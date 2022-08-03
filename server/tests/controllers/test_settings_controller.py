@@ -1312,262 +1312,207 @@ async def test_delete_logical_repository_nasty_input(
     assert response.status == code, "Response body is: " + body
 
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("with_precomputed_reset_check", [False, True])
-@with_defer
-async def test_set_logical_repository_smoke(
-    client,
-    headers,
-    metrics_calculator_factory,
-    sdb,
-    mdb,
-    bots,
-    release_match_setting_tag,
-    prefixer,
-    with_precomputed_reset_check,
-):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
-    time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
-    time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
-    if with_precomputed_reset_check:
-        await metrics_calculator_no_cache.calc_pull_request_facts_github(
+class TestSetLogicalRepository(Requester):
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.parametrize("with_precomputed_reset_check", [False, True])
+    @with_defer
+    async def test_smoke(
+        self,
+        metrics_calculator_factory,
+        sdb,
+        mdb,
+        bots,
+        release_match_setting_tag,
+        prefixer,
+        with_precomputed_reset_check,
+    ):
+        metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+        time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
+        time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
+        if with_precomputed_reset_check:
+            await metrics_calculator_no_cache.calc_pull_request_facts_github(
+                time_from,
+                time_to,
+                {"src-d/go-git"},
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                bots,
+                release_match_setting_tag,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                False,
+                False,
+            )
+            await wait_deferred()
+        await self._test_set_logical_repository(sdb, 1)
+        settings = Settings.from_account(1, sdb, mdb, None, None)
+        df_post = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from,
             time_to,
-            {"src-d/go-git"},
+            {"src-d/go-git", "src-d/go-git/alpha"},
             {},
             LabelFilter.empty(),
             JIRAFilter.empty(),
             False,
             bots,
-            release_match_setting_tag,
-            LogicalRepositorySettings.empty(),
+            await settings.list_release_matches(),
+            await settings.list_logical_repositories(prefixer),
             prefixer,
             False,
             False,
         )
-        await wait_deferred()
-    await _test_set_logical_repository(client, headers, sdb, 1)
-    settings = Settings.from_account(1, sdb, mdb, None, None)
-    df_post = await metrics_calculator_no_cache.calc_pull_request_facts_github(
-        time_from,
-        time_to,
-        {"src-d/go-git", "src-d/go-git/alpha"},
-        {},
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        False,
-        bots,
-        await settings.list_release_matches(),
-        await settings.list_logical_repositories(prefixer),
-        prefixer,
-        False,
-        False,
+        assert (
+            df_post[PullRequest.repository_full_name.name].values == "src-d/go-git/alpha"
+        ).sum() == 90
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_replace(self, logical_settings_db, release_match_setting_tag_logical_db, sdb):
+        await self._test_set_logical_repository(sdb, 2)
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_replace_identical(self, sdb, logical_settings_db):
+        # make the logical repositiry equal to the body
+        await sdb.execute(
+            update(LogicalRepository)
+            .where(LogicalRepository.name == "alpha")
+            .values(
+                prs={"title": ".*[Aa]argh", "labels": ["bug", "fix"]},
+                updated_at=LogicalRepository.updated_at,
+            ),
+        )
+        # create a matching ReleaseSetting for the logical repository
+        await sdb.execute(
+            insert(ReleaseSetting).values(
+                ReleaseSetting(
+                    repository="github.com/src-d/go-git/alpha",
+                    account_id=1,
+                    branches="master",
+                    tags="v.*",
+                    events=".*",
+                    match=ReleaseMatch.tag,
+                )
+                .create_defaults()
+                .explode(with_primary_keys=True),
+            ),
+        )
+
+        body = {
+            "account": 1,
+            "name": "alpha",
+            "parent": "github.com/src-d/go-git",
+            "prs": {"title": ".*[Aa]argh", "labels_include": ["bug", "fix"]},
+            "releases": {"branches": "master", "tags": "v.*", "match": "tag", "events": ".*"},
+        }
+        await self._request(json=body)
+
+    @pytest.mark.app_validate_responses(False)
+    async def test_clean_deployments(self, sdb, logical_settings_db, pdb) -> None:
+        await pdb.execute(
+            insert(GitHubPullRequestDeployment).values(
+                acc_id=1,
+                repository_full_name="src-d/go-git",
+                deployment_name="my-deployment2",
+                pull_request_id=123,
+                finished_at=datetime(2012, 1, 1),
+            ),
+        )
+
+        body = {
+            "account": 1,
+            "name": "gamma",
+            "parent": "github.com/src-d/go-git",
+            "prs": {"title": ".*[Aa]argh"},
+            "releases": {"branches": "master", "tags": "v.*", "match": "tag"},
+        }
+        await self._request(json=body)
+
+        pr_depl_row = await pdb.fetch_one(
+            select(GitHubPullRequestDeployment).where(
+                GitHubPullRequestDeployment.repository_full_name == "src-d/go-git",
+            ),
+        )
+        assert pr_depl_row is None
+
+    @pytest.mark.parametrize(
+        "account, name, parent, prs, match, extra, code",
+        [
+            (2, "alpha", "github.com/src-d/go-git", None, "tag", {}, 403),
+            (3, "alpha", "github.com/src-d/go-git", None, "tag", {}, 404),
+            (1, "alpha", "github.com/athenianco/athenian-api", None, "tag", {}, 403),
+            (1, "", "github.com/src-d/go-git", None, "tag", {}, 400),
+            (1, "alpha", "github.com/src-d/go-git", None, "branch", {}, 400),
+            (
+                1,
+                "alpha",
+                "github.com/src-d/go-git",
+                None,
+                "tag",
+                {"deployments": {"title": "(f*+"}},
+                400,
+            ),
+            (1, "alpha", "github.com/src-d/go-git", "(f*+", "tag", {}, 400),
+        ],
     )
-    assert (
-        df_post[PullRequest.repository_full_name.name].values == "src-d/go-git/alpha"
-    ).sum() == 90
+    async def test_nasty_input(self, account, name, parent, prs, match, extra, code):
+        body = {
+            "account": account,
+            "name": name,
+            "parent": parent,
+            "prs": {"title": ".*[Aa]argh" if not prs else prs},
+            "releases": {
+                "branches": "master",
+                "tags": "v.*",
+                "match": match,
+            },
+            **extra,
+        }
+        await self._request(code, json=body)
 
-
-async def _test_set_logical_repository(client, headers, sdb, n):
-    title = "[Ff]ix.*"
-    labels = ["BUG", "fiX", "Plumbing", "enhancement"]
-    body = {
-        "account": 1,
-        "name": "alpha",
-        "parent": "github.com/src-d/go-git",
-        "prs": {
+    async def _test_set_logical_repository(self, sdb, n):
+        labels = ["BUG", "fiX", "Plumbing", "enhancement"]
+        title = "[Ff]ix.*"
+        body = {
+            "account": 1,
+            "name": "alpha",
+            "parent": "github.com/src-d/go-git",
+            "prs": {"title": title, "labels_include": labels},
+            "releases": {"branches": "master", "tags": "v.*", "match": "tag"},
+        }
+        await self._request(json=body)
+        rows = await sdb.fetch_all(
+            select(LogicalRepository.name, LogicalRepository.prs).order_by(
+                LogicalRepository.name,
+            ),
+        )
+        assert len(rows) == n
+        assert rows[0][LogicalRepository.name.name] == "alpha"
+        assert rows[0][LogicalRepository.prs.name] == {
             "title": title,
-            "labels_include": labels,
-        },
-        "releases": {
-            "branches": "master",
-            "tags": "v.*",
-            "match": "tag",
-        },
-    }
-    response = await client.request(
-        method="PUT",
-        path="/v1/settings/logical_repository",
-        headers=headers,
-        json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is: " + body
-    rows = await sdb.fetch_all(
-        select([LogicalRepository.name, LogicalRepository.prs]).order_by(LogicalRepository.name),
-    )
-    assert len(rows) == n
-    assert rows[0][LogicalRepository.name.name] == "alpha"
-    assert rows[0][LogicalRepository.prs.name] == {
-        "title": title,
-        "labels": [v.lower() for v in labels],
-    }
-    row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
-    assert row[RepositorySet.items.name][:3] == [
-        ["github.com/src-d/gitbase", 39652769],
-        ["github.com/src-d/go-git", 40550],
-        ["github.com/src-d/go-git/alpha", 40550],
-    ]
-    assert len(row[RepositorySet.items.name]) == 2 + n
-    row = await sdb.fetch_one(
-        select([ReleaseSetting]).where(
-            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
-        ),
-    )
-    assert row[ReleaseSetting.branches.name] == "master"
-    assert row[ReleaseSetting.tags.name] == "v.*"
-    assert row[ReleaseSetting.match.name] == ReleaseMatch.tag
+            "labels": [v.lower() for v in labels],
+        }
+        row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
+        assert row[RepositorySet.items.name][:3] == [
+            ["github.com/src-d/gitbase", 39652769],
+            ["github.com/src-d/go-git", 40550],
+            ["github.com/src-d/go-git/alpha", 40550],
+        ]
+        assert len(row[RepositorySet.items.name]) == 2 + n
+        row = await sdb.fetch_one(
+            select(ReleaseSetting).where(
+                ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
+            ),
+        )
+        assert row[ReleaseSetting.branches.name] == "master"
+        assert row[ReleaseSetting.tags.name] == "v.*"
+        assert row[ReleaseSetting.match.name] == ReleaseMatch.tag
 
-
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-async def test_set_logical_repository_replace(
-    client,
-    headers,
-    logical_settings_db,
-    release_match_setting_tag_logical_db,
-    sdb,
-):
-    await _test_set_logical_repository(client, headers, sdb, 2)
-
-
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-async def test_set_logical_repository_replace_identical(client, headers, sdb, logical_settings_db):
-    # make the logical repositiry equal to the body
-    await sdb.execute(
-        update(LogicalRepository)
-        .where(LogicalRepository.name == "alpha")
-        .values(
-            prs={"title": ".*[Aa]argh", "labels": ["bug", "fix"]},
-            updated_at=LogicalRepository.updated_at,
-        ),
-    )
-    # create a matching ReleaseSetting for the logical repository
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git/alpha",
-                account_id=1,
-                branches="master",
-                tags="v.*",
-                events=".*",
-                match=ReleaseMatch.tag,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
-        ),
-    )
-
-    body = {
-        "account": 1,
-        "name": "alpha",
-        "parent": "github.com/src-d/go-git",
-        "prs": {"title": ".*[Aa]argh", "labels_include": ["bug", "fix"]},
-        "releases": {"branches": "master", "tags": "v.*", "match": "tag", "events": ".*"},
-    }
-    response = await client.request(
-        method="PUT",
-        path="/v1/settings/logical_repository",
-        headers=headers,
-        json=body,
-    )
-    assert response.status == 200
-
-
-@pytest.mark.app_validate_responses(False)
-async def test_set_logical_repository_clean_deployments(
-    client,
-    headers,
-    sdb,
-    logical_settings_db,
-    pdb,
-) -> None:
-    await pdb.execute(
-        insert(GitHubPullRequestDeployment).values(
-            acc_id=1,
-            repository_full_name="src-d/go-git",
-            deployment_name="my-deployment2",
-            pull_request_id=123,
-            finished_at=datetime(2012, 1, 1),
-        ),
-    )
-
-    body = {
-        "account": 1,
-        "name": "gamma",
-        "parent": "github.com/src-d/go-git",
-        "prs": {"title": ".*[Aa]argh"},
-        "releases": {"branches": "master", "tags": "v.*", "match": "tag"},
-    }
-    response = await client.request(
-        method="PUT",
-        path="/v1/settings/logical_repository",
-        headers=headers,
-        json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, body
-
-    pr_depl_row = await pdb.fetch_one(
-        select(GitHubPullRequestDeployment).where(
-            GitHubPullRequestDeployment.repository_full_name == "src-d/go-git",
-        ),
-    )
-    assert pr_depl_row is None
-
-
-@pytest.mark.parametrize(
-    "account, name, parent, prs, match, extra, code",
-    [
-        (2, "alpha", "github.com/src-d/go-git", None, "tag", {}, 403),
-        (3, "alpha", "github.com/src-d/go-git", None, "tag", {}, 404),
-        (1, "alpha", "github.com/athenianco/athenian-api", None, "tag", {}, 403),
-        (1, "", "github.com/src-d/go-git", None, "tag", {}, 400),
-        (1, "alpha", "github.com/src-d/go-git", None, "branch", {}, 400),
-        (
-            1,
-            "alpha",
-            "github.com/src-d/go-git",
-            None,
-            "tag",
-            {"deployments": {"title": "(f*+"}},
-            400,
-        ),
-        (1, "alpha", "github.com/src-d/go-git", "(f*+", "tag", {}, 400),
-    ],
-)
-async def test_set_logical_repository_nasty_input(
-    client,
-    headers,
-    account,
-    name,
-    parent,
-    prs,
-    match,
-    extra,
-    code,
-):
-    body = {
-        "account": account,
-        "name": name,
-        "parent": parent,
-        "prs": {
-            "title": ".*[Aa]argh" if not prs else prs,
-        },
-        "releases": {
-            "branches": "master",
-            "tags": "v.*",
-            "match": match,
-        },
-        **extra,
-    }
-    response = await client.request(
-        method="PUT",
-        path="/v1/settings/logical_repository",
-        headers=headers,
-        json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == code, "Response body is: " + body
+    async def _request(self, assert_status: int = 200, **kwargs: Any) -> None:
+        path = "/v1/settings/logical_repository"
+        client = self.client
+        response = await client.request(method="PUT", path=path, headers=self.headers, **kwargs)
+        assert response.status == assert_status
