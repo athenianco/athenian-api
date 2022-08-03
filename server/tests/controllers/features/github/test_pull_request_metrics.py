@@ -1769,7 +1769,7 @@ async def test_pull_request_count_logical_root(
         assert values[0, 2, 0, 0][0][1].value == 57
         assert values[0, 2, 0, 0][0][2].value == 267
         assert values[0, 2, 0, 0][0][3].value == 283
-        assert values[0, 2, 0, 0][0][4].value == 232
+        assert values[0, 2, 0, 0][0][4].value == 230
         args[5] = [["src-d/go-git"]]
         values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
@@ -1778,7 +1778,7 @@ async def test_pull_request_count_logical_root(
         assert values[0, 0, 0, 0][0][1].value == 107
         assert values[0, 0, 0, 0][0][2].value == 461
         assert values[0, 0, 0, 0][0][3].value == 513
-        assert values[0, 0, 0, 0][0][4].value == 421
+        assert values[0, 0, 0, 0][0][4].value == 419
 
 
 async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples):
@@ -1802,7 +1802,7 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
         (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
         (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
         (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
-        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=44585)),
+        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=25591)),
         (PullRequestMetricID.PR_DEPLOYMENT_TIME, [None, None, timedelta(days=723, seconds=65837)]),
         (
             PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
@@ -1855,10 +1855,10 @@ async def test_pull_request_cycle_deployment_time(
     for metric, td in [
         (
             PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-            [None, None, timedelta(days=731, seconds=10654)],
+            [None, None, timedelta(days=730, seconds=76007)],
         ),
         (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 513]),
-        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 466]),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 464]),
     ]:
         assert values[metric][0][0].value == td, metric
 

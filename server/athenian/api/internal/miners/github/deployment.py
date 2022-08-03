@@ -179,8 +179,7 @@ async def mine_deployments(
 ) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
 
-    :return: Deployment stats with deployed releases sub-dataframes.
-
+    :return: Deployment stats with deployed components and releases sub-dataframes.
     """
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
@@ -541,6 +540,7 @@ async def _postprocess_deployed_releases(
         rdb,
         cache,
         with_avatars=False,
+        with_pr_titles=True,
     )
     if not release_facts:
         return pd.DataFrame()

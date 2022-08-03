@@ -111,7 +111,11 @@ cdef ndarray _unordered_unique_int(ndarray arr, np_dtype dtype, varint _):
     return result
 
 
-def in1d_str(ndarray trial not None, ndarray dictionary not None) -> np.ndarray:
+def in1d_str(
+    ndarray trial not None,
+    ndarray dictionary not None,
+    bint skip_leading_zeros = False,
+) -> np.ndarray:
     cdef:
         np_dtype dtype_trial = <np_dtype>PyArray_DESCR(trial)
         np_dtype dtype_dict = <np_dtype>PyArray_DESCR(dictionary)
@@ -119,10 +123,10 @@ def in1d_str(ndarray trial not None, ndarray dictionary not None) -> np.ndarray:
     assert PyArray_NDIM(dictionary) == 1
     assert dtype_trial.kind == b"S" or dtype_trial.kind == b"U"
     assert dtype_trial.kind == dtype_dict.kind
-    return _in1d_str(trial, dictionary, dtype_trial.kind == b"S")
+    return _in1d_str(trial, dictionary, dtype_trial.kind == b"S", skip_leading_zeros)
 
 
-cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, int is_char):
+cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, int is_char, int skip_leading_zeros):
     cdef:
         char *data_trial = <char *>PyArray_DATA(trial)
         char *data_dictionary = <char *> PyArray_DATA(dictionary)
@@ -144,7 +148,11 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, int is_char):
         if is_char:
             for i in range(length):
                 s = data_dictionary + i * stride
-                nullptr = <char *> memchr(s, 0, itemsize)
+                nullptr = s
+                if skip_leading_zeros:
+                    while nullptr < (s + itemsize) and nullptr[0] == 0:
+                        nullptr += 1
+                nullptr = <char *> memchr(nullptr, 0, itemsize + (s - nullptr))
                 if nullptr:
                     size = nullptr - s
                 else:
@@ -172,7 +180,11 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, int is_char):
         if is_char:
             for i in range(length):
                 s = data_trial + i * stride
-                nullptr = <char *> memchr(s, 0, itemsize)
+                nullptr = s
+                if skip_leading_zeros:
+                    while nullptr < (s + itemsize) and nullptr[0] == 0:
+                        nullptr += 1
+                nullptr = <char *> memchr(nullptr, 0, itemsize + (s - nullptr))
                 if nullptr:
                     size = nullptr - s
                 else:

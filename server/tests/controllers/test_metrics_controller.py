@@ -972,7 +972,7 @@ class TestCalcMetricsPRs:
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
-            [[None, "62533037s"], [None, "65158487s"], [None, "66241187s"], [0, 513]],
+            [[None, "62533037s"], [None, "65158487s"], [None, "66222193s"], [0, 513]],
         ]
 
     # TODO: fix response validation against the schema
