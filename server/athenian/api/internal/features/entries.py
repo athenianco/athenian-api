@@ -7,7 +7,7 @@ from functools import partial, reduce
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
+from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, TypeVar
 
 import aiomcache
 import numpy as np
@@ -130,30 +130,66 @@ def _postprocess_cached_facts(
     return result
 
 
-class _PRMetricsLineGHCache:
-    @staticmethod
-    def postprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
-        # cache value has been stored with sorted(metrics), adapt before returning to caller
-        if (sorted_metrics := sorted(metrics)) != metrics:
-            sort_indexes = np.searchsorted(sorted_metrics, metrics)
-            return _sorted_result_metrics(result, sort_indexes)
+T = TypeVar("T")
 
-        return result
 
-    @staticmethod
-    def preprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
+class _CalcMetricsCache(Generic[T]):
+    """Cache processing for calculator methods having a list of metrics as argument.
+
+    Methods result must include a numpy array with elements ordered according to the order of
+    metrics in arguments.
+    Pre/post-processing functions in this class allows to share result cache across calls
+    with different metrics order.
+
+    """
+
+    @classmethod
+    def preprocess(cls, result: T, *, metrics: Sequence[str], **kwargs: Any) -> T:
         # cache value must be stored with sorted(metrics), adapt if needed
         if sorted(metrics) != metrics:
             sort_indexes = np.argsort(metrics)
-            return _sorted_result_metrics(result, sort_indexes)
+            return cls.sort_metric_values_in_result(result, sort_indexes)
         return result
 
+    @classmethod
+    def postprocess(cls, result: T, *, metrics: Sequence[str], **kwargs: Any) -> T:
+        # cache value has been stored with sorted(metrics), adapt before returning it to the caller
+        if (sorted_metrics := sorted(metrics)) != metrics:
+            sort_indexes = np.searchsorted(sorted_metrics, metrics)
+            return cls.sort_metric_values_in_result(result, sort_indexes)
+        return result
 
-def _sorted_result_metrics(result: np.ndarray, metrics_sort_indexes: Iterable[int]) -> np.ndarray:
-    flat_copy = result.ravel().copy()
-    # each element of `copy` is a list of list of metrics
-    flat_copy[:] = [[[m[idx] for idx in metrics_sort_indexes] for m in obj] for obj in flat_copy]
-    return flat_copy.reshape(result.shape)
+    @classmethod
+    def sort_metric_values_in_result(cls, result: T, sort_indexes: Iterable[int]) -> T:
+        raise NotImplementedError()
+
+    @classmethod
+    def _sorted_metric_values(cls, values: np.ndarray, sort_indexes: Iterable[int]) -> np.ndarray:
+        flat_copy = values.ravel().copy()
+        # each element of `flat_copy` is a list of list of metrics
+        flat_copy[:] = [[[m[idx] for idx in sort_indexes] for m in obj] for obj in flat_copy]
+        return flat_copy.reshape(values.shape)
+
+
+class _PRMetricsLineGHCache(_CalcMetricsCache[np.ndarray]):
+    @classmethod
+    def sort_metric_values_in_result(
+        cls,
+        result: np.ndarray,
+        sort_indexes: Iterable[int],
+    ) -> np.ndarray:
+        return cls._sorted_metric_values(result, sort_indexes)
+
+
+class _ReleaseMetricsLineGHCache(_CalcMetricsCache[tuple[np.ndarray, dict[str, ReleaseMatch]]]):
+    @classmethod
+    def sort_metric_values_in_result(
+        cls,
+        result: tuple[np.ndarray, dict[str, ReleaseMatch]],
+        sort_indexes: Iterable[int],
+    ) -> tuple[np.ndarray, dict[str, ReleaseMatch]]:
+        values = cls._sorted_metric_values(result[0], sort_indexes)
+        return (values, result[1])
 
 
 class UnsupportedMetricError(Exception):
@@ -668,8 +704,7 @@ class MetricEntriesCalculator:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
-            # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
-            ",".join(metrics),
+            ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
@@ -679,7 +714,10 @@ class MetricEntriesCalculator:
             release_settings,
             logical_settings,
         ),
+        preprocess=_ReleaseMetricsLineGHCache.preprocess,
+        postprocess=_ReleaseMetricsLineGHCache.postprocess,
         cache=lambda self, **_: self._cache,
+        version=2,
     )
     async def calc_release_metrics_line_github(
         self,
