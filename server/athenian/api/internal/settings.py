@@ -804,21 +804,13 @@ class Settings:
             tags = ".*"
 
         if dereference:
-            try:
-                if meta_ids is None:
-                    meta_ids = await get_metadata_account_ids(
-                        self._account, self._sdb, self._cache,
-                    )
-            except ResponseError as e:
-                if repos:
-                    raise e from None
-                meta_ids = None
-            else:
-                if prefixer is None:
-                    prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
-                settings = Settings.from_account(
-                    self._account, self._sdb, self._mdb, self._cache, self._slack,
-                )
+            if meta_ids is None:
+                meta_ids = await get_metadata_account_ids(self._account, self._sdb, self._cache)
+            if prefixer is None:
+                prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
+            settings = Settings.from_account(
+                self._account, self._sdb, self._mdb, self._cache, self._slack,
+            )
             repos, _ = await resolve_repos(
                 repos,
                 self._account,

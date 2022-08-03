@@ -193,7 +193,7 @@ class TestSetReleaseMatch(Requester):
         response = await self._request(json=body)
         assert response.status == code
 
-    async def test_login_failure(self, sdb, lazy_gkwillie, disable_default_user):
+    async def test_account_not_installed(self, sdb, lazy_gkwillie, disable_default_user):
         await self._cleanup_gkwillie(sdb)
         await sdb.execute(delete(RepositorySet))
         await sdb.execute(delete(AccountGitHubAccount))
@@ -209,7 +209,7 @@ class TestSetReleaseMatch(Requester):
             response = await self._request(json=body)
         finally:
             auth.GracefulExit = GracefulExit
-        assert response.status == 403, await response.read()
+        assert response.status == 422, await response.read()
 
     @pytest.mark.parametrize(
         "code, clear_kind",
