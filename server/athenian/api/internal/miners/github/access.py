@@ -1,11 +1,13 @@
+from itertools import chain
 import marshal
 from typing import Iterable, KeysView, Optional
 
 from sqlalchemy import select
 
+from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached
 from athenian.api.internal.miners.access import AccessChecker
-from athenian.api.models.metadata.github import AccountRepository
+from athenian.api.models.metadata.github import AccountRepository, NodeRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -56,9 +58,20 @@ class GitHubAccessChecker(AccessChecker):
 
     async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> dict[str, int]:
         return dict(
-            await self.mdb.fetch_all(
-                select(AccountRepository.repo_full_name, AccountRepository.repo_graph_id).where(
-                    AccountRepository.acc_id.in_(metadata_ids),
+            chain(
+                *(
+                    await gather(
+                        self.mdb.fetch_all(
+                            select(
+                                AccountRepository.repo_full_name, AccountRepository.repo_graph_id,
+                            ).where(AccountRepository.acc_id.in_(metadata_ids)),
+                        ),
+                        self.mdb.fetch_all(
+                            select(NodeRepository.name_with_owner, NodeRepository.node_id).where(
+                                NodeRepository.acc_id.in_(metadata_ids),
+                            ),
+                        ),
+                    )
                 ),
             ),
         )
