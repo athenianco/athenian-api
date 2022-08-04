@@ -9,6 +9,7 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
+from athenian.api.db import Database
 from athenian.api.models.state.models import (
     Account as DBAccount,
     AccountFeature,
@@ -17,12 +18,14 @@ from athenian.api.models.state.models import (
     FeatureComponent,
     Invitation,
     UserAccount,
+    UserToken,
 )
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
 from tests.conftest import DEFAULT_HEADERS, disable_default_user
-from tests.testutils.db import assert_existing_row, assert_missing_row
+from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory.state import DEFAULT_ACCOUNT_ID, UserAccountFactory, UserTokenFactory
 
 vadim_email = "vadim@athenian.co"
 eiso_email = "eiso@athenian.co"
@@ -507,6 +510,16 @@ class TestChangeUser:
         body = {"account": account, "user": user, "status": status}
         await self._request(client, code, json=body)
 
+    async def test_banish_user_with_token(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb, UserAccountFactory(user_id="auth0|GG"), UserTokenFactory(user_id="auth0|GG"),
+        )
+
+        body = {"account": DEFAULT_ACCOUNT_ID, "user": "auth0|GG", "status": "banished"}
+        await self._request(client, json=body)
+        await self._assert_user_banished(sdb, "auth0|GG")
+        await assert_missing_row(sdb, UserToken, user_id="auth0|GG")
+
     async def _request(self, client: TestClient, assert_status: int = 200, **kwargs: Any) -> dict:
         path = "/v1/account/user"
         response = await client.request(
@@ -514,3 +527,9 @@ class TestChangeUser:
         )
         assert response.status == assert_status
         return await response.json()
+
+    async def _assert_user_banished(self, sdb: Database, user_id: str) -> None:
+        await assert_missing_row(sdb, UserAccount, user_id=user_id, account_id=DEFAULT_ACCOUNT_ID)
+        await assert_existing_row(
+            sdb, BanishedUserAccount, user_id=user_id, account_id=DEFAULT_ACCOUNT_ID,
+        )
