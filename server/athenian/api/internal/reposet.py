@@ -26,7 +26,7 @@ from athenian.api.internal.miners.access import AccessChecker
 from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.prefixer import Prefixer, strip_proto
 from athenian.api.models.metadata.github import AccountRepository, NodeRepository, NodeUser
-from athenian.api.models.state.models import RepositorySet, UserAccount
+from athenian.api.models.state.models import LogicalRepository, RepositorySet, UserAccount
 from athenian.api.models.web import (
     ForbiddenError,
     InstallationProgress,
@@ -351,6 +351,29 @@ async def _load_account_reposets(
                 log.error("account_repos_log does not agree with api_repositories: %s", missing)
             if not repos:
                 raise_no_source_data()
+
+            # add the existing logical repositories as items of the reposet
+            logical_repos = await sdb_conn.fetch_all(
+                select(LogicalRepository.name, LogicalRepository.repository_id).where(
+                    LogicalRepository.account_id == account,
+                ),
+            )
+
+            wrong_references = []
+            for name, physical_repo_id in logical_repos:
+                try:
+                    physical_name = prefixer.repo_node_to_prefixed_name[physical_repo_id]
+                except KeyError:
+                    wrong_references.append((name, physical_repo_id))
+                else:
+                    repos.append([f"{physical_name}/{name}", physical_repo_id])
+            if wrong_references:
+                wrong_refs_repr = "; ".join(f"{name} => {repo}" for name, repo in wrong_references)
+                log.error("logical repos point to not existing repos: %s", wrong_refs_repr)
+
+            # sort repositories by name
+            repos.sort()
+
             rs = RepositorySet(
                 name=RepositorySet.ALL, owner_id=account, items=repos,
             ).create_defaults()

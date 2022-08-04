@@ -30,6 +30,7 @@ class LogicalRepositoryFactory(SQLAlchemyModelFactory):
     class Meta:
         model = LogicalRepository
 
+    id = factory.Sequence(lambda n: n + 1)
     account_id = DEFAULT_ACCOUNT_ID
     name = factory.Sequence(lambda n: f"logical-repo-{n}")
     repository_id = factory.Sequence(lambda n: n + 1)
