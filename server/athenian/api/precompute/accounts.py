@@ -204,7 +204,7 @@ async def precompute_reposet(
         prefixer, bots, new_items = await gather(
             Prefixer.load(meta_ids, mdb, cache),
             fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
-            refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
+            refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb, None),
         )
     except Exception as e:
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)

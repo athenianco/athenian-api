@@ -78,26 +78,24 @@ async def test_refresh_repository_names_smoke(sdb, mdb):
                     ["github.com/src-d/go-git/alpha", 40550],
                     ["github.com/src-d/zzz/beta", 40550],
                     ["yyy", 100500],
-                    ["github.com/src-d/gitbase", 39652769],
+                    ["github.com/src-d/gitbase", 39652699],
                 ],
                 RepositorySet.updated_at: datetime.now(timezone.utc),
                 RepositorySet.updates_count: RepositorySet.updates_count + 1,
             },
         ),
     )
-    items = await refresh_repository_names(1, (6366825,), sdb, mdb)
+    items = await refresh_repository_names(1, (6366825,), sdb, mdb, None)
     assert items == [
         "github.com/src-d/gitbase",
         "github.com/src-d/go-git",
         "github.com/src-d/go-git/alpha",
         "github.com/src-d/go-git/beta",
-        "yyy",
     ]
     items = await sdb.fetch_val(select([RepositorySet.items]).where(RepositorySet.id == 1))
     assert items == [
-        ["github.com/src-d/gitbase", 39652769],
+        ["github.com/src-d/gitbase", 39652699],
         ["github.com/src-d/go-git", 40550],
         ["github.com/src-d/go-git/alpha", 40550],
         ["github.com/src-d/go-git/beta", 40550],
-        ["yyy", 100500],
     ]
