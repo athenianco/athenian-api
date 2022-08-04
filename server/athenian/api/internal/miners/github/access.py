@@ -2,7 +2,7 @@ from itertools import chain
 import marshal
 from typing import Iterable, KeysView, Optional
 
-from sqlalchemy import select
+from sqlalchemy import and_, join, select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached
@@ -66,10 +66,20 @@ class GitHubAccessChecker(AccessChecker):
                                 AccountRepository.repo_full_name, AccountRepository.repo_graph_id,
                             ).where(AccountRepository.acc_id.in_(metadata_ids)),
                         ),
+                        # workaround DEV-4725
                         self.mdb.fetch_all(
-                            select(NodeRepository.name_with_owner, NodeRepository.node_id).where(
-                                NodeRepository.acc_id.in_(metadata_ids),
-                            ),
+                            select(NodeRepository.name_with_owner, NodeRepository.node_id)
+                            .select_from(
+                                join(
+                                    NodeRepository,
+                                    AccountRepository,
+                                    and_(
+                                        NodeRepository.acc_id == AccountRepository.acc_id,
+                                        NodeRepository.node_id == AccountRepository.repo_graph_id,
+                                    ),
+                                ),
+                            )
+                            .where(NodeRepository.acc_id.in_(metadata_ids)),
                         ),
                     )
                 ),
