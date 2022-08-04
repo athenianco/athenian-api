@@ -113,10 +113,14 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
         rule = ReleaseMatchRequest.from_dict(body)
     except ValueError as e:
         raise ResponseError(BadRequestError(str(e))) from e
+    meta_ids = await get_metadata_account_ids(rule.account, request.sdb, request.cache)
     settings = Settings.from_request(request, rule.account)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+
     match = ReleaseMatch[rule.match]
+    rule.events = rule.events or ".*"
     repos = await settings.set_release_matches(
-        rule.repositories, rule.branches, rule.tags, rule.events or ".*", match,
+        rule.repositories, rule.branches, rule.tags, rule.events, match, meta_ids, prefixer,
     )
     return web.json_response(sorted(repos))
 
@@ -642,6 +646,8 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 web_model.releases.tags,
                 web_model.releases.events,
                 ReleaseMatch[web_model.releases.match],
+                meta_ids,
+                prefixer,
                 dereference=False,
             )
             # append to repository sets
@@ -685,11 +691,9 @@ async def _find_matching_logical_repository(
     """
     existing = await sdb_conn.fetch_one(
         select([LogicalRepository]).where(
-            and_(
-                LogicalRepository.account_id == logical_repo.account_id,
-                LogicalRepository.name == logical_repo.name,
-                LogicalRepository.repository_id == logical_repo.repository_id,
-            ),
+            LogicalRepository.account_id == logical_repo.account_id,
+            LogicalRepository.name == logical_repo.name,
+            LogicalRepository.repository_id == logical_repo.repository_id,
         ),
     )
     if existing is None:
@@ -745,19 +749,15 @@ async def _delete_logical_repository(
     tasks = [
         sdb.execute(
             delete(LogicalRepository).where(
-                and_(
-                    LogicalRepository.account_id == account,
-                    LogicalRepository.name == name,
-                    LogicalRepository.repository_id == repo_id,
-                ),
+                LogicalRepository.account_id == account,
+                LogicalRepository.name == name,
+                LogicalRepository.repository_id == repo_id,
             ),
         ),
         sdb.execute(
             delete(ReleaseSetting).where(
-                and_(
-                    ReleaseSetting.account_id == account,
-                    ReleaseSetting.repository == prefixed_name,
-                ),
+                ReleaseSetting.account_id == account,
+                ReleaseSetting.repository == prefixed_name,
             ),
         ),
         clean_repository_sets(),
@@ -804,11 +804,8 @@ async def _clean_logical_deployments(
     affected_deployments = await pdb.fetch_all(
         union(
             *(
-                select([distinct(model.deployment_name)]).where(
-                    and_(
-                        model.acc_id == account,
-                        model.repository_full_name.in_(repos),
-                    ),
+                select(distinct(model.deployment_name)).where(
+                    model.acc_id == account, model.repository_full_name.in_(repos),
                 )
                 for model in deployment_models
             ),
@@ -821,7 +818,7 @@ async def _clean_logical_deployments(
         log.info("Cleaning deployments %s for repos %s", affected_deployment_names, repos)
         for model in deployment_models:
             delete_stmt = delete(model).where(
-                and_(model.acc_id == account, model.repository_full_name.in_(repos)),
+                model.acc_id == account, model.repository_full_name.in_(repos),
             )
             tasks.append(pdb.execute(delete_stmt))
         facts_delete_stmt = delete(GitHubDeploymentFacts).where(

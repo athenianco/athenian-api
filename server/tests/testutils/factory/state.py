@@ -16,6 +16,7 @@ from athenian.api.models.state.models import (
     GoalTemplate,
     LogicalRepository,
     MappedJIRAIdentity,
+    ReleaseSetting,
     RepositorySet,
     Team,
     TeamGoal,
@@ -64,6 +65,18 @@ class AccountJiraInstallationFactory(SQLAlchemyModelFactory):
 
     id = factory.Sequence(lambda n: n + 3)
     account_id = factory.Sequence(lambda n: n + 3)
+
+
+class ReleaseSettingFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = ReleaseSetting
+
+    repository = factory.LazyAttribute(
+        lambda rel_setting: f"github.com/org/repo-{rel_setting.repo_id}",
+    )
+    repo_id = factory.Sequence(lambda n: n + 1)
+    logical_name = ""
+    account_id = DEFAULT_ACCOUNT_ID
 
 
 class FeatureFactory(SQLAlchemyModelFactory):

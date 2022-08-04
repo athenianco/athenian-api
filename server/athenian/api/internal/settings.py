@@ -22,7 +22,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, select
 
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
-from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.internal.account import get_account_repositories
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     coerce_prefixed_logical_repos,
@@ -769,8 +769,8 @@ class Settings:
         tags: str,
         events: str,
         match: ReleaseMatch,
-        meta_ids: Optional[tuple[int, ...]] = None,
-        prefixer: Optional[Prefixer] = None,
+        meta_ids: tuple[int, ...],
+        prefixer: Prefixer,
         dereference: bool = True,
         pointer_root: str = "",
     ) -> set[str]:
@@ -804,10 +804,6 @@ class Settings:
             tags = ".*"
 
         if dereference:
-            if meta_ids is None:
-                meta_ids = await get_metadata_account_ids(self._account, self._sdb, self._cache)
-            if prefixer is None:
-                prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
             settings = Settings.from_account(
                 self._account, self._sdb, self._mdb, self._cache, self._slack,
             )
@@ -825,20 +821,19 @@ class Settings:
             )
         values = []
         for repo in repos:
-            if RepositoryName.from_prefixed(repo).is_logical:
-                if match not in (ReleaseMatch.tag, ReleaseMatch.event):
-                    raise ResponseError(
-                        InvalidRequestError(
-                            f"{pointer_root}.{match}",
-                            detail=(
-                                f"Logical repository {repo} must be released either by tag or by "
-                                "submitted event."
-                            ),
-                        ),
-                    )
+            repo_name = RepositoryName.from_prefixed(repo)
+            if repo_name.is_logical and match not in (ReleaseMatch.tag, ReleaseMatch.event):
+                msg = (
+                    f"Logical repository {repo} must be released either by tag or by "
+                    "submitted event."
+                )
+                raise ResponseError(InvalidRequestError(f"{pointer_root}.{match}", detail=msg))
+            repo_id = prefixer.repo_name_to_node[repo_name.unprefixed_physical]
             values.append(
                 ReleaseSetting(
                     repository=repo,
+                    logical_name=repo_name.logical or "",
+                    repo_id=repo_id,
                     account_id=self._account,
                     branches=branches,
                     tags=tags,

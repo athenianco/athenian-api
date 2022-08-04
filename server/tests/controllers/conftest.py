@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
 from random import randint
-from typing import Set
 import warnings
 
 import faker
@@ -25,11 +24,12 @@ from athenian.api.models.state.models import (
     JIRAProjectSetting,
     LogicalRepository,
     MappedJIRAIdentity,
-    ReleaseSetting,
     RepositorySet,
     Team,
 )
 from athenian.api.typing_utils import wraps
+from tests.testutils.db import models_insert
+from tests.testutils.factory.state import ReleaseSettingFactory
 
 
 @pytest.fixture(scope="function")
@@ -132,32 +132,22 @@ async def logical_settings_db(sdb):
 
 @pytest.fixture(scope="function")
 async def release_match_setting_tag_logical_db(sdb):
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git/alpha",
-                account_id=1,
-                branches="master",
-                tags=".*",
-                events=".*",
-                match=ReleaseMatch.tag,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            repository="github.com/src-d/go-git/alpha",
+            logical_name="alpha",
+            repo_id=40550,
+            branches="master",
+            match=ReleaseMatch.tag,
         ),
-    )
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git/beta",
-                account_id=1,
-                branches="master",
-                tags=r"v4\..*",
-                events=".*",
-                match=ReleaseMatch.tag,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+        ReleaseSettingFactory(
+            repository="github.com/src-d/go-git/beta",
+            logical_name="beta",
+            repo_id=40550,
+            branches="master",
+            tags=r"v4\..*",
+            match=ReleaseMatch.tag,
         ),
     )
 
@@ -363,7 +353,7 @@ SAMPLE_BOTS = {
 
 
 @pytest.fixture(scope="session")
-def bots() -> Set[str]:
+def bots() -> set[str]:
     return SAMPLE_BOTS
 
 
