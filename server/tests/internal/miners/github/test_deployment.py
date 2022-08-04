@@ -78,7 +78,7 @@ async def test_mine_deployments_from_scratch(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, computed_mask = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -103,7 +103,6 @@ async def test_mine_deployments_from_scratch(
     )
     _validate_deployments(deps, 9, True)
     deployment_facts_extract_mentioned_people(deps)
-    assert np.array_equal(computed_mask, np.full(len(deps), True))
     await wait_deferred()
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
@@ -146,7 +145,7 @@ async def test_mine_deployments_middle(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, computed_mask = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -171,7 +170,6 @@ async def test_mine_deployments_middle(
     )
     _validate_deployments(deps, 7, False)
     deployment_facts_extract_mentioned_people(deps)
-    assert np.array_equal(computed_mask, np.full(len(deps), True))
 
 
 @with_defer
@@ -239,7 +237,7 @@ async def test_mine_deployments_append(
             ),
         ),
     )
-    deps, computed_mask = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -266,11 +264,6 @@ async def test_mine_deployments_append(
     assert len(deps.loc[name]["prs"]) == 0
     assert len(deps.loc[name]["releases"]) == 0
     await _validate_deployed_prs(pdb)
-
-    assert len(deps) == len(computed_mask)
-    # only 1 deployment has been computed now
-    assert len(deps[computed_mask]) == 1
-    assert deps[computed_mask].iloc[0].name == name
 
 
 @with_defer
@@ -384,7 +377,7 @@ async def test_mine_deployments_only_failed(
         )
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
-    deps, computed_mask = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -452,7 +445,7 @@ async def test_mine_deployments_logical(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git/alpha"],
         {},
         time_from,
@@ -556,7 +549,7 @@ async def test_mine_deployments_no_prs(
             ),
         ),
     )
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -596,7 +589,7 @@ async def test_mine_deployments_no_release_facts(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4665,7 +4658,7 @@ async def test_mine_deployments_precomputed_dummy(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, _ = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4690,7 +4683,7 @@ async def test_mine_deployments_precomputed_dummy(
     )
     people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, _ = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4740,7 +4733,7 @@ async def test_mine_deployments_precomputed_sample(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, _ = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4765,7 +4758,7 @@ async def test_mine_deployments_precomputed_sample(
     )
     people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, _ = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4819,7 +4812,7 @@ async def test_mine_deployments_reversed(
 ):
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, _ = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4873,7 +4866,7 @@ async def test_mine_deployments_reversed(
         ),
     )
 
-    deps2, _ = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4920,7 +4913,7 @@ async def test_mine_deployments_empty(
     await rdb.execute(delete(DeploymentNotification))
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4945,7 +4938,7 @@ async def test_mine_deployments_empty(
     )
     assert len(deps) == 0
     await wait_deferred()
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -5026,7 +5019,7 @@ async def test_mine_deployments_event_releases(
             with_deployments=False,
         )
         await wait_deferred()
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -5222,7 +5215,7 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
-        deps, _ = await mine_deployments(
+        deps = await mine_deployments(
             **self._mine_common_kwargs(),
             branches=branches,
             prefixer=prefixer,
@@ -5282,7 +5275,7 @@ class TestHideOutlierFirstDeployments:
         # delete notifications so that mine_deployments will find nothing
         await rdb.execute(sa.delete(DeploymentNotification))
 
-        deps, _ = await mine_deployments(
+        deps = await mine_deployments(
             **self._mine_common_kwargs(),
             branches=branches,
             prefixer=prefixer,
@@ -5322,7 +5315,7 @@ class TestHideOutlierFirstDeployments:
             DeployedComponentFactory(deployment_name="deploy1", repository_node_id=40550),
         )
 
-        deps, _ = await mine_deployments(
+        deps = await mine_deployments(
             **self._mine_common_kwargs(),
             branches=branches,
             prefixer=prefixer,
