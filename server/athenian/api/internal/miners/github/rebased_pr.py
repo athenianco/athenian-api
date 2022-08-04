@@ -252,6 +252,10 @@ async def _match_rebased_prs_from_scratch(
             np.asarray(repo_ids if not isinstance(repo_ids, (set, frozenset)) else list(repo_ids)),
         ),
     )
+    if len(repo_matched) == 0:
+        add_pdb_misses(pdb, "rebased_prs", 0)
+        return pd.DataFrame()
+
     if len(repo_matched) < len(searched_commits):
         searched_commits = searched_commits.take(repo_matched)
 
