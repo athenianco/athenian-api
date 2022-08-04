@@ -481,6 +481,7 @@ async def refresh_repository_names(
     meta_ids: tuple[int, ...],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
 ) -> list[str]:
     """
     Update repository names in the account's reposets according to github.node_repository.
@@ -491,11 +492,15 @@ async def refresh_repository_names(
     :return: List of repository names belonging to the "ALL" reposet.
     """
     log = logging.getLogger(f"{metadata.__package__}.refresh_repository_names")
-    reposet_rows = await sdb.fetch_all(
-        select([RepositorySet.id, RepositorySet.items, RepositorySet.name]).where(
-            RepositorySet.owner_id == account,
+    reposet_rows, access_checker = await gather(
+        sdb.fetch_all(
+            select([RepositorySet.id, RepositorySet.items, RepositorySet.name]).where(
+                RepositorySet.owner_id == account,
+            ),
         ),
+        access_classes["github"](account, meta_ids, sdb, mdb, cache).load(),
     )
+    registered_node_ids = set(access_checker.installed_repos.values())
     repo_ids = set()
     for row in reposet_rows:
         repo_ids.update(r[1] for r in row[RepositorySet.items.name])
@@ -513,11 +518,16 @@ async def refresh_repository_names(
         dirty = False
         new_items = []
         is_all = row[RepositorySet.name.name] == RepositorySet.ALL
+        removed = set()
         for old_name, node_id in row[RepositorySet.items.name]:
             try:
                 new_name = name_map[node_id]
             except KeyError:
                 new_name = old_name
+            if node_id not in registered_node_ids:
+                removed.add(node_id)
+                dirty = True
+                continue
             if logical := extract_logical_repo(old_name, 3):
                 new_name += "/" + logical
             if old_name != new_name:
@@ -526,6 +536,13 @@ async def refresh_repository_names(
             new_items.append([new_name, node_id])
             if is_all:
                 all_reposet_names.append(new_name)
+        if removed:
+            log.error(
+                'reposet-sync didn\'t delete some repos [acc %d, "%s"]: %s',
+                account,
+                row[RepositorySet.name.name],
+                removed,
+            )
         if dirty:
             new_items.sort()
             updates.append(
