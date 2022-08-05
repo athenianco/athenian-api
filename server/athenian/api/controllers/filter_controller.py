@@ -3,19 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-    TypeVar,
-)
+from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Set, TypeVar
 
 from aiohttp import web
 import aiomcache
@@ -249,10 +237,10 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
 
 async def _common_filter_preprocess(
     filt: CommonFilterProperties,
-    repos: Optional[List[str]],
+    repos: Optional[list[str]],
     request: AthenianWebRequest,
     strip_prefix=True,
-) -> Tuple[datetime, datetime, Set[str], Tuple[int, ...], Prefixer, LogicalRepositorySettings]:
+) -> tuple[datetime, datetime, Set[str], tuple[int, ...], Prefixer, LogicalRepositorySettings]:
     if filt.date_to < filt.date_from:
         raise ResponseError(
             InvalidRequestError(
@@ -274,11 +262,11 @@ async def _common_filter_preprocess(
 
 
 async def _repos_preprocess(
-    repos: Optional[List[str]],
+    repos: Optional[list[str]],
     account: int,
     request: AthenianWebRequest,
     strip_prefix=True,
-) -> Tuple[Set[str], Tuple[int, ...], Prefixer, LogicalRepositorySettings]:
+) -> tuple[Set[str], tuple[int, ...], Prefixer, LogicalRepositorySettings]:
     async def login_loader() -> str:
         return (await request.user()).login
 
@@ -304,7 +292,7 @@ async def _repos_preprocess(
 async def resolve_filter_prs_parameters(
     filt: FilterPullRequestsRequest,
     request: AthenianWebRequest,
-) -> Tuple[
+) -> tuple[
     datetime,
     datetime,
     Set[str],
@@ -317,7 +305,7 @@ async def resolve_filter_prs_parameters(
     ReleaseSettings,
     LogicalRepositorySettings,
     Prefixer,
-    Tuple[int, ...],
+    tuple[int, ...],
 ]:
     """Infer all the required PR filters from the request."""
     (
@@ -432,7 +420,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     )
 
 
-def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, datetime]:
+def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> tuple[datetime, datetime]:
     if (filt.updated_from is None) != (filt.updated_to is None):
         raise ResponseError(
             InvalidRequestError(
@@ -688,7 +676,6 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         cache=request.cache,
         with_pr_titles=True,
     )
-    avatars = [(prefixer.user_node_to_prefixed_login[u], url) for u, url in avatars]
     return await _build_release_set_response(
         releases, avatars, deployments, prefixer, jira_ids, meta_ids, request.mdb,
     )
@@ -696,10 +683,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 
 async def _load_jira_issues_for_releases(
     jira_ids: Optional[JIRAConfig],
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-    meta_ids: Tuple[int, ...],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    meta_ids: tuple[int, ...],
     mdb: Database,
-) -> Dict[str, LinkedJIRAIssue]:
+) -> dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for _, facts in releases:
             facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.name]), None)
@@ -724,21 +711,26 @@ async def _load_jira_issues_for_releases(
 
 
 async def _build_release_set_response(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-    avatars: List[Tuple[str, str]],
-    deployments: Dict[str, Deployment],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    avatars: Iterable[tuple[int, str]],
+    deployments: dict[str, Deployment],
     prefixer: Prefixer,
     jira_ids: Optional[JIRAConfig],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
 ) -> web.Response:
     issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
     prefix_logical_repo = prefixer.prefix_logical_repo
+    user_node_to_login = prefixer.user_node_to_prefixed_login.get
     data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
     model = ReleaseSet(
         data=data,
         include=ReleaseSetInclude(
-            users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
+            users={
+                pl: IncludedNativeUser(avatar=a)
+                for u, a in avatars
+                if (pl := user_node_to_login(u)) is not None
+            },
             jira=issues,
             deployments={
                 key: webify_deployment(val, prefix_logical_repo)
@@ -751,7 +743,7 @@ async def _build_release_set_response(
 
 
 def _filtered_release_from_tuple(
-    t: Tuple[Dict[str, Any], ReleaseFacts],
+    t: tuple[dict[str, Any], ReleaseFacts],
     prefixer: Prefixer,
 ) -> FilteredRelease:
     details, facts = t
@@ -772,7 +764,7 @@ def _filtered_release_from_tuple(
     )
 
 
-def _extract_release_prs(facts: ReleaseFacts, prefixer: Prefixer) -> List[ReleasedPullRequest]:
+def _extract_release_prs(facts: ReleaseFacts, prefixer: Prefixer) -> list[ReleasedPullRequest]:
     user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
     return [
         ReleasedPullRequest(
@@ -834,13 +826,13 @@ async def _check_github_repos(
     account: int,
     prefixed_repos: Mapping[str, Any],
     pointer: str,
-) -> Tuple[
+) -> tuple[
     ReleaseSettings,
     LogicalRepositorySettings,
     Prefixer,
     Set[str],
-    Tuple[int, ...],
-    Dict[str, Any],
+    tuple[int, ...],
+    dict[str, Any],
 ]:
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -904,10 +896,10 @@ def webify_deployment(val: Deployment, prefix_logical_repo) -> WebDeploymentNoti
 
 @sentry_span
 async def _build_github_prs_response(
-    prs: List[PullRequestListItem],
-    deployments: Dict[str, Deployment],
+    prs: list[PullRequestListItem],
+    deployments: dict[str, Deployment],
     prefixer: Prefixer,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> web.Response:
@@ -1168,8 +1160,8 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
 async def _build_deployments_response(
     df: pd.DataFrame,
-    people: List[Tuple[str, str]],
-    issues: Dict[str, PullRequestJIRAIssueItem],
+    people: list[tuple[str, str]],
+    issues: dict[str, PullRequestJIRAIssueItem],
     prefixer: Prefixer,
 ) -> [FilteredDeployment]:
     if df.empty:
