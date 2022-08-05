@@ -15,7 +15,7 @@ import platform
 import re
 import socket
 import sys
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 import warnings
 
 import aiohttp.web
@@ -67,6 +67,7 @@ def parse_args() -> argparse.Namespace:
         epilog="""environment variables:
   SENTRY_KEY               Sentry token: ???@sentry.io
   SENTRY_PROJECT           Sentry project name
+  SENTRY_SAMPLING_RATE     Ratio of Sentry traces to submit
   AUTH0_DOMAIN             Auth0 domain, usually *.auth0.com
   AUTH0_AUDIENCE           JWT audience - the backref URL, usually the website address
   AUTH0_CLIENT_ID          Client ID of the Auth0 Machine-to-Machine Application
@@ -106,10 +107,10 @@ def parse_args() -> argparse.Namespace:
                 return "debug"
         return None
 
-    flogging.add_logging_args(parser, level_from_msg=level_from_msg)
+    flogging.add_logging_args(parser, level_from_msg=level_from_msg, erase_args=False)
     parser.add_argument(
         "--host",
-        default=[],
+        default=["0.0.0.0"],
         help="HTTP server host. May be specified multiple times.",
         action="append",
     )
@@ -174,6 +175,16 @@ def parse_args() -> argparse.Namespace:
         help="Do not validate database schema versions on startup.",
     )
     parser.add_argument("--weights", help="JSON file with endpoint weights.")
+    parser.add_argument(
+        "-n",
+        dest="workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of server processes to spawn and put behind the load balancer (gunicorn). -n 1"
+            " launches the server as usual."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -498,11 +509,46 @@ def set_endpoint_weights(file_name: str, log: logging.Logger) -> None:
     log.info("loaded %d endpoint weights from %s", len(endpoint_weights), file_name)
 
 
-def main() -> Optional[AthenianApp]:
-    """Server's entry point."""
-    uvloop.install()
-    asyncio.set_event_loop(loop := asyncio.new_event_loop())
+def entry() -> Optional[AthenianApp]:
+    """Script's entry point."""
     args = parse_args()
+    if args.workers == 1:
+        return main(args)
+    log = logging.getLogger(metadata.__package__)
+    setup_context(log)
+    if not args.no_db_version_check and not check_schema_versions(
+        args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log,
+    ):
+        return None
+    args.no_db_version_check = True
+    cmdline = ["gunicorn"] * 2 + ["--workers", str(args.workers)]
+    args.workers = 1
+    for host in args.host:
+        cmdline += ["--bind", f"{host}:{args.port}"]
+    args.host = []
+    cmdline += [
+        "--worker-class",
+        "aiohttp.GunicornUVLoopWebWorker",
+        "--access-logfile",
+        "-",
+        "--access-logformat",
+        AthenianApp.structured_access_log_format
+        if flogging.logs_are_structured
+        else AthenianApp.tty_access_log_format,
+        f"athenian.api.__main__:main(args={repr(vars(args))})",
+    ]
+    log.info(">>> " + " ".join(cmdline))
+    os.execlp(*cmdline)
+
+
+def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Application]:
+    """Server's entry point."""
+    if under_gunicorn := not isinstance(args, argparse.Namespace):
+        args = argparse.Namespace(**args)
+        flogging.setup(args.log_level, args.log_structured)
+    else:
+        uvloop.install()
+        asyncio.set_event_loop(loop := asyncio.new_event_loop())
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
     if not args.no_db_version_check and not check_schema_versions(
@@ -527,10 +573,14 @@ def main() -> Optional[AthenianApp]:
         segment=create_segment(),
         google_analytics=os.getenv("GOOGLE_ANALYTICS", ""),
     )
-    with aiomonitor.start_monitor(loop):
-        app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
-    return app
+
+    if not under_gunicorn:
+        with aiomonitor.start_monitor(loop):
+            app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
+    else:
+        log.info("worker %d constructed and running", os.getpid())
+    return app.app
 
 
 if __name__ == "__main__":
-    exit(main() is None)  # "1" for an error, "0" for a normal return
+    exit(entry() is None)  # "1" for an error, "0" for a normal return
