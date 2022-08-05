@@ -3,16 +3,25 @@ import subprocess
 import sys
 from threading import Condition, Thread
 
+import pytest
+
 from athenian.api.models import migrate
 from tests.conftest import db_dir
 
 
-def test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, locked_migrations):
+@pytest.mark.parametrize("gunicorn", [False, True])
+def test_integration_micro(
+    metadata_db,
+    unused_tcp_port_factory,
+    worker_id,
+    locked_migrations,
+    gunicorn,
+):
     with locked_migrations:
-        _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id)
+        _test_integration_micro(metadata_db, unused_tcp_port_factory, worker_id, gunicorn)
 
 
-def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
+def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, gunicorn):
     state_db_path = db_dir / ("sdb-%s.sqlite" % worker_id)
     state_db = "sqlite:///%s" % state_db_path
     if state_db_path.exists():
@@ -49,6 +58,7 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
             "--persistentdata-db=" + persistentdata_db,
             "--memcached=localhost:11211",
             "--port=" + unused_port,
+            "-n=" + ["1", "2"][gunicorn],
         ],
         encoding="utf-8",
         text=True,
@@ -60,14 +70,14 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
 
     def kill():
         with kill_cond:
-            kill_cond.wait(20)
+            kill_cond.wait([20, 40][gunicorn])
         if proc.poll() is None:
             proc.terminate()
 
     killer = Thread(target=kill)
     killer.start()
     wins = 0
-    n_checks = 6
+    n_checks = 6 * [1, 2][gunicorn]
     for line in proc.stderr:
         print(line.rstrip())
         if "Connected to the server state DB" in line:
@@ -80,8 +90,12 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
             wins += 1
         if "JWKS records" in line:
             wins += 1
-        if ("Listening on 0.0.0.0:" + unused_port) in line:
-            wins += 1
+        if gunicorn:
+            if ("constructed and running" + unused_port) in line:
+                wins += 1
+        else:
+            if ("Listening on 0.0.0.0:" + unused_port) in line:
+                wins += 1
         if wins == n_checks:
             with kill_cond:
                 kill_cond.notify_all()

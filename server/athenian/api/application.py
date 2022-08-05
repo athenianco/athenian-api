@@ -239,6 +239,23 @@ class AthenianApp(especifico.AioHttpApp):
 
     log = logging.getLogger(metadata.__package__)
     TIMEOUT: Optional[int] = 5 * 60  # max request processing time in seconds
+    tty_access_log_format = '%a %t "%r" %s %b "%{User-Agent}i" "%{User}o"'
+    structured_access_log_format = re.sub(
+        r"\s+",
+        " ",
+        """
+        {"ip": "%a",
+         "start_time": "%t",
+         "request": "%r",
+         "status": %s,
+         "response_size": %b,
+         "referrer": "%{Referer}i",
+         "user_agent": "%{User-Agent}i",
+         "user": "%{User}o",
+         "elapsed": %Tf,
+         "performance_db": "%{X-Performance-DB}o"}
+    """.strip(),
+    )
 
     def __init__(
         self,
@@ -489,24 +506,9 @@ class AthenianApp(especifico.AioHttpApp):
     def run(self, port=None, server=None, debug=None, host=None, **options) -> None:
         """Launch the event loop and block on serving requests."""
         if flogging.logs_are_structured:
-            access_log_format = re.sub(
-                r"\s+",
-                " ",
-                """
-                {"ip": "%a",
-                 "start_time": "%t",
-                 "request": "%r",
-                 "status": %s,
-                 "response_size": %b,
-                 "referrer": "%{Referer}i",
-                 "user_agent": "%{User-Agent}i",
-                 "user": "%{User}o",
-                 "elapsed": %Tf,
-                 "performance_db": "%{X-Performance-DB}o"}
-            """.strip(),
-            )
+            access_log_format = self.structured_access_log_format
         else:
-            access_log_format = '%a %t "%r" %s %b "%{User-Agent}i" "%{User}o"'
+            access_log_format = self.tty_access_log_format
         super().run(
             port=port,
             server=server,
