@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from functools import partial
 
 import morcilla
 import numpy as np
@@ -4868,6 +4869,105 @@ async def test_mine_deployments_event_releases(
         assert len(set(df.iloc[0]["prs_node_id"])) == 509
         assert df.iloc[0][Release.name.name] == "Pushed!"
         assert df.iloc[0][Release.sha.name] == b"1edb992dbc419a0767b1cf3a524b0d35529799f5"
+
+
+@with_defer
+async def test_ignore_newer_deployments_in_pdb(
+    branches,
+    default_branches,
+    release_match_setting_tag_or_branch,
+    prefixer,
+    mdb,
+    pdb,
+    rdb,
+) -> None:
+    await rdb.execute(sa.delete(DeploymentNotification))
+    await rdb.execute(sa.delete(DeployedComponent))
+    await rdb.execute(sa.delete(DeployedLabel))
+
+    time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    mine_releases_ = partial(
+        mine_releases,
+        ["src-d/go-git"],
+        {},
+        branches,
+        default_branches,
+        time_from,
+        time_to,
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        with_avatars=False,
+        with_pr_titles=False,
+        with_deployments=False,
+    )
+
+    mine_deployments_ = partial(
+        mine_deployments,
+        ["src-d/go-git"],
+        {},
+        time_from,
+        time_to,
+        ["production"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    await models_insert(
+        rdb,
+        DeploymentNotificationFactory(
+            name="deploy0", started_at=dt(2019, 11, 1), finished_at=dt(2019, 11, 1, 0, 10),
+        ),
+        DeployedComponentFactory(
+            deployment_name="deploy0", repository_node_id=40550, resolved_commit_node_id=2755244,
+        ),
+    )
+
+    await mine_releases_()
+    await wait_deferred()
+    await mine_deployments_()
+    await wait_deferred()
+
+    # the new notification is about an older commit
+    await models_insert(
+        rdb,
+        DeploymentNotificationFactory(
+            name="deploy1", started_at=dt(2018, 8, 1), finished_at=dt(2018, 8, 1, 0, 10),
+        ),
+        DeployedComponentFactory(
+            deployment_name="deploy1", repository_node_id=40550, resolved_commit_node_id=2755028,
+        ),
+    )
+    await mine_releases_()
+    await wait_deferred()
+    deps = await mine_deployments_()
+    deploy1_prs = deps[deps.name == "deploy1"].prs[0]
+    deploy0_prs_post = deps[deps.name == "deploy0"].prs[0]
+
+    # the two deployments must not share any PR
+    assert not (set(deploy0_prs_post) & set(deploy1_prs))
 
 
 async def _validate_deployed_prs(pdb: morcilla.Database) -> None:

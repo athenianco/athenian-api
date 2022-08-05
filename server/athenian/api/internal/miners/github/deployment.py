@@ -11,6 +11,7 @@ from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, S
 
 import aiomcache
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
@@ -36,6 +37,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, short_term_exptime
 from athenian.api.db import (
     Database,
+    DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
     ensure_db_datetime_tz,
@@ -248,8 +250,8 @@ async def mine_deployments(
         notifications.index.values, default_branches, release_settings, account, pdb,
     )
     # facts = facts.iloc[:0]  # uncomment to disable pdb
-    add_pdb_hits(pdb, "deployments", len(facts))
-    add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
+    hits = len(facts)
+    misses = len(notifications) - hits
     if misses > 0:
         if conclusions or with_labels or without_labels:
             # we have to look broader so that we compute the commit ownership correctly
@@ -274,9 +276,16 @@ async def mine_deployments(
             assume_unique=True,
             invert=True,
         )
+
+        missed_mask, facts = await _invalidate_pdb_facts_after_new_notification(
+            full_notifications, missed_mask, facts, account, pdb,
+        )
+        hits = len(facts)
+        misses = len(notifications) - hits
         full_notifications = _reduce_to_missed_notifications_if_possible(
             full_notifications, missed_mask,
         )
+
         missed_facts, missed_releases = await _compute_deployment_facts(
             full_notifications,
             full_components,
@@ -296,6 +305,9 @@ async def mine_deployments(
             facts = pd.concat([facts, missed_facts])
     else:
         missed_releases = pd.DataFrame()
+
+    add_pdb_hits(pdb, "deployments", hits)
+    add_pdb_misses(pdb, "deployments", misses)
 
     facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
@@ -321,6 +333,49 @@ async def mine_deployments(
     joined["labels"].values[no_labels] = subst
 
     return joined
+
+
+async def _invalidate_pdb_facts_after_new_notification(
+    notifications: pd.DataFrame,
+    missed_mask: npt.NDArray[bool],
+    facts: pd.DataFrame,
+    account: int,
+    pdb: DatabaseLike,
+):
+    """Invalidate precomputed facts about deployments happened before deploys not yet precomputed.
+
+    For each of such deployments:
+    * deploy is removed from `facts`
+    * its indexes in `missed_mask` (relative to `notifications`) are set to True
+    * rows in pdb about the deploy are cleared
+
+    """
+    oldest_missed_notification_time = np.min(notifications.finished_at[missed_mask])
+
+    deploys_to_invalidate = notifications[~missed_mask][
+        notifications.started_at > oldest_missed_notification_time
+    ].index.values.astype("U")
+
+    if deploys_to_invalidate.size > 0:
+        stmts = []
+        tables = (
+            GitHubCommitDeployment,
+            GitHubPullRequestDeployment,
+            GitHubReleaseDeployment,
+            GitHubDeploymentFacts,
+        )
+        for Table in tables:
+            stmts.append(
+                sa.delete(Table).where(
+                    Table.acc_id == account, Table.deployment_name.in_(deploys_to_invalidate),
+                ),
+            )
+        await gather(*[pdb.execute(stmt) for stmt in stmts])
+
+        missed_mask |= np.in1d(notifications.index.values.astype("U"), deploys_to_invalidate)
+        facts = facts[~facts.name.isin(deploys_to_invalidate)]
+
+    return missed_mask, facts
 
 
 @sentry_span
