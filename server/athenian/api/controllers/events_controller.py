@@ -451,7 +451,6 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         model.account,
         request.uid,
         login_loader,
-        logical_settings,
         meta_ids,
         request.sdb,
         request.mdb,

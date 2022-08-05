@@ -794,20 +794,17 @@ class Settings:
                 if repos:
                     raise e from None
                 meta_ids = None
-                logical_settings = LogicalRepositorySettings.empty()
             else:
                 if prefixer is None:
                     prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
                 settings = Settings.from_account(
                     self._account, self._sdb, self._mdb, self._cache, self._slack,
                 )
-                logical_settings = await settings.list_logical_repositories(prefixer)
             repos, _ = await resolve_repos(
                 repos,
                 self._account,
                 self._user_id,
                 self._login,
-                logical_settings,
                 meta_ids,
                 self._sdb,
                 self._mdb,

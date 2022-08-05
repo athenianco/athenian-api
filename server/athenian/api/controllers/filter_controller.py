@@ -291,7 +291,6 @@ async def _repos_preprocess(
         account,
         request.uid,
         login_loader,
-        logical_settings,
         meta_ids,
         request.sdb,
         request.mdb,
