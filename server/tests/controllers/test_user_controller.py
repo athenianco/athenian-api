@@ -1,13 +1,15 @@
 from datetime import date, datetime, timezone
+from typing import Any
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 from dateutil.parser import parse as parse_datetime
 import pytest
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
+from athenian.api.db import Database
 from athenian.api.models.state.models import (
     Account as DBAccount,
     AccountFeature,
@@ -16,11 +18,14 @@ from athenian.api.models.state.models import (
     FeatureComponent,
     Invitation,
     UserAccount,
+    UserToken,
 )
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
-from tests.conftest import disable_default_user
+from tests.conftest import DEFAULT_HEADERS, disable_default_user
+from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory.state import DEFAULT_ACCOUNT_ID, UserAccountFactory, UserTokenFactory
 
 vadim_email = "vadim@athenian.co"
 eiso_email = "eiso@athenian.co"
@@ -422,150 +427,109 @@ async def test_become_header(client, headers, sdb, god):
     }
 
 
-async def test_change_user_regular(client: TestClient, headers: dict) -> None:
-    body = {
-        "account": 1,
-        "user": "auth0|5e1f6e2e8bfa520ea5290741",
-        "status": "regular",
-    }
-    response = await client.request(
-        method="PUT", path="/v1/account/user", headers=headers, json=body,
-    )
-    assert response.status == 200
-    items = await response.json()
-    assert len(items["admins"]) == 1
-    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
-    assert len(items["regulars"]) == 1
-    assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
+class TestChangeUser:
+    async def test_regular(self, client: TestClient) -> None:
+        body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "regular"}
+        items = await self._request(client, json=body)
+        assert len(items["admins"]) == 1
+        assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
+        assert len(items["regulars"]) == 1
+        assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
+    async def test_invalid_status(self, client: TestClient) -> None:
+        body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "attacker"}
+        response_body = await self._request(client, 400, json=body)
+        assert "attacker" in response_body["detail"]
 
-async def test_change_user_invalid_status(client: TestClient, headers: dict) -> None:
-    body = {
-        "account": 1,
-        "user": "auth0|5e1f6e2e8bfa520ea5290741",
-        "status": "attacker",
-    }
-    response = await client.request(
-        method="PUT", path="/v1/account/user", headers=headers, json=body,
-    )
-    assert response.status == 400
-    response_body = await response.json()
-    assert "attacker" in response_body["detail"]
+    async def test_admin(self, client: TestClient) -> None:
+        body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "admin"}
+        items = await self._request(client, json=body)
+        assert len(items["admins"]) == 2
+        assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
+        assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
-
-async def test_change_user_admin(client, headers):
-    body = {
-        "account": 1,
-        "user": "auth0|5e1f6e2e8bfa520ea5290741",
-        "status": "admin",
-    }
-    response = await client.request(
-        method="PUT", path="/v1/account/user", headers=headers, json=body,
-    )
-    assert response.status == 200
-    items = await response.json()
-    assert len(items["admins"]) == 2
-    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
-    assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
-
-
-@pytest.mark.parametrize("membership_check", [False, True])
-async def test_change_user_banish(client, headers, sdb, membership_check):
-    response = await client.request(
-        method="GET", path="/v1/invite/generate/1", headers=headers, json={},
-    )
-    link1 = await response.json()
-    assert 1 == (
-        await sdb.fetch_val(
-            select([func.count(Invitation.id)]).where(
-                and_(Invitation.is_active, Invitation.account_id == 1),
-            ),
+    @pytest.mark.parametrize("membership_check", [False, True])
+    async def test_banish(self, client: TestClient, sdb, membership_check) -> None:
+        response = await client.request(
+            method="GET", path="/v1/invite/generate/1", headers=DEFAULT_HEADERS, json={},
         )
-    )
-    if not membership_check:
-        check_fid = await sdb.fetch_val(
-            select([Feature.id]).where(
-                and_(
+        link1 = await response.json()
+        await assert_existing_row(sdb, Invitation, is_active=True, account_id=1)
+        if not membership_check:
+            check_fid = await sdb.fetch_val(
+                select(Feature.id).where(
                     Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
                     Feature.component == FeatureComponent.server,
                 ),
-            ),
-        )
-        await sdb.execute(
-            insert(AccountFeature).values(
-                AccountFeature(
-                    account_id=1,
-                    feature_id=check_fid,
-                    enabled=False,
-                )
-                .create_defaults()
-                .explode(with_primary_keys=True),
-            ),
-        )
-    body = {
-        "account": 1,
-        "user": "auth0|5e1f6e2e8bfa520ea5290741",
-        "status": "banished",
-    }
-    response = await client.request(
-        method="PUT", path="/v1/account/user", headers=headers, json=body,
-    )
-    assert response.status == 200
-    items = await response.json()
-    assert len(items["admins"]) == 1
-    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
-    assert len(items["regulars"]) == 0
-    assert "auth0|5e1f6e2e8bfa520ea5290741" == await sdb.fetch_val(
-        select([BanishedUserAccount.user_id]),
-    )
-    if not membership_check:
-        assert 0 == (
-            await sdb.fetch_val(
-                select([func.count(Invitation.id)]).where(
-                    and_(Invitation.is_active, Invitation.account_id == 1),
+            )
+            await sdb.execute(
+                insert(AccountFeature).values(
+                    AccountFeature(
+                        account_id=1,
+                        feature_id=check_fid,
+                        enabled=False,
+                    )
+                    .create_defaults()
+                    .explode(with_primary_keys=True),
                 ),
             )
+        body = {
+            "account": 1,
+            "user": "auth0|5e1f6e2e8bfa520ea5290741",
+            "status": "banished",
+        }
+        items = await self._request(client, json=body)
+        assert len(items["admins"]) == 1
+        assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
+        assert len(items["regulars"]) == 0
+        assert "auth0|5e1f6e2e8bfa520ea5290741" == await sdb.fetch_val(
+            select([BanishedUserAccount.user_id]),
         )
+        if not membership_check:
+            await assert_missing_row(sdb, Invitation, is_active=True, account_id=1)
+            response = await client.request(
+                method="GET", path="/v1/invite/generate/1", headers=DEFAULT_HEADERS, json={},
+            )
+            link2 = await response.json()
+            assert link1 != link2
+
+        await assert_existing_row(sdb, Invitation, is_active=True, account_id=1)
+
+    @pytest.mark.parametrize(
+        "account, user, status, code",
+        [
+            (1, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+            (1, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+            (2, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+            (2, "auth0|62a1ae88b6bba16c6dbc6870", "admin", 403),
+            (2, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+            (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
+        ],
+    )
+    async def test_errors(self, client, account, user, status, code):
+        body = {"account": account, "user": user, "status": status}
+        await self._request(client, code, json=body)
+
+    async def test_banish_user_with_token(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb, UserAccountFactory(user_id="auth0|GG"), UserTokenFactory(user_id="auth0|GG"),
+        )
+
+        body = {"account": DEFAULT_ACCOUNT_ID, "user": "auth0|GG", "status": "banished"}
+        await self._request(client, json=body)
+        await self._assert_user_banished(sdb, "auth0|GG")
+        await assert_missing_row(sdb, UserToken, user_id="auth0|GG")
+
+    async def _request(self, client: TestClient, assert_status: int = 200, **kwargs: Any) -> dict:
+        path = "/v1/account/user"
         response = await client.request(
-            method="GET", path="/v1/invite/generate/1", headers=headers, json={},
+            method="PUT", path=path, headers=DEFAULT_HEADERS, **kwargs,
         )
-        link2 = await response.json()
-        assert 1 == (
-            await sdb.fetch_val(
-                select([func.count(Invitation.id)]).where(
-                    and_(Invitation.is_active, Invitation.account_id == 1),
-                ),
-            )
-        )
-        assert link1 != link2
-    else:
-        assert 1 == (
-            await sdb.fetch_val(
-                select([func.count(Invitation.id)]).where(
-                    and_(Invitation.is_active, Invitation.account_id == 1),
-                ),
-            )
-        )
+        assert response.status == assert_status
+        return await response.json()
 
-
-@pytest.mark.parametrize(
-    "account, user, status, code",
-    [
-        (1, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
-        (1, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
-        (2, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
-        (2, "auth0|62a1ae88b6bba16c6dbc6870", "admin", 403),
-        (2, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
-        (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
-    ],
-)
-async def test_change_user_errors(client, headers, account, user, status, code):
-    body = {
-        "account": account,
-        "user": user,
-        "status": status,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/account/user", headers=headers, json=body,
-    )
-    assert response.status == code
+    async def _assert_user_banished(self, sdb: Database, user_id: str) -> None:
+        await assert_missing_row(sdb, UserAccount, user_id=user_id, account_id=DEFAULT_ACCOUNT_ID)
+        await assert_existing_row(
+            sdb, BanishedUserAccount, user_id=user_id, account_id=DEFAULT_ACCOUNT_ID,
+        )

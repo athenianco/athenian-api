@@ -19,6 +19,7 @@ from athenian.api.models.state.models import (
     Team,
     TeamGoal,
     UserAccount,
+    UserToken,
 )
 
 from .alchemy import SQLAlchemyModelFactory
@@ -79,6 +80,18 @@ class AccountFeatureFactory(SQLAlchemyModelFactory):
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
     account_id = DEFAULT_ACCOUNT_ID
     feature_id = factory.Sequence(lambda n: n + 1)
+
+
+class UserTokenFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = UserToken
+
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
+    id = factory.Sequence(lambda n: n + 1)
+    account_id = DEFAULT_ACCOUNT_ID
+    user_id = "user-00"
+    name = factory.LazyAttribute(lambda token: f"token-{token.id}")
 
 
 class UserAccountFactory(SQLAlchemyModelFactory):

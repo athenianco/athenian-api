@@ -293,6 +293,7 @@ class UserToken(create_time_mixin(created_at=True, updated_at=True), Base):
             ("account_id", "user_id"),
             ("user_accounts.account_id", "user_accounts.user_id"),
             name="fk_account_tokens_user",
+            ondelete="CASCADE",
         ),
         {"sqlite_autoincrement": True},
     )
