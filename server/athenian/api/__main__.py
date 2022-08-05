@@ -110,7 +110,7 @@ def parse_args() -> argparse.Namespace:
     flogging.add_logging_args(parser, level_from_msg=level_from_msg, erase_args=False)
     parser.add_argument(
         "--host",
-        default=["0.0.0.0"],
+        default=[],
         help="HTTP server host. May be specified multiple times.",
         action="append",
     )
@@ -523,7 +523,7 @@ def entry() -> Optional[AthenianApp]:
     args.no_db_version_check = True
     cmdline = ["gunicorn"] * 2 + ["--workers", str(args.workers)]
     args.workers = 1
-    for host in args.host:
+    for host in args.host or ["0.0.0.0"]:
         cmdline += ["--bind", f"{host}:{args.port}"]
     args.host = []
     cmdline += [
