@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import morcilla
 import numpy as np
@@ -5145,8 +5146,49 @@ class TestHideOutlierFirstDeployments:
 
         await assert_missing_row(pdb, GitHubPullRequestDeployment, deployment_name="deploy0")
 
+    @with_defer
+    async def test_logical_deployments(
+        self,
+        branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        release_match_setting_tag_logical,
+    ) -> None:
+        logical_settings = LogicalRepositorySettings(
+            {"src-d/go-git/alpha": {"title": "alpha-.*"}},
+            {"src-d/go-git/alpha": {"title": "alpha-.*"}},
+        )
+
+        await rdb.execute(sa.delete(DeploymentNotification))
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="alpha-0", started_at=dt(2019, 1, 1)),
+            DeployedComponentFactory(deployment_name="alpha-0", repository_node_id=40550),
+            DeploymentNotificationFactory(name="alpha-1", started_at=dt(2019, 1, 2)),
+            DeployedComponentFactory(deployment_name="alpha-1", repository_node_id=40550),
+        )
+        deps = await mine_deployments(
+            **self._mine_common_kwargs(
+                logical_settings=logical_settings,
+                release_settings=release_match_setting_tag_logical,
+                repositories=["src-d/go-git/alpha"],
+            ),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        await wait_deferred()
+
+        await hide_outlier_first_deployments(deps, 1, (6366825,), mdb, pdb, 1.1)
+
+        await assert_missing_row(pdb, GitHubPullRequestDeployment, deployment_name="alpha-0")
+
     @classmethod
-    def _mine_common_kwargs(cls) -> dict:
+    def _mine_common_kwargs(cls, **extra: Any) -> dict:
         return {
             "repositories": ["src-d/go-git"],
             "participants": {},
@@ -5164,4 +5206,5 @@ class TestHideOutlierFirstDeployments:
             "account": 1,
             "meta_ids": (6366825,),
             "cache": None,
+            **extra,
         }
