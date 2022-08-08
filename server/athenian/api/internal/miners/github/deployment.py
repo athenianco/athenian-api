@@ -2750,10 +2750,10 @@ async def _search_outlier_first_deployments(
         columns={"repositories": REPOSITORY_COLUMN},
     )
 
-    # retrieve repo => creation time mapping
-    mentioned_repos = exploded_facts.repository.unique()
+    # retrieve repo => creation time mapping for the physical repos
+    mentioned_physical_repos = coerce_logical_repos(exploded_facts.repository.unique())
     repos_stmt = sa.select(Repository.full_name, Repository.created_at).where(
-        sa.and_(Repository.acc_id.in_(meta_ids), Repository.full_name.in_(mentioned_repos)),
+        Repository.acc_id.in_(meta_ids), Repository.full_name.in_(mentioned_physical_repos),
     )
     repo_creation_times: Mapping[str, np.datetime64] = {
         r[0]: np.datetime64(ensure_db_datetime_tz(r[1], mdb))
@@ -2785,9 +2785,9 @@ async def _search_outlier_first_deployments(
 
         first_deploy_idx = np.argmin(group["started_at"].values)
         first_deploy_time = group["started_at"].values[first_deploy_idx]
-        first_deploy_interval_ = first_deploy_time - repo_creation_times[repo]
+        first_deploy_interval = first_deploy_time - repo_creation_times[drop_logical_repo(repo)]
 
-        if (first_deploy_interval_ / median_interval) > threshold:
+        if (first_deploy_interval / median_interval) > threshold:
             deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
             # same deploy can be selected from different environments
             if deploy not in result:
