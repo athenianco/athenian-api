@@ -1,0 +1,262 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "How we calculate deployments",
+  "steps": [
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Everything starts here. We load the DataFrame with calculated deployment facts according to the filters. As you see, we always load all deployments which finished between `time_from` and `time_to`, i.e. there is no ability to load deployments by name atm.\n`repositories` select only those deployments which deployed at least one repository in that collection.",
+      "line": 157
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "The first step is to resolve the physical repository IDs from the (probably, logical) names. The deployed components reference physical repositories, so we need these node IDs to filter.",
+      "line": 184,
+      "selection": {
+        "start": {
+          "line": 184,
+          "character": 5
+        },
+        "end": {
+          "line": 185,
+          "character": 90
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Load the deployment events (notifications) that satisfy the majority of (but not all!) the filters. The result must contain all of those.\n\nNote: the deployments are identified by name. In other words, their names are globally unique.",
+      "line": 186,
+      "selection": {
+        "start": {
+          "line": 186,
+          "character": 5
+        },
+        "end": {
+          "line": 197,
+          "character": 6
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Load the deployed components for each deployment notification. We can deploy several repositories in the same deployment, so the result is grouped by deployment name.\nWe probably haven't fetched all the referenced commits in the metadata DB yet. In that case, drop the notifications which we cannot calculate.",
+      "line": 199
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Load the deployment tags (labels).",
+      "line": 200
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Alpha quality support for logical deployments: when different logical repositories deploy separately, potentially in different deployments. We support logical deployment selection rules by deployment name regular expression and by some tag (label) combination.",
+      "line": 204,
+      "selection": {
+        "start": {
+          "line": 204,
+          "character": 5
+        },
+        "end": {
+          "line": 210,
+          "character": 6
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Actually, I should move this early exit before the logical split :)",
+      "line": 211
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "This is important for the consistent release matching. The majority of our clients release by \"automatic\" strategy - *tag or branch*. We look for tags within [time_from - delta, time_to + delta] and if we find them, overwrite the release strategy to *tag*, otherwise, set the strategy to *branch*.",
+      "line": 213,
+      "selection": {
+        "start": {
+          "line": 213,
+          "character": 5
+        },
+        "end": {
+          "line": 228,
+          "character": 6
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Schedule the async task to load all the deployed releases from pdb. They are stored separately from the other deployment facts. We will sync the task closer to the function end where we build the final result.",
+      "line": 229,
+      "selection": {
+        "start": {
+          "line": 229,
+          "character": 5
+        },
+        "end": {
+          "line": 246,
+          "character": 6
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Load the main deployment facts from pdb. See ../types.py/DeploymentFacts for the returned columns.",
+      "line": 247,
+      "selection": {
+        "start": {
+          "line": 247,
+          "character": 5
+        },
+        "end": {
+          "line": 249,
+          "character": 6
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/types.py",
+      "description": "Over here. We currently embed the deployed PR stats in comparison with the releases.\n`repositories` is an array of repository names (physical or logical). `prs_offsets[repository index]` is the right border of the PR node IDs in `prs`, so that we deployed all PRs in `prs[prs_offsets[repository index - 1]:prs_offsets[repository_index]]` (convenient to use `np.split()`).\nIn hindsight, we could probably load deployed PR node IDs similarly to the releases. However, the current implementation is laser focused on the original requirements of the from 2021 and follows the corresponding logic.",
+      "line": 495,
+      "selection": {
+        "start": {
+          "line": 495,
+          "character": 7
+        },
+        "end": {
+          "line": 495,
+          "character": 20
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Every time we call these functions, we add a new header in the respones to indicate how well the pdb served us.",
+      "line": 251,
+      "selection": {
+        "start": {
+          "line": 251,
+          "character": 5
+        },
+        "end": {
+          "line": 252,
+          "character": 84
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "There are no deployments that are not precomputed => there is no problem. Otherwise, we have to do heavylifting.",
+      "line": 253
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "This is something that I spent weeks on to debug and realize. We can only calculate new deployment facts if there are no gaps, i.e. we are not missing any deployment in `[time_from, time_to]`. In other case, we will assign PRs to wrong deployments and calculate garbage. The question is, which filters we can ignore from checking?\n- `conclusions` should definitely taint the analysis, the client can ask for only failed deployments. The failed deployments do deploy PRs, but they don't \"hijack\" them, so that the following successful deployment owns those PRs, too. Don't even ask about rollbacks, they are a whole new level of complexity.\n- any filtering by label can lead to gaps, this is obvious.\n- filtering by environment is OK, they are independent of each other and isolated. Each deployment exist in one and only one environment by definition.\n- filter by repository - this can lead to gaps, but only if there are deployed components outside of the supplied `repositories`. We should add the check here. In reality, this never happens, but still, this is a good point.\n- the participants filters goes on top, we don't care.\n- regarding the JIRA filter and PR labels filter, we also add them on top, so whatever.",
+      "line": 255
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Therefore, this code resets the sensitive filters and re-loads the deployments so that we have a guarantee that there are no gaps.",
+      "line": 256,
+      "selection": {
+        "start": {
+          "line": 256,
+          "character": 13
+        },
+        "end": {
+          "line": 268,
+          "character": 14
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Optimization. As I said before, the environments are independent of each other. If some environments are fully precomputed, discard them before descending into the rabbit hole.",
+      "line": 277,
+      "selection": {
+        "start": {
+          "line": 277,
+          "character": 9
+        },
+        "end": {
+          "line": 279,
+          "character": 10
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "We've reached the complex stuff. This is where we perform the deployment ownership analysis: which commits, PRs, releases were deployed in which deployment.",
+      "line": 280,
+      "selection": {
+        "start": {
+          "line": 280,
+          "character": 9
+        },
+        "end": {
+          "line": 294,
+          "character": 10
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "If there are new fresh facts, append them to those that we loaded from pdb.\n\nIs it possible that we don't have a 1-1 match and we cannot calculate the facts for some deployments? Hell yeah. For example, there is a metadata inconsistency and although we resolved the referenced commit, we couldn't build the DAG up to that commit.",
+      "line": 295,
+      "selection": {
+        "start": {
+          "line": 295,
+          "character": 9
+        },
+        "end": {
+          "line": 296,
+          "character": 53
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Apply the PR filters after everything else. We could try to lift some up, but that would lead to another +500 lines of tricky code.",
+      "line": 300,
+      "selection": {
+        "start": {
+          "line": 300,
+          "character": 5
+        },
+        "end": {
+          "line": 302,
+          "character": 83
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Combine the precomputed release deployments with the freshly calculated ones, then group the resulting DataFrame by deployment name.",
+      "line": 304,
+      "selection": {
+        "start": {
+          "line": 304,
+          "character": 5
+        },
+        "end": {
+          "line": 312,
+          "character": 39
+        }
+      }
+    },
+    {
+      "file": "athenian/api/internal/miners/github/deployment.py",
+      "description": "Very boring data manipulation to present the resulting DataFrame as needed. Components, deployment tags (labels) and releases should be grouped nicely by deployment name.",
+      "line": 313,
+      "selection": {
+        "start": {
+          "line": 313,
+          "character": 5
+        },
+        "end": {
+          "line": 321,
+          "character": 47
+        }
+      }
+    }
+  ],
+  "ref": "master"
+}
