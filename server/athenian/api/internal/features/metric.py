@@ -84,6 +84,13 @@ class NumpyMetric(Metric[T]):
             confidence_max=confidence_max,
         )
 
+    def __repr__(self) -> str:
+        """Replace repr() of NumpyStruct."""
+        return (
+            f"{type(self).__name__}.from_fields({self.exists}, "
+            f"{self.value}, {self.confidence_min}, {self.confidence_max})"
+        )
+
     @property
     def exists(self) -> bool:
         """Return whether the metric exists."""

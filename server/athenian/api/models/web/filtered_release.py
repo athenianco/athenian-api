@@ -17,7 +17,7 @@ class FilteredRelease(Model):
         "added_lines": int,
         "deleted_lines": int,
         "commits": int,
-        "publisher": str,
+        "publisher": Optional[str],
         "commit_authors": List[str],
         "prs": List[ReleasedPullRequest],
         "deployments": Optional[List[str]],
@@ -265,7 +265,7 @@ class FilteredRelease(Model):
         self._commits = commits
 
     @property
-    def publisher(self) -> str:
+    def publisher(self) -> Optional[str]:
         """Gets the publisher of this FilteredRelease.
 
         Login of the person who created the release.
@@ -275,16 +275,13 @@ class FilteredRelease(Model):
         return self._publisher
 
     @publisher.setter
-    def publisher(self, publisher: str):
+    def publisher(self, publisher: Optional[str]):
         """Sets the publisher of this FilteredRelease.
 
         Login of the person who created the release.
 
         :param publisher: The publisher of this FilteredRelease.
         """
-        if publisher is None:
-            raise ValueError("Invalid value for `publisher`, must not be `None`")
-
         self._publisher = publisher
 
     @property

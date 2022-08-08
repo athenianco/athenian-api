@@ -855,7 +855,7 @@ def _build_mined_releases(
     prefixer: Prefixer,
     with_avatars: bool,
 ) -> tuple[list[tuple[dict[str, Any], ReleaseFacts]], Optional[np.ndarray], np.ndarray]:
-    release_repos = releases[Release.repository_full_name.name].values.astype("S")
+    release_repos = releases[Release.repository_full_name.name].values.astype("S", copy=False)
     release_keys = np.char.add(int_to_str(releases[Release.node_id.name].values), release_repos)
     precomputed_keys = np.char.add(
         int_to_str(np.fromiter((i for i, _ in precomputed_facts), int, len(precomputed_facts))),
@@ -898,12 +898,13 @@ def _build_mined_releases(
                 for f in precomputed_facts.values()
             ),
             *(f.commit_authors for f in precomputed_facts.values()),
-            np.nan_to_num(releases[Release.author_node_id.name].values, copy=False).astype(
-                int, copy=False,
-            ),
+            releases[Release.author_node_id.name].values,
         ],
+        casting="unsafe",
     )
-    mentioned_authors = np.unique(mentioned_authors[mentioned_authors > 0].astype(int, copy=False))
+    mentioned_authors = np.unique(mentioned_authors.astype(int, copy=False))
+    if len(mentioned_authors) and mentioned_authors[0] == 0:
+        mentioned_authors = mentioned_authors[1:]
     return result, mentioned_authors, has_precomputed_facts
 
 

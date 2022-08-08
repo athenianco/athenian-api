@@ -240,17 +240,20 @@ def _build_dtype(
         ):
             body.append((c.name, bool))
         elif (
+            isinstance(c.type, Integer)
+            or (isinstance(c.type, type) and issubclass(c.type, Integer))
+        ) and (
             (
-                isinstance(c.type, Integer)
-                or (isinstance(c.type, type) and issubclass(c.type, Integer))
-            )
-            and not getattr(c, "nullable", False)
-            and (
-                not isinstance(c, Label)
-                or (
-                    (not getattr(c.element, "nullable", False))
-                    and (not getattr(c, "nullable", False))
+                info := getattr(
+                    c,
+                    "info",
+                    {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
                 )
+            ).get("erase_nulls", False)
+            or info.get("reset_nulls", False)
+            or (
+                not getattr(c, "nullable", False)
+                and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
             )
         ):
             info = getattr(
@@ -461,25 +464,23 @@ def _extract_integer_columns(
     columns: Iterable[Union[Column, str]],
 ) -> Dict[str, Tuple[bool, bool]]:
     return {
-        c.name: (
-            (
-                info := getattr(
-                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                )
-            ).get("erase_nulls", False),
-            info.get("reset_nulls", False),
-        )
+        c.name: (info.get("erase_nulls", False), info.get("reset_nulls", False))
         for c in columns
         if not isinstance(c, str)
         and (
             isinstance(c.type, Integer)
             or (isinstance(c.type, type) and issubclass(c.type, Integer))
         )
-        and not getattr(c, "nullable", False)
         and (
-            not isinstance(c, Label)
+            (
+                info := getattr(
+                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+                )
+            ).get("erase_nulls", False)
+            or info.get("reset_nulls", False)
             or (
-                (not getattr(c.element, "nullable", False)) and (not getattr(c, "nullable", False))
+                not getattr(c, "nullable", False)
+                and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
             )
         )
     }
@@ -591,8 +592,10 @@ async def gather(
     :param description: Sentry span description.
     :param catch: Forward exceptions of this type.
     """
+    __tracebackhide__ = True  # noqa: F841
 
     async def body():
+        __tracebackhide__ = True  # noqa: F841
         if len(coros_or_futures) == 0:
             return tuple()
         if len(coros_or_futures) == 1:

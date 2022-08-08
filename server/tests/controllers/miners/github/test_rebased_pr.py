@@ -77,4 +77,4 @@ async def test_mark_dead_prs_smoke(mdb, pdb, branches, dag):
     for pr_node_id in prs_forward - prs_backward:
         pr_merge = merge_ids[forward.index.values == pr_node_id]
         assert len(pr_merge) == 1
-        assert pr_merge[0] is None
+        assert pr_merge[0] == 0
