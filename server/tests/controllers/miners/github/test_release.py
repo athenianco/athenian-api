@@ -2292,7 +2292,7 @@ async def test_precomputed_releases_low_level(
     await wait_deferred()
     assert_array_equal(
         releases[Release.author.name].values == "",
-        releases[Release.author_node_id.name].isnull().values,
+        releases[Release.author_node_id.name].values == 0,
     )
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},

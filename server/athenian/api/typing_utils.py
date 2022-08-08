@@ -233,11 +233,11 @@ class NumpyStruct(Mapping[str, Any]):
             kwargs_str = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items()) + ", "
         else:
             kwargs_str = ""
-        return f"{type(self).__name__}({kwargs_str}data={repr(self._data)})"
+        return f"{type(self).__name__}({kwargs_str}data={repr(bytes(self._data))})"
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
-        return repr(self)
+        return str(self)
 
     def __eq__(self, other) -> bool:
         """Compare this object to another."""

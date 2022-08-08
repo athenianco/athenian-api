@@ -2354,8 +2354,10 @@ async def test_filter_releases_by_tag(client, headers):
     assert len(releases.data) == 21
     pr_numbers = set()
     jira_stats = defaultdict(int)
+    nnz_publishers = 0
     for release in releases.data:
-        assert release.publisher.startswith("github.com/"), str(release)
+        nnz_publishers += (nnz_publisher := release.publisher is not None)
+        assert not nnz_publisher or release.publisher.startswith("github.com/"), str(release)
         assert len(release.commit_authors) > 0, str(release)
         assert all(a.startswith("github.com/") for a in release.commit_authors), str(release)
         for a in release.commit_authors:
@@ -2382,6 +2384,7 @@ async def test_filter_releases_by_tag(client, headers):
             )
             if pr.jira is not None:
                 jira_stats[len(pr.jira)] += 1
+    assert nnz_publishers > 0
     assert jira_stats == {1: 44}
 
 

@@ -354,20 +354,20 @@ class TestCalcMetricsPRs:
     @pytest.mark.parametrize(
         "metric, count",
         [
-            (PullRequestMetricID.PR_WIP_COUNT, 596),
-            (PullRequestMetricID.PR_REVIEW_COUNT, 433),
-            (PullRequestMetricID.PR_MERGING_COUNT, 589),
-            (PullRequestMetricID.PR_RELEASE_COUNT, 413),
-            (PullRequestMetricID.PR_OPEN_COUNT, 589),
-            (PullRequestMetricID.PR_LEAD_COUNT, 413),
-            (PullRequestMetricID.PR_CYCLE_COUNT, 934),
-            (PullRequestMetricID.PR_OPENED, 596),
-            (PullRequestMetricID.PR_REVIEWED, 373),
-            (PullRequestMetricID.PR_NOT_REVIEWED, 276),
-            (PullRequestMetricID.PR_CLOSED, 589),
-            (PullRequestMetricID.PR_MERGED, 538),
+            (PullRequestMetricID.PR_WIP_COUNT, 590),
+            (PullRequestMetricID.PR_REVIEW_COUNT, 428),
+            (PullRequestMetricID.PR_MERGING_COUNT, 583),
+            (PullRequestMetricID.PR_RELEASE_COUNT, 407),
+            (PullRequestMetricID.PR_OPEN_COUNT, 583),
+            (PullRequestMetricID.PR_LEAD_COUNT, 407),
+            (PullRequestMetricID.PR_CYCLE_COUNT, 922),
+            (PullRequestMetricID.PR_OPENED, 590),
+            (PullRequestMetricID.PR_REVIEWED, 368),
+            (PullRequestMetricID.PR_NOT_REVIEWED, 275),
+            (PullRequestMetricID.PR_CLOSED, 583),
+            (PullRequestMetricID.PR_MERGED, 532),
             (PullRequestMetricID.PR_REJECTED, 51),
-            (PullRequestMetricID.PR_DONE, 468),
+            (PullRequestMetricID.PR_DONE, 462),
             (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
             (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 86),
             (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 21),
@@ -1252,7 +1252,7 @@ developer_metric_mcuadros_stats = {
     "dev-prs-created": 14,
     "dev-prs-reviewed": 35,
     "dev-prs-merged": 175,
-    "dev-releases": 21,
+    "dev-releases": 20,
     "dev-reviews": 68,
     "dev-review-approvals": 14,
     "dev-review-rejections": 13,
@@ -1911,7 +1911,7 @@ async def test_release_metrics_smoke(client, headers, no_jira):
             assert len(model.values) == 9
 
 
-@pytest.mark.parametrize("role, n", [("releaser", 21), ("pr_author", 10), ("commit_author", 21)])
+@pytest.mark.parametrize("role, n", [("releaser", 20), ("pr_author", 10), ("commit_author", 21)])
 async def test_release_metrics_participants_single(client, headers, role, n):
     body = {
         "account": 1,
@@ -2005,7 +2005,7 @@ async def test_release_metrics_participants_groups(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 2
-    assert models[0].values[0].values[0] == 21
+    assert models[0].values[0].values[0] == 20
     assert models[1].values[0].values[0] == 4
 
 
@@ -2223,7 +2223,7 @@ async def test_release_metrics_participants_many_participants(client, headers):
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 2
     assert models[0].values[0].values[0] == 12
-    assert models[1].values[0].values[0] == 21
+    assert models[1].values[0].values[0] == 20
 
 
 # TODO: fix response validation against the schema

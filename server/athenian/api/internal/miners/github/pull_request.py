@@ -121,7 +121,6 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestCheckRuns,
     GitHubPullRequestDeployment,
 )
-from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.precomputer.db.models import GitHubRebasedPullRequest
@@ -1542,10 +1541,8 @@ class PullRequestMiner:
 
         pr_merge_commit_ids = merged_prs[PullRequest.merge_commit_id.name].values
         commit_ids_to_fetch_message = np.concatenate([pr_merge_commit_ids[i] for _, i in dead])
-        if commit_ids_to_fetch_message.dtype != int:
-            commit_ids_to_fetch_message = commit_ids_to_fetch_message[
-                is_not_null(commit_ids_to_fetch_message)
-            ].astype(int)
+        assert commit_ids_to_fetch_message.dtype == int
+        commit_ids_to_fetch_message = commit_ids_to_fetch_message[commit_ids_to_fetch_message != 0]
         commit_ids_to_fetch_message = commit_ids_to_fetch_message[
             np.in1d(
                 commit_ids_to_fetch_message,

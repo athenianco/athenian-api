@@ -124,7 +124,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseDeployment,
 )
-from athenian.api.to_object_arrays import is_not_null
+from athenian.api.to_object_arrays import is_not_null, is_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import unordered_unique
@@ -315,7 +315,7 @@ async def mine_deployments(
     )
     joined = _adjust_empty_df(joined, "releases")
     joined["labels"] = joined["labels"].astype(object, copy=False)
-    no_labels = joined["labels"].isnull().values
+    no_labels = joined["labels"].isnull().values  # can be NaN-s
     subst = np.empty(no_labels.sum(), dtype=object)
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
@@ -809,7 +809,7 @@ async def _compute_deployment_facts(
 
 def _adjust_empty_df(joined: pd.DataFrame, name: str) -> pd.DataFrame:
     try:
-        no_df = joined[name].isnull().values
+        no_df = joined[name].isnull().values  # can be NaN-s
     except KeyError:
         no_df = np.ones(len(joined), bool)
     col = np.full(no_df.sum(), None, object)
@@ -1749,14 +1749,11 @@ async def _fetch_components_and_prune_unresolved(
     )
     del components[DeployedComponent.account_id.name]
     del components[DeployedComponent.created_at.name]
-    unresolved_names = (
-        components.loc[
-            components[DeployedComponent.resolved_commit_node_id.name].isnull(),
-            DeployedComponent.deployment_name.name,
-        ]
-        .unique()
-        .astype("U")
-    )
+    unresolved_names = np.unique(
+        components[DeployedComponent.deployment_name.name].values[
+            is_null(components[DeployedComponent.resolved_commit_node_id.name].values)
+        ],
+    ).astype("U")
     notifications = notifications.take(
         np.flatnonzero(
             np.in1d(
