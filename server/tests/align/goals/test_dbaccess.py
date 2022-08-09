@@ -5,20 +5,28 @@ import sqlalchemy as sa
 
 from athenian.api.align.exceptions import GoalMutationError
 from athenian.api.align.goals.dbaccess import (
+    create_default_goal_templates,
     delete_empty_goals,
     delete_team_goals,
     fetch_team_goals,
     update_goal,
 )
+from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database
-from athenian.api.models.state.models import Goal, TeamGoal
+from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.testutils.db import (
     assert_existing_row,
+    assert_existing_rows,
     assert_missing_row,
     models_insert,
     transaction_conn,
 )
-from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
+from tests.testutils.factory.state import (
+    GoalFactory,
+    GoalTemplateFactory,
+    TeamFactory,
+    TeamGoalFactory,
+)
 
 
 class TestDeleteTeamGoals:
@@ -131,3 +139,24 @@ class TestDeleteEmptyGoals:
         await delete_empty_goals(1, sdb)
         goals = [r[0] for r in await sdb.fetch_all(sa.select(Goal.id).order_by(Goal.id))]
         assert goals == [20, 22]
+
+
+class TestCreateDefaultGoalTemplates:
+    async def test_base(self, sdb: Database) -> None:
+        await create_default_goal_templates(1, sdb)
+        rows = await assert_existing_rows(sdb, GoalTemplate)
+        assert len(rows) == len(TEMPLATES_COLLECTION)
+        assert sorted(r[GoalTemplate.name.name] for r in rows) == sorted(
+            template_def["name"] for template_def in TEMPLATES_COLLECTION.values()
+        )
+        assert sorted(r[GoalTemplate.metric.name] for r in rows) == sorted(
+            template_def["metric"] for template_def in TEMPLATES_COLLECTION.values()
+        )
+
+    async def test_ignore_existing_names(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[1]["name"], id=555))
+        await create_default_goal_templates(1, sdb)
+
+        rows = await assert_existing_rows(sdb, GoalTemplate)
+        assert len(rows) == len(TEMPLATES_COLLECTION)
+        await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[1]["name"])

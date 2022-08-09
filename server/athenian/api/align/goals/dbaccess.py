@@ -3,11 +3,13 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
+import logging
 from typing import Iterable, Sequence
 
 import sqlalchemy as sa
 
 from athenian.api.align.exceptions import GoalMutationError
+from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import (
     Connection,
     DatabaseLike,
@@ -16,7 +18,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     integrity_errors,
 )
-from athenian.api.models.state.models import Goal, Team, TeamGoal
+from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
 
@@ -188,6 +190,22 @@ async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
         ),
     )
     await sdb_conn.execute(delete_stmt)
+
+
+@sentry_span
+async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) -> None:
+    """Create the set of default goal templates for the account."""
+    log = logging.getLogger(f"{__name__}.create_default_goal_templates")
+    log.info("creating for account %d", account)
+    models = [
+        GoalTemplate(metric=template_def["metric"], name=template_def["name"], account_id=account)
+        for template_def in TEMPLATES_COLLECTION.values()
+    ]
+    values = [model.create_defaults().explode(with_primary_keys=False) for model in models]
+    # skip existing templates with the same name
+    insert = await dialect_specific_insert(sdb_conn)
+    stmt = insert(GoalTemplate).on_conflict_do_nothing()
+    await sdb_conn.execute_many(stmt, values)
 
 
 @sentry_span

@@ -13,6 +13,7 @@ from athenian.api.models.state.models import (
     Feature,
     FeatureComponent,
     Goal,
+    GoalTemplate,
     LogicalRepository,
     MappedJIRAIdentity,
     RepositorySet,
@@ -144,6 +145,18 @@ class GoalFactory(SQLAlchemyModelFactory):
     expires_at = factory.Sequence(
         lambda n: datetime(2022, 4, 1).replace(tzinfo=timezone.utc) + timedelta(hours=n),
     )
+
+
+class GoalTemplateFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = GoalTemplate
+
+    id = factory.Sequence(lambda n: n + 100)
+    account_id = DEFAULT_ACCOUNT_ID
+    name = factory.LazyAttribute(lambda template: f"Goal Template {template.id}")
+    metric = PullRequestMetricID.PR_DONE
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
 
 
 class TeamGoalFactory(SQLAlchemyModelFactory):
