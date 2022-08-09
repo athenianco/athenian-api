@@ -405,6 +405,26 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     archived = Column(Boolean, default=False, nullable=False, server_default="false")
 
 
+class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
+    """A template to generate a Goal."""
+
+    __tablename__ = "goal_templates"
+    __table_args__ = (
+        UniqueConstraint("account_id", "name", name="uc_goal_templates_account_id_name"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id = Column(Integer(), primary_key=True)
+    account_id = Column(
+        Integer(),
+        ForeignKey("accounts.id", name="fk_goal_template_account"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String, nullable=False)
+    metric = Column(String, nullable=False)
+
+
 class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
     """A Goal applied to a Team, with a specific target."""
 
