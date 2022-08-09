@@ -90,7 +90,7 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
-from athenian.api.unordered_unique import in1d_str
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 async def mine_releases(
@@ -426,9 +426,8 @@ async def _mine_releases(
         release_hashes = releases[Release.sha.name].values
         release_timestamps = releases[Release.published_at.name].values
         pos = 0
-        for repo, _, repo_release_count in zip(
-            # must specify return_index=True to enforce the stable sort
-            *np.unique(release_repos[repo_order], return_counts=True, return_index=True),
+        for repo, repo_release_count in zip(
+            *np.unique(release_repos[repo_order], return_counts=True),
         ):
             repo = repo.decode()
             repo_indexes = repo_order[pos : pos + repo_release_count]
@@ -626,7 +625,7 @@ async def _mine_releases(
                         my_additions = commits_additions[found_indexes].sum()
                         my_deletions = commits_deletions[found_indexes].sum()
                         my_commit_authors = commits_authors[found_indexes]
-                    mentioned_authors.update(np.unique(my_prs_authors[my_prs_authors > 0]))
+                    mentioned_authors.update(unordered_unique(my_prs_authors[my_prs_authors > 0]))
                     my_prs = dict(
                         zip(
                             ["prs_" + c.name for c in released_prs_columns(PullRequest)],
@@ -639,7 +638,7 @@ async def _mine_releases(
                             ],
                         ),
                     )
-
+                    # must sort commit authors
                     my_commit_authors = np.unique(my_commit_authors[my_commit_authors > 0])
                     mentioned_authors.update(my_commit_authors)
                     if len(my_parents):
