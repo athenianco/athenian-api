@@ -1,6 +1,11 @@
-from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
+from __future__ import annotations
 
-TEMPLATES_COLLECTION = {
+from typing import TypedDict
+
+from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
+from athenian.api.models.web.goal_template import GoalTemplateMetricID
+
+TEMPLATES_COLLECTION: dict[int, TemplateDefinition] = {
     1: {
         "metric": PullRequestMetricID.PR_REVIEW_TIME,
         "name": "Reduce code review time",
@@ -46,3 +51,10 @@ TEMPLATES_COLLECTION = {
         "name": "Increase the proportion of PRs reviewed",
     },
 }
+
+
+class TemplateDefinition(TypedDict):
+    """The definition of a Goal Template."""
+
+    metric: GoalTemplateMetricID
+    name: str
