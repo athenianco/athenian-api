@@ -673,7 +673,15 @@ async def _postprocess_deployed_releases(
         with_avatars=False,
         with_pr_titles=True,
     )
-    if not release_facts:
+    releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
+    releases_node_ids = set(releases.index.get_level_values(0).unique())
+    computed_node_ids = {r[Release.node_id.name] for r, _ in release_facts}
+    if diff := (releases_node_ids - computed_node_ids):
+        log = logging.getLogger(f"{metadata.__package__}.mine_releases_by_ids/deployed")
+        log.error("failed to compute release facts of %s", diff)
+        # this can happen when somebody removes a release while we are here
+        # let's monitor if there are other valid reasons
+    if len(release_facts) == 0:
         return pd.DataFrame()
     release_facts_df = df_from_structs([f for _, f in release_facts])
     release_facts_df[Release.node_id.name] = [r[Release.node_id.name] for r, _ in release_facts]
@@ -684,7 +692,6 @@ async def _postprocess_deployed_releases(
     del release_facts
     for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by):
         del release_facts_df[col]
-    releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
     releases = release_facts_df.join(releases)
     groups = list(releases.groupby("deployment_name", sort=False))
     grouped_releases = pd.DataFrame(

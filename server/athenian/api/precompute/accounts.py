@@ -244,115 +244,125 @@ async def precompute_reposet(
             BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
         )
         branches_count = len(branches)
-        log.info("Mining the releases")
-        releases, _, matches, _ = await mine_releases(
-            repos,
-            {},
-            branches,
-            default_branches,
-            no_time_from,
-            time_to,
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            release_settings,
-            logical_settings,
-            prefixer,
-            reposet.owner_id,
-            meta_ids,
-            mdb,
-            pdb,
-            rdb,
-            None,
-            force_fresh=True,
-            with_pr_titles=False,
-            with_deployments=False,
-        )
-        releases_by_tag = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
-        releases_by_branch = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
-        releases_count = len(releases)
-        ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(releases)
-        del releases
-        _release_settings = ReleaseLoader.disambiguate_release_settings(release_settings, matches)
-        if reposet.precomputed:
-            log.info("Scanning for force push dropped PRs")
-            await delete_force_push_dropped_prs(
-                repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
+        if not args.skip_releases:
+            log.info("Mining the releases")
+            releases, _, matches, _ = await mine_releases(
+                repos,
+                {},
+                branches,
+                default_branches,
+                no_time_from,
+                time_to,
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                release_settings,
+                logical_settings,
+                prefixer,
+                reposet.owner_id,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                None,
+                force_fresh=True,
+                with_pr_titles=False,
+                with_deployments=False,
             )
-        log.info("Extracting PR facts")
-        facts = await MetricEntriesCalculator(
-            reposet.owner_id,
-            meta_ids,
-            0,
-            mdb,
-            pdb,
-            rdb,
-            None,  # yes, disable the cache
-        ).calc_pull_request_facts_github(
-            time_from,
-            time_to,
-            repos,
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            False,
-            bots,
-            _release_settings,
-            logical_settings,
-            prefixer,
-            True,
-            False,
-            branches=branches,
-            default_branches=default_branches,
-        )
-        if not reposet.precomputed and slack is not None:
-            prs = len(facts)
-            prs_done = facts[PullRequestFacts.f.done].sum()
-            prs_merged = (
-                facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
-            ).sum()
-            prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
-        del facts  # free some memory
-        await wait_deferred()
-        await hide_first_releases(
-            ignored_first_releases,
-            ignored_released_prs,
-            default_branches,
-            release_settings,
-            reposet.owner_id,
-            pdb,
-        )
-        ignored_releases_count = len(ignored_first_releases)
-        del ignored_first_releases, ignored_released_prs
+            releases_by_tag = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
+            releases_by_branch = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+            releases_count = len(releases)
+            ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
+                releases,
+            )
+            del releases
+            _release_settings = ReleaseLoader.disambiguate_release_settings(
+                release_settings, matches,
+            )
+        else:
+            _release_settings = release_settings
+        if not args.skip_prs:
+            if reposet.precomputed:
+                log.info("Scanning for force push dropped PRs")
+                await delete_force_push_dropped_prs(
+                    repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
+                )
+            log.info("Extracting PR facts")
+            facts = await MetricEntriesCalculator(
+                reposet.owner_id,
+                meta_ids,
+                0,
+                mdb,
+                pdb,
+                rdb,
+                None,  # yes, disable the cache
+            ).calc_pull_request_facts_github(
+                time_from,
+                time_to,
+                repos,
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                bots,
+                _release_settings,
+                logical_settings,
+                prefixer,
+                True,
+                False,
+                branches=branches,
+                default_branches=default_branches,
+            )
+            if not reposet.precomputed and slack is not None:
+                prs = len(facts)
+                prs_done = facts[PullRequestFacts.f.done].sum()
+                prs_merged = (
+                    facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
+                ).sum()
+                prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
+            del facts  # free some memory
+            await wait_deferred()
 
-        log.info("Mining deployments")
-        deployment_facts = await mine_deployments(
-            repos,
-            {},
-            time_from,
-            time_to,
-            [],
-            [],
-            {},
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            _release_settings,
-            logical_settings,
-            branches,
-            default_branches,
-            prefixer,
-            reposet.owner_id,
-            meta_ids,
-            mdb,
-            pdb,
-            rdb,
-            None,  # yes, disable the cache
-        )
-        await wait_deferred()
+        if not args.skip_releases:
+            await hide_first_releases(
+                ignored_first_releases,
+                ignored_released_prs,
+                default_branches,
+                release_settings,
+                reposet.owner_id,
+                pdb,
+            )
+            ignored_releases_count = len(ignored_first_releases)
+            del ignored_first_releases, ignored_released_prs
 
-        await hide_outlier_first_deployments(
-            deployment_facts, reposet.owner_id, meta_ids, mdb, pdb,
-        )
+        if not args.skip_deployments:
+            log.info("Mining deployments")
+            deployment_facts = await mine_deployments(
+                repos,
+                {},
+                time_from,
+                time_to,
+                [],
+                [],
+                {},
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                _release_settings,
+                logical_settings,
+                branches,
+                default_branches,
+                prefixer,
+                reposet.owner_id,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                None,  # yes, disable the cache
+            )
+            await wait_deferred()
+            await hide_outlier_first_deployments(
+                deployment_facts, reposet.owner_id, meta_ids, mdb, pdb,
+            )
 
         if not reposet.precomputed and slack is not None:
 

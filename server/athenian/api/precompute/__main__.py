@@ -98,6 +98,15 @@ def _parse_args() -> argparse.Namespace:
         "--skip-jira", action="store_true", help="Do not perform any JIRA-related procedures.",
     )
     accounts_parser.add_argument(
+        "--skip-releases", action="store_true", help="Do not precompute any releases.",
+    )
+    accounts_parser.add_argument(
+        "--skip-prs", action="store_true", help="Do not precompute any PRs.",
+    )
+    accounts_parser.add_argument(
+        "--skip-deployments", action="store_true", help="Do not precompute any deployments.",
+    )
+    accounts_parser.add_argument(
         "--disable-isolation",
         action="store_true",
         help="Do not sandbox each account in a separate process",
