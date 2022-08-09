@@ -546,6 +546,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
     if under_gunicorn := not isinstance(args, argparse.Namespace):
         args = argparse.Namespace(**args)
         flogging.setup(args.log_level, args.log_structured)
+        loop = None
     else:
         uvloop.install()
         asyncio.set_event_loop(loop := asyncio.new_event_loop())
@@ -565,7 +566,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         ui=args.ui,
         auth0_cls=create_auth0_factory(args.force_user),
         kms_cls=None if args.no_google_kms else AthenianKMS,
-        cache=create_memcached(args.memcached, log),
+        cache=create_memcached(args.memcached, log, loop),
         slack=create_slack(log),
         mandrill=create_mandrill(),
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
