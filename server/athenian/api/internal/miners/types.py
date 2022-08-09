@@ -504,7 +504,9 @@ class DeploymentFacts:
 
         pr_authors: [int]
         commit_authors: [int]
-        release_authors: [int]
+        # this is a feature! deployment facts depend on the release settings
+        # so, when they change, we re-compute the deployments
+        release_authors: [int]  # do not remove
         repositories: [str]
         prs: [int]
         prs_offsets: [np.int32]

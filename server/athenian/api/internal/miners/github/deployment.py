@@ -7,7 +7,19 @@ import json
 import logging
 from operator import attrgetter
 import pickle
-from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Collection,
+    Dict,
+    KeysView,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 import aiomcache
 import numpy as np
@@ -183,8 +195,17 @@ async def mine_deployments(
 
     :return: Deployment stats with deployed components and releases sub-dataframes.
     """
-    repo_name_to_node = prefixer.repo_name_to_node.get
-    repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
+    if not isinstance(repositories, (set, frozenset, KeysView)):
+        repositories = set(repositories)
+    if repositories:
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        repo_node_ids = sorted(repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories))
+        if repo_node_ids[0] == 0:
+            repo_node_ids = repo_node_ids[1:]
+        if not repo_node_ids:
+            return pd.DataFrame()
+    else:
+        repo_node_ids = []
     notifications, _, _ = await _fetch_deployment_candidates(
         repo_node_ids,
         time_from,
@@ -201,6 +222,9 @@ async def mine_deployments(
         _fetch_components_and_prune_unresolved(notifications, prefixer, account, rdb),
         _fetch_grouped_labels(notifications.index.values, account, rdb),
     )
+    if notifications.empty:
+        return pd.DataFrame()
+
     # we must load all logical repositories at once to unambiguously process the residuals
     # (the root repository minus all the logicals)
     components = split_logical_deployed_components(
@@ -210,8 +234,6 @@ async def mine_deployments(
         logical_settings.with_logical_deployments(repositories),
         logical_settings,
     )
-    if notifications.empty:
-        return pd.DataFrame()
     repo_names, release_settings = await _finalize_release_settings(
         notifications,
         time_from,
@@ -253,7 +275,13 @@ async def mine_deployments(
     hits = len(facts)
     misses = len(notifications) - hits
     if misses > 0:
-        if conclusions or with_labels or without_labels:
+        if (
+            components[DeployedComponent.repository_node_id.name].unique().tolist()
+            != repo_node_ids
+            or conclusions
+            or with_labels
+            or without_labels
+        ):
             # we have to look broader so that we compute the commit ownership correctly
             full_notifications, _, _ = await _fetch_deployment_candidates(
                 repo_node_ids, time_from, time_to, environments, [], {}, {}, account, rdb, cache,
@@ -280,16 +308,16 @@ async def mine_deployments(
         invalidated = await _invalidate_precomputed_on_out_of_order_notifications(
             full_notifications, missed_mask, account, pdb,
         )
-        if invalidated.size:
+        if len(invalidated):
             facts = facts.take(
                 np.flatnonzero(
                     ~in1d_str(facts[DeploymentFacts.f.name].values.astype("U"), invalidated),
                 ),
             )
             missed_mask |= in1d_str(notifications.index.values.astype("U"), invalidated)
-
             hits = len(facts)
             misses = len(notifications) - hits
+
         full_notifications = _reduce_to_missed_notifications_if_possible(
             full_notifications, missed_mask,
         )
@@ -367,7 +395,9 @@ async def _invalidate_precomputed_on_out_of_order_notifications(
     A unicode string array with the names of affected precomputed deployments is returned.
 
     """
-    if len(to_invalidate := _get_invalid_precomputed_deploys(notifications, missed_mask)) > 0:
+    if len(to_invalidate := _find_invalid_precomputed_deploys(notifications, missed_mask)):
+        log = logging.getLogger(f"{metadata.__package__}.mine_deployments")
+        log.warning("invalidated out-of-order deployments: %s", to_invalidate.tolist())
         stmts = []
         tables = (
             GitHubCommitDeployment,
@@ -381,12 +411,15 @@ async def _invalidate_precomputed_on_out_of_order_notifications(
                     Table.acc_id == account, Table.deployment_name.in_(to_invalidate),
                 ),
             )
-        await gather(*[pdb.execute(stmt) for stmt in stmts])
+        await gather(
+            *(pdb.execute(stmt) for stmt in stmts),
+            op="_invalidate_precomputed_on_out_of_order_notifications/sql",
+        )
 
     return to_invalidate
 
 
-def _get_invalid_precomputed_deploys(
+def _find_invalid_precomputed_deploys(
     notifications: pd.DataFrame,
     missed_mask: npt.NDArray[bool],
 ) -> npt.NDArray[str]:
@@ -418,7 +451,7 @@ def _get_invalid_precomputed_deploys(
         invalid_counts.sum(),
     )
 
-    return np.unique(notifications.index.values[final_order[ranges]]).astype("U")
+    return notifications.index.values[final_order[ranges]].astype("U")
 
 
 @sentry_span
@@ -844,9 +877,16 @@ async def _compute_deployment_facts(
         rdb,
         cache,
     )
-    notifications = notifications[
-        ~notifications[DeploymentNotification.environment.name].isin(tainted_envs)
-    ]
+    if tainted_envs:
+        notifications = notifications.take(
+            np.flatnonzero(
+                np.in1d(
+                    notifications[DeploymentNotification.environment.name].values,
+                    tainted_envs,
+                    invert=True,
+                ),
+            ),
+        )
     if notifications.empty:
         return pd.DataFrame(), pd.DataFrame()
     with sentry_sdk.start_span(op=f"_extract_deployed_commits({len(components)})"):
@@ -970,62 +1010,46 @@ async def _submit_deployment_facts(
     await insert_or_ignore(GitHubDeploymentFacts, values, "_submit_deployment_facts", pdb)
 
 
-CommitRelationship = NamedTuple(
-    "CommitRelationship",
-    [
-        ("parent_node_ids", np.ndarray),  # [int]
-        ("parent_shas", np.ndarray),  # [S40]
-        # indicates whether we *don't* deduplicate the corresponding parent
-        ("externals", np.ndarray),  # [bool]
-    ],
-)
+class _CommitRelationship(NamedTuple):
+    parent_node_ids: npt.NDArray[int]
+    parent_shas: npt.NDArray[bytes]  # S40
+    # indicates whether we *don't* deduplicate the corresponding parent
+    externals: npt.NDArray[bool]
 
 
-DeployedCommitDetails = NamedTuple(
-    "DeployedCommitDetails",
-    [
-        ("shas", np.ndarray),
-        ("deployments", np.ndarray),
-    ],
-)
+class _DeployedCommitDetails(NamedTuple):
+    shas: npt.NDArray[bytes]
+    deployments: npt.NDArray[str]
 
 
-DeployedCommitStats = NamedTuple(
-    "DeployedCommitStats",
-    [
-        ("commit_authors", np.ndarray),
-        ("lines", np.ndarray),
-        ("pull_requests", np.ndarray),
-        ("merge_shas", np.ndarray),
-        ("pr_lines", np.ndarray),
-        ("pr_authors", np.ndarray),
-        ("pr_commit_counts", np.ndarray),
-        ("pr_repository_full_names", np.ndarray),
-        ("ambiguous_prs", dict[str, list[int]]),
-    ],
-)
+class _DeployedCommitStats(NamedTuple):
+    commit_authors: npt.NDArray[int]
+    lines: npt.NDArray[int]
+    pull_requests: npt.NDArray[int]
+    merge_shas: npt.NDArray[bytes]
+    pr_lines: npt.NDArray[int]
+    pr_authors: npt.NDArray[int]
+    pr_commit_counts: npt.NDArray[int]
+    pr_repository_full_names: npt.NDArray[str]
+    ambiguous_prs: dict[str, list[int]]
 
 
-RepositoryDeploymentFacts = NamedTuple(
-    "RepositoryDeploymentFacts",
-    [
-        ("pr_authors", np.ndarray),
-        ("commit_authors", np.ndarray),
-        ("release_authors", set),
-        ("prs", np.ndarray),
-        ("lines_prs", int),
-        ("lines_overall", int),
-        ("commits_prs", int),
-        ("commits_overall", int),
-    ],
-)
+class _RepositoryDeploymentFacts(NamedTuple):
+    pr_authors: npt.NDArray[int]
+    commit_authors: npt.NDArray[int]
+    release_authors: set[int]
+    prs: npt.NDArray[int]
+    lines_prs: int
+    lines_overall: int
+    commits_prs: int
+    commits_overall: int
 
 
 async def _generate_deployment_facts(
     notifications: pd.DataFrame,
-    deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
+    deployed_commits_per_repo_per_env: Dict[str, Dict[str, _DeployedCommitDetails]],
     all_mentioned_hashes: np.ndarray,
-    commit_stats: DeployedCommitStats,
+    commit_stats: _DeployedCommitStats,
     releases: pd.DataFrame,
     account: int,
     pdb: Database,
@@ -1097,7 +1121,7 @@ async def _generate_deployment_facts(
                 pr_authors = commit_stats.pr_authors[pr_indexes]
                 facts_per_repo_per_deployment[deployment_name][
                     repo_name
-                ] = RepositoryDeploymentFacts(
+                ] = _RepositoryDeploymentFacts(
                     pr_authors=pr_authors[pr_authors != 0],
                     commit_authors=commit_authors[commit_authors != 0],
                     release_authors=all_releases_authors.get(deployment_name, []),
@@ -1116,20 +1140,20 @@ async def _generate_deployment_facts(
 
             if ambiguous_pr_deployments:
                 has_ambiguous_prs = False  # don't write them twice
+                # erase everything after the oldest deployment
+                removed_by_deployment = defaultdict(list)
+                deployed_shas_by_name = {}
                 for addrs in ambiguous_pr_deployments.values():
                     if len(addrs) == 1:
                         continue
                     addrs.sort()
-                    # erase everything after the oldest deployment
-                    removed_by_deployment = defaultdict(list)
-                    deployed_shas_by_name = {}
                     for _, deployment_name, deployed_shas, i in addrs[1:]:
                         deployed_shas_by_name[deployment_name] = deployed_shas
                         removed_by_deployment[deployment_name].append(i)
-                    for deployment_name, removed in removed_by_deployment.items():
-                        calc_deployment_facts(
-                            deployment_name, deployed_shas_by_name[deployment_name], removed,
-                        )
+                for deployment_name, removed in removed_by_deployment.items():
+                    calc_deployment_facts(
+                        deployment_name, deployed_shas_by_name[deployment_name], removed,
+                    )
     pr_inserts = list(chain.from_iterable(pr_inserts.values()))
     facts = []
     for deployment_name, repos in facts_per_repo_per_deployment.items():
@@ -1179,7 +1203,7 @@ async def _generate_deployment_facts(
 
 @sentry_span
 async def _map_releases_to_deployments(
-    deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
+    deployed_commits_per_repo_per_env: Dict[str, Dict[str, _DeployedCommitDetails]],
     all_mentioned_hashes: np.ndarray,
     max_release_time_to: datetime,
     prefixer: Prefixer,
@@ -1383,7 +1407,7 @@ async def _map_releases_to_deployments(
 
 @sentry_span
 async def _submit_deployed_commits(
-    deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
+    deployed_commits_per_repo_per_env: Dict[str, Dict[str, _DeployedCommitDetails]],
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
@@ -1474,7 +1498,7 @@ async def _fetch_commit_stats(
     meta_ids: Tuple[int, ...],
     mdb: Database,
     pdb: Database,
-) -> DeployedCommitStats:
+) -> _DeployedCommitStats:
     selected = [
         NodeCommit.id,
         NodeCommit.sha,
@@ -1647,21 +1671,39 @@ async def _fetch_commit_stats(
     if has_logical:
         selected.append(NodePullRequest.title)
     if rebased_map:
-        rebased_pr_rows = await mdb.fetch_all(
-            select(selected).where(
-                and_(
-                    NodePullRequest.acc_id.in_(meta_ids),
-                    NodePullRequest.node_id.in_(rebased_map),
+        rebased_pr_rows, already_deployed = await gather(
+            mdb.fetch_all(
+                select(selected).where(
+                    and_(
+                        NodePullRequest.acc_id.in_(meta_ids),
+                        NodePullRequest.node_id.in_(rebased_map),
+                    ),
                 ),
             ),
+            read_sql_query(
+                select(GitHubPullRequestDeployment.pull_request_id).where(
+                    and_(
+                        GitHubPullRequestDeployment.acc_id == account,
+                        GitHubPullRequestDeployment.pull_request_id.in_(rebased_map),
+                    ),
+                ),
+                pdb,
+                [GitHubPullRequestDeployment.pull_request_id],
+            ),
+            op="_fetch_commit_stats/rebased",
+        )
+        already_deployed = set(
+            already_deployed[GitHubPullRequestDeployment.pull_request_id.name].values,
         )
     else:
-        rebased_pr_rows = []
+        rebased_pr_rows = already_deployed = []
     rebased_prs_by_repo = {}
     for pr_row in rebased_pr_rows:
+        if pr_row[NodePullRequest.node_id.name] in already_deployed:
+            continue
         repo_id = pr_row[NodePullRequest.repository_id.name]
         rebased_prs_by_repo.setdefault(repo_id, []).append(pr_row)
-    del rebased_pr_rows
+    del rebased_pr_rows, already_deployed
     repo_node_to_name = prefixer.repo_node_to_name.__getitem__
     extra_merges = []
     extra_pr_ids = []
@@ -1726,7 +1768,7 @@ async def _fetch_commit_stats(
         pr_lines = pr_lines[order]
         pr_commits = pr_commits[order]
         pr_repo_names = pr_repo_names[order]
-    return DeployedCommitStats(
+    return _DeployedCommitStats(
         commit_authors=commit_authors,
         lines=lines,
         merge_shas=merge_shas,
@@ -1744,9 +1786,9 @@ async def _extract_deployed_commits(
     notifications: pd.DataFrame,
     components: pd.DataFrame,
     deployed_commits_df: pd.DataFrame,
-    commit_relationship: Dict[str, Dict[str, Dict[int, Dict[int, CommitRelationship]]]],
+    commit_relationship: Dict[str, Dict[str, Dict[int, Dict[int, _CommitRelationship]]]],
     dags: Dict[str, Tuple[bool, DAG]],
-) -> Tuple[Dict[str, Dict[str, DeployedCommitDetails]], np.ndarray]:
+) -> Tuple[Dict[str, Dict[str, _DeployedCommitDetails]], np.ndarray]:
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
     commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values
     joined = notifications.join(components)
@@ -1820,7 +1862,7 @@ async def _extract_deployed_commits(
                 failed_parents[unique_indexes],
             )[unique_remap]
 
-        deployed_commits_per_repo_per_env[env][repo_name] = DeployedCommitDetails(
+        deployed_commits_per_repo_per_env[env][repo_name] = _DeployedCommitDetails(
             grouped_deployed_shas, grouped_deployment_names,
         )
         all_mentioned_hashes.extend(grouped_deployed_shas)
@@ -1847,11 +1889,14 @@ async def _fetch_components_and_prune_unresolved(
     )
     del components[DeployedComponent.account_id.name]
     del components[DeployedComponent.created_at.name]
-    unresolved_names = np.unique(
-        components[DeployedComponent.deployment_name.name].values[
-            is_null(components[DeployedComponent.resolved_commit_node_id.name].values)
-        ],
-    ).astype("U")
+    unresolved_names = unordered_unique(
+        components[DeployedComponent.deployment_name.name]
+        .values[is_null(components[DeployedComponent.resolved_commit_node_id.name].values)]
+        .astype("U"),
+    )
+    # we drop not yet resolved notifications and rely on
+    # _invalidate_precomputed_on_out_of_order_notifications() to correctly compute them
+    # in the future
     notifications = notifications.take(
         np.flatnonzero(
             np.in1d(
@@ -1897,7 +1942,7 @@ async def _resolve_commit_relationship(
     rdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> Tuple[
-    Dict[str, Dict[str, Dict[int, Dict[int, CommitRelationship]]]],
+    Dict[str, Dict[str, Dict[int, Dict[int, _CommitRelationship]]]],
     Dict[str, Tuple[bool, DAG]],
     pd.DataFrame,
     List[str],
@@ -2008,7 +2053,9 @@ async def _resolve_commit_relationship(
                 root_mask[: len(successful_commits)].sum(),
             )
             for index, my_parents in zip(np.flatnonzero(noroot_mask), parents[noroot_mask]):
-                my_relationships[all_commits[index]][all_deployed_ats[index]] = CommitRelationship(
+                my_relationships[all_commits[index]][
+                    all_deployed_ats[index]
+                ] = _CommitRelationship(
                     all_commits[my_parents],
                     all_shas[my_parents],
                     np.zeros(len(my_parents), dtype=bool),
@@ -2111,7 +2158,7 @@ async def _resolve_commit_relationship(
                 for index, my_parents in zip(np.flatnonzero(noroot_mask), parents[noroot_mask]):
                     my_relationships[all_commit_ids[index]][
                         all_deployed_ats[index]
-                    ] = CommitRelationship(
+                    ] = _CommitRelationship(
                         all_commit_ids[my_parents],
                         all_shas[my_parents],
                         (success_len <= my_parents) & (my_parents < success_len + len(cids)),

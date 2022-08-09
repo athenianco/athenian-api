@@ -4872,8 +4872,9 @@ async def test_mine_deployments_event_releases(
         assert df.iloc[0][Release.sha.name] == b"1edb992dbc419a0767b1cf3a524b0d35529799f5"
 
 
+@pytest.mark.parametrize("old_notifications_mode", ["1", "2", "1-1"])
 @with_defer
-async def test_invalidate_newer_deploys(
+async def test_invalidate_newer_deploys_smoke(
     branches,
     default_branches,
     release_match_setting_tag_or_branch,
@@ -4881,13 +4882,14 @@ async def test_invalidate_newer_deploys(
     mdb,
     pdb,
     rdb,
+    old_notifications_mode,
 ) -> None:
     await rdb.execute(sa.delete(DeploymentNotification))
     await rdb.execute(sa.delete(DeployedComponent))
     await rdb.execute(sa.delete(DeployedLabel))
 
-    time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
-    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 2, 1, tzinfo=timezone.utc)
     mine_releases_ = partial(
         mine_releases,
         ["src-d/go-git"],
@@ -4939,12 +4941,43 @@ async def test_invalidate_newer_deploys(
     await models_insert(
         rdb,
         DeploymentNotificationFactory(
-            name="deploy0", started_at=dt(2019, 11, 1), finished_at=dt(2019, 11, 1, 0, 10),
+            name="deploy_old_1", started_at=dt(2019, 1, 1), finished_at=dt(2019, 1, 1, 0, 10),
         ),
         DeployedComponentFactory(
-            deployment_name="deploy0", repository_node_id=40550, resolved_commit_node_id=2755244,
+            deployment_name="deploy_old_1",
+            repository_node_id=40550,
+            resolved_commit_node_id=2756591,
         ),
     )
+    match old_notifications_mode:
+        case "2":
+            await models_insert(
+                rdb,
+                DeploymentNotificationFactory(
+                    name="deploy_old_2",
+                    started_at=dt(2020, 1, 1),
+                    finished_at=dt(2020, 1, 1, 0, 10),
+                ),
+                DeployedComponentFactory(
+                    deployment_name="deploy_old_2",
+                    repository_node_id=40550,
+                    resolved_commit_node_id=2755244,
+                ),
+            )
+        case "1-1":
+            await models_insert(
+                rdb,
+                DeploymentNotificationFactory(
+                    name="deploy_old_2",
+                    started_at=dt(2017, 1, 1),
+                    finished_at=dt(2017, 1, 1, 0, 10),
+                ),
+                DeployedComponentFactory(
+                    deployment_name="deploy_old_2",
+                    repository_node_id=40550,
+                    resolved_commit_node_id=2755513,
+                ),
+            )
 
     await mine_releases_()
     await wait_deferred()
@@ -4955,20 +4988,31 @@ async def test_invalidate_newer_deploys(
     await models_insert(
         rdb,
         DeploymentNotificationFactory(
-            name="deploy1", started_at=dt(2018, 8, 1), finished_at=dt(2018, 8, 1, 0, 10),
+            name="deploy_new", started_at=dt(2018, 8, 1), finished_at=dt(2018, 8, 1, 0, 10),
         ),
         DeployedComponentFactory(
-            deployment_name="deploy1", repository_node_id=40550, resolved_commit_node_id=2755028,
+            deployment_name="deploy_new",
+            repository_node_id=40550,
+            resolved_commit_node_id=2755028,
         ),
     )
-    await mine_releases_()
-    await wait_deferred()
     deps = await mine_deployments_()
-    deploy1_prs = deps[deps.name == "deploy1"].prs[0]
-    deploy0_prs_post = deps[deps.name == "deploy0"].prs[0]
+    deploy_new_prs_post = deps[deps.name == "deploy_new"].prs[0]
+    deploy_old1_prs_post = deps[deps.name == "deploy_old_1"].prs[0]
 
     # the two deployments must not share any PR
-    assert not (set(deploy0_prs_post) & set(deploy1_prs))
+    assert len(deploy_new_prs_post)
+    assert len(deploy_old1_prs_post)
+    common = set(deploy_new_prs_post) & set(deploy_old1_prs_post)
+    assert not common
+
+    if old_notifications_mode != "1":
+        deploy_old2_prs_post = deps[deps.name == "deploy_old_2"].prs[0]
+        assert len(deploy_old2_prs_post)
+        common = set(deploy_new_prs_post) & set(deploy_old2_prs_post)
+        assert not common
+        common = set(deploy_old1_prs_post) & set(deploy_old2_prs_post)
+        assert not common
 
 
 @with_defer
