@@ -11,6 +11,7 @@ from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, S
 
 import aiomcache
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
@@ -36,6 +37,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, short_term_exptime
 from athenian.api.db import (
     Database,
+    DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
     ensure_db_datetime_tz,
@@ -127,7 +129,7 @@ from athenian.api.models.precomputed.models import (
 from athenian.api.to_object_arrays import is_not_null, is_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-from athenian.api.unordered_unique import unordered_unique
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 @sentry_span
@@ -248,8 +250,8 @@ async def mine_deployments(
         notifications.index.values, default_branches, release_settings, account, pdb,
     )
     # facts = facts.iloc[:0]  # uncomment to disable pdb
-    add_pdb_hits(pdb, "deployments", len(facts))
-    add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
+    hits = len(facts)
+    misses = len(notifications) - hits
     if misses > 0:
         if conclusions or with_labels or without_labels:
             # we have to look broader so that we compute the commit ownership correctly
@@ -274,6 +276,20 @@ async def mine_deployments(
             assume_unique=True,
             invert=True,
         )
+
+        invalidated = await _invalidate_precomputed_on_out_of_order_notifications(
+            full_notifications, missed_mask, account, pdb,
+        )
+        if invalidated.size:
+            facts = facts.take(
+                np.flatnonzero(
+                    ~in1d_str(facts[DeploymentFacts.f.name].values.astype("U"), invalidated),
+                ),
+            )
+            missed_mask |= in1d_str(notifications.index.values.astype("U"), invalidated)
+
+            hits = len(facts)
+            misses = len(notifications) - hits
         full_notifications = _reduce_to_missed_notifications_if_possible(
             full_notifications, missed_mask,
         )
@@ -295,21 +311,32 @@ async def mine_deployments(
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
+        invalidated = np.array([], dtype="U")
         missed_releases = pd.DataFrame()
+
+    add_pdb_hits(pdb, "deployments", hits)
+    add_pdb_misses(pdb, "deployments", misses)
 
     facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
     components = _group_components(components)
+
     await releases
     releases = releases.result()
     # releases = releases.iloc[:0]  # uncomment to disable pdb
+    # invalidate release facts with previously computed  invalid deploy names
+    if invalidated.size:
+        releases = releases.take(
+            np.flatnonzero(~in1d_str(releases.index.values.astype("U"), invalidated)),
+        )
     if not missed_releases.empty:
         if not releases.empty:
             # there is a minuscule chance that some releases are duplicated here, we ignore it
             releases = pd.concat([releases, missed_releases])
         else:
             releases = missed_releases
+
     joined = notifications.join([components, facts], how="inner").join(
         [labels] + ([releases] if not releases.empty else []),
     )
@@ -321,6 +348,77 @@ async def mine_deployments(
     joined["labels"].values[no_labels] = subst
 
     return joined
+
+
+async def _invalidate_precomputed_on_out_of_order_notifications(
+    notifications: pd.DataFrame,
+    missed_mask: npt.NDArray[bool],
+    account: int,
+    pdb: DatabaseLike,
+) -> npt.NDArray[str]:
+    """Invalidate precomputed facts of deployments newer than deploys not precomputed yet.
+
+    We clear the related pdb table records (e.g., deployed PRs) for each such invalidated
+    deployment.
+
+    `missed_mask` is a bitmask relative to `notifications` stating which deployments are
+    not yet precomputed.
+
+    A unicode string array with the names of affected precomputed deployments is returned.
+
+    """
+    if len(to_invalidate := _get_invalid_precomputed_deploys(notifications, missed_mask)) > 0:
+        stmts = []
+        tables = (
+            GitHubCommitDeployment,
+            GitHubPullRequestDeployment,
+            GitHubReleaseDeployment,
+            GitHubDeploymentFacts,
+        )
+        for Table in tables:
+            stmts.append(
+                sa.delete(Table).where(
+                    Table.acc_id == account, Table.deployment_name.in_(to_invalidate),
+                ),
+            )
+        await gather(*[pdb.execute(stmt) for stmt in stmts])
+
+    return to_invalidate
+
+
+def _get_invalid_precomputed_deploys(
+    notifications: pd.DataFrame,
+    missed_mask: npt.NDArray[bool],
+) -> npt.NDArray[str]:
+    chrono_order = np.argsort(notifications[DeploymentNotification.finished_at.name].values)
+    envs_col = notifications[DeploymentNotification.environment.name].values[chrono_order]
+    # stable sort so that we don't lose the chronological order
+    env_order = np.argsort(envs_col, kind="stable")
+    final_order = chrono_order[env_order]
+
+    missed = missed_mask.take(final_order)
+    detect = np.diff(missed, prepend=[0])  # -1 for out of order deployments
+
+    # count deployments in each environment
+    unique_envs, env_counts = np.unique(envs_col[env_order], return_counts=True)
+    env_borders = np.cumsum(env_counts)
+    detect[env_borders[:-1]] = 0  # remove -1 on environment borders
+
+    # distinguish the environments
+    detect *= np.repeat(np.arange(1, len(unique_envs) + 1), env_counts)
+    deltas, first_positions = np.unique(detect, return_index=True)
+    first_positions = first_positions[deltas < 0][::-1]
+
+    # find the nearest greater border index to each first occurrence position
+    last_positions = env_borders[np.searchsorted(env_borders, first_positions, side="right")]
+
+    # https://codereview.stackexchange.com/questions/83018/vectorized-numpy-version-of-arange-with-multiple-start-stop
+    invalid_counts = last_positions - first_positions
+    ranges = np.repeat(last_positions - invalid_counts.cumsum(), invalid_counts) + np.arange(
+        invalid_counts.sum(),
+    )
+
+    return np.unique(notifications.index.values[final_order[ranges]]).astype("U")
 
 
 @sentry_span
