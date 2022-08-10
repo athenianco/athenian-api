@@ -148,7 +148,10 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, **kwargs):
             query += _generate_tags()
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
         if isinstance(result[0], tuple):
-            length = len(result[0][0][0])
+            try:
+                length = len(result[0][0][0])
+            except IndexError:
+                length = 0
         else:
             length = len(result[0])
         try:
