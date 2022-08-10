@@ -624,6 +624,37 @@ async def test_load_releases_empty(
 
 
 @with_defer
+async def test_load_releases_uncertain(
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    release_loader,
+    prefixer,
+):
+    releases, _ = await release_loader.load_releases(
+        ["src-d/go-git"],
+        branches,
+        default_branches,
+        datetime(year=2018, month=4, day=18, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(tags=".*")}),
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        index=Release.node_id.name,
+    )
+    assert len(releases)
+    assert "v4.3.1" not in releases[Release.tag.name].values
+
+
+@with_defer
 async def test_load_releases_events_settings(
     branches,
     default_branches,
@@ -2117,6 +2148,7 @@ async def test_mine_releases_twins(
                 Release.url: "https://github.com/src-d/go-git/commit/tag/v4.0.0",
                 Release.sha: "bf3b1f1fb9e0a04d0f87511a7ded2562b48a19d8",
                 Release.commit_id: 2757510,
+                Release.type: "Tag",
             },
         ),
     )
@@ -2336,6 +2368,7 @@ async def test_precomputed_releases_ambiguous(
         rdb,
         None,
     )
+    assert len(releases_tag) == 53
     releases_branch, _ = await release_loader.load_releases(
         ["src-d/go-git"],
         branches,

@@ -223,7 +223,10 @@ def _namespace(**kwargs: Any) -> Namespace:
     kwargs.setdefault("skip_jira", True)
     kwargs.setdefault("prometheus_pushgateway", None)
     kwargs.setdefault("timeout", 1000)
-    return Namespace(**kwargs)
+    kwargs.setdefault("skip_teams", False)
+    ns = Namespace(**kwargs)
+    ns.time_from = None
+    return ns
 
 
 class TestEnsureTeams:

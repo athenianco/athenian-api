@@ -338,8 +338,9 @@ class Release(
     published_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
     url = Column(Text)
-    sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
-    commit_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    sha = Column(Text, info={"dtype": "S40"})
+    commit_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
+    type = Column(Text, nullable=False, info={"dtype": "S12"})
 
 
 class NodeCommit(

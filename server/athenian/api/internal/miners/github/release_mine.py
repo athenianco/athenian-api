@@ -348,19 +348,21 @@ async def _mine_releases(
     commits_authors_nz = prs_authors_nz = slice(0)
     repo_releases_analyzed = {}
     if missed_releases_count > 0:
-        time_from = (
-            releases_in_time_range[Release.published_at.name].take(missing_release_indexes).min()
-        )
-        time_to = releases_in_time_range[Release.published_at.name].take(
-            missing_release_indexes,
-        ).max() + timedelta(seconds=1)
-        releases_in_time_range = releases_in_time_range.take(
-            np.flatnonzero(
-                releases_in_time_range[Release.repository_full_name.name]
-                .isin(missing_repos)
-                .values,
-            ),
-        )
+        time_from = releases_in_time_range[Release.published_at.name].iloc[
+            missing_release_indexes[-1]
+        ]
+        time_to = releases_in_time_range[Release.published_at.name].iloc[
+            missing_release_indexes[0]
+        ] + timedelta(seconds=1)
+        if internal_releases:
+            releases_in_time_range = releases_in_time_range.take(
+                np.flatnonzero(
+                    np.in1d(
+                        releases_in_time_range[Release.repository_full_name.name].values,
+                        missing_repos,
+                    ),
+                ),
+            )
         (_, releases, _, _, dags), first_commit_dates = await gather(
             ReleaseToPullRequestMapper._find_releases_for_matching_prs(
                 missing_repos,
