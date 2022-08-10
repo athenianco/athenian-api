@@ -1174,11 +1174,11 @@ class ReleaseMatcher:
         if not (unique_mask := _deduplicate_tags(releases, False)).all():
             releases = releases.take(np.flatnonzero(unique_mask))
             release_index_repos = release_index_repos[unique_mask]
-            release_index_tags = release_index_tags[unique_mask]
         if (uncertain := (release_types == b"Release[Tag]") & unique_mask).any():
             # throw away any secondary releases after the original tag
             uncertain_tags = release_index_tags[uncertain]
-            release_tags = np.char.encode(release_index_tags[unique_mask], "UTF-8")
+            release_index_tags = release_index_tags[unique_mask]
+            release_tags = np.char.encode(release_index_tags, "UTF-8")
             with sentry_sdk.start_span(
                 op="fetch_tags/uncertain", description=str(len(uncertain_tags)),
             ):
@@ -1205,6 +1205,8 @@ class ReleaseMatcher:
                 log.info("removed %d secondary releases", len(removed) - len(left))
                 release_index_repos = release_index_repos[left]
                 release_index_tags = release_index_tags[left]
+        else:
+            release_index_tags = release_index_tags[unique_mask]
 
         # apply the release settings
         regexp_cache = {}

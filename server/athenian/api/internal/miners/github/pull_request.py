@@ -2028,7 +2028,7 @@ class PullRequestMiner:
             DeploymentNotification.conclusion,
             DeploymentNotification.finished_at,
         ]
-        details = await read_sql_query(
+        notifications = await read_sql_query(
             sql.select(cols).where(
                 sql.and_(
                     DeploymentNotification.account_id == account,
@@ -2039,8 +2039,8 @@ class PullRequestMiner:
             columns=cols,
             index=DeploymentNotification.name.name,
         )
-        details.index.name = ghprd.deployment_name.name
-        df = df.join(details)
+        notifications.index.name = ghprd.deployment_name.name
+        df = df.join(notifications)
         df.reset_index(inplace=True)
         df.set_index(
             [
