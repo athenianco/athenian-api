@@ -3,12 +3,13 @@ from operator import itemgetter
 import pytest
 import sqlalchemy as sa
 
-from athenian.api.align.exceptions import GoalMutationError
+from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoundError
 from athenian.api.align.goals.dbaccess import (
     create_default_goal_templates,
     delete_empty_goals,
     delete_team_goals,
     fetch_team_goals,
+    get_goal_template_from_db,
     update_goal,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
@@ -139,6 +140,17 @@ class TestDeleteEmptyGoals:
         await delete_empty_goals(1, sdb)
         goals = [r[0] for r in await sdb.fetch_all(sa.select(Goal.id).order_by(Goal.id))]
         assert goals == [20, 22]
+
+
+class TestGetGoalTemplateFromDB:
+    async def test_found(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=102, name="Foo"))
+        row = await get_goal_template_from_db(102, sdb)
+        assert row["name"] == "Foo"
+
+    async def test_not_found(self, sdb: Database) -> None:
+        with pytest.raises(GoalTemplateNotFoundError):
+            await get_goal_template_from_db(102, sdb)
 
 
 class TestCreateDefaultGoalTemplates:

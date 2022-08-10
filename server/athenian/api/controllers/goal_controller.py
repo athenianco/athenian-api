@@ -2,11 +2,13 @@ from operator import attrgetter
 
 from aiohttp import web
 
+from athenian.api.align.goals.dbaccess import get_goal_template_from_db
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.internal.account import get_user_account_status_from_request
-from athenian.api.models.web import GoalTemplate, NotFoundError
+from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
+from athenian.api.models.web import GoalTemplate
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import ResponseError, model_response
+from athenian.api.response import model_response
 
 
 async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
@@ -16,11 +18,12 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
     :type id: int
 
     """
-    try:
-        template_def = TEMPLATES_COLLECTION[id]
-    except KeyError:
-        return ResponseError(NotFoundError("Template %d was not found." % id)).response
-    model = GoalTemplate(id=id, name=template_def["name"], metric=template_def["metric"])
+    row = await get_goal_template_from_db(id, request.sdb)
+    await get_user_account_status_from_request(request, row[DBGoalTemplate.account_id.name])
+    model = GoalTemplate(
+        id=id, name=row[DBGoalTemplate.name.name], metric=row[DBGoalTemplate.metric.name],
+    )
+
     return model_response(model)
 
 

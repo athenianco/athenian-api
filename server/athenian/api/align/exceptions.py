@@ -16,3 +16,17 @@ class GoalMutationError(ResponseError):
             title="Goal mutation error",
         )
         super().__init__(wrapped_error)
+
+
+class GoalTemplateNotFoundError(ResponseError):
+    """A goal template was not found."""
+
+    def __init__(self, template_id: int):
+        """Init the GoalTemplateNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/align/GoalTemplateNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Goal template {template_id} not found",
+            title="Goal template not found",
+        )
+        super().__init__(wrapped_error)
