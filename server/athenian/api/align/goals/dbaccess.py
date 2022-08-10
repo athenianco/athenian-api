@@ -8,7 +8,7 @@ from typing import Iterable, Sequence
 
 import sqlalchemy as sa
 
-from athenian.api.align.exceptions import GoalMutationError
+from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoundError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import (
     Connection,
@@ -190,6 +190,15 @@ async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
         ),
     )
     await sdb_conn.execute(delete_stmt)
+
+
+async def get_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> Row:
+    """Return a GoalTemplate."""
+    stmt = sa.select(GoalTemplate).where(GoalTemplate.id == template_id)
+    template = await sdb.fetch_one(stmt)
+    if template is None:
+        raise GoalTemplateNotFoundError(template_id)
+    return template
 
 
 @sentry_span
