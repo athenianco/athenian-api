@@ -1,3 +1,4 @@
+from datetime import timedelta
 import io
 from zipfile import ZipFile
 
@@ -5,6 +6,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete
 
+from athenian.api.internal.miners.github import deployment_light
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import ContributorIdentity, MatchedIdentity, PullRequestMetricID
@@ -65,7 +67,12 @@ async def test_match_identities_nasty_input(client, headers, body, code):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-async def test_get_everything_smoke(client, headers, dummy_deployment_label):
+async def test_get_everything_smoke(
+    client,
+    headers,
+    dummy_deployment_label,
+    precomputed_deployments,
+):
     # preheat
     body = {
         "for": [
@@ -89,11 +96,16 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
 
-    response = await client.request(
-        method="GET", path="/v1/get/export?account=1", headers=headers,
-    )
-    assert response.status == 200
-    body = await response.read()
+    original_threshold = deployment_light.repository_environment_threshold
+    deployment_light.repository_environment_threshold = timedelta(days=100500)
+    try:
+        response = await client.request(
+            method="GET", path="/v1/get/export?account=1", headers=headers,
+        )
+        assert response.status == 200
+        body = await response.read()
+    finally:
+        deployment_light.repository_environment_threshold = original_threshold
 
     developer_dfs = {
         "jira_mapping": 212,
@@ -130,6 +142,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
             depslbls_df = pd.read_parquet(depslblsf)
     assert len(prs_df) == 678
     assert set(prs_df) == {
+        "stage_time_deploy_production",
         "first_comment_on_first_review",
         "merged_by_login",
         "first_commit",

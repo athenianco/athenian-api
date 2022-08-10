@@ -776,7 +776,9 @@ async def _filter_pull_requests(
     else:
         assert updated_max is None
     environments_task = asyncio.create_task(
-        fetch_repository_environments(repos, prefixer, account, rdb, cache),
+        fetch_repository_environments(
+            repos, prefixer, account, rdb, cache, time_from=time_from, time_to=time_to,
+        ),
     )
     branches, default_branches = await BranchMiner.extract_branches(
         repos, prefixer, meta_ids, mdb, cache,
@@ -1039,24 +1041,30 @@ async def fetch_pull_requests(
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
-        _fetch_pull_requests(
-            prs,
-            bots,
-            release_settings,
-            logical_settings,
-            prefixer,
-            account,
-            meta_ids,
-            mdb,
-            pdb,
-            rdb,
-            cache,
-        ),
-        fetch_repository_environments(prs, prefixer, account, rdb, cache),
+    mined_prs, dfs, facts, _, deployments_task = await _fetch_pull_requests(
+        prs,
+        bots,
+        release_settings,
+        logical_settings,
+        prefixer,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        rdb,
+        cache,
     )
     if not mined_prs:
         return [], {}
+    repo_envs = await fetch_repository_environments(
+        prs,
+        prefixer,
+        account,
+        rdb,
+        cache,
+        time_from=dfs.prs[PullRequest.created_at.name].min(),
+        time_to=dfs.prs[PullRequest.created_at.name].max(),
+    )
     miner = PullRequestListMiner(
         mined_prs,
         dfs,
