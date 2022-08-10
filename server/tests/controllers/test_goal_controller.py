@@ -1,10 +1,9 @@
 from aiohttp.test_utils import TestClient
 
-from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
-from tests.testutils.factory.state import GoalTemplateFactory
+from tests.testutils.factory.state import GoalFactory, GoalTemplateFactory
 
 
 class TestGetGoalTemplate:
@@ -29,13 +28,16 @@ class TestGetGoalTemplate:
 
 
 class TestListGoalTemplates:
-    async def test_from_predefined_templates(self, client: TestClient) -> None:
+    async def test_base(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=201, template_id=1001),
+            GoalTemplateFactory(id=1002, name="T1002"),
+            GoalTemplateFactory(id=1001, name="T1001"),
+        )
         res = await self._request(client, 1)
-        # result is ordered by ID
-        expected = [template_def for _, template_def in sorted(TEMPLATES_COLLECTION.items())]
-
-        assert [r["name"] for r in res] == [t["name"] for t in expected]
-        assert [r["metric"] for r in res] == [t["metric"] for t in expected]
+        assert [r["id"] for r in res] == [1001, 1002]
+        assert [r["name"] for r in res] == ["T1001", "T1002"]
 
     async def test_wrong_account(self, client: TestClient) -> None:
         await self._request(client, 3, 404)
