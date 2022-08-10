@@ -9,6 +9,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 import aiomcache
 import morcilla
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, false, func, or_, select, true, union_all, update
@@ -27,6 +28,7 @@ from athenian.api.db import (
     least,
 )
 from athenian.api.defer import defer
+from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.account import get_installation_url_prefix
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
@@ -50,23 +52,15 @@ from athenian.api.internal.settings import (
     ReleaseSettings,
     default_branch_alias,
 )
-from athenian.api.models.metadata.github import (
-    Branch,
-    NodeCommit,
-    PullRequest,
-    PushCommit,
-    Release,
-    User,
-)
+from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseMatchTimespan,
 )
-from athenian.api.models.web import NoSourceDataError
-from athenian.api.response import ResponseError
 from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import in1d_str
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
 fresh_lookbehind = timedelta(days=7)
@@ -384,21 +378,11 @@ class ReleaseLoader:
                 if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
                     errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
             include = (
-                ~errors & (published_at >= time_from).values & (published_at < time_to).values
+                ~errors
+                & (published_at >= time_from).values
+                & (published_at < time_to).values
+                & _deduplicate_tags(releases, True)  # FIXME: remove after pdb reset
             )
-
-            # remove duplicate tags, this may happen  on a pair of tag + GitHub release
-            tag_null = is_null(releases[Release.tag.name].values)
-            tag_notnull_indexes = np.flatnonzero(~tag_null)
-            tag_names = np.char.add(
-                releases[Release.repository_full_name.name]
-                .values[tag_notnull_indexes]
-                .astype("U"),  # noqa
-                releases[Release.tag.name].values[tag_notnull_indexes].astype("U"),
-            )
-            _, tag_uniques = np.unique(tag_names[::-1], return_index=True)
-            tag_null[tag_notnull_indexes[len(tag_notnull_indexes) - tag_uniques - 1]] = True
-            include &= tag_null
 
             if not include.all():
                 releases.disable_consolidate()
@@ -889,7 +873,11 @@ class ReleaseLoader:
 def dummy_releases_df(index: Optional[str | Sequence[str]] = None) -> pd.DataFrame:
     """Create an empty releases DataFrame."""
     df = pd.DataFrame(
-        columns=[c.name for c in Release.__table__.columns if c.name != Release.acc_id.name]
+        columns=[
+            c.name
+            for c in Release.__table__.columns
+            if c.name not in (Release.acc_id.name, Release.type.name)
+        ]
         + [matched_by_column],
     )
     df = _adjust_release_dtypes(df)
@@ -925,6 +913,29 @@ def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     if df[Release.author.name].values.dtype != "U40":
         df[Release.author.name] = df[Release.author.name].values.astype("U40")
     return df
+
+
+def _deduplicate_tags(releases: pd.DataFrame, logical: bool) -> npt.NDArray[bool]:
+    """
+    Remove duplicate tags, this may happen on a pair of tag + GitHub release.
+
+    :return: Boolean array, True means the release should remain.
+    """
+    tag_null = is_null(releases[Release.tag.name].values)
+    tag_notnull_indexes = np.flatnonzero(~tag_null)
+    if logical:
+        repos = releases[Release.repository_full_name.name].values[tag_notnull_indexes].astype("S")
+    else:
+        repos = int_to_str(releases[Release.repository_node_id.name].values[tag_notnull_indexes])
+    tag_names = np.char.add(
+        repos,
+        np.char.encode(
+            releases[Release.tag.name].values[tag_notnull_indexes].astype("U"), "UTF-8",
+        ),
+    )
+    _, tag_uniques = np.unique(tag_names[::-1], return_index=True)
+    tag_null[tag_notnull_indexes[len(tag_notnull_indexes) - tag_uniques - 1]] = True
+    return tag_null
 
 
 def group_repos_by_release_match(
@@ -1079,158 +1090,127 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
-        releases: Optional[pd.DataFrame] = None,
     ) -> tuple[pd.DataFrame, list[str]]:
         """Return the releases matched by tag."""
-        if releases is None:
-            with sentry_sdk.start_span(op="fetch_tags"):
-                query = (
-                    select([Release])
-                    .where(
-                        and_(
-                            Release.acc_id.in_(self._meta_ids),
-                            Release.published_at.between(time_from, time_to),
-                            Release.repository_full_name.in_(coerce_logical_repos(repos)),
-                        ),
-                    )
-                    .order_by(desc(Release.published_at))
-                )
-                if time_to - time_from < fresh_lookbehind:
-                    hints = (
-                        "Rows(ref_2 repo_2 *250)",
-                        "Rows(ref_3 repo_3 *250)",
-                        "Rows(rel rrs *250)",
-                        "Leading(rel rrs)",
-                        "IndexScan(rel github_node_release_published_at)",
-                    )
-                else:
-                    # time_from..time_to will not help
-                    # we don't know the row counts but these convince PG to plan properly
-                    hints = (
-                        "Leading((((((repo rrs) rel) n1) n2) u))",
-                        "Rows(repo rrs #2000)",
-                        "Rows(repo rrs rel #2000)",
-                        "Rows(repo rrs rel n1 #2000)",
-                        "Rows(repo rrs rel n1 n2 #2000)",
-                        "Rows(repo rrs rel n1 n2 u #2000)",
-                        "Leading((((((((repo_2 n2_2) ref_2) rrs_2) t_2) n1_2) n3_2) c_2))",
-                        "Rows(repo_2 n2_2 #1000)",
-                        "Rows(repo_2 n2_2 ref_2 #50000)",
-                        "Rows(repo_2 n2_2 ref_2 rrs_2 #50000)",
-                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 #50000)",
-                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 #50000)",
-                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 #50000)",
-                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 c_2 #50000)",
-                        "Leading(((((((repo_3 n2_3) ref_3) n3_3) rrs_3) n1_3) c_3))",
-                        "Rows(repo_3 n2_3 #1000)",
-                        "Rows(repo_3 n2_3 ref_3 #50000)",
-                        "Rows(repo_3 n2_3 ref_3 n3_3 #4000)",
-                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 #4000)",
-                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 #4000)",
-                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 c_3 #4000)",
-                    )
-                for hint in hints:
-                    query.with_statement_hint(hint)
-                releases = await read_sql_query(query, self._mdb, Release)
-        if (duplicated := releases.index.duplicated(keep="first")).any():
-            releases = releases.take(np.flatnonzero(~duplicated))
-            releases.reset_index(inplace=True, drop=True)
-        missing_commit = releases[Release.commit_id.name].values == 0
-        if (missing_sha := is_null(releases[Release.sha.name].values) & ~missing_commit).any():
-            raise ResponseError(
-                NoSourceDataError(
-                    detail="There are missing commit hashes for releases %s"
-                    % releases[Release.node_id.name].values[missing_sha].tolist(),
-                ),
-            )
-        release_index_repos = releases[Release.repository_full_name.name].values.astype("U")
-        if (missing_count := missing_commit.sum()) > 0:
-            log = logging.getLogger(f"{metadata.__package__}.match_releases_by_tag")
-            published_col = releases[Release.published_at.name].values
-            missing_repos = np.unique(release_index_repos[missing_commit])
-            threshold = 1800  # 30 min
-            max_missing_ts = pd.Timestamp(published_col[missing_commit].max()).replace(
-                tzinfo=timezone.utc,
-            )
-            min_missing_ts = pd.Timestamp(published_col[missing_commit].min()).replace(
-                tzinfo=timezone.utc,
-            ) - timedelta(seconds=threshold)
-            log.warning(
-                "%d releases in %d repositories miss tags within [%s, %s], applying "
-                "the timestamp heuristic",
-                missing_count,
-                len(missing_repos),
-                min_missing_ts,
-                max_missing_ts,
-            )
-            # they deleted the tag that the release references
-            columns = [
-                PullRequest.merge_commit_id,
-                PullRequest.merge_commit_sha,
-                PullRequest.merged_at,
-                PullRequest.repository_full_name,
-            ]
-            commits = await read_sql_query(
-                select(columns)
+        with sentry_sdk.start_span(op="fetch_tags"):
+            query = (
+                select(Release)
                 .where(
                     and_(
-                        PullRequest.acc_id.in_(self._meta_ids),
-                        PullRequest.merged_at.between(min_missing_ts, max_missing_ts),
-                        PullRequest.repository_full_name.in_(missing_repos),
+                        Release.acc_id.in_(self._meta_ids),
+                        Release.published_at.between(time_from, time_to),
+                        Release.repository_full_name.in_(coerce_logical_repos(repos)),
                     ),
                 )
-                .order_by(PullRequest.merged_at),
-                self._mdb,
-                columns,
+                .order_by(desc(Release.published_at))
             )
-            commits_repos, commits_map, commits_counts = np.unique(
-                commits[PullRequest.repository_full_name.name].values,
-                return_inverse=True,
-                return_counts=True,
-            )
-            commits_order = np.argsort(commits_map, kind="stable")
-            commits_ts = commits[PullRequest.merged_at.name].values
-            pos = 0
-            commits_ids = commits[PullRequest.merge_commit_id.name].values
-            commits_shas = commits[PullRequest.merge_commit_sha.name].values
-            release_commits = releases[Release.commit_id.name].values
-            release_shas = releases[Release.sha.name].values
-            missing_ix = np.flatnonzero(missing_commit)
-            for i, repo in enumerate(commits_repos):
-                repo_commits_ix = commits_order[pos : pos + commits_counts[i]]
-                pos += commits_counts[i]
-                repo_commits_ts = commits_ts[repo_commits_ix]
-                repo_release_ix = missing_ix[release_index_repos[missing_ix] == repo]
-                missing_pubs = published_col[repo_release_ix]
-                indexes = np.searchsorted(repo_commits_ts, missing_pubs) - 1
-                indexes[indexes < 0] = 0
-                matched = (missing_pubs - repo_commits_ts[indexes]) < np.timedelta64(
-                    threshold, "s",
+            if time_to - time_from < fresh_lookbehind:
+                hints = (
+                    "Rows(ref_2 repo_2 *250)",
+                    "Rows(ref_3 repo_3 *250)",
+                    "Rows(rel rrs *250)",
+                    "Leading(rel rrs)",
+                    "IndexScan(rel github_node_release_published_at)",
                 )
-                if not matched.any():
-                    continue
-                repo_commits_ix = repo_commits_ix[indexes[matched]]
-                repo_release_ix = repo_release_ix[matched]
-                missing_commit[repo_release_ix] = False
-                release_commits[repo_release_ix] = commits_ids[repo_commits_ix]
-                release_shas[repo_release_ix] = commits_shas[repo_commits_ix]
-            log.info(
-                "mapped commits to %d / %d releases",
-                missing_count - missing_commit.sum(),
-                missing_count,
-            )
-            if missing_commit.any():
-                indexes = np.flatnonzero(~missing_commit)
-                releases.disable_consolidate()
-                releases = releases.take(indexes)
-                releases.reset_index(inplace=True, drop=True)
-                release_index_repos = release_index_repos[indexes]
+            else:
+                # time_from..time_to will not help
+                # we don't know the row counts but these convince PG to plan properly
+                hints = (
+                    "Leading((((((repo rrs) rel) n1) n2) u))",
+                    "Rows(repo rrs #2000)",
+                    "Rows(repo rrs rel #2000)",
+                    "Rows(repo rrs rel n1 #2000)",
+                    "Rows(repo rrs rel n1 n2 #2000)",
+                    "Rows(repo rrs rel n1 n2 u #2000)",
+                    "Leading((((((((repo_2 n2_2) ref_2) rrs_2) t_2) n1_2) n3_2) c_2))",
+                    "Rows(repo_2 n2_2 #1000)",
+                    "Rows(repo_2 n2_2 ref_2 #50000)",
+                    "Rows(repo_2 n2_2 ref_2 rrs_2 #50000)",
+                    "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 #50000)",
+                    "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 #50000)",
+                    "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 #50000)",
+                    "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 c_2 #50000)",
+                    "Leading(((((((repo_3 n2_3) ref_3) n3_3) rrs_3) n1_3) c_3))",
+                    "Rows(repo_3 n2_3 #1000)",
+                    "Rows(repo_3 n2_3 ref_3 #50000)",
+                    "Rows(repo_3 n2_3 ref_3 n3_3 #4000)",
+                    "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 #4000)",
+                    "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 #4000)",
+                    "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 c_3 #4000)",
+                )
+            for hint in hints:
+                query.with_statement_hint(hint)
+            releases = await read_sql_query(query, self._mdb, Release)
+        release_index_repos = releases[Release.repository_full_name.name].values.astype("S")
+        log = logging.getLogger(f"{metadata.__package__}.match_releases_by_tag")
 
+        # we probably haven't fetched the commit yet
+        if len(inconsistent := np.flatnonzero(releases[Release.sha.name].values == b"")):
+            release_published_ats = releases[Release.published_at.name].values
+            # drop all releases younger than the oldest inconsistent for each repository
+            inconsistent_repos = release_index_repos[inconsistent][::-1]
+            inconsistent_repos, first_indexes = np.unique(inconsistent_repos, return_index=True)
+            first_indexes = len(inconsistent) - 1 - first_indexes
+            inconsistent_published_ats = releases[Release.published_at.name].values[
+                inconsistent[first_indexes]
+            ]
+            consistent = np.ones(len(releases), dtype=bool)
+            for repo, published_at in zip(inconsistent_repos, inconsistent_published_ats):
+                consistent[
+                    (release_index_repos == repo) & (release_published_ats >= published_at)
+                ] = False
+            releases = releases.take(np.flatnonzero(consistent))
+            log.warning(
+                "removed %d inconsistent releases in %d repositories",
+                len(release_index_repos) - len(releases),
+                len(inconsistent_repos),
+            )
+            release_index_repos = release_index_repos[consistent]
+
+        # remove the duplicate tags
+        release_types = releases[Release.type.name].values
+        release_index_tags = releases[Release.tag.name].values.astype("U")
+        del releases[Release.type.name]
+        if not (unique_mask := _deduplicate_tags(releases, False)).all():
+            releases = releases.take(np.flatnonzero(unique_mask))
+            release_index_repos = release_index_repos[unique_mask]
+            release_index_tags = release_index_tags[unique_mask]
+        if (uncertain := (release_types == b"Release[Tag]") & unique_mask).any():
+            # throw away any secondary releases after the original tag
+            uncertain_tags = release_index_tags[uncertain]
+            release_tags = np.char.encode(release_index_tags[unique_mask], "UTF-8")
+            with sentry_sdk.start_span(
+                op="fetch_tags/uncertain", description=str(len(uncertain_tags)),
+            ):
+                extra_releases = await read_sql_query(
+                    select(Release.repository_node_id, Release.tag).where(
+                        Release.acc_id.in_(self._meta_ids),
+                        Release.type != "Release[Tag]",
+                        Release.tag.in_(uncertain_tags),
+                        Release.published_at < time_from,
+                    ),
+                    self._mdb,
+                    [Release.repository_node_id, Release.tag],
+                )
+            release_ids = np.char.add(
+                int_to_str(releases[Release.repository_node_id.name].values), release_tags,
+            )
+            extra_ids = np.char.add(
+                int_to_str(extra_releases[Release.repository_node_id.name].values),
+                np.char.encode(extra_releases[Release.tag.name].values.astype("U"), "UTF-8"),
+            )
+            if (removed := in1d_str(release_ids, extra_ids, skip_leading_zeros=True)).any():
+                left = np.flatnonzero(~removed)
+                releases = releases.take(left)
+                log.info("removed %d secondary releases", len(removed) - len(left))
+                release_index_repos = release_index_repos[left]
+                release_index_tags = release_index_tags[left]
+
+        # apply the release settings
         regexp_cache = {}
         df_parts = []
-        release_index_tags = releases[Release.tag.name].values
         for repo in repos:
-            physical_repo = drop_logical_repo(repo)
+            physical_repo = drop_logical_repo(repo).encode()
             repo_indexes = np.flatnonzero(release_index_repos == physical_repo)
             if not len(repo_indexes):
                 continue

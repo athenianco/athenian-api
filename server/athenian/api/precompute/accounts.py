@@ -56,7 +56,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
         date.today() + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc,
     )
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
+    if (time_from := args.time_from) is None:
+        time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
     to_precompute = await _get_reposets_to_precompute(context.sdb, accounts)
     isolate = not args.disable_isolation
@@ -212,9 +213,10 @@ async def precompute_reposet(
         return
     reposet.items = new_items
     log.info("loaded %d bots", len(bots))
-    num_teams, num_bots = await ensure_teams(
-        reposet.owner_id, reposet.precomputed, bots, prefixer, meta_ids, sdb, mdb, cache, log,
-    )
+    if not args.skip_teams:
+        num_teams, num_bots = await ensure_teams(
+            reposet.owner_id, reposet.precomputed, bots, prefixer, meta_ids, sdb, mdb, cache, log,
+        )
     if not args.skip_jira:
         try:
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)

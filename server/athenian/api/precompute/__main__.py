@@ -21,6 +21,7 @@ from athenian.api.precompute import (
     sync_labels,
 )
 from athenian.api.precompute.context import PrecomputeContext
+from athenian.api.serialization import deserialize_datetime
 
 commands = {
     "sync-labels": sync_labels.main,
@@ -105,6 +106,15 @@ def _parse_args() -> argparse.Namespace:
     )
     accounts_parser.add_argument(
         "--skip-deployments", action="store_true", help="Do not precompute any deployments.",
+    )
+    accounts_parser.add_argument(
+        "--skip-teams", action="store_true", help="Do not touch anything related to teams.",
+    )
+    accounts_parser.add_argument(
+        "--time-from",
+        type=deserialize_datetime,
+        default=None,
+        help='Override the "time_from" timestamp = since when we precompute everything..',
     )
     accounts_parser.add_argument(
         "--disable-isolation",
