@@ -124,7 +124,6 @@ async def mine_all_prs(
     del raw_done_rows
     del facts
     if not df_facts.empty:
-        df_facts.set_index(PullRequest.node_id.name, inplace=True)
         stage_timings = PullRequestListMiner.calc_stage_timings(
             df_facts, *PullRequestListMiner.create_stage_calcs(envs),
         )
@@ -135,6 +134,7 @@ async def mine_all_prs(
             else:
                 df_facts[f"stage_time_{stage}"] = pd.to_timedelta(timings[0], unit="s")
         del stage_timings
+        df_facts.set_index(PullRequest.node_id.name, inplace=True)
     for col in df_prs:
         if col in df_facts:
             del df_facts[col]

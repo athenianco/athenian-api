@@ -154,7 +154,11 @@ repository_environment_threshold = timedelta(days=60)
     exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, **_: (",".join(sorted(repos)),),
+    key=lambda repos, time_from=None, time_to=None, **_: (
+        ",".join(sorted(repos)),
+        time_from.timestamp() if time_from is not None else "",
+        time_to.timestamp() if time_to is not None else "",
+    ),
 )
 async def fetch_repository_environments(
     repos: Collection[str],
@@ -162,10 +166,15 @@ async def fetch_repository_environments(
     account: int,
     rdb: Database,
     cache: Optional[aiomcache.Client],
+    time_from: Optional[datetime] = None,
+    time_to: Optional[datetime] = None,
 ) -> Dict[str, List[str]]:
     """Map environments to repositories that have deployed there."""
     repo_name_to_node_get = prefixer.repo_name_to_node.get
     repo_ids = {repo_name_to_node_get(r) for r in repos} - {None}
+    assert (time_from is None) == (time_to is None)
+    if time_from is None:
+        time_from = datetime.now(timezone.utc)
     rows = await rdb.fetch_all(
         select([DeployedComponent.repository_node_id, DeploymentNotification.environment])
         .select_from(
@@ -182,8 +191,12 @@ async def fetch_repository_environments(
             and_(
                 DeployedComponent.account_id == account,
                 DeployedComponent.repository_node_id.in_(repo_ids),
-                DeploymentNotification.finished_at
-                > datetime.now(timezone.utc) - repository_environment_threshold,
+                DeploymentNotification.finished_at > time_from - repository_environment_threshold
+                if time_to is None
+                else DeploymentNotification.finished_at.between(
+                    time_from - repository_environment_threshold,
+                    time_to + repository_environment_threshold,
+                ),
             ),
         )
         .group_by(DeployedComponent.repository_node_id, DeploymentNotification.environment)

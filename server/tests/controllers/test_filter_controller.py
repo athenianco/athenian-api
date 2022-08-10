@@ -981,6 +981,9 @@ async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
     data2 = prs.data
+    for pr in chain(data1, data2):
+        assert pr.stage_timings.deploy["production"]
+        pr.stage_timings.deploy["production"] = timedelta(0)
     assert data1 == data2
 
 
