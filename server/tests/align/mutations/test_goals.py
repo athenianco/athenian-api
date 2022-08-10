@@ -10,6 +10,7 @@ from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import CreateGoalInputFields
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
+from athenian.api.models.web import PullRequestMetricID
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
@@ -27,6 +28,7 @@ from tests.testutils.db import (
 from tests.testutils.factory.state import (
     AccountFactory,
     GoalFactory,
+    GoalTemplateFactory,
     TeamFactory,
     TeamGoalFactory,
     UserAccountFactory,
@@ -37,9 +39,18 @@ _USER_ID = "github|1"
 
 
 class BaseGoalTest:
+    _TEMPLATE_NAME = "T0"
+    _TEMPLATE_METRIC = PullRequestMetricID.PR_REVIEW_TIME
+
     @pytest.fixture(autouse=True, scope="function")
     async def setup(self, sdb):
         await sdb.execute(model_insert_stmt(UserAccountFactory(user_id=_USER_ID)))
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(
+                name=self._TEMPLATE_NAME, metric=self._TEMPLATE_METRIC,
+            ),
+        )
 
     @classmethod
     async def _assert_no_goal_exists(cls, sdb: Database) -> None:
@@ -100,12 +111,9 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await self._assert_no_goal_exists(sdb)
 
     async def test_invalid_date(self, client: TestClient, sdb: Database) -> None:
-        variables = {
-            "createGoalInput": self._mk_input(validFrom="not-a-date"),
-            "accountId": 1,
-        }
+        variables = {"createGoalInput": self._mk_input(validFrom="not-date"), "accountId": 1}
         res = await self._request(variables, client)
-        assert "not-a-date" in res["errors"][0]["message"]
+        assert "not-date" in res["errors"][0]["message"]
         await self._assert_no_goal_exists(sdb)
 
     async def test_missing_date(self, client: TestClient, sdb: Database) -> None:
@@ -208,8 +216,9 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
     async def test_duplicated_dates(self, client: TestClient, sdb: Database) -> None:
         await models_insert(
             sdb,
+            GoalTemplateFactory(id=100, name="Goal0"),
             GoalFactory(
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                name="Goal0",
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -217,6 +226,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         )
         variables = {
             "createGoalInput": self._mk_input(
+                templateId=100,
                 validFrom="2021-01-01",
                 expiresAt="2021-03-31",
                 teamGoals=[{"teamId": 100, "target": {"int": 0}}],
@@ -233,7 +243,11 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, client: TestClient, sdb: Database) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
+        await models_insert(
+            sdb,
+            TeamFactory(owner_id=1, id=10),
+            GoalTemplateFactory(id=200, name="G0", metric=PullRequestMetricID.PR_COMMENTS_PER),
+        )
 
         team_goals = [{"teamId": 10, "target": {"int": 42}}]
 
@@ -258,8 +272,8 @@ class TestCreateGoals(BaseCreateGoalTest):
             Goal,
             id=new_goal_id,
             account_id=1,
-            name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
-            metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
+            name="G0",
+            metric=PullRequestMetricID.PR_COMMENTS_PER,
         )
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
@@ -273,14 +287,19 @@ class TestCreateGoals(BaseCreateGoalTest):
         await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10, target=42)
 
     async def test_create_multiple_team_goals(self, client: TestClient, sdb: Database) -> None:
-        await models_insert(sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=20))
+        await models_insert(
+            sdb,
+            TeamFactory(owner_id=1, id=10),
+            TeamFactory(owner_id=1, id=20),
+            GoalTemplateFactory(id=200, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME),
+        )
 
         team_goals = [
             {"teamId": 10, "target": {"int": 42}},
             {"teamId": 20, "target": {"str": "foobar"}},
         ]
         variables = {
-            "createGoalInput": self._mk_input(teamGoals=team_goals),
+            "createGoalInput": self._mk_input(teamGoals=team_goals, templateId=200),
             "accountId": 1,
         }
         res = await self._request(variables, client)
@@ -289,7 +308,9 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        await assert_existing_row(
+            sdb, Goal, id=new_goal_id, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME,
+        )
 
         team_goals = await sdb.fetch_all(
             sa.select(TeamGoal).where(TeamGoal.goal_id == 1).order_by(TeamGoal.team_id),
@@ -317,7 +338,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert "errors" not in res
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        goal_row = await sdb.fetch_one(sa.select(Goal).where(Goal.id == new_goal_id))
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id)
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 5, 4, tzinfo=timezone.utc,
         )
@@ -326,9 +347,10 @@ class TestCreateGoals(BaseCreateGoalTest):
         # test that the uc_goal constraint doesn't fail more than expected
         await models_insert(
             sdb,
+            GoalTemplateFactory(id=102, name="G1"),
             GoalFactory(
                 id=100,
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                name="G1",
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -361,13 +383,15 @@ class TestCreateGoals(BaseCreateGoalTest):
         res = await self._request(variables, client)
         assert "errors" not in res
 
-        # same template and interval but different account
+        # same interval but different account
         await models_insert(
             sdb,
             AccountFactory(id=5),
+            GoalTemplateFactory(id=505, name="G1", account_id=5),
             UserAccountFactory(account_id=5, user_id="gh|XXX"),
             TeamFactory(id=200, owner_id=5),
         )
+        variables["createGoalInput"]["templateId"] = 505
         variables["createGoalInput"]["expiresAt"] = "2022-03-31"
         variables["accountId"] = 5
         variables["createGoalInput"]["teamGoals"] = [{"teamId": 200, "target": {"int": 1}}]
