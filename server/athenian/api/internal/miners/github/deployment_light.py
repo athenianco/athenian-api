@@ -51,35 +51,31 @@ async def load_included_deployments(
     Fetch brief details about the deployments.
 
     Compared to `mine_deployments()`, this is much more lightweight and is intended for `include`.
+
+    :return: Mapping from deployment name to the corresponding details.
     """
     notifications, components, labels = await gather(
         read_sql_query(
-            select([DeploymentNotification]).where(
-                and_(
-                    DeploymentNotification.account_id == account,
-                    DeploymentNotification.name.in_any_values(names),
-                ),
+            select(DeploymentNotification).where(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.name.in_any_values(names),
             ),
             rdb,
             DeploymentNotification,
             index=DeploymentNotification.name.name,
         ),
         read_sql_query(
-            select([DeployedComponent]).where(
-                and_(
-                    DeployedComponent.account_id == account,
-                    DeployedComponent.deployment_name.in_any_values(names),
-                ),
+            select(DeployedComponent).where(
+                DeployedComponent.account_id == account,
+                DeployedComponent.deployment_name.in_any_values(names),
             ),
             rdb,
             DeployedComponent,
         ),
         read_sql_query(
-            select([DeployedLabel]).where(
-                and_(
-                    DeployedLabel.account_id == account,
-                    DeployedLabel.deployment_name.in_any_values(names),
-                ),
+            select(DeployedLabel).where(
+                DeployedLabel.account_id == account,
+                DeployedLabel.deployment_name.in_any_values(names),
             ),
             rdb,
             DeployedLabel,
