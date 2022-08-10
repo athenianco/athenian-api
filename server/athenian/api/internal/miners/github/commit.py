@@ -731,6 +731,8 @@ async def _fetch_commits_for_dags(
     mdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
+    if not commits:
+        return pd.DataFrame()
     queries = [
         select(COMMIT_FETCH_COMMITS_COLUMNS).where(
             and_(
