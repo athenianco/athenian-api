@@ -10,6 +10,7 @@ from athenian.api.align.goals.dbaccess import (
     delete_team_goals,
     fetch_team_goals,
     get_goal_template_from_db,
+    get_goal_templates_from_db,
     update_goal,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
@@ -151,6 +152,13 @@ class TestGetGoalTemplateFromDB:
     async def test_not_found(self, sdb: Database) -> None:
         with pytest.raises(GoalTemplateNotFoundError):
             await get_goal_template_from_db(102, sdb)
+
+
+class TestGetGoalTemplatesFromDB:
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=102), GoalTemplateFactory(id=103))
+        rows = await get_goal_templates_from_db(1, sdb)
+        assert len(rows) == 2
 
 
 class TestCreateDefaultGoalTemplates:
