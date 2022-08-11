@@ -1,6 +1,8 @@
 # Guide to adding new API endpoints
 
-## Edit [`../spec/openapi.yml`](../spec/openapi.yml)
+## Edit [`athenian/api/openapi/openapi.yml`](athenian/api/openapi/openapi.yml)
+
+The spec lives in a different repository and should be committed and released there.
 
 Useful links:
 
@@ -13,7 +15,7 @@ Things to remember:
 * `openapi.yml` is also a regular YAML! You can use pointers, multi-line strings (`|-`), etc.
 * OpenAPI is based on [JSON Schema](https://json-schema.org/) but there are very few differences.
 * We employ `tags` to sort endpoints in Swagger UI. `default` is required for simpler JavaScript client bindings and is stripped away on the server because it duplicates the endpoints in Swagger UI.
-* The Python handler will be searched at `"x-openapi-router-controller"."operationId"`. 
+* The Python handler will be searched at `"x-openapi-router-controller"."operationId"`.
 
 Gotchas:
 
@@ -22,9 +24,16 @@ Gotchas:
 * Forgetting `security:\n- bearerAuth: []` will lead to obscure error messages at server startup.
 * Forgetting `additionalProperties: false` in `components/schemas` allows the frontend to send any weird shit that the server silently discards.
 
-## Generate the new models with [`../spec/generate_server.sh`](../spec/generate_server.sh)
+## Generate the new models with [`../docs/generate_server.sh`](../docs/generate_server.sh)
 
 This script gives you `server_new` with the generated web models and the processed spec.
+
+Notes:
+
+* script must be run from repository root directory
+* `openapi-generator` doesn't seem to support x-openapi-router-controller right now, controller paths
+  should be checked manually
+
 
 ## Check the differences between the specs
 
