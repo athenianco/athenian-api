@@ -166,7 +166,7 @@ def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
 
     if data is not None and isinstance(data, dict):
         for attr, attr_type in instance.attribute_types.items():
-            attr_key = instance.attribute_map[attr]
+            attr_key = instance.attribute_map.get(attr, attr)
             if attr_key in data:
                 value = data[attr_key]
                 setattr(instance, attr, _deserialize(value, attr_type, f"{path}.{attr}"))
