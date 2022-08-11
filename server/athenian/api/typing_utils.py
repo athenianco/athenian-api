@@ -1,6 +1,7 @@
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
+import types
 from typing import Any, Callable, Iterable, Iterator, Mapping, NamedTuple, Optional, TypeVar, Union
 
 import numpy as np
@@ -50,9 +51,14 @@ def is_list(klass: type):
     return getattr(klass, "__origin__", None) == list
 
 
-def is_union(klass: type):
+def is_union(klass: object) -> bool:
     """Determine whether klass is a Union."""
-    return getattr(klass, "__origin__", None) in VerbatimUnionTypes
+    return (
+        # old style typing.Union[T0, T1]
+        getattr(klass, "__origin__", None) in VerbatimUnionTypes
+        # new style T0 | T1
+        or isinstance(klass, types.UnionType)
+    )
 
 
 def is_optional(klass: type):

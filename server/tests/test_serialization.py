@@ -1,5 +1,6 @@
 import dataclasses
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
 from freezegun import freeze_time
 import numpy as np
@@ -10,6 +11,7 @@ import pytest
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.serialization import (
     FriendlyJson,
+    ParseError,
     deserialize_date,
     deserialize_datetime,
     deserialize_model,
@@ -104,6 +106,43 @@ class TestDeserializeModel:
         t: T = deserialize_model(data, T)
         assert t.a == 123
         assert t.b == "foo"
+
+    def test_union_field(self) -> None:
+        @dataclasses.dataclass
+        class T(Model):
+            attribute_types = {"a": int | str}
+
+            def __init__(self, a=None):
+                self._a = a
+
+            def _set_a(self, value):
+                self._a = value
+
+            a = property(lambda t: t._a, _set_a)
+
+        t: T = deserialize_model({"a": 42}, T)
+        assert t.a == 42
+
+        t = deserialize_model({"a": "foo"}, T)
+        assert t.a == "foo"
+
+    def test_optional_field(self) -> None:
+        @dataclasses.dataclass
+        class T(Model):
+            attribute_types = {"a": Optional[date]}
+
+            def __init__(self, a=None):
+                self._a = a
+
+            def _set_a(self, value):
+                self._a = value
+
+            a = property(lambda t: t._a, _set_a)
+
+        t: T = deserialize_model({"a": "2001-01-01"}, T)
+        assert t.a == date(2001, 1, 1)
+        with pytest.raises(ParseError):
+            deserialize_model({"a": "foo"}, T)
 
 
 class TestFriendlyJson:
