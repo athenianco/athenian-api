@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools!=60.6.0", "wheel", "Cython>=0.29.30", "numpy==1.23.0"]
+requires = ["setuptools!=60.6.0,!=64.0.0", "wheel", "Cython>=0.29.30", "numpy==1.23.1"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

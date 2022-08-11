@@ -381,7 +381,9 @@ class ReleaseLoader:
                 ~errors
                 & (published_at >= time_from).values
                 & (published_at < time_to).values
-                & _deduplicate_tags(releases, True)  # FIXME: remove after pdb reset
+                # repeat what we did in match_releases_by_tag()
+                # because we could precompute Release[Tag] earlier than Tag or Commit
+                & _deduplicate_tags(releases, True)
             )
 
             if not include.all():

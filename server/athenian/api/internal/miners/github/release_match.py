@@ -512,9 +512,9 @@ class ReleaseToPullRequestMapper:
         Dict[str, Tuple[bool, DAG]],
     ]:
         (
-            matched_bys,
             releases,
             releases_in_time_range,
+            matched_bys,
             release_settings,
             dags,
         ) = await cls._find_releases_for_matching_prs(
@@ -591,9 +591,9 @@ class ReleaseToPullRequestMapper:
         cache: Optional[aiomcache.Client],
         releases_in_time_range: Optional[pd.DataFrame] = None,
     ) -> Tuple[
+        pd.DataFrame,
+        pd.DataFrame,
         Dict[str, ReleaseMatch],
-        pd.DataFrame,
-        pd.DataFrame,
         ReleaseSettings,
         Dict[str, Tuple[bool, DAG]],
     ]:
@@ -872,7 +872,7 @@ class ReleaseToPullRequestMapper:
             releases_in_time_range = pd.concat(
                 [releases_today, releases_in_time_range], ignore_index=True, copy=False,
             )
-        return matched_bys, releases, releases_in_time_range, consistent_release_settings, dags
+        return releases, releases_in_time_range, matched_bys, consistent_release_settings, dags
 
     @classmethod
     @sentry_span
