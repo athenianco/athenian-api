@@ -363,7 +363,7 @@ async def _mine_releases(
                     ),
                 ),
             )
-        (_, releases, _, _, dags), first_commit_dates = await gather(
+        (releases, *_, dags), first_commit_dates = await gather(
             ReleaseToPullRequestMapper._find_releases_for_matching_prs(
                 missing_repos,
                 branches,

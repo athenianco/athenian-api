@@ -667,9 +667,9 @@ async def _postprocess_deployed_releases(
     computed_node_ids = {r[Release.node_id.name] for r, _ in release_facts}
     if diff := (releases_node_ids - computed_node_ids):
         log = logging.getLogger(f"{metadata.__package__}.mine_releases_by_ids/deployed")
-        log.error("failed to compute release facts of %s", diff)
+        log.warning("failed to compute release facts of %s", diff)
         # this can happen when somebody removes a release while we are here
-        # let's monitor if there are other valid reasons
+        # also, on deleted releases
     if len(release_facts) == 0:
         return pd.DataFrame()
     release_facts_df = df_from_structs([f for _, f in release_facts])
