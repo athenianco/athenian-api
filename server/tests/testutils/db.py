@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-from functools import reduce
 from typing import Any, AsyncIterator, Optional, Sequence, cast
 
 import sqlalchemy as sa
@@ -128,8 +127,7 @@ async def transaction_conn(db: Database) -> AsyncIterator[Connection]:
 
 
 def _build_table_where_clause(table: DeclarativeMeta, **kwargs: Any) -> ClauseElement:
-    return reduce(
-        lambda acc, item: sa.and_(acc, getattr(table, item[0]) == item[1]),
-        kwargs.items(),
-        cast(ClauseElement, sa.true()),
+    return cast(
+        ClauseElement,
+        sa.and_(*(getattr(table, key) == val for key, val in kwargs.items())),
     )
