@@ -1141,9 +1141,9 @@ async def _generate_deployment_facts(
                     commits_overall=len(indexes),
                     prs=prs,
                 )
-                pr_inserts[(deployment_name, repo_name)] = (
+                pr_inserts[(deployment_name, repo_name)] = [
                     (deployment_name, finished, repo_name, pr) for pr in prs
-                )
+                ]
 
             for deployment_name, deployed_shas in zip(details.deployments, details.shas):
                 calc_deployment_facts(deployment_name, deployed_shas, [])
@@ -1453,7 +1453,7 @@ async def _submit_deployed_commits(
 
 @sentry_span
 async def _submit_deployed_prs(
-    values: tuple[str, datetime, str, int],
+    values: list[tuple[str, datetime, str, int]],
     account: int,
     pdb: Database,
 ) -> None:

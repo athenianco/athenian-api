@@ -59,6 +59,11 @@ def _parse_args() -> argparse.Namespace:
         help="Persistentdata DB endpoint, e.g. postgresql://0.0.0.0:5432/persistentdata",
     )
     parser.add_argument(
+        "--no-db-version-check",
+        action="store_true",
+        help="Do not validate database schema versions on startup.",
+    )
+    parser.add_argument(
         "--memcached", required=False, help="memcached address, e.g. 0.0.0.0:11211",
     )
     parser.add_argument(
@@ -153,7 +158,7 @@ def _main() -> int:
 
 
 def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
-    if not check_schema_versions(
+    if not args.no_db_version_check and not check_schema_versions(
         args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log,
     ):
         return 1
