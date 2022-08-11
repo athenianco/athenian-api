@@ -304,7 +304,7 @@ class ReleaseLoader:
                     index=index,
                 ),
             )
-            add_pdb_misses(pdb, "releases/all", len(missing_all))
+        add_pdb_misses(pdb, "releases/all", len(missing_all))
         if tasks:
             missings = await gather(*tasks)
             if inconsistent := list(chain.from_iterable(m[1] for m in missings)):

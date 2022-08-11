@@ -2008,8 +2008,6 @@ class PullRequestMiner:
         rdb: Database,
     ) -> pd.DataFrame:
         """Load the deployments for each PR node ID."""
-        if account == 205:  # FIXME(vmarkovsev): temporarily disable 205
-            account = 0
         ghprd = GitHubPullRequestDeployment
         sentry_sdk.Hub.current.scope.span.description = str(len(pr_node_ids))
         cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_full_name]

@@ -2893,7 +2893,7 @@ async def hide_outlier_first_deployments(
         )
         stmts.append(sa.delete(Table).where(where_clause))
 
-    # clear GitHubDeploymentFacts by removing prs and commits from facts data
+    # clear GitHubDeploymentFacts by removing prs, releases, and commits from facts data
     FactsT = GitHubDeploymentFacts
     depl_facts_stmt = sa.select(GitHubDeploymentFacts).where(
         FactsT.acc_id == account, FactsT.deployment_name.in_(d[0] for d in grouped_deploys),
@@ -2902,6 +2902,7 @@ async def hide_outlier_first_deployments(
 
     for row in depl_facts_rows:
         facts = DeploymentFacts(row[FactsT.data.name], name=row[FactsT.deployment_name.name])
+        # TODO(vmarkovtsev): we currently ignore logical repositories
         new_facts = facts.with_nothing_deployed()
         match_cols = (
             FactsT.acc_id,
