@@ -134,7 +134,7 @@ class TestSyncTeams(BaseTestSyncTeams):
 
     async def test_deletion(self, sdb: Database, mdb: Database) -> None:
         root_team_id = await self._mk_root_team(sdb)
-        team_a_id, team_b_id = await models_insert_auto_pk(
+        await models_insert_auto_pk(
             sdb,
             TeamFactory(name="teamA", origin_node_id=100, parent_id=root_team_id),
             TeamFactory(name="teamB", origin_node_id=101, parent_id=root_team_id),
@@ -302,7 +302,7 @@ class TestSyncTeamsErrors(BaseTestSyncTeams):
         await assert_missing_row(sdb, Team, origin_node_id=101)
 
 
-class TestSyncTemsDryRun(BaseTestSyncTeams):
+class TestSyncTeamsDryRun(BaseTestSyncTeams):
     async def test_create_missing(self, sdb: Database, mdb: Database) -> None:
         await self._mk_root_team(sdb)
 
@@ -314,3 +314,14 @@ class TestSyncTemsDryRun(BaseTestSyncTeams):
             await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb, dry_run=True)
 
         await assert_missing_row(sdb, Team, name="teamA")
+
+
+class TestSyncTeamsForce(BaseTestSyncTeams):
+    async def test_delete_unmapped_teams(self, sdb: Database, mdb: Database) -> None:
+        root_team_id = await self._mk_root_team(sdb)
+        await models_insert(
+            sdb,
+            TeamFactory(parent_id=root_team_id, origin_node_id=123),
+        )
+        await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb, force=True)
+        await assert_missing_row(sdb, Team, origin_node_id=123)

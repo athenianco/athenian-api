@@ -5,15 +5,13 @@ from typing import Any, Mapping, Optional, Union
 
 from aiohttp import web
 from asyncpg import UniqueViolationError
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import and_, insert, select, update
 
-from athenian.api.align.goals.dbaccess import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import (
-    copy_teams_as_needed,
     get_metadata_account_ids,
     get_user_account_status_from_request,
 )
@@ -22,6 +20,7 @@ from athenian.api.internal.team import (
     get_all_team_members,
     get_root_team,
 )
+from athenian.api.internal.team_sync import sync_teams
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import (
@@ -289,19 +288,9 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
                 detail="User %s may not resynchronize teams %d" % (request.uid, account),
             ),
         )
-    async with request.sdb.connection() as sdb_conn:
-        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-        root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
-        async with sdb_conn.transaction():
-            await sdb_conn.execute(
-                delete(Team).where(
-                    and_(
-                        Team.owner_id == account, Team.name != Team.BOTS, Team.id != root_team_id,
-                    ),
-                ),
-            )
-            await delete_empty_goals(account, sdb_conn)
-            teams, _ = await copy_teams_as_needed(
-                account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache,
-            )
+    meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
+    await sync_teams(account, meta_ids, request.sdb, request.mdb, force=True)
+    teams = await request.sdb.fetch_all(
+        select([Team]).where(Team.owner_id == account).order_by(Team.name),
+    )
     return await _list_loaded_teams(teams, account, meta_ids, request)

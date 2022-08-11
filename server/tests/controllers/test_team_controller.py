@@ -327,9 +327,9 @@ class TestResyncTeams:
         body = await self._request(client, 1)
         teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
         actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
-        assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
+        assert len(teams) == len(actual_teams)
 
-        assert teams.keys() == {
+        assert {
             "team",
             "engineering",
             "business",
@@ -337,7 +337,8 @@ class TestResyncTeams:
             "product",
             "admin",
             "automation",
-        }
+        }.issubset(teams.keys())
+        assert len(teams) == 8
         assert [m.login for m in teams["product"].members] == [
             "github.com/warenlg",
             "github.com/eiso",
@@ -361,7 +362,7 @@ class TestResyncTeams:
         await models_insert(
             sdb,
             TeamFactory(id=100, parent_id=None),
-            TeamFactory(id=101, parent_id=100),
+            TeamFactory(id=101, parent_id=100, origin_node_id=123),
             GoalFactory(id=20),
             GoalFactory(id=21),
             TeamGoalFactory(goal_id=20, team_id=101),
