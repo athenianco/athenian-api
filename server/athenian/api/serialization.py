@@ -52,16 +52,18 @@ def _deserialize(
         elif typing_utils.is_generic(klass):
             if typing_utils.is_list(klass):
                 return _deserialize_list(data, klass.__args__[0], path)
-            if typing_utils.is_dict(klass):
+            elif typing_utils.is_dict(klass):
                 return _deserialize_dict(data, klass.__args__[1], path)
-            if typing_utils.is_optional(klass):
+            # optional is also a union, must stand the first
+            elif typing_utils.is_optional(klass):
                 return _deserialize(data, klass.__args__[0], path)
-            if typing_utils.is_union(klass):
+            elif typing_utils.is_union(klass):
                 for arg in klass.__args__:
                     try:
                         return _deserialize(data, arg, path)
                     except (ValueError, TypeError):
                         continue
+                raise ValueError(f"None of the union options fit: {klass.__args__}")
         else:
             return deserialize_model(data, klass, path)
     except Exception as e:

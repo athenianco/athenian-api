@@ -1,6 +1,19 @@
 from dataclasses import dataclass
+from typing import Union
 
-from athenian.api.typing_utils import dataclass_asdict
+from athenian.api.typing_utils import dataclass_asdict, is_union
+
+
+class TestIsUnion:
+    def test_typing_union(self) -> None:
+        assert is_union(Union[int, str])
+
+    def test_new_style_union(self) -> None:
+        assert is_union(int | str)
+
+    def test_negative(self) -> None:
+        for obj in (1, None, int, type("A", (), {})):
+            assert not is_union(obj)
 
 
 class TestDataclassAsDict:
