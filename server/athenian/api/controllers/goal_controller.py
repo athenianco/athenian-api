@@ -1,11 +1,16 @@
 from aiohttp import web
 
-from athenian.api.align.goals.dbaccess import get_goal_template_from_db, get_goal_templates_from_db
+from athenian.api.align.goals.dbaccess import (
+    get_goal_template_from_db,
+    get_goal_templates_from_db,
+    insert_goal_template,
+)
+from athenian.api.db import integrity_errors
 from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
-from athenian.api.models.web import GoalTemplate
+from athenian.api.models.web import DatabaseConflict, GoalTemplate, GoalTemplateCreateRequest
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response
+from athenian.api.response import ResponseError, model_response
 
 
 async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
@@ -45,15 +50,18 @@ async def list_goal_templates(request: AthenianWebRequest, id: int) -> web.Respo
 
 
 async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.Response:
-    """Stub."""
-    raise NotImplementedError()
+    """Create a goal template.
 
-
-async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
-    """Stub."""
-    raise NotImplementedError()
-
-
-async def update_goal_template(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
-    """Stub."""
-    raise NotImplementedError()
+    :param body: GoalTemplateCreateRequest
+    """
+    create_request = GoalTemplateCreateRequest.from_dict(body)
+    await get_user_account_status_from_request(request, create_request.account)
+    try:
+        template_id = await insert_goal_template(
+            create_request.account, create_request.name, create_request.metric, request.sdb,
+        )
+    except integrity_errors:
+        raise ResponseError(
+            DatabaseConflict(detail="Goal Template named '%s' already exists."),
+        ) from None
+    return model_response({"id": template_id})

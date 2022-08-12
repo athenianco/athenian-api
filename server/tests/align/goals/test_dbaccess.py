@@ -11,10 +11,11 @@ from athenian.api.align.goals.dbaccess import (
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
+    insert_goal_template,
     update_goal,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.db import Database
+from athenian.api.db import Database, integrity_errors
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.testutils.db import (
     assert_existing_row,
@@ -159,6 +160,19 @@ class TestGetGoalTemplatesFromDB:
         await models_insert(sdb, GoalTemplateFactory(id=102), GoalTemplateFactory(id=103))
         rows = await get_goal_templates_from_db(1, sdb)
         assert len(rows) == 2
+
+
+class TestInsertGoalTemplate:
+    async def test_base(self, sdb: Database) -> None:
+        await insert_goal_template(1, "T", "m", sdb)
+        await assert_existing_row(sdb, GoalTemplate, account_id=1, name="T", metric="m")
+
+    async def test_duplicated_name(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(account_id=1, name="T"))
+        with pytest.raises(integrity_errors):
+            await insert_goal_template(1, "T", "m0", sdb)
+
+        await assert_missing_row(sdb, GoalTemplate, metric="m")
 
 
 class TestCreateDefaultGoalTemplates:

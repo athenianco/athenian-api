@@ -209,6 +209,13 @@ async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> Row:
     return await sdb.fetch_all(stmt)
 
 
+async def insert_goal_template(account_id: int, name: str, metric: str, sdb: DatabaseLike) -> int:
+    """Insert a new Goal Template."""
+    model = GoalTemplate(account_id=account_id, name=name, metric=metric)
+    values = model.create_defaults().explode()
+    return await sdb.execute(sa.insert(GoalTemplate).values(values))
+
+
 @sentry_span
 async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) -> None:
     """Create the set of default goal templates for the account."""
