@@ -508,7 +508,7 @@ class LeadCounterWithQuantiles(Counter):
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
 class CycleTimeCalculator(MetricCalculator[timedelta]):
-    """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
+    """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, and PR_RELEASE_TIME."""
 
     deps = (
         WorkInProgressTimeCalculator,
@@ -577,7 +577,7 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
 class CycleCounter(WithoutQuantilesMixin, Counter):
-    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
+    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \
     or PR_RELEASE_TIME disregarding the quantiles."""
 
     deps = (CycleTimeCalculator,)
@@ -585,7 +585,7 @@ class CycleCounter(WithoutQuantilesMixin, Counter):
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
 class CycleCounterWithQuantiles(Counter):
-    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
+    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \
     or PR_RELEASE_TIME respecting the quantiles."""
 
     deps = (CycleTimeCalculator,)
@@ -1534,7 +1534,7 @@ class LeadDeploymentCounterWithQuantiles(DeploymentMetricBase, Counter):
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME)
 class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
-    """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, PR_RELEASE_TIME, and \
+    """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, PR_RELEASE_TIME, and \
     PR_DEPLOYMENT_TIME."""
 
     deps = (CycleTimeCalculator, DeploymentTimeCalculator)
