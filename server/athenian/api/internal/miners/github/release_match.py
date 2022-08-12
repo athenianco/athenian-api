@@ -10,6 +10,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, func, join, or_, select, union_all
 from sqlalchemy.sql.elements import BinaryExpression
+from sqlalchemy.sql.visitors import cloned_traverse
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
@@ -64,6 +65,7 @@ from athenian.api.internal.settings import (
 )
 from athenian.api.models.metadata.github import (
     NodeCommit,
+    NodePullRequest,
     NodeRepository,
     PullRequest,
     PullRequestLabel,
@@ -903,7 +905,7 @@ class ReleaseToPullRequestMapper:
         if updated_min is not None:
             assert updated_max is not None
             # DEV-3730: load all the PRs and intersect merge commit shas with `commits`
-            merge_commit_ids = None
+            superset_pr_ids = None
         else:
             assert updated_max is None
             # performance: first find out the merge commit IDs, then use them to query PullRequest
@@ -913,29 +915,64 @@ class ReleaseToPullRequestMapper:
             filters = [
                 NodeCommit.acc_id.in_(meta_ids),
                 NodeCommit.repository_id.in_(unique_repo_ids),
+                NodePullRequest.merged_at < time_boundary,
             ]
+            for expr in (pr_blacklist, pr_whitelist):
+                if expr is not None:
+                    expr = cloned_traverse(expr, {}, {})  # copy
+                    expr.left = NodePullRequest.node_id
+                    filters.append(expr)
             unique_commits = unordered_unique(commits)
             if len(unique_commits) <= 100:
                 filters.append(NodeCommit.sha.in_(unique_commits))
             else:
                 # this reduces the planning time (DEV-4176)
-                filters.append(NodeCommit.sha.in_any_values(unique_commits))
-            query = select([NodeCommit.node_id]).where(and_(*filters))
+                filters.extend(
+                    [
+                        NodeCommit.sha.in_any_values(unique_commits),
+                        NodePullRequest.repository_id.in_(unique_repo_ids),
+                    ],
+                )
+            query = (
+                select([NodePullRequest.node_id])
+                .select_from(
+                    join(
+                        NodeCommit,
+                        NodePullRequest,
+                        and_(
+                            NodeCommit.acc_id == NodePullRequest.acc_id,
+                            NodeCommit.node_id == NodePullRequest.merge_commit_id,
+                        ),
+                    ),
+                )
+                .where(*filters)
+            )
             if len(unique_commits) > 100:
                 query = query.with_statement_hint(
                     f"Rows({NodeCommit.__tablename__} *VALUES* #{len(unique_commits)})",
-                )
-            commit_rows = await mdb.fetch_all(query)
-            merge_commit_ids = [r[0] for r in commit_rows]
+                ).with_statement_hint(f"Leading({NodeCommit.__tablename__} *VALUES*)")
+            superset_df = await read_sql_query(query, mdb, [NodeCommit.node_id])
+            superset_pr_ids = superset_df[NodePullRequest.node_id.name].values
         filters = [
-            PullRequest.merged_at < time_boundary,
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
         ]
-        hints = ["Rows(pr repo *1000)"]
-        if merge_commit_ids is not None:
-            filters.append(PullRequest.merge_commit_id.in_(merge_commit_ids))
+        if superset_pr_ids is None:
+            filters.append(PullRequest.merged_at < time_boundary)
+
+        if superset_pr_ids is not None:
+            if len(superset_pr_ids) > 100:
+                filters.append(PullRequest.node_id.in_any_values(superset_pr_ids))
+                hints = [
+                    "Leading(pr *VALUES* repo)",
+                    f"Rows(pr *VALUES* #{len(superset_pr_ids)})",
+                    f"Rows(pr *VALUES* repo #{len(superset_pr_ids)})",
+                ]
+            else:
+                hints = [f"Rows(pr repo #{len(superset_pr_ids)})"]
+                filters.append(PullRequest.node_id.in_(superset_pr_ids))
         else:
+            hints = ["Rows(pr repo *1000)"]
             filters.extend(
                 [
                     PullRequest.updated_at.between(updated_min, updated_max),
@@ -956,13 +993,14 @@ class ReleaseToPullRequestMapper:
         elif len(mergers):
             filters.append(PullRequest.merged_by_login.in_(mergers))
             hints.append("Rows(pr math *1000)")
-        if pr_blacklist is not None:
-            filters.append(pr_blacklist)
-        if pr_whitelist is not None:
-            filters.append(pr_whitelist)
+        if superset_pr_ids is None:
+            for expr in (pr_blacklist, pr_whitelist):
+                if expr is not None:
+                    filters.append(expr)
         if not jira:
-            query = select([PullRequest]).where(and_(*filters))
-            hints.append("IndexScan(pr github_node_pull_request_merge_commit)")
+            query = select([PullRequest]).where(*filters)
+            if superset_pr_ids is None:
+                hints.append("IndexScan(pr github_node_pull_request_merge_commit)")
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)

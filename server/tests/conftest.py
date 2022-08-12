@@ -141,7 +141,7 @@ override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
-os.environ["SENTRY_SAMPLING_RATE"] = "0.01"
+os.environ["SENTRY_SAMPLING_RATE"] = "0.001"  # ~20 transactions per day
 os.environ["SENTRY_ENV"] = "test"
 if _init_sentry(
     log := logging.getLogger("test-api"),
