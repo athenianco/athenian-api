@@ -2,19 +2,23 @@ from datetime import datetime, timedelta, timezone
 import json
 from random import randint
 import re
+from unittest import mock
 
 from freezegun import freeze_time
 import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.controllers.invitation_controller import (
     admin_backdoor,
+    create_new_account,
     decode_slug,
     encode_slug,
     jira_url_template,
     url_prefix,
 )
+from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import (
@@ -25,6 +29,7 @@ from athenian.api.models.state.models import (
     BanishedUserAccount,
     Feature,
     FeatureComponent,
+    GoalTemplate,
     God,
     Invitation,
     ReleaseSetting,
@@ -34,6 +39,9 @@ from athenian.api.models.state.models import (
     WorkType,
 )
 from athenian.api.models.web import InvitedUser
+from athenian.api.response import ResponseError
+from tests.testutils.db import assert_existing_row, assert_existing_rows, assert_missing_row, count
+from tests.testutils.time import dt
 
 
 async def clean_state(sdb: morcilla.Database) -> int:
@@ -940,3 +948,39 @@ async def test_gen_jira_link_errors(client, headers, account, code):
         method="GET", path="/v1/invite/jira/%d" % account, headers=headers, json={},
     )
     assert response.status == code
+
+
+class TestCreateNewAccount:
+    @freeze_time("2012-10-26T10:05:00Z")
+    async def test_base(self, sdb: Database) -> None:
+        account = await create_new_account(sdb, "KEY")
+        account_row = await assert_existing_row(sdb, Account, id=account)
+        created_at = ensure_db_datetime_tz(account_row[Account.created_at.name], sdb)
+        assert created_at == dt(2012, 10, 26, 10, 5)
+        expires_at = ensure_db_datetime_tz(account_row[Account.expires_at.name], sdb)
+        assert expires_at == dt(2012, 11, 26, 14, 5)
+
+        assert await count(sdb, GoalTemplate, GoalTemplate.account_id == account) == len(
+            TEMPLATES_COLLECTION,
+        )
+
+    async def test_account_overflow(self, sdb: Database) -> None:
+        existing = await count(sdb, Account)
+
+        with mock.patch(f"{create_new_account.__module__}.admin_backdoor", 4):
+            with pytest.raises(ResponseError):
+                await create_new_account(sdb, "KEY")
+
+        assert await count(sdb, Account) == existing
+
+    async def test_account_overflow_templates_not_created(self, sdb: Database) -> None:
+        existing_accounts = await count(sdb, Account)
+        existing_templates = await count(sdb, GoalTemplate)
+
+        with mock.patch(f"{create_new_account.__module__}.admin_backdoor", 4), pytest.raises(
+            ResponseError,
+        ):
+            await create_new_account(sdb, "KEY")
+
+        assert await count(sdb, Account) == existing_accounts
+        assert await count(sdb, GoalTemplate) == existing_templates
