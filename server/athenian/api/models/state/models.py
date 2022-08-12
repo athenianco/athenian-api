@@ -388,6 +388,7 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     __tablename__ = "goals"
     __table_args__ = (
         UniqueConstraint("account_id", "template_id", "valid_from", "expires_at", name="uc_goal"),
+        UniqueConstraint("account_id", "name", "valid_from", "expires_at", name="uc_goal_name"),
     )
 
     id = Column(Integer(), primary_key=True)
@@ -397,6 +398,8 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
         nullable=False,
         index=True,
     )
+    name = Column(String, nullable=False)
+    metric = Column(String, nullable=False)
     template_id = Column(Integer(), nullable=False)
     valid_from = Column(TIMESTAMP(timezone=True), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
