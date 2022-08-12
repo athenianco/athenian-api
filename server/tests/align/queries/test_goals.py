@@ -5,6 +5,7 @@ from aiohttp.test_utils import TestClient
 import pytest
 
 from athenian.api.db import Database
+from athenian.api.models.web import PullRequestMetricID
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
@@ -22,7 +23,7 @@ from tests.testutils.factory.state import (
 
 
 class BaseGoalsTest:
-    _ALL_GOAL_FIELDS = ("id", "templateId", "validFrom", "expiresAt")
+    _ALL_GOAL_FIELDS = ("id", "name", "metric", "templateId", "validFrom", "expiresAt")
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
 
@@ -146,6 +147,8 @@ class TestGoals(BaseGoalsTest):
             TeamFactory(id=10, name="A-Team", members=[39789, 40020, 40191]),
             GoalFactory(
                 id=20,
+                name="Goal 0",
+                metric=PullRequestMetricID.PR_REVIEW_COUNT,
                 template_id=2,
                 valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),

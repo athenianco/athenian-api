@@ -160,6 +160,8 @@ def _team_tree_to_goal_tree(
     team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
     return GoalTree(
         goal_row[Goal.id.name],
+        goal_row[Goal.name.name],
+        goal_row[Goal.metric.name],
         goal_row[Goal.template_id.name],
         valid_from,
         expires_at,
