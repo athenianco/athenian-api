@@ -8,11 +8,10 @@ import os
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Any, Callable, Coroutine, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Coroutine, Mapping, Optional, Sequence
 
 from aiohttp import web
 import aiomcache
-import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 from dateutil.relativedelta import relativedelta
 import morcilla.core
@@ -21,10 +20,11 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, text, update
 
 from athenian.api import metadata
+from athenian.api.align.goals.dbaccess import create_default_goal_templates
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
-from athenian.api.db import Connection, Database, DatabaseLike
+from athenian.api.db import Connection, Database, DatabaseLike, is_postgresql
 from athenian.api.defer import defer
 from athenian.api.ffx import decrypt, encrypt
 from athenian.api.internal.account import (
@@ -278,7 +278,7 @@ async def _join_account(
     user: Optional[User] = None,
     invitation: Optional[Mapping[str, Any]] = None,
     check_org_membership: bool = True,
-) -> Tuple[int, User]:
+) -> tuple[int, User]:
     """
     Join the `request`-ing user to the account `acc_id`.
 
@@ -446,7 +446,7 @@ async def _check_user_org_membership(
     cache = request.cache
 
     # check whether the user is a member of the GitHub org
-    async def load_org_members() -> Tuple[Tuple[int, ...], Sequence[int]]:
+    async def load_org_members() -> tuple[tuple[int, ...], Sequence[int]]:
         if not (meta_ids := await get_metadata_account_ids_or_empty(acc_id, sdb_conn, cache)):
             log.warning(
                 "Could not check the organization membership of %s because "
@@ -500,15 +500,11 @@ async def get_organizations_members(meta_ids: Sequence[int], mdb: DatabaseLike) 
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:
     """Create a new account."""
-    if isinstance(conn, morcilla.Database):
-        slow = conn.url.dialect == "sqlite"
-    else:
-        async with conn.raw_connection() as raw_connection:
-            slow = isinstance(raw_connection, aiosqlite.core.Connection)
-    if slow:
-        acc_id = await _create_new_account_slow(conn, secret)
-    else:
+    if await is_postgresql(conn):
         acc_id = await _create_new_account_fast(conn, secret)
+    else:
+        acc_id = await _create_new_account_slow(conn, secret)
+
     if acc_id >= admin_backdoor:
         # overflow, we are not ready for you
         await conn.execute(delete(Account).where(Account.id == acc_id))
@@ -520,6 +516,8 @@ async def create_new_account(conn: DatabaseLike, secret: str) -> int:
                 detail="Invitation was not found.",
             ),
         )
+
+    await create_default_goal_templates(acc_id, conn)
     return acc_id
 
 
@@ -543,12 +541,7 @@ async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:
     await conn.execute(
         update(Account)
         .where(Account.id == account_id)
-        .values(
-            {
-                Account.secret_salt: salt,
-                Account.secret: secret,
-            },
-        ),
+        .values({Account.secret_salt: salt, Account.secret: secret}),
     )
     return account_id
 
@@ -571,12 +564,7 @@ async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
     await conn.execute(
         update(Account)
         .where(Account.id == acc_id)
-        .values(
-            {
-                Account.secret_salt: salt,
-                Account.secret: secret,
-            },
-        ),
+        .values({Account.secret_salt: salt, Account.secret: secret}),
     )
     return acc_id
 
@@ -720,7 +708,7 @@ async def eval_jira_progress(request: AthenianWebRequest, id: int) -> web.Respon
     return model_response(model)
 
 
-def _generate_account_secret(account_id: int, key: str) -> Tuple[int, str]:
+def _generate_account_secret(account_id: int, key: str) -> tuple[int, str]:
     salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
     secret = encode_slug(account_id, salt, key)
     return salt, secret
