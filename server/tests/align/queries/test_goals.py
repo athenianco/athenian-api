@@ -23,7 +23,7 @@ from tests.testutils.factory.state import (
 
 
 class BaseGoalsTest:
-    _ALL_GOAL_FIELDS = ("id", "name", "metric", "templateId", "validFrom", "expiresAt")
+    _ALL_GOAL_FIELDS = ("id", "name", "metric", "validFrom", "expiresAt")
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
 
