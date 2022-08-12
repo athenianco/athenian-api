@@ -106,7 +106,9 @@ async def resolve_update_goal(
 def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input[CreateGoalInputFields.templateId]
-    if template_id not in TEMPLATES_COLLECTION:
+    try:
+        template_info = TEMPLATES_COLLECTION[template_id]
+    except KeyError:
         raise GoalMutationError(f"Invalid templateId {template_id}")
 
     team_goals = [
@@ -126,6 +128,8 @@ def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCrea
 
     goal = Goal(
         account_id=account_id,
+        name=template_info["name"],
+        metric=template_info["metric"],
         template_id=template_id,
         valid_from=valid_from,
         expires_at=expires_at,

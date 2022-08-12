@@ -6,6 +6,7 @@ from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from tests.align.utils import (
@@ -245,10 +246,15 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        goal_row = await sdb.fetch_one(sa.select(Goal).where(Goal.id == new_goal_id))
-        assert goal_row is not None
-        assert goal_row[Goal.account_id.name] == 1
-        assert goal_row[Goal.template_id.name] == 1
+        goal_row = await assert_existing_row(
+            sdb,
+            Goal,
+            id=new_goal_id,
+            account_id=1,
+            template_id=1,
+            name=TEMPLATES_COLLECTION[1]["name"],
+            metric=TEMPLATES_COLLECTION[1]["metric"],
+        )
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
         )
@@ -258,11 +264,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             2023, 1, 1, tzinfo=timezone.utc,
         )
 
-        team_goals = await sdb.fetch_all(sa.select(TeamGoal).where(TeamGoal.goal_id == 1))
-        assert len(team_goals) == 1
-
-        assert team_goals[0]["team_id"] == 10
-        assert team_goals[0]["target"] == 42
+        await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10, target=42)
 
     async def test_create_multiple_team_goals(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=20))
@@ -281,13 +283,10 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        goal_row = await sdb.fetch_one(sa.select([Goal]).where(Goal.id == new_goal_id))
-        assert goal_row is not None
-        assert goal_row["account_id"] == 1
-        assert goal_row["template_id"] == 1
+        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1, template_id=1)
 
         team_goals = await sdb.fetch_all(
-            sa.select([TeamGoal]).where(TeamGoal.goal_id == 1).order_by(TeamGoal.team_id),
+            sa.select(TeamGoal).where(TeamGoal.goal_id == 1).order_by(TeamGoal.team_id),
         )
         assert len(team_goals) == 2
 
