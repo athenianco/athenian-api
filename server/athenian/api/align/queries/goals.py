@@ -161,7 +161,6 @@ def _team_tree_to_goal_tree(
         goal_row[Goal.id.name],
         goal_row[Goal.name.name],
         goal_row[Goal.metric.name],
-        goal_row[Goal.template_id.name],
         valid_from,
         expires_at,
         _team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
