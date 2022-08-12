@@ -130,7 +130,6 @@ def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCrea
         account_id=account_id,
         name=template_info["name"],
         metric=template_info["metric"],
-        template_id=template_id,
         valid_from=valid_from,
         expires_at=expires_at,
     )
