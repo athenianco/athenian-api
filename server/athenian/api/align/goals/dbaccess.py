@@ -49,11 +49,9 @@ async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -
     goal_value = creation_info.goal.create_defaults().explode()
     try:
         new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
-    except integrity_errors:  # uc_goal constraint can fail here
-        template_id = creation_info.goal.template_id
+    except integrity_errors:  # uc_goal_name constraint can fail here
         raise GoalMutationError(
-            f"There is an existing goal with the same template {template_id} for the same time"
-            " interval",
+            "There is an existing goal with the same name for the same time interval",
         )
 
     team_goals_values = [
