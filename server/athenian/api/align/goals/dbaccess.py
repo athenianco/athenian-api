@@ -221,6 +221,13 @@ async def delete_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> N
     await sdb.execute(sa.delete(GoalTemplate).where(GoalTemplate.id == template_id))
 
 
+async def update_goal_template_in_db(template_id, name: str, sdb: DatabaseLike) -> None:
+    """Update a Goal Template."""
+    values = {GoalTemplate.name: name, GoalTemplate.updated_at: datetime.now(timezone.utc)}
+    stmt = sa.update(GoalTemplate).where(GoalTemplate.id == template_id).values(values)
+    await sdb.execute(stmt)
+
+
 @sentry_span
 async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) -> None:
     """Create the set of default goal templates for the account."""

@@ -7,6 +7,7 @@ from athenian.api.models.state.models import GoalTemplate
 from athenian.api.models.web import (
     DeveloperMetricID,
     GoalTemplateCreateRequest,
+    GoalTemplateUpdateRequest,
     PullRequestMetricID,
 )
 from tests.conftest import DEFAULT_HEADERS
@@ -130,4 +131,54 @@ class TestDeleteGoalTemplate(BaseDeleteGoalTemplateTest):
     async def test_delete(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=1121))
         await self._request(client, 1121)
-        await assert_missing_row(sdb, GoalTemplateFactory, id=1121)
+        await assert_missing_row(sdb, GoalTemplate, id=1121)
+
+
+class BaseUpdateGoalTemplateTest:
+    async def _request(
+        self,
+        client: TestClient,
+        template: int,
+        assert_status: int = 200,
+        **kwargs: Any,
+    ) -> dict:
+        path = f"/v1/goal_template/{template}"
+        headers = DEFAULT_HEADERS
+        response = await client.request(method="PUT", path=path, headers=headers, **kwargs)
+        assert response.status == assert_status
+        return await response.json()
+
+
+class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
+    async def test_not_found(self, client: TestClient, sdb: Database) -> None:
+        req = GoalTemplateUpdateRequest("new-name")
+        await self._request(client, 1121, 404, json=req.to_dict())
+        await assert_missing_row(sdb, GoalTemplate, id=1121)
+
+    async def test_account_mismatch(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb, AccountFactory(id=10), GoalTemplateFactory(id=1111, account_id=10, name="T0"),
+        )
+        req = GoalTemplateUpdateRequest("new-name")
+        await self._request(client, 1111, 404, json=req.to_dict())
+        await assert_existing_row(sdb, GoalTemplate, id=1111, name="T0")
+
+    async def test_empty_name(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
+        req = GoalTemplateUpdateRequest("")
+        await self._request(client, 111, 400, json=req.to_dict())
+        await assert_existing_row(sdb, GoalTemplate, id=111, name="T0")
+
+    async def test_null_name(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
+        req = GoalTemplateUpdateRequest(None)
+        await self._request(client, 111, 400, json=req.to_dict())
+        await assert_existing_row(sdb, GoalTemplate, id=111, name="T0")
+
+
+class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
+    async def test_update_name(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
+        req = GoalTemplateUpdateRequest("T1")
+        await self._request(client, 111, json=req.to_dict())
+        await assert_existing_row(sdb, GoalTemplate, id=111, name="T1")
