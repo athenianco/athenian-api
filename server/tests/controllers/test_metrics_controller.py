@@ -50,10 +50,10 @@ class TestCalcMetricsPRs:
             (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 0),
             (PullRequestMetricID.PR_REVIEW_COUNT, 46),
             (PullRequestMetricID.PR_REVIEW_COUNT_Q, 46),
-            (PullRequestMetricID.PR_MERGING_TIME, 51),
+            (PullRequestMetricID.PR_MERGING_TIME, 50),
             (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 0),
-            (PullRequestMetricID.PR_MERGING_COUNT, 51),
-            (PullRequestMetricID.PR_MERGING_COUNT_Q, 51),
+            (PullRequestMetricID.PR_MERGING_COUNT, 50),
+            (PullRequestMetricID.PR_MERGING_COUNT_Q, 50),
             (PullRequestMetricID.PR_RELEASE_TIME, 19),
             (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 189),
             (PullRequestMetricID.PR_RELEASE_COUNT, 19),
@@ -356,11 +356,11 @@ class TestCalcMetricsPRs:
         [
             (PullRequestMetricID.PR_WIP_COUNT, 590),
             (PullRequestMetricID.PR_REVIEW_COUNT, 428),
-            (PullRequestMetricID.PR_MERGING_COUNT, 583),
+            (PullRequestMetricID.PR_MERGING_COUNT, 532),
             (PullRequestMetricID.PR_RELEASE_COUNT, 407),
             (PullRequestMetricID.PR_OPEN_COUNT, 583),
             (PullRequestMetricID.PR_LEAD_COUNT, 407),
-            (PullRequestMetricID.PR_CYCLE_COUNT, 922),
+            (PullRequestMetricID.PR_CYCLE_COUNT, 904),
             (PullRequestMetricID.PR_OPENED, 590),
             (PullRequestMetricID.PR_REVIEWED, 368),
             (PullRequestMetricID.PR_NOT_REVIEWED, 275),
@@ -972,7 +972,7 @@ class TestCalcMetricsPRs:
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
-            [[None, "62533037s"], [None, "65158487s"], [None, "66222193s"], [0, 513]],
+            [[None, "62533037s"], [None, "65158487s"], [None, "66004050s"], [0, 513]],
         ]
 
     # TODO: fix response validation against the schema

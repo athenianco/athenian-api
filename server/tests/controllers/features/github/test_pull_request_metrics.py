@@ -1800,7 +1800,7 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
     for metric, td in [
         (PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
         (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
-        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
+        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=2, seconds=30368)),
         (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
         (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=25591)),
         (PullRequestMetricID.PR_DEPLOYMENT_TIME, [None, None, timedelta(days=723, seconds=65837)]),
@@ -1855,10 +1855,10 @@ async def test_pull_request_cycle_deployment_time(
     for metric, td in [
         (
             PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-            [None, None, timedelta(days=730, seconds=76007)],
+            [None, None, timedelta(days=729, seconds=85842)],
         ),
         (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 513]),
-        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 464]),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 460]),
     ]:
         assert values[metric][0][0].value == td, metric
 

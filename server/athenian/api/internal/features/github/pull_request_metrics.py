@@ -303,8 +303,8 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         merge_end = result.copy().astype(min_times.dtype)
-        closed_indexes = np.nonzero(facts[PullRequestFacts.f.closed].notnull().values)[0]
-        closed = facts[PullRequestFacts.f.closed].values[closed_indexes]
+        closed_indexes = np.nonzero(facts[PullRequestFacts.f.merged].notnull().values)[0]
+        closed = facts[PullRequestFacts.f.merged].values[closed_indexes]
         closed_in_range = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         closed_indexes = np.broadcast_to(
             closed_indexes[None, :], (len(min_times), len(closed_indexes)),

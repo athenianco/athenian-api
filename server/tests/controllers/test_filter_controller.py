@@ -1669,7 +1669,7 @@ async def validate_prs_response(
         if pr.stage_timings.wip == tdz:
             if pr.stage_timings.merge is None:
                 # review requested at once, no new commits, not merged
-                assert pr.stage_timings.review > tdz, str(pr)
+                assert (pr.closed and not pr.merged) or pr.stage_timings.review > tdz, str(pr)
             else:
                 # no new commits after opening the PR
                 assert pr.stage_timings.merge > tdz, str(pr)
@@ -1699,7 +1699,7 @@ async def validate_prs_response(
             assert PullRequestStage.DONE in pr.stages_now
             if pr.stage_timings.merge is None:
                 # https://github.com/src-d/go-git/pull/878
-                assert pr.commits == 0, str(pr)
+                assert pr.commits == 0 or (pr.closed and not pr.merged), str(pr)
             else:
                 assert pr.stage_timings.merge > tdz or pr.stage_timings.review > tdz, str(pr)
         if PullRequestEvent.RELEASED in pr.events_now:
@@ -1730,7 +1730,7 @@ async def validate_prs_response(
             assert PullRequestStage.DONE in pr.stages_time_machine
             if pr.stage_timings.merge is None:
                 # https://github.com/src-d/go-git/pull/878
-                assert pr.commits == 0, str(pr)
+                assert pr.commits == 0 or (pr.closed and not pr.merged), str(pr)
             else:
                 assert pr.stage_timings.merge > tdz or pr.stage_timings.review > tdz, str(pr)
         if PullRequestEvent.RELEASED in pr.events_time_machine:
