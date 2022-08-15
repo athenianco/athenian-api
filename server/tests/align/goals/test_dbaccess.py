@@ -7,6 +7,7 @@ from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoun
 from athenian.api.align.goals.dbaccess import (
     create_default_goal_templates,
     delete_empty_goals,
+    delete_goal_template_from_db,
     delete_team_goals,
     fetch_team_goals,
     get_goal_template_from_db,
@@ -173,6 +174,15 @@ class TestInsertGoalTemplate:
             await insert_goal_template(1, "T", "m0", sdb)
 
         await assert_missing_row(sdb, GoalTemplate, metric="m")
+
+
+class TestDeleteGoalTemplateFromDB:
+    async def test_delete(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=120))
+        await delete_goal_template_from_db(120, sdb)
+
+    async def test_not_existing(self, sdb: Database) -> None:
+        await delete_goal_template_from_db(120, sdb)
 
 
 class TestCreateDefaultGoalTemplates:
