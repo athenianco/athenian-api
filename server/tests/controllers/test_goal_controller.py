@@ -103,3 +103,30 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
         res = await self._request(json=req.to_dict())
         template_id = res["id"]
         await assert_existing_row(sdb, GoalTemplate, account_id=1, id=template_id, name="T0")
+
+
+class BaseDeleteGoalTemplateTest(Requester):
+    async def _request(self, template: int, assert_status: int = 200) -> dict:
+        path = f"/v1/goal_template/{template}"
+        response = await self.client.request(method="DELETE", path=path, headers=self.headers)
+        assert response.status == assert_status
+        return await response.json()
+
+
+class TestDeleteGoalTemplateErrors(BaseDeleteGoalTemplateTest):
+    async def test_not_found(self) -> None:
+        await self._request(1121, 404)
+
+    async def test_account_mismatch(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, AccountFactory(id=10), GoalTemplateFactory(id=1121, account_id=10),
+        )
+        await self._request(1121, 404)
+        await assert_existing_row(sdb, GoalTemplate, account_id=10, id=1121)
+
+
+class TestDeleteGoalTemplate(BaseDeleteGoalTemplateTest):
+    async def test_delete(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=1121))
+        await self._request(1121)
+        await assert_missing_row(sdb, GoalTemplateFactory, id=1121)

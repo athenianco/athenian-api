@@ -2,6 +2,7 @@ from aiohttp import web
 
 from athenian.api.align.exceptions import GoalTemplateNotFoundError
 from athenian.api.align.goals.dbaccess import (
+    delete_goal_template_from_db,
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
@@ -75,3 +76,19 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
             ),
         ) from None
     return model_response(CreatedIdentifier(template_id))
+
+
+async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
+    """Delete a goal tamplate.
+
+    :param id: Numeric identifier of the goal template.
+    """
+    template = await get_goal_template_from_db(id, request.sdb)
+    try:
+        await get_user_account_status_from_request(
+            request, template[DBGoalTemplate.account_id.name],
+        )
+    except ResponseError:
+        raise GoalTemplateNotFoundError(id) from None
+    await delete_goal_template_from_db(id, request.sdb)
+    return web.json_response()
