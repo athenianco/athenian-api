@@ -8,7 +8,7 @@ pytest-rerunfailures==10.2
 pytest-xdist==2.5.0
 pytest-timeout==2.1.0
 pytest-sentry==0.1.9
-filelock==3.7.1
+filelock==3.8.0
 faker==13.15.1
 freezegun==1.2.1
 nest_asyncio==1.5.5
