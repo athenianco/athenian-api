@@ -6,6 +6,7 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
+    update_goal_template_in_db,
 )
 from athenian.api.db import integrity_errors
 from athenian.api.internal.account import get_user_account_status_from_request
@@ -15,6 +16,7 @@ from athenian.api.models.web import (
     DatabaseConflict,
     GoalTemplate,
     GoalTemplateCreateRequest,
+    GoalTemplateUpdateRequest,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
@@ -91,4 +93,22 @@ async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Resp
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
     await delete_goal_template_from_db(id, request.sdb)
+    return web.json_response()
+
+
+async def update_goal_template(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
+    """Update a goal template.
+
+    :param id: Numeric identifier of the goal template.
+    :param body: GoalTemplateUpdateRequest
+    """
+    update_request = GoalTemplateUpdateRequest.from_dict(body)
+    template = await get_goal_template_from_db(id, request.sdb)
+    try:
+        await get_user_account_status_from_request(
+            request, template[DBGoalTemplate.account_id.name],
+        )
+    except ResponseError:
+        raise GoalTemplateNotFoundError(id) from None
+    await update_goal_template_in_db(id, update_request.name, request.sdb)
     return web.json_response()
