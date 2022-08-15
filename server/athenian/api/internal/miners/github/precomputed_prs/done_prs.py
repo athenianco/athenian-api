@@ -606,9 +606,12 @@ class DonePRFactsLoader:
             account,
             postgres,
         )
-        query = union_all(*(queries_undeployed + queries_deployed))
+        queries = queries_undeployed + queries_deployed
+        batches = [
+            pdb.fetch_all(union_all(*queries[i : i + 20])) for i in range(0, len(queries), 20)
+        ]
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
-            rows = await pdb.fetch_all(query)
+            rows = list(chain.from_iterable(await gather(*batches)))
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         if labels and not postgres:
