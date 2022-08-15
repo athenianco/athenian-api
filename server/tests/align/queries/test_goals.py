@@ -5,6 +5,7 @@ from aiohttp.test_utils import TestClient
 import pytest
 
 from athenian.api.db import Database
+from athenian.api.models.web import JIRAMetricID, PullRequestMetricID
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
@@ -22,7 +23,7 @@ from tests.testutils.factory.state import (
 
 
 class BaseGoalsTest:
-    _ALL_GOAL_FIELDS = ("id", "templateId", "validFrom", "expiresAt")
+    _ALL_GOAL_FIELDS = ("id", "name", "metric", "templateId", "validFrom", "expiresAt")
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
 
@@ -146,7 +147,7 @@ class TestGoals(BaseGoalsTest):
             TeamFactory(id=10, name="A-Team", members=[39789, 40020, 40191]),
             GoalFactory(
                 id=20,
-                template_id=2,
+                metric=PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
                 valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
             ),
@@ -158,7 +159,6 @@ class TestGoals(BaseGoalsTest):
         goal = res["data"]["goals"][0]
 
         assert goal["id"] == 20
-        assert goal["templateId"] == 2
         assert goal["validFrom"] == "2019-01-01"
         assert goal["expiresAt"] == "2021-12-31"
 
@@ -177,13 +177,13 @@ class TestGoals(BaseGoalsTest):
             TeamFactory(id=11, members=[40020], parent_id=10),
             GoalFactory(
                 id=20,
-                template_id=3,
+                metric=PullRequestMetricID.PR_MEDIAN_SIZE,
                 valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
             ),
             GoalFactory(
                 id=21,
-                template_id=6,
+                metric=JIRAMetricID.JIRA_RESOLVED,
                 valid_from=datetime(2020, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
             ),
@@ -274,13 +274,13 @@ class TestGoals(BaseGoalsTest):
             TeamFactory(id=13, parent_id=12),
             GoalFactory(
                 id=20,
-                template_id=1,
+                metric=PullRequestMetricID.PR_REVIEW_TIME,
                 valid_from=datetime(2000, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2001, 1, 1, tzinfo=timezone.utc),
             ),
             GoalFactory(
                 id=21,
-                template_id=2,
+                metric=PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
                 valid_from=datetime(2004, 7, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2004, 10, 1, tzinfo=timezone.utc),
             ),
@@ -293,7 +293,6 @@ class TestGoals(BaseGoalsTest):
         assert len(res["data"]["goals"]) == 2
 
         assert (goal_20 := res["data"]["goals"][0])["id"] == 20
-        assert goal_20["templateId"] == 1
         assert goal_20["validFrom"] == "2000-01-01"
         assert goal_20["expiresAt"] == "2000-12-31"
 
@@ -315,7 +314,6 @@ class TestGoals(BaseGoalsTest):
 
         # same tree is built for goal 21, with different values
         assert (goal_21 := res["data"]["goals"][1])["id"] == 21
-        assert goal_21["templateId"] == 2
         assert goal_21["validFrom"] == "2004-07-01"
         assert goal_21["expiresAt"] == "2004-09-30"
 
@@ -341,7 +339,7 @@ class TestGoals(BaseGoalsTest):
             TeamFactory(id=10),
             GoalFactory(
                 id=20,
-                template_id=4,
+                metric=PullRequestMetricID.PR_LEAD_TIME,
                 valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2019, 7, 1, tzinfo=timezone.utc),
             ),

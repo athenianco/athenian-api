@@ -8,7 +8,6 @@ from graphql import GraphQLResolveInfo
 
 from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
 from athenian.api.align.goals.dbaccess import fetch_team_goals
-from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
 from athenian.api.align.queries.metrics import TeamMetricsRequest, calculate_team_metrics
 from athenian.api.align.queries.teams import build_team_tree_from_rows
@@ -109,7 +108,7 @@ class _GoalToServe:
         only_with_targets: bool,
     ) -> tuple[TeamMetricsRequest, TeamTree]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
-        metric = TEMPLATES_COLLECTION[goal_row[Goal.template_id.name]]["metric"]
+        metric = goal_row[Goal.metric.name]
 
         valid_from = goal_row[Goal.valid_from.name]
         expires_at = goal_row[Goal.expires_at.name]
@@ -160,6 +159,8 @@ def _team_tree_to_goal_tree(
     team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
     return GoalTree(
         goal_row[Goal.id.name],
+        goal_row[Goal.name.name],
+        goal_row[Goal.metric.name],
         goal_row[Goal.template_id.name],
         valid_from,
         expires_at,

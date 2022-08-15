@@ -390,6 +390,8 @@ class GoalTree(Model):
 
     attribute_types = {
         "id": int,
+        "name": str,
+        "metric": str,
         "template_id": int,
         "valid_from": date,
         "expires_at": date,
@@ -406,6 +408,8 @@ class GoalTree(Model):
     def __init__(
         self,
         id: int,
+        name: str,
+        metric: str,
         template_id: int,
         valid_from: date,
         expires_at: date,
@@ -413,6 +417,8 @@ class GoalTree(Model):
     ):
         """Init the GoalTree."""
         self._id = id
+        self._name = name
+        self._metric = metric
         self._template_id = template_id
         self._valid_from = valid_from
         self._expires_at = expires_at
@@ -422,6 +428,16 @@ class GoalTree(Model):
     def id(self) -> int:
         """Get the identifier of the goal."""
         return self._id
+
+    @property
+    def name(self) -> str:
+        """Get the name of the goal."""
+        return self._name
+
+    @property
+    def metric(self) -> str:
+        """Get the metric of the goal."""
+        return self._metric
 
     @property
     def template_id(self) -> int:

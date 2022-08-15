@@ -21,6 +21,7 @@ from athenian.api.models.state.models import (
     UserAccount,
     UserToken,
 )
+from athenian.api.models.web import PullRequestMetricID
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -134,6 +135,8 @@ class GoalFactory(SQLAlchemyModelFactory):
     id = factory.Sequence(lambda n: n + 1)
     account_id = DEFAULT_ACCOUNT_ID
     template_id = 1
+    name = factory.LazyAttribute(lambda goal: f"goal-{goal.id}")
+    metric = PullRequestMetricID.PR_CLOSED
     # create unique intervals by default to avoid uniqueness constraint
     valid_from = factory.Sequence(
         lambda n: datetime(2022, 1, 1).replace(tzinfo=timezone.utc) + timedelta(hours=n),
