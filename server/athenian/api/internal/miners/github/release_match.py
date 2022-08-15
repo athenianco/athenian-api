@@ -8,12 +8,17 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, func, join, or_, select, union_all
+from sqlalchemy import and_, func, join, literal_column, or_, select, sql, union_all
 from sqlalchemy.sql.elements import BinaryExpression
 from sqlalchemy.sql.visitors import cloned_traverse
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
+from athenian.api.async_utils import (
+    gather,
+    postprocess_datetime,
+    read_sql_query,
+    read_sql_query_with_join_collapse,
+)
 from athenian.api.cache import cached, max_exptime, middle_term_exptime
 from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, insert_or_ignore
 from athenian.api.defer import defer
@@ -915,6 +920,7 @@ class ReleaseToPullRequestMapper:
             filters = [
                 NodeCommit.acc_id.in_(meta_ids),
                 NodeCommit.repository_id.in_(unique_repo_ids),
+                NodePullRequest.merged,
                 NodePullRequest.merged_at < time_boundary,
             ]
             for expr in (pr_blacklist, pr_whitelist):
@@ -922,43 +928,72 @@ class ReleaseToPullRequestMapper:
                     expr = cloned_traverse(expr, {}, {})  # copy
                     expr.left = NodePullRequest.node_id
                     filters.append(expr)
-            unique_commits = unordered_unique(commits)
-            if len(unique_commits) <= 100:
-                filters.append(NodeCommit.sha.in_(unique_commits))
-            else:
+            if len(unique_commits := unordered_unique(commits)) > 100:
                 # this reduces the planning time (DEV-4176)
                 filters.extend(
                     [
-                        NodeCommit.sha.in_any_values(unique_commits),
+                        NodeCommit.committed_date < time_boundary,
                         NodePullRequest.repository_id.in_(unique_repo_ids),
                     ],
                 )
-            query = (
-                select([NodePullRequest.node_id])
-                .select_from(
-                    join(
-                        NodeCommit,
-                        NodePullRequest,
-                        and_(
-                            NodeCommit.acc_id == NodePullRequest.acc_id,
-                            NodeCommit.node_id == NodePullRequest.merge_commit_id,
+            if mdb.url.dialect == "postgresql":
+                # we can have two or even three *VALUES* so cannot rely on the usual hints
+                # automatic planning failed miserably and led to an incident DEV-4788
+                # so we set join_collapse_limit=1 and put the most critical VALUES inside JOIN
+                query = (
+                    select(NodePullRequest.node_id)
+                    .select_from(
+                        join(
+                            join(
+                                NodeCommit,
+                                sql.text(
+                                    "(VALUES ('"
+                                    + "'),('".join(sha.decode() for sha in unique_commits)
+                                    + "')) shas(sha)",
+                                ),
+                                NodeCommit.sha == literal_column("shas.sha"),
+                            ),
+                            NodePullRequest,
+                            and_(
+                                NodeCommit.acc_id == NodePullRequest.acc_id,
+                                NodeCommit.graph_id == NodePullRequest.merge_commit_id,
+                            ),
                         ),
-                    ),
+                    )
+                    .where(*filters)
+                    .with_statement_hint(
+                        "IndexScan(raw_prs github_node_pull_request_repo_merged_at)",
+                    )
                 )
-                .where(*filters)
-            )
-            if len(unique_commits) > 100:
-                query = query.with_statement_hint(
-                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(unique_commits)})",
-                ).with_statement_hint(f"Leading({NodeCommit.__tablename__} *VALUES*)")
-            superset_df = await read_sql_query(query, mdb, [NodeCommit.node_id])
+            else:
+                filters.append(NodeCommit.sha.in_(unique_commits))
+                query = (
+                    select([NodePullRequest.node_id])
+                    .select_from(
+                        join(
+                            NodeCommit,
+                            NodePullRequest,
+                            and_(
+                                NodeCommit.acc_id == NodePullRequest.acc_id,
+                                NodeCommit.node_id == NodePullRequest.merge_commit_id,
+                            ),
+                        ),
+                    )
+                    .where(*filters)
+                )
+            superset_df = await read_sql_query_with_join_collapse(query, mdb, [NodeCommit.node_id])
             superset_pr_ids = superset_df[NodePullRequest.node_id.name].values
         filters = [
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
         ]
         if superset_pr_ids is None:
-            filters.append(PullRequest.merged_at < time_boundary)
+            filters.extend(
+                [
+                    PullRequest.merged,
+                    PullRequest.merged_at < time_boundary,
+                ],
+            )
 
         if superset_pr_ids is not None:
             if len(superset_pr_ids) > 100:
