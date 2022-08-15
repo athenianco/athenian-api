@@ -10,7 +10,7 @@ pytest-timeout==2.1.0
 pytest-sentry==0.1.9
 filelock==3.8.0
 faker==14.0.0
-freezegun==1.2.1
+freezegun==1.2.2
 nest_asyncio==1.5.5
 codecov==2.1.12
 factory-boy==3.2.1
