@@ -224,6 +224,9 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                     raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
                 acc_id = inv[Invitation.account_id.name]
                 await _check_disabled_github_logins(acc_id, request.uid, sdb_conn)
+                inv = dict(inv)
+                inv["name"] = invitation.name
+                inv["email"] = invitation.email
                 acc_id, user = await _join_account(acc_id, request, sdb_conn, invitation=inv)
     except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
         raise ResponseError(DatabaseConflict(detail=str(e)))
@@ -351,6 +354,9 @@ async def _join_account(
             )
         elif user is None:
             user = await request.user()
+        if invitation is not None:
+            user.name = invitation["name"] or user.name
+            user.email = invitation["email"] or user.email
         # create the user<>account record if not blocked
         if await sdb_transaction.fetch_val(
             select([func.count(text("*"))]).where(
