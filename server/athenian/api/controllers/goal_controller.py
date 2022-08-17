@@ -1,7 +1,10 @@
+from typing import Optional
+
 from aiohttp import web
 
 from athenian.api.align.goals.dbaccess import (
     delete_goal_template_from_db,
+    dump_goal_repositories,
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
@@ -71,9 +74,18 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     """
     create_request = GoalTemplateCreateRequest.from_dict(body)
     await get_user_account_status_from_request(request, create_request.account)
+
+    repositories = await _parse_request_repositories(
+        create_request.repositories, request, create_request.account,
+    )
+
     try:
         template_id = await insert_goal_template(
-            create_request.account, create_request.name, create_request.metric, request.sdb,
+            account_id=create_request.account,
+            name=create_request.name,
+            metric=create_request.metric,
+            repositories=repositories,
+            sdb=request.sdb,
         )
     except integrity_errors:
         raise ResponseError(
@@ -101,6 +113,27 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     """
     update_request = GoalTemplateUpdateRequest.from_dict(body)
     template = await get_goal_template_from_db(id, request.sdb)
-    await get_user_account_status_from_request(request, template[DBGoalTemplate.account_id.name])
-    await update_goal_template_in_db(id, update_request.name, request.sdb)
+    account_id = template[DBGoalTemplate.account_id.name]
+    await get_user_account_status_from_request(request, account_id)
+
+    repositories = await _parse_request_repositories(
+        update_request.repositories, request, account_id,
+    )
+    values = {
+        DBGoalTemplate.name.name: update_request.name,
+        DBGoalTemplate.repositories.name: repositories,
+    }
+    await update_goal_template_in_db(id, request.sdb, **values)
     return web.json_response({})
+
+
+async def _parse_request_repositories(
+    repo_names: Optional[list[str]],
+    request: AthenianWebRequest,
+    account_id: int,
+) -> Optional[list[list]]:
+    if repo_names is None:
+        return None
+    else:
+        mapper = await RepoIdentitiesMapper.from_request(request, account_id)
+        return dump_goal_repositories(mapper.prefixed_names_to_identities(repo_names))
