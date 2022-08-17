@@ -1,8 +1,11 @@
+from typing import Optional
+
 from aiohttp import web
 
 from athenian.api.align.exceptions import GoalTemplateNotFoundError
 from athenian.api.align.goals.dbaccess import (
     delete_goal_template_from_db,
+    dump_goal_repositories,
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
@@ -83,13 +86,19 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     """
     create_request = GoalTemplateCreateRequest.from_dict(body)
     await get_user_account_status_from_request(request, create_request.account)
+
+    repositories = await _parse_request_repositories(
+        create_request.repositories, request, create_request.account,
+    )
+
+    values = {
+        DBGoalTemplate.account_id.name: create_request.account,
+        DBGoalTemplate.name.name: create_request.name,
+        DBGoalTemplate.metric.name: create_request.metric,
+        DBGoalTemplate.repositories.name: repositories,
+    }
     try:
-        template_id = await insert_goal_template(
-            request.sdb,
-            account_id=create_request.account,
-            name=create_request.name,
-            metric=create_request.metric,
-        )
+        template_id = await insert_goal_template(request.sdb, **values)
     except integrity_errors:
         raise ResponseError(
             DatabaseConflict(
@@ -123,6 +132,7 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     """
     update_request = GoalTemplateUpdateRequest.from_dict(body)
     template = await get_goal_template_from_db(id, request.sdb)
+    account_id = template[DBGoalTemplate.account_id.name]
     try:
         await get_user_account_status_from_request(
             request, template[DBGoalTemplate.account_id.name],
@@ -130,4 +140,24 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
     await update_goal_template_in_db(id, request.sdb, name=update_request.name)
+    repositories = await _parse_request_repositories(
+        update_request.repositories, request, account_id,
+    )
+    values = {
+        DBGoalTemplate.name.name: update_request.name,
+        DBGoalTemplate.repositories.name: repositories,
+    }
+    await update_goal_template_in_db(id, request.sdb, **values)
     return web.json_response({})
+
+
+async def _parse_request_repositories(
+    repo_names: Optional[list[str]],
+    request: AthenianWebRequest,
+    account_id: int,
+) -> Optional[list[list]]:
+    if repo_names is None:
+        return None
+    else:
+        mapper = await Prefixer.from_request(request, account_id)
+        return dump_goal_repositories(mapper.prefixed_repo_names_to_identities(repo_names))
