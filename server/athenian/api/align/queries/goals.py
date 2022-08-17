@@ -7,13 +7,14 @@ from ariadne import ObjectType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
-from athenian.api.align.goals.dbaccess import fetch_team_goals
+from athenian.api.align.goals.dbaccess import fetch_team_goals, parse_goal_repositories
 from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
 from athenian.api.align.queries.metrics import TeamMetricsRequest, calculate_team_metrics
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.db import Row
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.reposet import RepoIdentitiesMapperFactory
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Goal, Team, TeamGoal
@@ -33,6 +34,9 @@ async def resolve_goals(
     **kwargs,
 ) -> Any:
     """Serve goals() query."""
+    request = info.context
+    # used by Goal.repositories resolvers
+    info.context.repo_identities_mapper_factory = RepoIdentitiesMapperFactory(accountId, request)
     team_rows, meta_ids = await gather(
         fetch_teams_recursively(
             accountId,
@@ -70,6 +74,19 @@ async def resolve_goals(
         slack=info.context.app["slack"],
     )
     return [to_serve.build_goal_tree(all_metric_values).to_dict() for to_serve in goals_to_serve]
+
+
+goal = ObjectType("Goal")
+
+
+@goal.field("repositories")
+async def resolve_repositories(goal_tree: dict, info: GraphQLResolveInfo) -> Any:
+    """Resolve the repositories field of the Goal type."""
+    repositories = goal_tree["repositories"]
+    if not repositories:
+        return repositories
+    mapper = await info.context.repo_identities_mapper_factory()
+    return mapper.identities_to_prefixed_names(parse_goal_repositories(repositories))
 
 
 class _GoalToServe:
@@ -164,6 +181,7 @@ def _team_tree_to_goal_tree(
         valid_from,
         expires_at,
         _team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
+        goal_row[Goal.repositories.name],
     )
 
 

@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 from datetime import datetime, timezone
 from typing import Any
+from unittest import mock
 
 import pytest
 import sqlalchemy as sa
@@ -10,6 +11,7 @@ from athenian.api.db import Database
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import (
     RepoIdentitiesMapper,
+    RepoIdentitiesMapperFactory,
     RepoIdentity,
     RepoName,
     load_account_reposets,
@@ -18,6 +20,7 @@ from athenian.api.internal.reposet import (
 )
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import RepositorySet
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
@@ -238,3 +241,21 @@ class TestRepoIdentitiesMapper:
                 kwargs.setdefault(field.name, {})
         kwargs["do_not_construct_me_directly"] = None
         return Prefixer(**kwargs)
+
+
+class TestRepoIdentitiesMapperFactory:
+    async def test_base(self, sdb: Database, mdb: Database) -> None:
+        request = mock.Mock()
+        request.sdb = sdb
+        request.mdb = mdb
+        request.cache = None
+        factory = RepoIdentitiesMapperFactory(1, request)
+
+        with mock.patch.object(
+            RepoIdentitiesMapper, "from_request", wraps=RepoIdentitiesMapper.from_request,
+        ) as from_request_mock:
+            first_mapper = await factory()
+            second_mapper = await factory()
+
+        assert first_mapper is second_mapper
+        from_request_mock.assert_called_once()

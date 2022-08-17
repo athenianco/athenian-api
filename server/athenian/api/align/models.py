@@ -8,6 +8,7 @@ import numpy as np
 
 from athenian.api.models.web import Contributor
 from athenian.api.models.web.base_model_ import Enum, Model
+from athenian.api.typing_utils import VerbatimOptional
 
 
 class GoalRemoveStatus(Model):
@@ -395,6 +396,7 @@ class GoalTree(Model):
         "valid_from": date,
         "expires_at": date,
         "team_goal": TeamGoalTree,
+        "repositories": VerbatimOptional[list[str]],
     }
 
     attribute_map = {
@@ -411,6 +413,7 @@ class GoalTree(Model):
         valid_from: date,
         expires_at: date,
         team_goal: TeamGoalTree,
+        repositories: Optional[list[str]],
     ):
         """Init the GoalTree."""
         self._id = id
@@ -419,6 +422,7 @@ class GoalTree(Model):
         self._valid_from = valid_from
         self._expires_at = expires_at
         self._team_goal = team_goal
+        self._repositories = repositories
 
     @property
     def id(self) -> int:
@@ -449,6 +453,11 @@ class GoalTree(Model):
     def team_goal(self) -> TeamGoalTree:
         """Get the root of the `TeamGoalTree` attached to the goal."""
         return self._team_goal
+
+    @property
+    def repositories(self) -> Optional[list[str]]:
+        """Get the repositories defining the goal scope."""
+        return self._repositories
 
 
 class Member(Contributor):

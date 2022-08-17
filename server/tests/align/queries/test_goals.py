@@ -13,7 +13,8 @@ from tests.align.utils import (
     build_recursive_fields_structure,
 )
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import models_insert
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import (
     GoalFactory,
     MappedJIRAIdentityFactory,
@@ -23,7 +24,7 @@ from tests.testutils.factory.state import (
 
 
 class BaseGoalsTest:
-    _ALL_GOAL_FIELDS = ("id", "name", "metric", "validFrom", "expiresAt")
+    _ALL_GOAL_FIELDS = ("id", "name", "metric", "validFrom", "expiresAt", "repositories")
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
 
@@ -161,6 +162,7 @@ class TestGoals(BaseGoalsTest):
         assert goal["id"] == 20
         assert goal["validFrom"] == "2019-01-01"
         assert goal["expiresAt"] == "2021-12-31"
+        assert goal["repositories"] is None
 
         team_goal = goal["teamGoal"]
         assert team_goal["team"]["id"] == 10
@@ -169,6 +171,31 @@ class TestGoals(BaseGoalsTest):
         assert team_goal["value"]["target"]["float"] == 1.23
         assert team_goal["value"]["current"]["float"] == pytest.approx(3.7, 0.1)
         assert team_goal["value"]["initial"]["float"] == pytest.approx(11.5, 0.1)
+
+    async def test_repositories(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[]),
+            GoalFactory(id=20, repositories=[[1, None]]),
+            GoalFactory(id=21, repositories=[[1, "a"], [1, "b"]]),
+            TeamGoalFactory(goal_id=20, team_id=10, target=1),
+            TeamGoalFactory(goal_id=21, team_id=10, target=20),
+        )
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [md_factory.RepositoryFactory(node_id=1, full_name="athenianco/repo")]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            res = await self._request(1, 10, client)
+
+        assert len(res["data"]["goals"]) == 2
+        assert res["data"]["goals"][0]["id"] == 20
+        assert res["data"]["goals"][0]["repositories"] == ["github.com/athenianco/repo"]
+        assert res["data"]["goals"][1]["id"] == 21
+        assert res["data"]["goals"][1]["repositories"] == [
+            "github.com/athenianco/repo/a",
+            "github.com/athenianco/repo/b",
+        ]
 
     async def test_two_teams_jira_metric(self, client: TestClient, sdb: Database) -> None:
         await models_insert(

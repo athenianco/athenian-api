@@ -706,3 +706,20 @@ class RepoIdentitiesMapper:
             name = RepoName.from_prefixed(physical_name).with_logical(repo.logical_name)
             repo_names.append(str(name))
         return repo_names
+
+
+class RepoIdentitiesMapperFactory:
+    """Factory to share a single, lazily built, RepoIdentitiesMapper."""
+
+    def __init__(self, account_id: int, request: AthenianWebRequest) -> None:
+        """Build the RepoIdentitiesMapperFactory."""
+        self._account_id = account_id
+        self._request = request
+        self._mapper: Optional[RepoIdentitiesMapper] = None
+
+    async def __call__(self) -> RepoIdentitiesMapper:
+        """Return the shared RepoIdentitiesMapper instance."""
+        if self._mapper is None:
+            self._mapper = await RepoIdentitiesMapper.from_request(self._request, self._account_id)
+
+        return self._mapper
