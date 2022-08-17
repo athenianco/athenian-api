@@ -5,10 +5,12 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
+    parse_goal_repositories,
     update_goal_template_in_db,
 )
 from athenian.api.db import integrity_errors
 from athenian.api.internal.account import get_user_account_status_from_request
+from athenian.api.internal.reposet import RepoIdentitiesMapper
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
 from athenian.api.models.web import (
     DatabaseConflict,
@@ -25,14 +27,17 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
 
     :param id: Numeric identifier of the goal template.
     :type id: int
-
     """
     row = await get_goal_template_from_db(id, request.sdb)
-    await get_user_account_status_from_request(request, row[DBGoalTemplate.account_id.name])
-    model = GoalTemplate(
-        id=id, name=row[DBGoalTemplate.name.name], metric=row[DBGoalTemplate.metric.name],
-    )
+    account = row[DBGoalTemplate.account_id.name]
+    await get_user_account_status_from_request(request, account)
 
+    if (db_repos := parse_goal_repositories(row[DBGoalTemplate.repositories.name])) is not None:
+        mapper = await RepoIdentitiesMapper.from_request(request, account)
+        repositories = mapper.identities_to_prefixed_names(db_repos)
+    else:
+        repositories = None
+    model = GoalTemplate.from_db_row(row, repositories=repositories)
     return model_response(model)
 
 
@@ -41,18 +46,21 @@ async def list_goal_templates(request: AthenianWebRequest, id: int) -> web.Respo
 
     :param id: Numeric identifier of the account.
     :type id: int
-
     """
     await get_user_account_status_from_request(request, id)
     rows = await get_goal_templates_from_db(id, request.sdb)
-    models = [
-        GoalTemplate(
-            id=row[DBGoalTemplate.id.name],
-            name=row[DBGoalTemplate.name.name],
-            metric=row[DBGoalTemplate.metric.name],
-        )
-        for row in rows
-    ]
+
+    mapper = None
+    models = []
+    for row in rows:
+        raw_db_repos = row[DBGoalTemplate.repositories.name]
+        if (db_repos := parse_goal_repositories(raw_db_repos)) is not None:
+            if mapper is None:
+                mapper = await RepoIdentitiesMapper.from_request(request, id)
+            repositories = mapper.identities_to_prefixed_names(db_repos)
+        else:
+            repositories = None
+        models.append(GoalTemplate.from_db_row(row, repositories=repositories))
     return model_response(models)
 
 

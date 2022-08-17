@@ -11,8 +11,9 @@ from athenian.api.models.web import (
     PullRequestMetricID,
 )
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
-from tests.testutils.factory.state import AccountFactory, GoalFactory, GoalTemplateFactory
+from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.state import AccountFactory, GoalTemplateFactory
 
 
 class TestGetGoalTemplate:
@@ -21,9 +22,38 @@ class TestGetGoalTemplate:
         assert res["type"] == "/errors/align/GoalTemplateNotFound"
 
     async def test_base(self, client: TestClient, sdb: Database) -> None:
-        await models_insert(sdb, GoalTemplateFactory(id=200))
+        await models_insert(sdb, GoalTemplateFactory(id=200, name="T 1"))
+        res = await self._request(client, 200)
+        assert res["id"] == 200
+        assert res["name"] == "T 1"
+        assert "repositories" not in res
 
-        await self._request(client, 200)
+    async def test_with_repositories(
+        self,
+        client: TestClient,
+        sdb: Database,
+        mdb: Database,
+    ) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(
+                id=200, repositories=[[1000, None], [1001, "logical0"], [1001, "logical1"]],
+            ),
+        )
+        async with DBCleaner(mdb) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=1000, full_name="athenianco/repo-A"),
+                md_factory.RepositoryFactory(node_id=1001, full_name="athenianco/repo-B"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb, *mdb_models)
+
+            res = await self._request(client, 200)
+        assert res["repositories"] == [
+            "github.com/athenianco/repo-A",
+            "github.com/athenianco/repo-B/logical0",
+            "github.com/athenianco/repo-B/logical1",
+        ]
 
     async def test_account_mismatch(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=101, account_id=3))
@@ -40,13 +70,31 @@ class TestListGoalTemplates:
     async def test_base(self, client: TestClient, sdb: Database) -> None:
         await models_insert(
             sdb,
-            GoalFactory(id=201, template_id=1001),
             GoalTemplateFactory(id=1002, name="T1002"),
             GoalTemplateFactory(id=1001, name="T1001"),
         )
         res = await self._request(client, 1)
         assert [r["id"] for r in res] == [1001, 1002]
         assert [r["name"] for r in res] == ["T1001", "T1002"]
+        assert not any("repositories" in r for r in res)
+
+    async def test_repositories(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=102, name="T0", repositories=None),
+            GoalTemplateFactory(id=103, name="T1", repositories=[[200, ""]]),
+        )
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=200, full_name="athenianco/repo-A"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb, *mdb_models)
+
+            res = await self._request(client, 1)
+        assert "repositories" not in res[0]
+        assert res[1]["repositories"] == ["github.com/athenianco/repo-A"]
 
     async def test_wrong_account(self, client: TestClient) -> None:
         await self._request(client, 3, 404)

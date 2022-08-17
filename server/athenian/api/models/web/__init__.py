@@ -113,7 +113,7 @@ from athenian.api.models.web.generic_error import (
 )
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
-from athenian.api.models.web.goal_template import GoalTemplate
+from athenian.api.models.web.goal_template import BaseGoalTemplateModel, GoalTemplate
 from athenian.api.models.web.goal_template_create_request import GoalTemplateCreateRequest
 from athenian.api.models.web.goal_template_update_request import GoalTemplateUpdateRequest
 from athenian.api.models.web.granularity import Granularity, GranularityMixin
