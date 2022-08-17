@@ -228,13 +228,13 @@ async def test_get_account_features_disabled(client, headers, sdb):
 async def test_set_account_features_smoke(client, headers, god, sdb):
     body = [
         {"name": "expires_at", "parameters": "2020-01-01"},
-        {"name": "jira", "parameters": {"enabled": True, "parameters": "test"}},
+        {"name": "jira", "parameters": {"enabled": True, "parameters": {"a": "test"}}},
         {"name": "bare_value", "parameters": {"enabled": False}},
     ]
     response = await client.request(
         method="POST", path="/v1/account/1/features", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, await response.json()
     body = await response.json()
     assert isinstance(body, list)
     assert len(body) == 2
@@ -245,7 +245,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     model = models[1]
     expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
     assert expires_at.date() == date(2020, 1, 1)
-    assert model.parameters == "test"
+    assert model.parameters == {"a": "test", "c": "d"}
 
 
 # TODO: response validation fails because
@@ -301,6 +301,26 @@ async def test_set_account_features_nasty(client, headers, god):
         method="POST", path="/v1/account/1/features", headers=headers, json=body,
     )
     assert response.status == 400
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "name": "bare_value",
+            "parameters": {"enabled": True, "parameters": {"test": "2020-01-01"}},
+        },
+        {"name": "jira", "parameters": {"enabled": True, "parameters": '"test"'}},
+    ],
+)
+async def test_set_account_features_type_mismatch(client, headers, god, sdb, body):
+    body = [body]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+    text = await response.json()
+    assert "format mismatch" in str(text), text
+    assert response.status == 400, text
 
 
 @pytest.mark.flaky(reruns=10, reruns_delay=1)
