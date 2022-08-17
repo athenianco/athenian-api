@@ -10,15 +10,18 @@ from athenian.api.align.goals.dbaccess import (
     delete_empty_goals,
     delete_goal_template_from_db,
     delete_team_goals,
+    dump_goal_repositories,
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
+    parse_goal_repositories,
     update_goal,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
+from athenian.api.internal.reposet import RepoIdentity
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.testutils.db import (
     assert_existing_row,
@@ -168,13 +171,17 @@ class TestGetGoalTemplatesFromDB:
 
 class TestInsertGoalTemplate:
     async def test_base(self, sdb: Database) -> None:
-        await insert_goal_template(1, "T", "m", sdb)
-        await assert_existing_row(sdb, GoalTemplate, account_id=1, name="T", metric="m")
+        await insert_goal_template(
+            sdb, account_id=1, name="T", metric="m", repositories=[[1, None]],
+        )
+        await assert_existing_row(
+            sdb, GoalTemplate, account_id=1, name="T", metric="m", repositories=[[1, None]],
+        )
 
     async def test_duplicated_name(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(account_id=1, name="T"))
         with pytest.raises(integrity_errors):
-            await insert_goal_template(1, "T", "m0", sdb)
+            await insert_goal_template(sdb, account_id=1, name="T", metric="m0")
 
         await assert_missing_row(sdb, GoalTemplate, metric="m")
 
@@ -194,13 +201,13 @@ class TestUpdateGoalTemplateInDB:
         await models_insert(
             sdb, GoalTemplateFactory(id=120, name="Tmpl 0", updated_at=dt(2012, 10, 23)),
         )
-        await update_goal_template_in_db(120, "Tmpl new", sdb)
+        await update_goal_template_in_db(120, sdb, name="Tmpl new")
         row = await assert_existing_row(sdb, GoalTemplate, id=120, name="Tmpl new")
         assert ensure_db_datetime_tz(row[GoalTemplate.updated_at.name], sdb) == dt(2012, 10, 26)
 
     async def test_not_found(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=120, name="T0"))
-        await update_goal_template_in_db(121, "T1", sdb)
+        await update_goal_template_in_db(121, sdb, name="T1")
         await assert_existing_row(sdb, GoalTemplate, id=120, name="T0")
 
 
@@ -223,3 +230,30 @@ class TestCreateDefaultGoalTemplates:
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
         await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[1]["name"])
+
+
+class TestParseGoalRepositories:
+    def test_unset(self) -> None:
+        assert parse_goal_repositories(None) is None
+
+    def test_empty(self) -> None:
+        assert parse_goal_repositories([]) == []
+
+    def test_base(self) -> None:
+        val: list[list] = [[123, None], [456, "logical"]]
+        identities = parse_goal_repositories(val)
+        assert identities is not None
+        assert all(isinstance(ident, RepoIdentity) for ident in identities)
+        assert identities[0].repo_id == 123
+        assert identities[0].logical_name is None
+        assert identities[1].repo_id == 456
+        assert identities[1].logical_name == "logical"
+
+
+class TestDumpGoalRepositories:
+    def test_none(self) -> None:
+        assert dump_goal_repositories(None) is None
+
+    def test_some_identities(self) -> None:
+        idents = [RepoIdentity(1, "a"), RepoIdentity(2, None)]
+        assert dump_goal_repositories(idents) == [[1, "a"], [2, None]]
