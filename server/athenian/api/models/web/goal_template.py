@@ -26,8 +26,6 @@ class GoalTemplate(Model):
         """
         self._id = id
         self._name = name
-        if metric is not None:
-            self._validate_metric(metric)
         self._metric = metric
 
     @property
@@ -70,15 +68,6 @@ class GoalTemplate(Model):
         """Sets the metric of this GoalTemplate."""
         if metric is None:
             raise ValueError("Invalid value for `metric`, must not be `None`")
-        self._validate_metric(metric)
         self._metric = metric
 
     @classmethod
-    def _validate_metric(cls, metric: GoalTemplateMetricID) -> None:
-        metric_str = cast(str, metric)
-        Enums = (JIRAMetricID, PullRequestMetricID, ReleaseMetricID)
-        for Enum in Enums:
-            if metric_str in Enum:
-                return
-        enums_repr = ", ".join(Enum.__name__ for Enum in Enums)
-        raise ValueError(f"Invalid value for `metric`, must be one of {enums_repr}")
