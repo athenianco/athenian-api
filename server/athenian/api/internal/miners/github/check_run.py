@@ -2,7 +2,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
-import pickle
 from typing import Collection, Iterable, List, Optional, Tuple, Union
 import warnings
 
@@ -14,7 +13,7 @@ from xxhash import xxh3_64_intdigest
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.features.github.check_run_metrics_accelerated import (
@@ -38,6 +37,7 @@ from athenian.api.models.metadata.github import (
     NodeRepository,
     PullRequestLabel,
 )
+from athenian.api.pandas_io import deserialize_df, serialize_df
 from athenian.api.to_object_arrays import as_bool
 from athenian.api.tracing import sentry_span
 
@@ -53,8 +53,8 @@ pull_request_title_column = "pull_request_" + NodePullRequest.title.name
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_df,
+    deserialize=deserialize_df,
     key=lambda time_from, time_to, repositories, pushers, labels, jira, logical_settings, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
@@ -64,6 +64,7 @@ pull_request_title_column = "pull_request_" + NodePullRequest.title.name
         jira,
         logical_settings,
     ),
+    version=2,
 )
 async def mine_check_runs(
     time_from: datetime,
@@ -772,10 +773,17 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> int:
     return split
 
 
+@cached(
+    exptime=middle_term_exptime,
+    serialize=serialize_df,
+    deserialize=deserialize_df,
+    key=lambda commit_ids, **_: (",".join(map(str, sorted(commit_ids))),),
+)
 async def mine_commit_check_runs(
     commit_ids: Iterable[int],
     meta_ids: Tuple[int, ...],
     mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
     """Fetch check runs belonging to the specified commits."""
     log = logging.getLogger(f"{metadata.__package__}.mine_commit_check_runs")

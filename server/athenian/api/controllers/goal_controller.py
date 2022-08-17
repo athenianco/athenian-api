@@ -38,3 +38,18 @@ async def list_goal_templates(request: AthenianWebRequest, id: int) -> web.Respo
     ]
     models.sort(key=attrgetter("id"))
     return model_response(models)
+
+
+async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Stub."""
+    raise NotImplementedError()
+
+
+async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
+    """Stub."""
+    raise NotImplementedError()
+
+
+async def update_goal_template(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
+    """Stub."""
+    raise NotImplementedError()

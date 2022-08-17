@@ -397,7 +397,18 @@ class UnfreshPullRequestFactsFetcher:
                     f.deployment_conclusions.append(DeploymentConclusion[conclusion])
                 except AttributeError:
                     continue  # numpy array, already set
-        empty = []
+        empty_deployments = np.array([], dtype=object)
+        empty_deployed = np.array([], dtype="datetime64[s]")
+        empty_environments = np.array([], dtype="U")
+        empty_deployment_conclusions = np.array([], dtype=int)
         for f in facts.values():
             if f.deployments is None:
-                f.deployments = f.deployed = f.environments = f.deployment_conclusions = empty
+                f.deployments = empty_deployments
+                f.deployed = empty_deployed
+                f.environments = empty_environments
+                f.deployment_conclusions = empty_deployment_conclusions
+            else:
+                f.deployments = np.array(f.deployments, dtype=object)
+                f.deployed = np.array(f.deployed, dtype="datetime64[s]")
+                f.environments = np.array(f.environments, dtype="U")
+                f.deployment_conclusions = np.array(f.deployment_conclusions, dtype=int)

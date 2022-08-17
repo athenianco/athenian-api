@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 import logging
-import pickle
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Iterable, Optional
 
 import aiomcache
 import numpy as np
@@ -16,6 +15,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
+from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
@@ -28,23 +28,24 @@ class BranchMiner:
     @sentry_span
     @cached(
         exptime=middle_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
+        serialize=serialize_args,
+        deserialize=deserialize_args,
         key=lambda meta_ids, repos, strip=False, **_: (
             ",".join(map(str, meta_ids)),
             ",".join(sorted(repos if repos is not None else ["None"])),
             strip,
         ),
+        version=2,
     )
     async def extract_branches(
         cls,
         repos: Optional[Iterable[str]],
         prefixer: Prefixer,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
         cache: Optional[aiomcache.Client],
         strip: bool = False,
-    ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
@@ -173,7 +174,7 @@ class BranchMiner:
     async def _extract_branches(
         cls,
         repos: Optional[Iterable[int]],
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> pd.DataFrame:
         query = (
@@ -198,7 +199,7 @@ class BranchMiner:
 
 async def load_branch_commit_dates(
     branches: pd.DataFrame,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
 ) -> None:
     """Fetch the branch head commit dates if needed. The operation executes in-place."""
