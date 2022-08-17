@@ -5,6 +5,7 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.internal.reposet import (
+    RepositoryName,
     load_account_reposets,
     load_account_state,
     refresh_repository_names,
@@ -136,3 +137,32 @@ async def test_refresh_repository_names_smoke(sdb, mdb):
         ["github.com/src-d/go-git/alpha", 40550],
         ["github.com/src-d/go-git/beta", 40550],
     ]
+
+
+class TestRepositoryName:
+    def test_from_prefixed_wrong_value(self) -> None:
+        for bad_value in ("org/repo", "org/repo/logic"):
+            with pytest.raises(ValueError):
+                RepositoryName.from_prefixed(bad_value)
+
+    def test_from_prefixed(self) -> None:
+        name = RepositoryName.from_prefixed("github.com/org/repo")
+        assert name.prefix == "github.com"
+        assert name.owner == "org"
+        assert name.physical == "repo"
+        assert name.logical is None
+        assert not name.is_logical
+        assert str(name) == "github.com/org/repo"
+
+    def test_from_prefixed_logical(self) -> None:
+        name = RepositoryName.from_prefixed("gitlab.com/org/repo/logical")
+        assert name.prefix == "gitlab.com"
+        assert name.owner == "org"
+        assert name.physical == "repo"
+        assert name.logical == "logical"
+        assert name.is_logical
+        assert str(name) == "gitlab.com/org/repo/logical"
+
+    def test_with_logical(self) -> None:
+        name = RepositoryName.from_prefixed("gitlab.com/org/repo").with_logical("l")
+        assert str(name) == "gitlab.com/org/repo/l"
