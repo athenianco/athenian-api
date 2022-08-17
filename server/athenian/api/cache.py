@@ -145,7 +145,11 @@ def cached(
                     try:
                         with sentry_sdk.start_span(op="get " + cache_key.hex()):
                             buffer = await client.get(cache_key)
-                    except (aiomcache.exceptions.ClientException, IncompleteReadError) as e:
+                    except (
+                        aiomcache.exceptions.ClientException,
+                        IncompleteReadError,
+                        IndexError,  # DEV-4823, https://github.com/aio-libs/aiomcache/issues/279
+                    ) as e:
                         log.exception(
                             "Failed to fetch cached %s/%s: %s: %s",
                             full_name,
