@@ -1,5 +1,6 @@
 import asyncio
 from datetime import timezone
+import json
 import pickle
 from typing import Optional
 
@@ -195,6 +196,18 @@ async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response
         except KeyError:
             continue
         if v is not None:
+            if isinstance(v, dict) != isinstance(fk[1], dict):
+                raise ResponseError(
+                    InvalidRequestError(
+                        pointer=f".{fk[0]}.parameters.parameters",
+                        detail=(
+                            "`parameters` format mismatch: required type"
+                            f' {type(fk[1]).__name__} (example: `{{"parameters":'
+                            f" {json.dumps(fk[1])}}}`) but got {type(v).__name__} ="
+                            f" `{json.dumps(v)}`"
+                        ),
+                    ),
+                )
             if isinstance(v, dict):
                 for pk, pv in v.items():
                     fk[1][pk] = pv
