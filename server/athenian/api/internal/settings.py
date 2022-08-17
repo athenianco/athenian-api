@@ -33,10 +33,9 @@ from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     coerce_prefixed_logical_repos,
     drop_logical_repo,
-    drop_prefixed_logical_repo,
 )
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import RepoName, resolve_repos
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
@@ -732,7 +731,7 @@ class Settings:
         missing_logical = []
         for repo in repos:
             if repo not in loaded:
-                if drop_prefixed_logical_repo(repo) != repo:
+                if RepoName.from_prefixed(repo).is_logical:
                     missing_logical.append(repo)
                     continue
                 settings.append(
@@ -821,8 +820,7 @@ class Settings:
             )
         values = []
         for repo in repos:
-            if drop_prefixed_logical_repo(repo) != repo:
-                # logical
+            if RepoName.from_prefixed(repo).is_logical:
                 if match not in (ReleaseMatch.tag, ReleaseMatch.event):
                     raise ResponseError(
                         InvalidRequestError(
