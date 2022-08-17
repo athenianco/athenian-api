@@ -1,10 +1,16 @@
 import asyncio
+import dataclasses
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.db import Database
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import (
+    RepoIdentitiesMapper,
+    RepoIdentity,
     RepoName,
     load_account_reposets,
     load_account_state,
@@ -13,7 +19,9 @@ from athenian.api.internal.reposet import (
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.response import ResponseError
-from tests.testutils.db import models_insert
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import LogicalRepositoryFactory
 
 
@@ -166,3 +174,67 @@ class TestRepoName:
     def test_with_logical(self) -> None:
         name = RepoName.from_prefixed("gitlab.com/org/repo").with_logical("l")
         assert str(name) == "gitlab.com/org/repo/l"
+
+
+class TestRepoIdentitiesMapper:
+    def test_prefixed_names_to_identities(self) -> None:
+        prefixer = self._mk_prefixer(repo_name_to_node={"org/repo1": 1, "org/repo2": 2})
+        mapper = RepoIdentitiesMapper(prefixer)
+        idents = mapper.prefixed_names_to_identities(
+            ["github.com/org/repo1", "github.com/org/repo2/log"],
+        )
+        assert idents == [RepoIdentity(1, None), RepoIdentity(2, "log")]
+
+    def test_prefixed_names_to_identities_invalid_repo(self) -> None:
+        prefixer = self._mk_prefixer(repo_name_to_node={"org/repo1": 1})
+        mapper = RepoIdentitiesMapper(prefixer)
+        with pytest.raises(ResponseError):
+            mapper.prefixed_names_to_identities(["github.com/org/repo2"])
+
+    def test_identities_to_prefixed_names(self) -> None:
+        prefixer = self._mk_prefixer(
+            repo_node_to_prefixed_name={1: "github.com/org/repo1", 2: "github.com/org/repo2"},
+        )
+        mapper = RepoIdentitiesMapper(prefixer)
+        names = mapper.identities_to_prefixed_names([RepoIdentity(1, None), RepoIdentity(1, "l")])
+        assert names == ["github.com/org/repo1", "github.com/org/repo1/l"]
+
+    def test_identities_to_prefixed_names_invalid_identities(self) -> None:
+        prefixer = self._mk_prefixer(repo_node_to_prefixed_name={1: "github.com/org/repo1"})
+        mapper = RepoIdentitiesMapper(prefixer)
+        with pytest.raises(ValueError):
+            mapper.identities_to_prefixed_names([RepoIdentity(2, None)])
+
+    async def test_with_real_prefixer(self, mdb: Database) -> None:
+        async with DBCleaner(mdb) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=1, full_name="athenianco/repo-A"),
+                md_factory.RepositoryFactory(node_id=2, full_name="athenianco/repo-B"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb, *mdb_models)
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
+
+        mapper = RepoIdentitiesMapper(prefixer)
+
+        names = mapper.identities_to_prefixed_names(
+            [RepoIdentity(1, None), RepoIdentity(2, "l1"), RepoIdentity(2, "l2")],
+        )
+        assert names == [
+            "github.com/athenianco/repo-A",
+            "github.com/athenianco/repo-B/l1",
+            "github.com/athenianco/repo-B/l2",
+        ]
+
+        identities = mapper.prefixed_names_to_identities(
+            ["github.com/athenianco/repo-A/l", "github.com/athenianco/repo-B"],
+        )
+        assert identities == [RepoIdentity(1, "l"), RepoIdentity(2, None)]
+
+    @classmethod
+    def _mk_prefixer(cls, **kwargs: Any) -> Prefixer:
+        for field in dataclasses.fields(Prefixer):
+            if field.name != "do_not_construct_me_directly":
+                kwargs.setdefault(field.name, {})
+        kwargs["do_not_construct_me_directly"] = None
+        return Prefixer(**kwargs)

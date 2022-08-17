@@ -6,7 +6,17 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence, Type
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Coroutine,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+)
 
 import aiomcache
 from asyncpg import UniqueViolationError
@@ -38,6 +48,7 @@ from athenian.api.models.web import (
     NotFoundError,
 )
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
@@ -584,6 +595,24 @@ async def refresh_repository_names(
     await gather(*updates)
     all_reposet_names.sort()
     return all_reposet_names
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RepoIdentity:
+    """The identity of a repository, physical or logical."""
+
+    repo_id: int
+    """
+    The identifier of the physical repository
+
+    It's a reference to the mdb `Repository.node_id` column.
+    """
+    logical_name: Optional[str]
+    """
+    The logical name of repository, if this is logical repository.
+    """
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class RepoName:
     """The name of a repository.
@@ -638,3 +667,42 @@ class RepoName:
     def __str__(self) -> str:
         """Return the canonical full repository name."""
         return "/".join(filter(None, dataclasses.astuple(self)))
+
+
+class RepoIdentitiesMapper:
+    """Convert between RepoIdentity <=> names using Prefixer."""
+
+    def __init__(self, prefixer: Prefixer):
+        """Build the RepoIdentitiesMapper."""
+        self._prefixer = prefixer
+
+    @classmethod
+    async def from_request(cls, request: AthenianWebRequest, account: int) -> RepoIdentitiesMapper:
+        """Build the RepoIdentitiesMapper from a web request."""
+        meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
+        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+        return RepoIdentitiesMapper(prefixer)
+
+    def prefixed_names_to_identities(self, repo_names: Iterable[str]) -> list[RepoIdentity]:
+        """Convert a list of prefixed repository names to RepoIdentity-s."""
+        repos = []
+        for repo_name in repo_names:
+            name = RepoName.from_prefixed(repo_name)
+            try:
+                physical_id = self._prefixer.repo_name_to_node[name.unprefixed_physical]
+            except KeyError:
+                raise ResponseError(BadRequestError(f"Unknown repository {repo_name}"))
+            repos.append(RepoIdentity(physical_id, name.logical))
+        return repos
+
+    def identities_to_prefixed_names(self, repo_identities: Iterable[RepoIdentity]) -> list[str]:
+        """Convert a list of RepoIdentity to a list of prefixed repository names."""
+        repo_names = []
+        for repo in repo_identities:
+            try:
+                physical_name = self._prefixer.repo_node_to_prefixed_name[repo.repo_id]
+            except KeyError:
+                raise ValueError(f"Invalid repo_id {repo.repo_id}")
+            name = RepoName.from_prefixed(physical_name).with_logical(repo.logical_name)
+            repo_names.append(str(name))
+        return repo_names
