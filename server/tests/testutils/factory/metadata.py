@@ -7,6 +7,7 @@ from athenian.api.models.metadata.github import (
     AccountRepository,
     Bot,
     FetchProgress,
+    Repository,
     Team,
     TeamMember,
     User,
@@ -26,6 +27,18 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class RepositoryFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Repository
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
+    full_name = factory.LazyAttribute(lambda repo: f"org/repo-{repo.node_id}")
+    html_url = factory.LazyAttribute(lambda repo: f"https://github.com/{repo.full_name}")
 
 
 class AccountFactory(SQLAlchemyModelFactory):
