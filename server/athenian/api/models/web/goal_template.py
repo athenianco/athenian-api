@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -13,6 +14,7 @@ class GoalTemplate(Model):
         "id": int,
         "name": str,
         "metric": str,
+        "repositories": Optional[list[str]],
     }
 
     def __init__(
@@ -20,28 +22,28 @@ class GoalTemplate(Model):
         id: Optional[int] = None,
         name: Optional[str] = None,
         metric: Optional[str] = None,
+        repositories: Optional[list[str]] = None,
     ):
         """GoalTemplate - a model defined in OpenAPI
 
-        :param id: The id of this GoalTemplate.
+        :param id: The identifier of this GoalTemplate.
         :param name: The name of this GoalTemplate.
         :param metric: The metric of this GoalTemplate.
+        :param repositories: The repositories of this GoalTemplate.
         """
         self._id = id
         self._name = name
         self._metric = metric
+        self._repositories = repositories
 
     @property
     def id(self) -> int:
-        """Gets the id of this GoalTemplate."""
+        """Gets the identifier for this GoalTemplate."""
         return self._id
 
     @id.setter
-    def id(self, id: int) -> None:
-        """Sets the id of this GoalTemplate."""
-        if id is None:
-            raise ValueError("Invalid value for `id`, must not be `None`")
-
+    def id(self, id: int):
+        """Sets the identifier of this GoalTemplate."""
         self._id = id
 
     @property
@@ -73,6 +75,16 @@ class GoalTemplate(Model):
             raise ValueError("Invalid value for `metric`, must not be `None`")
         self._validate_metric(metric)
         self._metric = metric
+
+    @property
+    def repositories(self) -> Optional[list[str]]:
+        """Gets the repositories for this GoalTemplate."""
+        return self._repositories
+
+    @repositories.setter
+    def repositories(self, repositories: Optional[list[str]]):
+        """Sets the repositories of this GoalTemplate."""
+        self._repositories = repositories
 
     @classmethod
     def _validate_metric(cls, metric: str) -> None:

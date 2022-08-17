@@ -6,10 +6,12 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
+    parse_goal_repositories,
     update_goal_template_in_db,
 )
-from athenian.api.db import integrity_errors
+from athenian.api.db import integrity_errors, Row
 from athenian.api.internal.account import get_user_account_status_from_request
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
 from athenian.api.models.web import (
     CreatedIdentifier,
@@ -22,6 +24,15 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 
 
+def _goal_template_from_row(row: Row, **kwargs) -> GoalTemplate:
+    return GoalTemplate(
+        id=row[DBGoalTemplate.id.name],
+        name=row[DBGoalTemplate.name.name],
+        metric=row[DBGoalTemplate.metric.name],
+        **kwargs,
+    )
+
+
 async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
     """Retrieve a goal template.
 
@@ -29,15 +40,18 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
     :type id: int
     """
     row = await get_goal_template_from_db(id, request.sdb)
+    account = row[DBGoalTemplate.account_id.name]
     try:
-        await get_user_account_status_from_request(request, row[DBGoalTemplate.account_id.name])
+        await get_user_account_status_from_request(request, account)
     except ResponseError:
         # do not leak the account that owns this template
         raise GoalTemplateNotFoundError(id)
-    model = GoalTemplate(
-        id=id, name=row[DBGoalTemplate.name.name], metric=row[DBGoalTemplate.metric.name],
-    )
-
+    if (db_repos := parse_goal_repositories(row[DBGoalTemplate.repositories.name])) is not None:
+        prefixer = await Prefixer.from_request(request, account)
+        repositories = prefixer.repo_identities_to_prefixed_names(db_repos)
+    else:
+        repositories = None
+    model = _goal_template_from_row(row, repositories=repositories)
     return model_response(model)
 
 
@@ -49,14 +63,16 @@ async def list_goal_templates(request: AthenianWebRequest, id: int) -> web.Respo
     """
     await get_user_account_status_from_request(request, id)
     rows = await get_goal_templates_from_db(id, request.sdb)
-    models = [
-        GoalTemplate(
-            id=row[DBGoalTemplate.id.name],
-            name=row[DBGoalTemplate.name.name],
-            metric=row[DBGoalTemplate.metric.name],
-        )
-        for row in rows
-    ]
+
+    prefixer = await Prefixer.from_request(request, id)
+    models = []
+    for row in rows:
+        raw_db_repos = row[DBGoalTemplate.repositories.name]
+        if (db_repos := parse_goal_repositories(raw_db_repos)) is not None:
+            repositories = prefixer.repo_identities_to_prefixed_names(db_repos)
+        else:
+            repositories = None
+        models.append(_goal_template_from_row(row, repositories=repositories))
     return model_response(models)
 
 
@@ -69,12 +85,15 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     await get_user_account_status_from_request(request, create_request.account)
     try:
         template_id = await insert_goal_template(
-            create_request.account, create_request.name, create_request.metric, request.sdb,
+            request.sdb,
+            account_id=create_request.account,
+            name=create_request.name,
+            metric=create_request.metric,
         )
     except integrity_errors:
         raise ResponseError(
             DatabaseConflict(
-                detail=f"Goal Template named '{create_request.name}' already exists.",
+                detail=f"Goal template named '{create_request.name}' already exists.",
             ),
         ) from None
     return model_response(CreatedIdentifier(template_id))
@@ -110,5 +129,5 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
         )
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
-    await update_goal_template_in_db(id, update_request.name, request.sdb)
+    await update_goal_template_in_db(id, request.sdb, name=update_request.name)
     return web.json_response({})

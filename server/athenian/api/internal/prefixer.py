@@ -11,7 +11,9 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
+from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.models.metadata.github import Repository, User
+from athenian.api.request import AthenianWebRequest
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -179,6 +181,16 @@ class Prefixer:
             user_node_to_login=user_node_to_login,
             user_login_to_node=user_login_to_node,
         )
+
+    @staticmethod
+    async def from_request(request: AthenianWebRequest, account: int) -> Prefixer:
+        """
+        Initialize a new Prefixer from the account ID and request.
+
+        Use this method with caution! It swallows `meta_ids`.
+        """
+        meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
+        return await Prefixer.load(meta_ids, request.mdb, request.cache)
 
     def resolve_repo_nodes(self, repo_node_ids: Iterable[int]) -> List[str]:
         """Lookup each repository node ID in repo_node_map."""

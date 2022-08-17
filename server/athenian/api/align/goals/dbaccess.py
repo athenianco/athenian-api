@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 import sqlalchemy as sa
 
@@ -18,6 +18,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     integrity_errors,
 )
+from athenian.api.internal.prefixer import RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -201,7 +202,7 @@ async def get_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> Row:
     return template
 
 
-async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> Row:
+async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> list[Row]:
     """Return all account GoalTemplate-s, ordered by id."""
     stmt = (
         sa.select(GoalTemplate).where(GoalTemplate.account_id == account).order_by(GoalTemplate.id)
@@ -209,9 +210,9 @@ async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> Row:
     return await sdb.fetch_all(stmt)
 
 
-async def insert_goal_template(account_id: int, name: str, metric: str, sdb: DatabaseLike) -> int:
+async def insert_goal_template(sdb: DatabaseLike, **kwargs: Any) -> int:
     """Insert a new Goal Template."""
-    model = GoalTemplate(account_id=account_id, name=name, metric=metric)
+    model = GoalTemplate(**kwargs)
     values = model.create_defaults().explode()
     return await sdb.execute(sa.insert(GoalTemplate).values(values))
 
@@ -221,9 +222,9 @@ async def delete_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> N
     await sdb.execute(sa.delete(GoalTemplate).where(GoalTemplate.id == template_id))
 
 
-async def update_goal_template_in_db(template_id, name: str, sdb: DatabaseLike) -> None:
+async def update_goal_template_in_db(template_id: int, sdb: DatabaseLike, **values: Any) -> None:
     """Update a Goal Template."""
-    values = {GoalTemplate.name: name, GoalTemplate.updated_at: datetime.now(timezone.utc)}
+    values[GoalTemplate.updated_at.name] = datetime.now(timezone.utc)
     stmt = sa.update(GoalTemplate).where(GoalTemplate.id == template_id).values(values)
     await sdb.execute(stmt)
 
@@ -242,6 +243,23 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     insert = await dialect_specific_insert(sdb_conn)
     stmt = insert(GoalTemplate).on_conflict_do_nothing()
     await sdb_conn.execute_many(stmt, values)
+
+
+def parse_goal_repositories(val: Optional[list[list]]) -> Optional[list[RepositoryReference]]:
+    """Parse the raw value in DB repositories JSON column as list of `RepositoryReference`."""
+    if val is None:
+        return val
+    return [RepositoryReference(repo_id, logical_name) for repo_id, logical_name in val]
+
+
+def dump_goal_repositories(
+    repo_idents: Optional[Sequence[RepositoryReference]],
+) -> Optional[list[list]]:
+    """Dump the sequence of RepositoryReference-s in the format used by DB repositories JSON \
+    column."""
+    if repo_idents is None:
+        return None
+    return [[ident.repo_id, ident.logical_name] for ident in repo_idents]
 
 
 @sentry_span
