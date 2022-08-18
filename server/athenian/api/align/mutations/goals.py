@@ -87,14 +87,16 @@ async def resolve_update_goal(
     input: dict,
 ) -> dict:
     """Update an existing Goal."""
-    update = _parse_update_goal_input(input)
+    repo_identities_factory = RepoIdentitiesMapperFactory(accountId, info.context)
+    update = await _parse_update_goal_input(input, repo_identities_factory)
     goal_id = input[UpdateGoalInputFields.goalId]
     result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
+    if not update.has_updates:
+        return result
+
     deletions = update.team_goal_deletions
     assignments = update.team_goal_assignments
-    if not deletions and not assignments and update.archived is None:
-        return result
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -102,8 +104,14 @@ async def resolve_update_goal(
                 await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
             if assignments:
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
+
+            update_values = {}
             if update.archived is not None:
-                await update_goal(accountId, goal_id, sdb_conn, archived=update.archived)
+                update_values[Goal.archived.name] = update.archived
+            if update.repositories is not GoalUpdateInfo.NO_UPDATE:
+                update_values[Goal.repositories.name] = update.repositories
+            if update_values:
+                await update_goal(accountId, goal_id, sdb_conn, **update_values)
 
     return result
 
@@ -165,17 +173,32 @@ def _parse_team_goal_target(team_goal_target: dict) -> int | float | str:
     return next(tgt for tgt in team_goal_target.values() if tgt is not None)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class GoalUpdateInfo:
     """The information to update an existing Goal."""
+
+    NO_UPDATE = object()
 
     team_goal_deletions: Sequence[int]
     team_goal_assignments: Sequence[TeamGoalTargetAssignment]
     archived: Optional[bool]
+    repositories: Optional[list[list]]
+
+    def has_updates(self) -> bool:
+        """Get whether the object expresses any kind of update."""
+        return bool(
+            self.team_goal_deletions
+            or self.team_goal_assignments
+            or self.archived is None
+            or self.repositories is not self.NO_UPDATE,
+        )
 
 
 @sentry_span
-def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
+async def _parse_update_goal_input(
+    input: dict[str, Any],
+    repo_identities_mapper_factory: RepoIdentitiesMapperFactory,
+) -> GoalUpdateInfo:
     deletions = []
     assignments = []
 
@@ -218,17 +241,22 @@ def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
     if errors:
         raise GoalMutationError("; ".join(errors))
 
-    return GoalUpdateInfo(deletions, assignments, input.get("archived"))
+    repositories = await _parse_input_repositories(
+        input, repo_identities_mapper_factory, default=GoalUpdateInfo.NO_UPDATE,
+    )
+
+    return GoalUpdateInfo(deletions, assignments, input.get("archived"), repositories)
 
 
 async def _parse_input_repositories(
     input: dict[str, Any],
     repo_identities_mapper_factory: RepoIdentitiesMapperFactory,
+    default: Any = None,
 ) -> Optional[list[list]]:
     try:
         req_repos = input[CreateGoalInputFields.repositories][GoalRepositoriesFields.value]
     except KeyError:
-        req_repos = None
+        return default
 
     if req_repos is None:
         repositories = None

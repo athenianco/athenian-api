@@ -140,8 +140,7 @@ async def update_goal(
     account_id: int,
     goal_id: int,
     sdb_conn: Connection,
-    *,
-    archived: bool,
+    **values: Any,
 ) -> None:
     """Update the properties of an existing Goal."""
     assert await conn_in_transaction(sdb_conn)
@@ -152,7 +151,7 @@ async def update_goal(
     if await sdb_conn.fetch_one(select_stmt) is None:
         raise GoalMutationError(f"Goal {goal_id} not found", HTTPStatus.NOT_FOUND)
 
-    values = {Goal.archived.name: archived, Goal.updated_at: datetime.now(timezone.utc)}
+    values[Goal.updated_at.name] = datetime.now(timezone.utc)
     update_stmt = sa.update(Goal).where(where).values(values)
     await sdb_conn.execute(update_stmt)
 

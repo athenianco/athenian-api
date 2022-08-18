@@ -748,3 +748,46 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         res = await self._request(variables, client)
         assert "errors" not in res
         await assert_existing_row(sdb, Goal, id=100, archived=True)
+
+    async def test_repositories_unset(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=1, repositories=[[1, None], [2, None]]))
+        variables = {"accountId": 1, "input": {"goalId": 1, "repositories": {"value": None}}}
+        res = await self._request(variables, client)
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=1)
+        assert row[Goal.repositories.name] is None
+
+    async def test_repositories_not_updated(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=1, repositories=[[1, None], [2, None]]))
+        variables = {"accountId": 1, "input": {"goalId": 1}}
+        res = await self._request(variables, client)
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=1)
+        assert row[Goal.repositories.name] == [[1, None], [2, None]]
+
+    async def test_repositories_update(
+        self,
+        client: TestClient,
+        sdb: Database,
+        mdb: Database,
+    ) -> None:
+        await models_insert(sdb, GoalFactory(id=1, repositories=[[1, None], [2, None]]))
+        variables = {
+            "accountId": 1,
+            "input": {
+                "goalId": 1,
+                "repositories": {"value": ["github.com/org/r1", "github.com/org/r2/l"]},
+            },
+        }
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.RepositoryFactory(node_id=2, full_name="org/r1"),
+                md_factory.RepositoryFactory(node_id=3, full_name="org/r2"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            res = await self._request(variables, client)
+
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=1)
+        assert row[Goal.repositories.name] == [[2, None], [3, "l"]]
