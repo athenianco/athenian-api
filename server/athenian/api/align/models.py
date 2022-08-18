@@ -392,14 +392,12 @@ class GoalTree(Model):
         "id": int,
         "name": str,
         "metric": str,
-        "template_id": int,
         "valid_from": date,
         "expires_at": date,
         "team_goal": TeamGoalTree,
     }
 
     attribute_map = {
-        "template_id": "templateId",
         "valid_from": "validFrom",
         "expires_at": "expiresAt",
         "team_goal": "teamGoal",
@@ -410,7 +408,6 @@ class GoalTree(Model):
         id: int,
         name: str,
         metric: str,
-        template_id: int,
         valid_from: date,
         expires_at: date,
         team_goal: TeamGoalTree,
@@ -419,7 +416,6 @@ class GoalTree(Model):
         self._id = id
         self._name = name
         self._metric = metric
-        self._template_id = template_id
         self._valid_from = valid_from
         self._expires_at = expires_at
         self._team_goal = team_goal
@@ -438,11 +434,6 @@ class GoalTree(Model):
     def metric(self) -> str:
         """Get the metric of the goal."""
         return self._metric
-
-    @property
-    def template_id(self) -> int:
-        """Get the template identifier of the goal."""
-        return self._template_id
 
     @property
     def valid_from(self) -> date:
