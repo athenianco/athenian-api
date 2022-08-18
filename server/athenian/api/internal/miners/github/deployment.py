@@ -6,7 +6,6 @@ from itertools import chain, groupby, product, repeat
 import json
 import logging
 from operator import attrgetter
-import pickle
 from typing import Any, Collection, KeysView, Mapping, NamedTuple, Optional, Sequence
 
 import aiomcache
@@ -126,36 +125,13 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseDeployment,
 )
+from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_not_null, is_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
-@sentry_span
-@cached(
-    exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda repositories, participants, time_from, time_to, environments, conclusions, with_labels, without_labels, pr_labels, jira, release_settings, logical_settings, default_branches, **_: (  # noqa
-        ",".join(sorted(repositories)),
-        ",".join(
-            "%s: %s" % (k, "+".join(str(p) for p in sorted(v)))
-            for k, v in sorted(participants.items())
-        ),
-        time_from.timestamp(),
-        time_to.timestamp(),
-        ",".join(sorted(environments)),
-        ",".join(sorted(str(c) for c in conclusions)),
-        ",".join(f"{k}:{v}" for k, v in sorted(with_labels.items())),
-        ",".join(f"{k}:{v}" for k, v in sorted(without_labels.items())),
-        pr_labels,
-        jira,
-        release_settings,
-        logical_settings,
-        ",".join("%s: %s" % p for p in sorted(default_branches.items())),
-    ),
-)
 async def mine_deployments(
     repositories: Collection[str],
     participants: ReleaseParticipants,
@@ -181,8 +157,98 @@ async def mine_deployments(
 ) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
 
+    This is a join()-ing wrapper around _mine_deployments(). The reason why we split the code
+    is because serialization of independent DataFrame-s is much more efficient than the final
+    DataFrame with nested DataFrame-s.
+
     :return: Deployment stats with deployed components and releases sub-dataframes.
     """
+    notifications, components, facts, labels, releases = await _mine_deployments(
+        repositories,
+        participants,
+        time_from,
+        time_to,
+        environments,
+        conclusions,
+        with_labels,
+        without_labels,
+        pr_labels,
+        jira,
+        release_settings,
+        logical_settings,
+        branches,
+        default_branches,
+        prefixer,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        rdb,
+        cache,
+    )
+    if notifications.empty:
+        return pd.DataFrame()
+    components = _group_components(components)
+    labels = _group_labels(labels)
+    releases = [_group_releases(releases)] if not releases.empty else []
+    joined = notifications.join([components, facts], how="inner").join([labels] + releases)
+    joined = _adjust_empty_df(joined, "releases")
+    joined["labels"] = joined["labels"].astype(object, copy=False)
+    no_labels = joined["labels"].isnull().values  # can be NaN-s
+    subst = np.empty(no_labels.sum(), dtype=object)
+    subst.fill(pd.DataFrame())
+    joined["labels"].values[no_labels] = subst
+
+    return joined
+
+
+@sentry_span
+@cached(
+    exptime=short_term_exptime,
+    serialize=serialize_args,
+    deserialize=deserialize_args,
+    key=lambda repositories, participants, time_from, time_to, environments, conclusions, with_labels, without_labels, pr_labels, jira, release_settings, logical_settings, default_branches, **_: (  # noqa
+        ",".join(sorted(repositories)),
+        ",".join(
+            "%s: %s" % (k, "+".join(str(p) for p in sorted(v)))
+            for k, v in sorted(participants.items())
+        ),
+        time_from.timestamp(),
+        time_to.timestamp(),
+        ",".join(sorted(environments)),
+        ",".join(sorted(str(c) for c in conclusions)),
+        ",".join(f"{k}:{v}" for k, v in sorted(with_labels.items())),
+        ",".join(f"{k}:{v}" for k, v in sorted(without_labels.items())),
+        pr_labels,
+        jira,
+        release_settings,
+        logical_settings,
+        ",".join("%s: %s" % p for p in sorted(default_branches.items())),
+    ),
+)
+async def _mine_deployments(
+    repositories: Collection[str],
+    participants: ReleaseParticipants,
+    time_from: datetime,
+    time_to: datetime,
+    environments: Collection[str],
+    conclusions: Collection[DeploymentConclusion],
+    with_labels: Mapping[str, Any],
+    without_labels: Mapping[str, Any],
+    pr_labels: LabelFilter,
+    jira: JIRAFilter,
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    branches: pd.DataFrame,
+    default_branches: dict[str, str],
+    prefixer: Prefixer,
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if not isinstance(repositories, (set, frozenset, KeysView)):
         repositories = set(repositories)
     if repositories:
@@ -191,7 +257,7 @@ async def mine_deployments(
         if repo_node_ids[0] == 0:
             repo_node_ids = repo_node_ids[1:]
         if not repo_node_ids:
-            return pd.DataFrame()
+            return (pd.DataFrame(),) * 5
     else:
         repo_node_ids = []
     notifications, _, _ = await _fetch_deployment_candidates(
@@ -208,10 +274,10 @@ async def mine_deployments(
     )
     (notifications, components), labels = await gather(
         _fetch_components_and_prune_unresolved(notifications, prefixer, account, rdb),
-        _fetch_grouped_labels(notifications.index.values, account, rdb),
+        _fetch_labels(notifications.index.values, account, rdb),
     )
     if notifications.empty:
-        return pd.DataFrame()
+        return (pd.DataFrame(),) * 5
 
     # we must load all logical repositories at once to unambiguously process the residuals
     # (the root repository minus all the logicals)
@@ -276,7 +342,7 @@ async def mine_deployments(
             )
             (full_notifications, full_components), full_labels = await gather(
                 _fetch_components_and_prune_unresolved(full_notifications, prefixer, account, rdb),
-                _fetch_grouped_labels(full_notifications.index.values, account, rdb),
+                _fetch_labels(full_notifications.index.values, account, rdb),
             )
             full_components = split_logical_deployed_components(
                 full_notifications, full_labels, full_components, repositories, logical_settings,
@@ -337,7 +403,6 @@ async def mine_deployments(
     facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
-    components = _group_components(components)
 
     await releases
     releases = releases.result()
@@ -345,7 +410,12 @@ async def mine_deployments(
     # invalidate release facts with previously computed  invalid deploy names
     if invalidated.size:
         releases = releases.take(
-            np.flatnonzero(~in1d_str(releases.index.values.astype("U"), invalidated)),
+            np.flatnonzero(
+                ~in1d_str(
+                    releases[GitHubReleaseDeployment.deployment_name.name].values.astype("U"),
+                    invalidated,
+                ),
+            ),
         )
     if not missed_releases.empty:
         if not releases.empty:
@@ -353,18 +423,7 @@ async def mine_deployments(
             releases = pd.concat([releases, missed_releases])
         else:
             releases = missed_releases
-
-    joined = notifications.join([components, facts], how="inner").join(
-        [labels] + ([releases] if not releases.empty else []),
-    )
-    joined = _adjust_empty_df(joined, "releases")
-    joined["labels"] = joined["labels"].astype(object, copy=False)
-    no_labels = joined["labels"].isnull().values  # can be NaN-s
-    subst = np.empty(no_labels.sum(), dtype=object)
-    subst.fill(pd.DataFrame())
-    joined["labels"].values[no_labels] = subst
-
-    return joined
+    return notifications, components, facts, labels, releases
 
 
 async def _invalidate_precomputed_on_out_of_order_notifications(
@@ -682,7 +741,11 @@ async def _postprocess_deployed_releases(
     for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by):
         del release_facts_df[col]
     releases = release_facts_df.join(releases)
-    groups = list(releases.groupby("deployment_name", sort=False))
+    return releases
+
+
+def _group_releases(df: pd.DataFrame) -> pd.DataFrame:
+    groups = list(df.groupby("deployment_name", sort=False))
     grouped_releases = pd.DataFrame(
         {
             "deployment_name": [g[0] for g in groups],
@@ -1061,8 +1124,20 @@ async def _generate_deployment_facts(
     pr_inserts = {}
     all_releases_authors = defaultdict(set)
     if not releases.empty:
-        for name, subdf in zip(releases.index.values, releases["releases"].values):
-            all_releases_authors[name].update(subdf[Release.author_node_id.name].values)
+        unique_release_deps, release_index, release_group_counts = np.unique(
+            releases[GitHubReleaseDeployment.deployment_name.name].values,
+            return_inverse=True,
+            return_counts=True,
+        )
+        release_order = np.argsort(release_index)
+        release_pos = 0
+        for name, group_size in zip(unique_release_deps, release_group_counts):
+            all_releases_authors[name].update(
+                releases[Release.author_node_id.name].values[
+                    release_order[release_pos : release_pos + group_size]
+                ],
+            )
+            release_pos += group_size
     facts_per_repo_per_deployment = defaultdict(dict)
     unique_repos, repo_order, repo_commit_counts = np.unique(
         commit_stats.pr_repository_full_names, return_counts=True, return_inverse=True,
@@ -2644,8 +2719,8 @@ def _postprocess_fetch_deployment_candidates(
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_args,
+    deserialize=deserialize_args,
     postprocess=_postprocess_fetch_deployment_candidates,
     key=lambda repo_node_ids, time_from, time_to, with_labels, without_labels, **_: (
         ",".join(map(str, repo_node_ids)),
@@ -2741,12 +2816,12 @@ async def _fetch_deployment_candidates(
     return notifications, environments, conclusions
 
 
-async def _fetch_grouped_labels(
+async def _fetch_labels(
     names: Collection[str],
     account: int,
     rdb: Database,
 ) -> pd.DataFrame:
-    df = await read_sql_query(
+    return await read_sql_query(
         select([DeployedLabel]).where(
             and_(DeployedLabel.account_id == account, DeployedLabel.deployment_name.in_(names)),
         ),
@@ -2754,6 +2829,9 @@ async def _fetch_grouped_labels(
         DeployedLabel,
         index=DeployedLabel.deployment_name.name,
     )
+
+
+def _group_labels(df: pd.DataFrame) -> pd.DataFrame:
     groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
     grouped_labels = pd.DataFrame(
         {

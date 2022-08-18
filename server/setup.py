@@ -35,19 +35,18 @@ setup(
     packages=find_packages(exclude=["tests"]),
     ext_modules=cythonize(
         [
-            str(p)
-            for p in (
+            str(path)
+            # fmt: off
+            for path in (
                 code_root / "internal" / "miners" / "github" / "dag_accelerated.pyx",
                 code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
-                code_root
-                / "internal"
-                / "features"
-                / "github"
-                / "check_run_metrics_accelerated.pyx",
+                code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",  # noqa
                 code_root / "to_object_arrays.pyx",
                 code_root / "unordered_unique.pyx",
+                code_root / "pandas_io.pyx",
                 code_root / "models" / "sql_builders.pyx",
             )
+            # fmt: on
         ],
     ),
     include_dirs=[np.get_include()],

@@ -1208,7 +1208,7 @@ class PullRequestMiner:
             merged_node_ids = node_ids.values[anyhow_merged_mask]
             open_node_ids = node_ids.values[~anyhow_merged_mask]
             return await cls.fetch_pr_check_runs(
-                merged_node_ids, open_node_ids, account, meta_ids, mdb, pdb,
+                merged_node_ids, open_node_ids, account, meta_ids, mdb, pdb, cache,
             )
 
         # the order is important: it provides the best performance
@@ -2062,6 +2062,7 @@ class PullRequestMiner:
         meta_ids: Tuple[int, ...],
         mdb: Database,
         pdb: Database,
+        cache: Optional[aiomcache.Client],
     ) -> pd.DataFrame:
         """Load the check runs for each PR node ID."""
         prcrs = GitHubPullRequestCheckRuns
@@ -2115,7 +2116,7 @@ class PullRequestMiner:
             ),
         )
         missed_commit_ids = {r[0] for r in rows}
-        missed_df = await mine_commit_check_runs(missed_commit_ids, meta_ids, mdb)
+        missed_df = await mine_commit_check_runs(missed_commit_ids, meta_ids, mdb, cache)
         missed_df = missed_df.take(
             np.flatnonzero(
                 np.in1d(

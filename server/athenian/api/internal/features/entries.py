@@ -113,6 +113,7 @@ from athenian.api.internal.miners.types import (
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
+from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -1483,8 +1484,8 @@ class MetricEntriesCalculator:
     @sentry_span
     @cached(
         exptime=short_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
+        serialize=serialize_args,
+        deserialize=deserialize_args,
         key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, with_jira_map, **_: (  # noqa
             time_from,
             time_to,
@@ -1500,6 +1501,7 @@ class MetricEntriesCalculator:
         ),
         postprocess=_postprocess_cached_facts,
         cache=lambda self, **_: self._cache,
+        version=2,
     )
     async def _calc_pull_request_facts_github(
         self,

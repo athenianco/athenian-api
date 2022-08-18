@@ -32,7 +32,6 @@ cdef extern from "wchar.h" nogil:
     wchar_t *wmemchr(const wchar_t *, wchar_t, size_t)
 
 
-
 def unordered_unique(ndarray arr not None) -> np.ndarray:
     cdef:
         np_dtype dtype = <np_dtype>PyArray_DESCR(arr)

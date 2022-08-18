@@ -70,32 +70,36 @@ def sample_deployments():
     components.set_index(DeployedComponent.deployment_name.name, inplace=True)
     labels = pd.DataFrame(
         {
-            "deployment_name": ["one", "two", "three", "four"],
-            "labels": [
-                pd.DataFrame(
-                    {
-                        DeployedLabel.key.name: ["first", "second"],
-                        DeployedLabel.value.name: ["alpha", "alpha"],
-                    },
-                ),
-                pd.DataFrame(
-                    {
-                        DeployedLabel.key.name: ["first", "third"],
-                        DeployedLabel.value.name: ["alpha", "beta"],
-                    },
-                ),
-                pd.DataFrame(
-                    {
-                        DeployedLabel.key.name: ["first", "second"],
-                        DeployedLabel.value.name: ["gamma", "alpha"],
-                    },
-                ),
-                pd.DataFrame(
-                    {DeployedLabel.key.name: ["first"], DeployedLabel.value.name: ["gamma"]},
-                ),
+            DeployedLabel.deployment_name.name: [
+                "one",
+                "one",
+                "two",
+                "two",
+                "three",
+                "three",
+                "four",
+            ],
+            DeployedLabel.key.name: [
+                "first",
+                "second",
+                "first",
+                "third",
+                "first",
+                "second",
+                "first",
+            ],
+            DeployedLabel.value.name: [
+                "alpha",
+                "alpha",
+                "alpha",
+                "beta",
+                "gamma",
+                "alpha",
+                "gamma",
             ],
         },
     )
+    labels.set_index(DeployedComponent.deployment_name.name, inplace=True)
     return deployments, components, labels
 
 

@@ -496,12 +496,19 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                 matched[repo] = set(found)
         if not labels.empty and self.has_labels:
             logical_labels = self._labels
-            for deployment_name, deployed_labels_df in zip(
-                labels["deployment_name"].values, labels["labels"].values,
+            label_order = np.argsort(labels.index.values)
+            unique_label_deployment_names, label_group_counts = np.unique(
+                labels.index.values[label_order], return_counts=True,
+            )
+            label_pos = 0
+            for deployment_name, group_size in zip(
+                unique_label_deployment_names, label_group_counts,
             ):
+                indexes = label_order[label_pos : label_pos + group_size]
+                label_pos += group_size
                 for label, value in zip(
-                    deployed_labels_df[DeployedLabel.key.name].values,
-                    deployed_labels_df[DeployedLabel.value.name].values,
+                    labels[DeployedLabel.key.name].values[indexes],
+                    labels[DeployedLabel.value.name].values[indexes],
                 ):
                     try:
                         repo_labels = logical_labels[label]
