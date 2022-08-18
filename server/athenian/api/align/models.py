@@ -288,6 +288,13 @@ class CreateGoalInputFields(metaclass=Enum):
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
+    repositories = "repositories"
+
+
+class GoalRepositoriesFields(metaclass=Enum):
+    """Fields definitions for GraphQL GoalRepositories input type."""
+
+    value = "value"
 
 
 class TeamGoalInputFields(metaclass=Enum):

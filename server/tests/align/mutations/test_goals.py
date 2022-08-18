@@ -17,12 +17,14 @@ from tests.align.utils import (
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.auth import mock_auth0
 from tests.testutils.db import (
+    DBCleaner,
     assert_existing_row,
     assert_missing_row,
     count,
     model_insert_stmt,
     models_insert,
 )
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import (
     AccountFactory,
     GoalFactory,
@@ -238,6 +240,31 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
         assert (await count(sdb, Goal, Goal.account_id == 1)) == 1
 
+    async def test_invalid_repositories(
+        self,
+        client: TestClient,
+        sdb: Database,
+        mdb: Database,
+    ) -> None:
+        await models_insert(sdb, TeamFactory(id=100))
+        variables: dict = {
+            "createGoalInput": self._mk_input(
+                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+                repositories={"value": ["github.com/org/r1", "github.com/org/wrong"]},
+            ),
+            "accountId": 1,
+        }
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.RepositoryFactory(node_id=2, full_name="org/r1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            res = await self._request(variables, client)
+
+        assert_extension_error(res, "Unknown repository github.com/org/wrong")
+        await assert_missing_row(sdb, Goal, account_id=1)
+
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, client: TestClient, sdb: Database) -> None:
@@ -258,11 +285,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
-
-        res = await self._request(variables, client)
-        assert "errors" not in res
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables, client)
 
         goal_row = await assert_existing_row(
             sdb,
@@ -275,6 +298,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
         )
+        assert goal_row[Goal.repositories.name] is None
 
         # expires_at is moved to the day after the one received in api
         assert ensure_db_datetime_tz(goal_row[Goal.expires_at.name], sdb) == datetime(
@@ -299,11 +323,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             "createGoalInput": self._mk_input(teamGoals=team_goals, templateId=200),
             "accountId": 1,
         }
-        res = await self._request(variables, client)
-        assert "errors" not in res
-        assert res["data"]["createGoal"]["errors"] is None
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables, client)
 
         await assert_existing_row(
             sdb, Goal, id=new_goal_id, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME,
@@ -331,10 +351,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
-        res = await self._request(variables, client)
-        assert "errors" not in res
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
-
+        new_goal_id = await self._create(variables, client)
         goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id)
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 5, 4, tzinfo=timezone.utc,
@@ -386,10 +403,14 @@ class TestCreateGoals(BaseCreateGoalTest):
         variables["createGoalInput"]["expiresAt"] = "2022-03-31"
         variables["accountId"] = 5
         variables["createGoalInput"]["teamGoals"] = [{"teamId": 200, "target": {"int": 1}}]
-        res = await self._request(variables, client, user_id="gh|XXX")
-        assert "errors" not in res
+        await self._create(variables, client, user_id="gh|XXX")
 
         assert (await count(sdb, Goal)) == 4
+
+    async def _create(self, *args: Any, **kwargs: Any) -> int:
+        res = await self._request(*args, **kwargs)
+        assert "errors" not in res
+        return res["data"]["createGoal"]["goal"]["id"]
 
     @freeze_time("2022-03-01")
     async def test_future_dates_are_accepted(self, client: TestClient, sdb: Database) -> None:
@@ -409,6 +430,30 @@ class TestCreateGoals(BaseCreateGoalTest):
         await assert_existing_row(
             sdb, Goal, id=new_goal_id, valid_from=dt(2023, 1, 1), expires_at=dt(2024, 1, 1),
         )
+
+    async def test_repositories(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=100))
+        variables: dict = {
+            "createGoalInput": self._mk_input(
+                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+                repositories={"value": ["github.com/org/r0", "github.com/org/r1"]},
+            ),
+            "accountId": 1,
+        }
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.RepositoryFactory(node_id=1, full_name="org/r0"),
+                md_factory.RepositoryFactory(node_id=2, full_name="org/r1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            res = await self._request(variables, client)
+        assert "errors" not in res
+
+        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+
+        row = await assert_existing_row(sdb, Goal, id=new_goal_id)
+        assert row[Goal.repositories.name] == [[1, None], [2, None]]
 
 
 class BaseRemoveGoalTest(BaseGoalTest):

@@ -14,6 +14,7 @@ from athenian.api.align.goals.dbaccess import (
     assign_team_goals,
     delete_goal,
     delete_team_goals,
+    dump_goal_repositories,
     get_goal_template_from_db,
     insert_goal,
     update_goal,
@@ -21,6 +22,7 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.align.models import (
     CreateGoalInputFields,
     GoalRemoveStatus,
+    GoalRepositoriesFields,
     MutateGoalResult,
     MutateGoalResultGoal,
     TeamGoalChangeFields,
@@ -29,6 +31,7 @@ from athenian.api.align.models import (
 )
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.db import Database
+from athenian.api.internal.reposet import RepoIdentitiesMapperFactory
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -45,7 +48,9 @@ async def resolve_create_goal(
     input: dict[str, Any],
 ) -> dict[str, Any]:
     """Create a Goal."""
-    creation_info = await _parse_create_goal_input(input, accountId, info.context.sdb)
+    creation_info = await _parse_create_goal_input(
+        input, accountId, info.context.sdb, RepoIdentitiesMapperFactory(accountId, info.context),
+    )
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -108,6 +113,7 @@ async def _parse_create_goal_input(
     input: dict[str, Any],
     account: int,
     sdb: Database,
+    repo_identities_mapper_factory: RepoIdentitiesMapperFactory,
 ) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input[CreateGoalInputFields.templateId]
@@ -130,12 +136,14 @@ async def _parse_create_goal_input(
     if expires_at < valid_from:
         raise GoalMutationError("Goal expiresAt cannot precede validFrom")
 
+    repositories = await _parse_input_repositories(input, repo_identities_mapper_factory)
     goal = Goal(
         account_id=account,
         name=template[GoalTemplate.name.name],
         metric=template[GoalTemplate.metric.name],
         valid_from=valid_from,
         expires_at=expires_at,
+        repositories=repositories,
     )
     return GoalCreationInfo(goal, team_goals)
 
@@ -211,3 +219,20 @@ def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
         raise GoalMutationError("; ".join(errors))
 
     return GoalUpdateInfo(deletions, assignments, input.get("archived"))
+
+
+async def _parse_input_repositories(
+    input: dict[str, Any],
+    repo_identities_mapper_factory: RepoIdentitiesMapperFactory,
+) -> Optional[list[list]]:
+    try:
+        req_repos = input[CreateGoalInputFields.repositories][GoalRepositoriesFields.value]
+    except KeyError:
+        req_repos = None
+
+    if req_repos is None:
+        repositories = None
+    else:
+        mapper = await repo_identities_mapper_factory()
+        repositories = dump_goal_repositories(mapper.prefixed_names_to_identities(req_repos))
+    return repositories
