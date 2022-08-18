@@ -203,7 +203,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await models_insert(
             sdb,
             GoalFactory(
-                template_id=1,
+                name=TEMPLATES_COLLECTION[1]["name"],
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -219,7 +219,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         }
         res = await self._request(variables, client)
         assert_extension_error(
-            res, "There is an existing goal with the same template 1 for the same time interval",
+            res, "There is an existing goal with the same name for the same time interval",
         )
 
         assert (await count(sdb, Goal, Goal.account_id == 1)) == 1
@@ -251,7 +251,6 @@ class TestCreateGoals(BaseCreateGoalTest):
             Goal,
             id=new_goal_id,
             account_id=1,
-            template_id=1,
             name=TEMPLATES_COLLECTION[1]["name"],
             metric=TEMPLATES_COLLECTION[1]["metric"],
         )
@@ -283,7 +282,7 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1, template_id=1)
+        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
 
         team_goals = await sdb.fetch_all(
             sa.select(TeamGoal).where(TeamGoal.goal_id == 1).order_by(TeamGoal.team_id),
@@ -322,14 +321,14 @@ class TestCreateGoals(BaseCreateGoalTest):
             sdb,
             GoalFactory(
                 id=100,
-                template_id=1,
+                name=TEMPLATES_COLLECTION[1]["name"],
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
             TeamFactory(id=100),
         )
 
-        # same interval, different template
+        # same interval, different name
         variables: dict = {
             "createGoalInput": self._mk_input(
                 templateId=2,
@@ -342,7 +341,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         res = await self._request(variables, client)
         assert "errors" not in res
 
-        # same template, different interval
+        # same name, different interval
         variables["createGoalInput"]["templateId"] = 1
         variables["createGoalInput"]["expiresAt"] = "2022-06-30"
 
