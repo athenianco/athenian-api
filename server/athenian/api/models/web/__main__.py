@@ -1,6 +1,5 @@
 from pathlib import Path
 import sys
-import textwrap
 from typing import TypeVar
 
 from athenian.api.models import web
@@ -31,9 +30,7 @@ def main():
         if not imports:
             continue
         imports.sort(key=str.casefold)
-        line = "from %s import %s" % (ip, ", ".join(imports))
-        lines = textwrap.wrap(line, width=97, subsequent_indent="    ", break_long_words=False)
-        all_imports.append(" \\\n".join(lines) + "\n")
+        all_imports.append("from %s import %s\n" % (ip, ", ".join(imports)))
     all_imports.sort()
     with open(root / "__init__.py", "w") as fout:
         fout.writelines(all_imports)

@@ -283,7 +283,8 @@ class MetricValues(Model):
 class CreateGoalInputFields(metaclass=Enum):
     """Fields definitions for GraphQL CreateGoalInput type."""
 
-    templateId = "templateId"
+    name = "name"
+    metric = "metric"
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"

@@ -1,11 +1,7 @@
-from typing import cast
-
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
-
-GoalTemplateMetricID = JIRAMetricID | PullRequestMetricID | ReleaseMetricID
 
 
 class GoalTemplate(Model):
@@ -14,10 +10,10 @@ class GoalTemplate(Model):
     attribute_types = {
         "id": int,
         "name": str,
-        "metric": GoalTemplateMetricID,
+        "metric": str,
     }
 
-    def __init__(self, id: int = None, name: str = None, metric: GoalTemplateMetricID = None):
+    def __init__(self, id: int = None, name: str = None, metric: str = None):
         """GoalTemplate - a model defined in OpenAPI
 
         :param id: The id of this GoalTemplate.
@@ -61,12 +57,12 @@ class GoalTemplate(Model):
         self._name = name
 
     @property
-    def metric(self) -> GoalTemplateMetricID:
+    def metric(self) -> str:
         """Gets the metric of this GoalTemplate."""
         return self._metric
 
     @metric.setter
-    def metric(self, metric: GoalTemplateMetricID) -> None:
+    def metric(self, metric: str) -> None:
         """Sets the metric of this GoalTemplate."""
         if metric is None:
             raise ValueError("Invalid value for `metric`, must not be `None`")
@@ -74,11 +70,6 @@ class GoalTemplate(Model):
         self._metric = metric
 
     @classmethod
-    def _validate_metric(cls, metric: GoalTemplateMetricID) -> None:
-        metric_str = cast(str, metric)
-        Enums = (JIRAMetricID, PullRequestMetricID, ReleaseMetricID)
-        for Enum in Enums:
-            if metric_str in Enum:
-                return
-        enums_repr = ", ".join(Enum.__name__ for Enum in Enums)
-        raise ValueError(f"Invalid value for `metric`, must be one of {enums_repr}")
+    def _validate_metric(cls, metric: str) -> None:
+        if metric not in JIRAMetricID | PullRequestMetricID | ReleaseMetricID:
+            raise ValueError(f"Invalid value for `metric` {metric}")

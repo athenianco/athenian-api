@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TypedDict
 
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
-from athenian.api.models.web.goal_template import GoalTemplateMetricID
 
 TEMPLATES_COLLECTION: dict[int, TemplateDefinition] = {
     1: {
@@ -56,5 +55,5 @@ TEMPLATES_COLLECTION: dict[int, TemplateDefinition] = {
 class TemplateDefinition(TypedDict):
     """The definition of a Goal Template."""
 
-    metric: GoalTemplateMetricID
+    metric: str
     name: str

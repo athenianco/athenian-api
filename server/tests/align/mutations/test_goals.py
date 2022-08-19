@@ -7,6 +7,7 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
+from athenian.api.align.models import CreateGoalInputFields
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from tests.align.utils import (
@@ -76,7 +77,12 @@ class BaseCreateGoalTest(BaseGoalTest):
 
     @classmethod
     def _mk_input(self, **kwargs: Any) -> dict:
-        kwargs.setdefault("templateId", 1)
+        kwargs.setdefault(
+            CreateGoalInputFields.name, TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+        )
+        kwargs.setdefault(
+            CreateGoalInputFields.metric, TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
+        )
         kwargs.setdefault("validFrom", "2022-01-01")
         kwargs.setdefault("expiresAt", "2022-03-31")
         kwargs.setdefault("teamGoals", [])
@@ -84,13 +90,13 @@ class BaseCreateGoalTest(BaseGoalTest):
 
 
 class TestCreateGoalErrors(BaseCreateGoalTest):
-    async def test_invalid_template_id(self, client: TestClient, sdb: Database) -> None:
+    async def test_invalid_metric(self, client: TestClient, sdb: Database) -> None:
         variables = {
-            "createGoalInput": self._mk_input(templateId=1234),
+            "createGoalInput": self._mk_input(metric="xxx-cuckold"),
             "accountId": 1,
         }
         res = await self._request(variables, client)
-        assert_extension_error(res, "Invalid templateId 1234")
+        assert_extension_error(res, 'Unsupported metric "xxx-cuckold"')
         await self._assert_no_goal_exists(sdb)
 
     async def test_invalid_date(self, client: TestClient, sdb: Database) -> None:
@@ -203,7 +209,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await models_insert(
             sdb,
             GoalFactory(
-                name=TEMPLATES_COLLECTION[1]["name"],
+                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -233,7 +239,8 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         variables = {
             "createGoalInput": self._mk_input(
-                templateId=1,
+                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
                 validFrom="2022-01-01",
                 expiresAt="2022-12-31",
                 teamGoals=team_goals,
@@ -251,8 +258,8 @@ class TestCreateGoals(BaseCreateGoalTest):
             Goal,
             id=new_goal_id,
             account_id=1,
-            name=TEMPLATES_COLLECTION[1]["name"],
-            metric=TEMPLATES_COLLECTION[1]["metric"],
+            name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+            metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
         )
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
@@ -321,7 +328,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             sdb,
             GoalFactory(
                 id=100,
-                name=TEMPLATES_COLLECTION[1]["name"],
+                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -331,7 +338,8 @@ class TestCreateGoals(BaseCreateGoalTest):
         # same interval, different name
         variables: dict = {
             "createGoalInput": self._mk_input(
-                templateId=2,
+                name=TEMPLATES_COLLECTION[2][CreateGoalInputFields.name],
+                metric=TEMPLATES_COLLECTION[2][CreateGoalInputFields.metric],
                 validFrom="2022-01-01",
                 expiresAt="2022-03-31",
                 teamGoals=[{"teamId": 100, "target": {"int": 1}}],
@@ -342,7 +350,12 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert "errors" not in res
 
         # same name, different interval
-        variables["createGoalInput"]["templateId"] = 1
+        variables["createGoalInput"][CreateGoalInputFields.name] = TEMPLATES_COLLECTION[1][
+            CreateGoalInputFields.name
+        ]
+        variables["createGoalInput"][CreateGoalInputFields.metric] = TEMPLATES_COLLECTION[1][
+            CreateGoalInputFields.metric
+        ]
         variables["createGoalInput"]["expiresAt"] = "2022-06-30"
 
         res = await self._request(variables, client)
@@ -368,7 +381,8 @@ class TestCreateGoals(BaseCreateGoalTest):
         await models_insert(sdb, TeamFactory(id=100))
         variables: dict = {
             "createGoalInput": self._mk_input(
-                templateId=1,
+                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
                 validFrom="2023-01-01",
                 expiresAt="2023-12-31",
                 teamGoals=[{"teamId": 100, "target": {"int": 1}}],
