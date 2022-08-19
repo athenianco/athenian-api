@@ -64,7 +64,6 @@ pull_request_title_column = "pull_request_" + NodePullRequest.title.name
         jira,
         logical_settings,
     ),
-    version=2,
 )
 async def mine_check_runs(
     time_from: datetime,

@@ -125,7 +125,7 @@ def in1d_str(
     return _in1d_str(trial, dictionary, dtype_trial.kind == b"S", skip_leading_zeros)
 
 
-cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, int is_char, int skip_leading_zeros):
+cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip_leading_zeros):
     cdef:
         char *data_trial = <char *>PyArray_DATA(trial)
         char *data_dictionary = <char *> PyArray_DATA(dictionary)

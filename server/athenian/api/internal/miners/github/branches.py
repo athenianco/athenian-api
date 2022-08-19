@@ -35,7 +35,6 @@ class BranchMiner:
             ",".join(sorted(repos if repos is not None else ["None"])),
             strip,
         ),
-        version=2,
     )
     async def extract_branches(
         cls,
