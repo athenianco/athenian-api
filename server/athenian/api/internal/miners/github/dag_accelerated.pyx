@@ -80,7 +80,7 @@ def extract_subdag(hashes: np.ndarray,
     left_vertexes = np.zeros_like(vertexes)
     left_edges = np.zeros_like(edges)
     cdef:
-        int left_count
+        long left_count
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] existing_heads_view = existing_heads
@@ -166,7 +166,7 @@ def join_dags(hashes: np.ndarray,
               ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     cdef:
         Py_ssize_t size
-        int i, hpos, parent_index
+        long i, hpos, parent_index
         const char *parent_oid
         const char *child_oid
         PyObject *record
@@ -237,7 +237,7 @@ def join_dags(hashes: np.ndarray,
 
     cdef:
         vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](new_hashes_map.size())
-        int new_edges_counter = 0
+        long new_edges_counter = 0
     size = len(new_edges)
     if isinstance(new_edges[0], asyncpg.Record):
         with nogil:
@@ -358,7 +358,7 @@ def append_missing_heads(edges: List[Tuple[str, str, int]],
         unordered_set[string_view] hashes_set
         unordered_set[string_view].const_iterator it
         Py_ssize_t size
-        int i
+        long i
         PyObject *record
         PyObject *desc = Py_None
         object new_record, elem
@@ -415,7 +415,7 @@ def verify_edges_integrity(edges: List[Tuple[str, str, int]]) -> List[int]:
         Py_ssize_t size = len(edges)
         Py_ssize_t children_size
         const char *oid
-        int indexes_sum, parent_index, i, j, is_asyncpg
+        long indexes_sum, parent_index, i, j, is_asyncpg
         unordered_map[string_view, vector[RawEdge]] children_indexes
         unordered_map[string_view, vector[RawEdge]].iterator it
         PyObject *record
@@ -564,7 +564,7 @@ def find_orphans(edges: List[Tuple[str, str, int]],
         Py_ssize_t size = len(edges)
         const char *child_oid
         const char *parent_oid
-        int i, is_asyncpg
+        long i, is_asyncpg
         unordered_set[string_view] parents
         unordered_map[string_view, vector[RawEdge]] reversed_edges
         unordered_map[string_view, vector[RawEdge]].iterator reversed_parents
@@ -829,13 +829,13 @@ cdef void _copy_parents_to_array(const vector[vector[uint32_t]] *parents,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int _mark_dag_parents(const uint32_t[:] vertexes,
-                           const uint32_t[:] edges,
-                           const uint32_t[:] heads,
-                           const uint64_t[:] timestamps,
-                           const int32_t[:] ownership,
-                           bool slay_hydra,
-                           vector[vector[uint32_t]] *parents) nogil:
+cdef int64_t _mark_dag_parents(const uint32_t[:] vertexes,
+                               const uint32_t[:] edges,
+                               const uint32_t[:] heads,
+                               const uint64_t[:] timestamps,
+                               const int32_t[:] ownership,
+                               bool slay_hydra,
+                               vector[vector[uint32_t]] *parents) nogil:
     cdef:
         uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent, beg, end
         uint64_t timestamp, head_timestamp
@@ -893,7 +893,7 @@ def extract_first_parents(hashes: np.ndarray,
                           vertexes: np.ndarray,
                           edges: np.ndarray,
                           heads: np.ndarray,
-                          max_depth: int = 0) -> np.ndarray:
+                          max_depth: long = 0) -> np.ndarray:
     assert heads.dtype.char == "S"
     heads = np.sort(heads)
     if len(hashes):
@@ -903,7 +903,7 @@ def extract_first_parents(hashes: np.ndarray,
         heads = np.array([], dtype=np.uint32)
     first_parents = np.zeros_like(hashes, dtype=np.bool_)
     cdef:
-        int max_depth_native = max_depth
+        long max_depth_native = max_depth
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] heads_view = heads
@@ -919,11 +919,11 @@ def extract_first_parents(hashes: np.ndarray,
 cdef void _extract_first_parents(const uint32_t[:] vertexes,
                                  const uint32_t[:] edges,
                                  const uint32_t[:] heads,
-                                 int max_depth,
+                                 long max_depth,
                                  char[:] first_parents) nogil:
     cdef:
         uint32_t head
-        int i, depth
+        long i, depth
     for i in range(len(heads)):
         head = heads[i]
         depth = 0
@@ -968,7 +968,7 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
     cdef:
         vector[uint32_t] boilerplate
         vector[char] visited = vector[char](len(vertexes) - 1)
-        int i, v
+        long i, v
         uint32_t head, edge, peek, j
     for i in range(len(heads)):
         head = heads[i]
@@ -1030,7 +1030,7 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
                               int8_t[:] left_vertexes_map,
                               vector[vector[uint32_t]] *pr_commits) nogil:
     cdef:
-        int i
+        long i
         uint32_t first, last, v, j, edge, peek
         uint32_t oob = len(vertexes)
         vector[uint32_t] *my_pr_commits

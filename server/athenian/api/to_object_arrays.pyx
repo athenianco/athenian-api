@@ -105,7 +105,7 @@ def as_bool(ndarray arr not None) -> np.ndarray:
     new_arr = np.empty(len(arr), dtype=bool)
     cdef:
         const char *arr_obj = <const char *> PyArray_DATA(arr)
-        int size = len(arr), stride = arr.strides[0]
+        long size = len(arr), stride = arr.strides[0]
         npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
     with nogil:
         _as_bool_vec(arr_obj, stride, size, out_bools)
@@ -115,10 +115,10 @@ def as_bool(ndarray arr not None) -> np.ndarray:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _as_bool_vec(const char *obj_arr,
-                       const int stride,
-                       const int size,
+                       const long stride,
+                       const long size,
                        npy_bool *out_arr) nogil:
-    cdef int i
+    cdef long i
     for i in range(size):
         # Py_None and Py_False become 0
         out_arr[i] = Py_True == (<const PyObject **> (obj_arr + i * stride))[0]
@@ -132,7 +132,7 @@ def is_null(ndarray arr not None) -> np.ndarray:
     new_arr = np.zeros(len(arr), dtype=bool)
     cdef:
         const char *arr_obj = <const char *> PyArray_DATA(arr)
-        int size = len(arr), stride = arr.strides[0]
+        long size = len(arr), stride = arr.strides[0]
         npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
     with nogil:
         _is_null_vec(arr_obj, stride, size, out_bools)
@@ -142,10 +142,10 @@ def is_null(ndarray arr not None) -> np.ndarray:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _is_null_vec(const char *obj_arr,
-                       const int stride,
-                       const int size,
+                       const long stride,
+                       const long size,
                        npy_bool *out_arr) nogil:
-    cdef int i
+    cdef long i
     for i in range(size):
         out_arr[i] = Py_None == (<const PyObject **> (obj_arr + i * stride))[0]
 
@@ -157,7 +157,7 @@ def is_not_null(ndarray arr not None) -> np.ndarray:
     new_arr = np.zeros(len(arr), dtype=bool)
     cdef:
         const char *arr_obj = <const char *> PyArray_DATA(arr)
-        int size = len(arr), stride = arr.strides[0]
+        long size = len(arr), stride = arr.strides[0]
         npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
     with nogil:
         _is_not_null(arr_obj, stride, size, out_bools)
@@ -167,9 +167,9 @@ def is_not_null(ndarray arr not None) -> np.ndarray:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _is_not_null(const char *obj_arr,
-                       const int stride,
-                       const int size,
+                       const long stride,
+                       const long size,
                        npy_bool *out_arr) nogil:
-    cdef int i
+    cdef long i
     for i in range(size):
         out_arr[i] = Py_None != (<const PyObject **> (obj_arr + i * stride))[0]

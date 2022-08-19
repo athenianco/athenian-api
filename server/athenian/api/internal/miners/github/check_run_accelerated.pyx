@@ -30,7 +30,7 @@ def split_duplicate_check_runs(suite_ids: np.ndarray,
     started_ats[started_ats != started_ats] = 0
     suite_order = np.argsort(suite_ids, kind="stable")
     cdef:
-        int result
+        long result
         PyObject **data_obj = <PyObject **> PyArray_DATA(names)
         int64_t[:] suite_ids_view = suite_ids
         const int64_t[:] started_ats_int64 = started_ats.view(np.int64)
@@ -45,19 +45,19 @@ def split_duplicate_check_runs(suite_ids: np.ndarray,
 
 cdef struct CheckSuiteState:
     int32_t epoch
-    unordered_map[string, int] types
+    unordered_map[string, long] types
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int _split_duplicate_check_runs(int64_t[:] suite_ids,
-                                     PyObject **names,
-                                     const int64_t[:] started_ats,
-                                     const int64_t[:] suite_order) nogil:
+cdef long _split_duplicate_check_runs(int64_t[:] suite_ids,
+                                      PyObject **names,
+                                      const int64_t[:] started_ats,
+                                      const int64_t[:] suite_order) nogil:
     cdef:
         unordered_map[int64_t, CheckSuiteState] suite_groups
-        int i, j, epoch, split = 0
-        int *type_pos
+        long i, j, epoch, split = 0
+        long *type_pos
         int64_t suite_id, previous_suite_id = -1, started_at, previous_started_at = 0
         uint64_t suite_id_mask = 0xFFFFFFFFFFFFFF
         CheckSuiteState *state

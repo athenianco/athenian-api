@@ -134,6 +134,9 @@ def deserialize_args(bytes buffer) -> tuple[Any]:
     return result
 
 
+DEF nodim = 0xFFFFFFFF
+
+
 def serialize_df(df not None) -> bytes:
     cdef:
         list blocks = [], arrs = []
@@ -204,7 +207,7 @@ def serialize_df(df not None) -> bytes:
             output += 16
             ndim = PyArray_NDIM(arr_obj)
             (<uint32_t *> output)[0] = PyArray_DIM(arr_obj, 0)
-            (<uint32_t *> output)[1] = PyArray_DIM(arr_obj, 1) if ndim > 1 else 0
+            (<uint32_t *> output)[1] = PyArray_DIM(arr_obj, 1) if ndim > 1 else nodim
             output += 8
             if not strncmp(input, b"object", aux_size):
                 _serialize_object_block(arr_obj, output, &measurements[i])
@@ -311,7 +314,7 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                         memcmp(
                             descr,
                             (<char *>PyArray_DESCR(item)) + sizeof(PyObject),
-                            8 + 4 + 8 * 3,
+                            8 + 4 + sizeof(int) * 3,
                         )
                     ):
                         return -y
@@ -484,14 +487,14 @@ def deserialize_df(bytes buffer) -> DataFrame:
         rows = (<uint32_t *> input)[1]
         input += 8
         input_size -= 8
-        if rows > 0:
+        if rows != nodim:
             shape = (columns, rows)
         else:
             shape = (columns,)
         arr = np.empty(shape, dtype=dtype)
         if dtype != object:
             arr_data = PyArray_BYTES(<PyObject *> arr)
-            arr_size = dtype.itemsize * columns * (rows if rows > 0 else 1)
+            arr_size = dtype.itemsize * columns * (rows if rows != nodim else 1)
             if input_size < arr_size:
                 raise CorruptedBuffer()
             memcpy(arr_data, input, arr_size)
