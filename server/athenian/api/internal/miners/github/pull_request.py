@@ -2124,80 +2124,54 @@ class PullRequestMiner:
                 ),
             ),
         )
-        # there are identical timestamps, order by name and then by timestamp for 100% determinism
-        missed_df.sort_values(CheckRun.name.name, inplace=True, ignore_index=True)
-        missed_df.sort_values(
-            CheckRun.started_at.name, inplace=True, ignore_index=True, kind="stable",
-        )
-        # np.unique uses stable sort if and only if return_index=True
-        new_pr_node_ids, _, index_map, map_counts = np.unique(
-            missed_df[CheckRun.pull_request_node_id.name].values,
-            return_index=True,
-            return_inverse=True,
-            return_counts=True,
-        )
-        if len(
-            missed_empty_pr_ids := missed_pr_node_ids.difference(new_pr_node_ids).intersection(
-                merged_pr_node_ids,
-            ),
-        ):
-            await defer(
-                cls._store_empty_pr_check_runs(missed_empty_pr_ids, account, pdb),
-                f"_store_empty_pr_check_runs({len(missed_empty_pr_ids)})",
+        missed_check_runs = pd.DataFrame()
+        if not missed_df.empty:
+            # there are identical timestamps, order by name and then by timestamp
+            # for 100% deterministic results
+            missed_df.sort_values(CheckRun.name.name, inplace=True, ignore_index=True)
+            missed_df.sort_values(
+                CheckRun.started_at.name, inplace=True, ignore_index=True, kind="stable",
             )
-        # store 0 for missed_pr_node_ids - new_pr_node_ids
-        order = np.argsort(index_map, kind="stable")
-        offsets = np.zeros(len(new_pr_node_ids) + 1, dtype=int)
-        np.cumsum(map_counts, out=offsets[1:])
-        started_ats = missed_df[CheckRun.started_at.name].values
-        completed_ats = missed_df[CheckRun.completed_at.name].values
-        check_suite_started_ats = missed_df[check_suite_started_column].values
-        check_suite_completed_ats = missed_df[check_suite_completed_column].values
-        check_suite_node_ids = missed_df[CheckRun.check_suite_node_id.name].values
-        conclusions = missed_df[CheckRun.conclusion.name].values
-        statuses = missed_df[CheckRun.status.name].values
-        commit_ids = missed_df[CheckRun.commit_node_id.name].values
-        check_suite_conclusions = missed_df[CheckRun.check_suite_conclusion.name].values
-        check_suite_statuses = missed_df[CheckRun.check_suite_status.name].values
-        names = missed_df[CheckRun.name.name].values.astype("U", copy=False)
-        new_structs = []
-        stored_new_pr_node_ids = []
-        stored_new_structs = []
-        now = np.datetime64(datetime.utcnow())
-        for i, pr in enumerate(new_pr_node_ids):
-            indexes = order[offsets[i] : offsets[i + 1]]
-            pr_commit_ids = commit_ids[indexes]
-            new_structs.append(
-                struct := PullRequestCheckRun.from_fields(
-                    started_at=started_ats[indexes],
-                    completed_at=completed_ats[indexes],
-                    check_suite_started_at=check_suite_started_ats[indexes],
-                    check_suite_completed_at=check_suite_completed_ats[indexes],
-                    check_suite_node_id=check_suite_node_ids[indexes],
-                    conclusion=conclusions[indexes],
-                    status=statuses[indexes],
-                    check_suite_conclusion=check_suite_conclusions[indexes],
-                    check_suite_status=check_suite_statuses[indexes],
-                    name=names[indexes],
-                    commit_ids=np.unique(pr_commit_ids),
-                    node_id=pr,
+            # np.unique uses stable sort if and only if return_index=True
+            new_pr_node_ids, _, index_map, map_counts = np.unique(
+                missed_df[CheckRun.pull_request_node_id.name].values,
+                return_index=True,
+                return_inverse=True,
+                return_counts=True,
+            )
+            if len(
+                missed_empty_pr_ids := missed_pr_node_ids.difference(new_pr_node_ids).intersection(
+                    merged_pr_node_ids,
                 ),
-            )
-            if pr in open_pr_node_ids:
-                # indexes are already sorted by time
-                # if the last started_at happened more than 24h ago,
-                # assume that nothing will change
-                if now - started_ats[indexes[-1]] < np.timedelta64(24, "h"):
-                    # otherwise, exclude the head commit
-                    pr_commit_ids, firsts, index_map = np.unique(
-                        pr_commit_ids, return_index=True, return_inverse=True,
-                    )
-                    head = np.argmax(firsts)
-                    indexes = indexes[index_map != head]
-                    if len(indexes) == 0:
-                        continue
-                    pr_commit_ids = np.delete(pr_commit_ids, head)
-                    struct = PullRequestCheckRun.from_fields(
+            ):
+                await defer(
+                    cls._store_empty_pr_check_runs(missed_empty_pr_ids, account, pdb),
+                    f"_store_empty_pr_check_runs({len(missed_empty_pr_ids)})",
+                )
+            # store 0 for missed_pr_node_ids - new_pr_node_ids
+            order = np.argsort(index_map, kind="stable")
+            offsets = np.zeros(len(new_pr_node_ids) + 1, dtype=int)
+            np.cumsum(map_counts, out=offsets[1:])
+            started_ats = missed_df[CheckRun.started_at.name].values
+            completed_ats = missed_df[CheckRun.completed_at.name].values
+            check_suite_started_ats = missed_df[check_suite_started_column].values
+            check_suite_completed_ats = missed_df[check_suite_completed_column].values
+            check_suite_node_ids = missed_df[CheckRun.check_suite_node_id.name].values
+            conclusions = missed_df[CheckRun.conclusion.name].values
+            statuses = missed_df[CheckRun.status.name].values
+            commit_ids = missed_df[CheckRun.commit_node_id.name].values
+            check_suite_conclusions = missed_df[CheckRun.check_suite_conclusion.name].values
+            check_suite_statuses = missed_df[CheckRun.check_suite_status.name].values
+            names = missed_df[CheckRun.name.name].values.astype("U", copy=False)
+            new_structs = []
+            stored_new_pr_node_ids = []
+            stored_new_structs = []
+            now = np.datetime64(datetime.utcnow())
+            for i, pr in enumerate(new_pr_node_ids):
+                indexes = order[offsets[i] : offsets[i + 1]]
+                pr_commit_ids = commit_ids[indexes]
+                new_structs.append(
+                    struct := PullRequestCheckRun.from_fields(
                         started_at=started_ats[indexes],
                         completed_at=completed_ats[indexes],
                         check_suite_started_at=check_suite_started_ats[indexes],
@@ -2208,20 +2182,51 @@ class PullRequestMiner:
                         check_suite_conclusion=check_suite_conclusions[indexes],
                         check_suite_status=check_suite_statuses[indexes],
                         name=names[indexes],
-                        commit_ids=pr_commit_ids,
+                        commit_ids=np.unique(pr_commit_ids),
                         node_id=pr,
-                    )
+                    ),
+                )
+                if pr in open_pr_node_ids:
+                    # indexes are already sorted by time
+                    # if the last started_at happened more than 24h ago,
+                    # assume that nothing will change
+                    if now - started_ats[indexes[-1]] < np.timedelta64(24, "h"):
+                        # otherwise, exclude the head commit
+                        pr_commit_ids, firsts, index_map = np.unique(
+                            pr_commit_ids, return_index=True, return_inverse=True,
+                        )
+                        head = np.argmax(firsts)
+                        indexes = indexes[index_map != head]
+                        if len(indexes) == 0:
+                            continue
+                        pr_commit_ids = np.delete(pr_commit_ids, head)
+                        struct = PullRequestCheckRun.from_fields(
+                            started_at=started_ats[indexes],
+                            completed_at=completed_ats[indexes],
+                            check_suite_started_at=check_suite_started_ats[indexes],
+                            check_suite_completed_at=check_suite_completed_ats[indexes],
+                            check_suite_node_id=check_suite_node_ids[indexes],
+                            conclusion=conclusions[indexes],
+                            status=statuses[indexes],
+                            check_suite_conclusion=check_suite_conclusions[indexes],
+                            check_suite_status=check_suite_statuses[indexes],
+                            name=names[indexes],
+                            commit_ids=pr_commit_ids,
+                            node_id=pr,
+                        )
 
-            stored_new_pr_node_ids.append(pr)
-            stored_new_structs.append(struct)
-        await defer(
-            cls._store_pr_check_runs(stored_new_pr_node_ids, stored_new_structs, account, pdb),
-            f"_store_pr_check_runs({len(new_structs)})",
-        )
-        missed_check_runs = df_from_structs(new_structs)
-        missed_check_runs.set_index(new_pr_node_ids, inplace=True)
+                stored_new_pr_node_ids.append(pr)
+                stored_new_structs.append(struct)
+            await defer(
+                cls._store_pr_check_runs(stored_new_pr_node_ids, stored_new_structs, account, pdb),
+                f"_store_pr_check_runs({len(new_structs)})",
+            )
+            missed_check_runs = df_from_structs(new_structs)
+            missed_check_runs.set_index(new_pr_node_ids, inplace=True)
         if precomputed_check_runs.empty:
             check_runs = missed_check_runs
+        elif missed_check_runs.empty:
+            check_runs = precomputed_check_runs
         else:
             check_runs = pd.concat([precomputed_check_runs, missed_check_runs])
         if check_runs.empty:
