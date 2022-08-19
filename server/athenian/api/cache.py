@@ -208,11 +208,12 @@ def cached(
             if cache_key is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
+                    submitted = result
+                    if preprocess is not None:
+                        with sentry_sdk.start_span(op="preprocess"):
+                            submitted = preprocess(result, **args_dict)
                     with sentry_sdk.start_span(op="serialize") as span:
-                        result_to_store = (
-                            result if preprocess is None else preprocess(result, **args_dict)
-                        )
-                        payload = serialize(result_to_store)
+                        payload = serialize(submitted)
                         uncompressed_payload_size = len(payload)
                         span.description = str(uncompressed_payload_size)
                 except Exception as e:
