@@ -983,6 +983,7 @@ class ReleaseToPullRequestMapper:
                 )
             superset_df = await read_sql_query_with_join_collapse(query, mdb, [NodeCommit.node_id])
             superset_pr_ids = superset_df[NodePullRequest.node_id.name].values
+
         filters = [
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
@@ -996,16 +997,13 @@ class ReleaseToPullRequestMapper:
             )
 
         if superset_pr_ids is not None:
-            if len(superset_pr_ids) > 100:
-                filters.append(PullRequest.node_id.in_any_values(superset_pr_ids))
-                hints = [
-                    "Leading(pr *VALUES* repo)",
-                    f"Rows(pr *VALUES* #{len(superset_pr_ids)})",
-                    f"Rows(pr *VALUES* repo #{len(superset_pr_ids)})",
-                ]
-            else:
-                hints = [f"Rows(pr repo #{len(superset_pr_ids)})"]
-                filters.append(PullRequest.node_id.in_(superset_pr_ids))
+            filters.append(PullRequest.node_id.in_(superset_pr_ids))
+            hints = [
+                "IndexScan(pr node_pullrequest_pkey)",
+                f"Rows(pr repo #{len(superset_pr_ids)})",
+                f"Rows(pr c #{len(superset_pr_ids)})",
+                f"Rows(pr repo c #{len(superset_pr_ids)})",
+            ]
         else:
             hints = ["Rows(pr repo *1000)"]
             filters.extend(
@@ -1024,18 +1022,50 @@ class ReleaseToPullRequestMapper:
             hints.append(f"Rows(pr ath math *{10 * len(set(authors).intersection(mergers))})")
         elif len(authors):
             filters.append(PullRequest.user_login.in_(authors))
-            hints.append("Rows(pr ath *1000)")
+            if superset_pr_ids is not None:
+                hints.extend(
+                    [
+                        f"Rows(pr ath #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr ath repo #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr ath c #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr ath repo c #{len(superset_pr_ids) // 2})",
+                    ],
+                )
+            else:
+                hints.extend(
+                    [
+                        "Rows(pr ath *100)",
+                        "Rows(pr ath repo *100)",
+                        "Rows(pr ath c *100)",
+                        "Rows(pr ath repo c *100)",
+                    ],
+                )
         elif len(mergers):
             filters.append(PullRequest.merged_by_login.in_(mergers))
-            hints.append("Rows(pr math *1000)")
+            if superset_pr_ids is not None:
+                hints.extend(
+                    [
+                        f"Rows(pr math #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr math repo #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr math c #{len(superset_pr_ids) // 2})",
+                        f"Rows(pr math repo c #{len(superset_pr_ids) // 2})",
+                    ],
+                )
+            else:
+                hints.extend(
+                    [
+                        "Rows(pr math *100)",
+                        "Rows(pr math repo *100)",
+                        "Rows(pr math c *100)",
+                        "Rows(pr math repo c *100)",
+                    ],
+                )
         if superset_pr_ids is None:
             for expr in (pr_blacklist, pr_whitelist):
                 if expr is not None:
                     filters.append(expr)
         if not jira:
             query = select([PullRequest]).where(*filters)
-            if superset_pr_ids is None:
-                hints.append("IndexScan(pr github_node_pull_request_merge_commit)")
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)

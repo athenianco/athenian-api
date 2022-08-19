@@ -151,13 +151,21 @@ async def _mine_commits(
         columns.append(
             (PushCommit.additions + PushCommit.deletions).label(developer_changed_lines_column),
         )
-    query = select(columns).where(
-        and_(
-            PushCommit.committed_date.between(time_from, time_to),
-            PushCommit.author_user_id.in_(dev_ids),
-            PushCommit.repository_node_id.in_(repo_ids),
-            PushCommit.acc_id.in_(meta_ids),
-        ),
+    query = (
+        select(columns)
+        .where(
+            and_(
+                PushCommit.committed_date.between(time_from, time_to),
+                PushCommit.author_user_id.in_any_values(dev_ids),
+                PushCommit.repository_node_id.in_(repo_ids),
+                PushCommit.acc_id.in_(meta_ids),
+            ),
+        )
+        .with_statement_hint("IndexOnlyScan(cmm github_node_commit_contributors)")
+        .with_statement_hint("Leading(((((cmm *VALUES*) repo) ath) cath))")
+        .with_statement_hint("Rows(cmm *VALUES* *1000)")
+        .with_statement_hint("Rows(cmm *VALUES* repo *10000)")
+        .with_statement_hint("HashJoin(cmm *VALUES* repo)")
     )
     return await read_sql_query(query, mdb, columns)
 
@@ -469,6 +477,7 @@ processors = [
 ]
 
 
+@sentry_span
 async def mine_developer_activities(
     devs: Collection[str],
     repos: Collection[str],
