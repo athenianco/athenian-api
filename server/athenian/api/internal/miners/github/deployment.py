@@ -6,6 +6,7 @@ from itertools import chain, groupby, product, repeat
 import json
 import logging
 from operator import attrgetter
+import pickle
 from typing import Any, Collection, KeysView, Mapping, NamedTuple, Optional, Sequence
 
 import aiomcache
@@ -202,11 +203,24 @@ async def mine_deployments(
     return joined
 
 
+def _prerocess_mine_deployments(result, **_):
+    notifications, components, facts, labels, releases = result
+    return notifications, components, facts, pickle.dumps(labels), releases
+
+
+def _postprocess_mine_deployments(result, **_):
+    notifications, components, facts, labels, releases = result
+    return notifications, components, facts, pickle.loads(labels), releases
+
+
 @sentry_span
 @cached(
     exptime=short_term_exptime,
     serialize=serialize_args,
     deserialize=deserialize_args,
+    # FIXME(vmarkovtsev): we don't support free-form JSON in the labels DF yet
+    preprocess=_prerocess_mine_deployments,
+    postprocess=_postprocess_mine_deployments,
     key=lambda repositories, participants, time_from, time_to, environments, conclusions, with_labels, without_labels, pr_labels, jira, release_settings, logical_settings, default_branches, **_: (  # noqa
         ",".join(sorted(repositories)),
         ",".join(
@@ -225,6 +239,7 @@ async def mine_deployments(
         logical_settings,
         ",".join("%s: %s" % p for p in sorted(default_branches.items())),
     ),
+    version=2,
 )
 async def _mine_deployments(
     repositories: Collection[str],
