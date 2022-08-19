@@ -17,7 +17,6 @@ from athenian.api.align.goals.dbaccess import (
     insert_goal,
     update_goal,
 )
-from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import (
     CreateGoalInputFields,
     GoalRemoveStatus,
@@ -29,6 +28,7 @@ from athenian.api.align.models import (
 )
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.models.state.models import Goal, TeamGoal
+from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from athenian.api.tracing import sentry_span
 
 mutation = MutationType()
@@ -102,15 +102,16 @@ async def resolve_update_goal(
     return result
 
 
+def validate_goal_metric(value: str) -> None:
+    """Raise a validation error if the metric is outside of the allowed enum values."""
+    if value not in PullRequestMetricID | ReleaseMetricID | JIRAMetricID:
+        raise GoalMutationError(f'Unsupported metric "{value}"')
+
+
 @sentry_span
 def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
-    template_id = input[CreateGoalInputFields.templateId]
-    try:
-        template_info = TEMPLATES_COLLECTION[template_id]
-    except KeyError:
-        raise GoalMutationError(f"Invalid templateId {template_id}")
-
+    validate_goal_metric(input[CreateGoalInputFields.metric])
     team_goals = [
         _parse_team_goal_input(tg_input) for tg_input in input[CreateGoalInputFields.teamGoals]
     ]
@@ -128,8 +129,8 @@ def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCrea
 
     goal = Goal(
         account_id=account_id,
-        name=template_info["name"],
-        metric=template_info["metric"],
+        name=input[CreateGoalInputFields.name],
+        metric=input[CreateGoalInputFields.metric],
         valid_from=valid_from,
         expires_at=expires_at,
     )

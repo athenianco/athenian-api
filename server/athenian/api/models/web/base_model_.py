@@ -151,6 +151,14 @@ class Enum(Slots):
         """Count the number of enumerated values."""
         return len(cls.__members)
 
+    def __or__(self, other: typing.Union[set, "Enum"]) -> set:
+        """Union with another Enum."""
+        if isinstance(other, Enum):
+            return set(self) | set(other)
+        return set(self) | other
+
+    __ror__ = __or__
+
 
 def AllOf(
     *mixed: typing.Type[Model],
