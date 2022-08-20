@@ -3,9 +3,11 @@
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 from datetime import timezone
+import json
 import pickle
 from typing import Any
 
+cimport cython
 from cpython cimport (
     Py_INCREF,
     PyBytes_FromStringAndSize,
@@ -16,8 +18,8 @@ from cpython cimport (
     PyTuple_New,
     PyTuple_SET_ITEM,
 )
-from libc.stdint cimport uint32_t
-from libc.string cimport memcmp, memcpy, memset, strcpy, strncmp
+from libc.stdint cimport uint16_t, uint32_t
+from libc.string cimport memcmp, memcpy, memset, strcpy, strlen, strncmp
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 from numpy cimport (
@@ -40,6 +42,10 @@ from pandas.core.internals import BlockManager, DatetimeTZBlock
 import_array()
 
 
+cdef extern from "<stdlib.h>" nogil:
+    char *gcvt(double number, int ndigit, char *buf)
+
+
 cdef extern from "<string.h>" nogil:
     size_t strnlen(const char *, size_t)
 
@@ -54,11 +60,20 @@ cdef extern from "Python.h":
     bint PyUnicode_Check(PyObject *) nogil
     bint PyList_CheckExact(PyObject *) nogil
     Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    char *PyUnicode_DATA(PyObject *) nogil
+    void *PyUnicode_DATA(PyObject *) nogil
     unsigned int PyUnicode_KIND(PyObject *) nogil
     bint PyLong_CheckExact(PyObject *) nogil
     long PyLong_AsLong(PyObject *) nogil
+    bint PyDict_CheckExact(PyObject *) nogil
+    int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue) nogil
+    double PyFloat_AS_DOUBLE(PyObject *) nogil
+    bint PyFloat_CheckExact(PyObject *) nogil
+    unsigned int PyUnicode_1BYTE_KIND
+    unsigned int PyUnicode_2BYTE_KIND
+    unsigned int PyUnicode_4BYTE_KIND
     PyObject *Py_None
+    PyObject *Py_True
+    PyObject *Py_False
 
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
 
@@ -175,8 +190,11 @@ def serialize_df(df not None) -> bytes:
             assert ndim == 2
             object_block_size = _measure_object_block(arr_obj, &measurements[i])
             if object_block_size <= 0:
+                if isinstance(loc, slice):
+                    loc = list(range(*loc.indices(len(mgr.blocks))))
+                bad_loc = loc[-object_block_size]
                 raise AssertionError(
-                    f'Unsupported object column "{df.columns[loc[-object_block_size]]}": '
+                    f'Unsupported object column "{df.columns[bad_loc]}": '
                     f'{arr[-object_block_size, :10]}'
                 )
             size += object_block_size
@@ -230,6 +248,7 @@ cdef enum ObjectDType:
     ODT_LIST_STR = 4
     ODT_INT = 5
     ODT_STR = 6
+    ODT_JSON = 7
 
 
 cdef struct ColumnMeasurement:
@@ -300,10 +319,12 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                         dtype = ODT_STR
                     elif PyLong_CheckExact(item):
                         dtype = ODT_INT
+                    elif PyDict_CheckExact(item):
+                        dtype = ODT_JSON
                     else:
                         return -y
                     measurement[y].dtype = dtype
-                if dtype <= ODT_NDARRAY_STR:
+                if dtype == ODT_NDARRAY_STR or dtype == ODT_NDARRAY_FIXED or dtype == ODT_NDARRAY_RAGGED:
                     if (
                         not PyArray_CheckExact(item)
                         or PyArray_NDIM(item) != 1
@@ -357,8 +378,81 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                     if not PyLong_CheckExact(item):
                         return -y
                     size += 8
+                elif dtype == ODT_JSON:
+                    item_size = _measure_json(item)
+                    if item_size <= 0:
+                        return -y
+                    size += item_size + 4
             measurement[y].nulls = nulls
             data += rows
+    return size
+
+
+@cython.cdivision(True)
+cdef Py_ssize_t _measure_json(PyObject *node) nogil:
+    cdef:
+        PyObject *key = NULL
+        PyObject *value = NULL
+        Py_ssize_t pos = 0, size = 0, key_delta, value_delta, i, item_len, char_len
+        char *data
+        unsigned int kind
+        char buffer[32]
+        char sym
+        long long_val
+        double float_val
+
+    if PyDict_CheckExact(node):
+        size += 1
+        while PyDict_Next(node, &pos, &key, &value):
+            key_delta = _measure_json(key)
+            if key_delta < 0:
+                return key_delta
+            value_delta = _measure_json(value)
+            if value_delta < 0:
+                return value_delta
+            size += key_delta + 1 + value_delta + 1
+    elif PyList_CheckExact(node):
+        size += 1
+        for i in range(PyList_GET_SIZE(node)):
+            value = PyList_GET_ITEM(node, i)
+            value_delta = _measure_json(value)
+            if value_delta < 0:
+                return value_delta
+            size += value_delta + 1
+    elif PyUnicode_Check(node):
+        size += 2
+        data = <char *>PyUnicode_DATA(node)
+        kind = PyUnicode_KIND(node)
+        item_len = PyUnicode_GET_LENGTH(node)
+        if kind == PyUnicode_1BYTE_KIND:
+            for i in range(item_len):
+                size += _measure_ucs4(data[i])
+        elif kind == PyUnicode_2BYTE_KIND:
+            for i in range(item_len):
+                size += _measure_ucs4((<uint16_t *> data)[i])
+        elif kind == PyUnicode_4BYTE_KIND:
+            for i in range(item_len):
+                size += _measure_ucs4((<uint32_t *> data)[i])
+    elif PyLong_CheckExact(node):
+        long_val = PyLong_AsLong(node)
+        if long_val < 0:
+            size += 1
+            long_val = -long_val
+        elif long_val == 0:
+            size += 1
+        while long_val:
+            size += 1
+            long_val //= 10
+    elif PyFloat_CheckExact(node):
+        size += strlen(gcvt(PyFloat_AS_DOUBLE(node), 24, buffer))
+    elif node == Py_True:
+        size += 4
+    elif node == Py_False:
+        size += 5
+    elif node == Py_None:
+        size += 4
+    else:
+        size = -1
     return size
 
 
@@ -426,6 +520,10 @@ cdef void _serialize_object_block(
             elif dtype == ODT_INT:
                 (<long *> output)[0] = PyLong_AsLong(item)
                 output += 8
+            elif dtype == ODT_JSON:
+                bookmark = <uint32_t *>(output + 4)
+                output = _write_json(item, <char *>bookmark)
+                bookmark[-1] = output - <char *>bookmark
         data += rows
 
 
@@ -441,6 +539,173 @@ cdef inline void _write_str(PyObject *obj, char **output) nogil:
     output[0] += 4
     memcpy(output[0], PyUnicode_DATA(obj), size)
     output[0] += size
+
+
+@cython.cdivision(True)
+cdef char *_write_json(PyObject *node, char *output) nogil:
+    cdef:
+        PyObject *key = NULL
+        PyObject *value = NULL
+        Py_ssize_t pos = 0, size = 0, i, j, item_len, char_len
+        char *data
+        unsigned int kind
+        char sym
+        long long_val, div
+        double float_val
+
+    if PyDict_CheckExact(node):
+        output[0] = b"{"
+        output += 1
+        while PyDict_Next(node, &pos, &key, &value):
+            if pos != 1:
+                output[0] = b","
+                output += 1
+            output = _write_json(key, output)
+            output[0] = b":"
+            output += 1
+            output = _write_json(value, output)
+        output[0] = b"}"
+        output += 1
+    elif PyList_CheckExact(node):
+        output[0] = b"["
+        output += 1
+        for i in range(PyList_GET_SIZE(node)):
+            if i != 0:
+                output[0] = b","
+                output += 1
+            output = _write_json(PyList_GET_ITEM(node, i), output)
+        output[0] = b"]"
+        output += 1
+    elif PyUnicode_Check(node):
+        output[0] = b'"'
+        output += 1
+
+        data = <char *>PyUnicode_DATA(node)
+        kind = PyUnicode_KIND(node)
+        item_len = PyUnicode_GET_LENGTH(node)
+        if kind == PyUnicode_1BYTE_KIND:
+            for i in range(item_len):
+                output += _ucs4_to_utf8_json(data[i], output)
+        elif kind == PyUnicode_2BYTE_KIND:
+            for i in range(item_len):
+                output += _ucs4_to_utf8_json((<uint16_t *> data)[i], output)
+        elif kind == PyUnicode_4BYTE_KIND:
+            for i in range(item_len):
+                output += _ucs4_to_utf8_json((<uint32_t *> data)[i], output)
+
+        output[0] = b'"'
+        output += 1
+    elif PyLong_CheckExact(node):
+        long_val = PyLong_AsLong(node)
+        if long_val < 0:
+            output[0] = b"-"
+            output += 1
+            long_val = -long_val
+        if long_val == 0:
+            output[0] = b"0"
+            output += 1
+        else:
+            data = output
+            while long_val:
+                div = long_val
+                long_val = long_val // 10
+                output[0] = div - long_val * 10 + ord(b"0")
+                output += 1
+            long_val = output - data
+            for i in range(long_val // 2):
+                sym = data[i]
+                div = long_val - i - 1
+                data[i] = data[div]
+                data[div] = sym
+    elif node == Py_True:
+        memcpy(output, b"true", 4)
+        output += 4
+    elif node == Py_False:
+        memcpy(output, b"false", 5)
+        output += 5
+    elif PyFloat_CheckExact(node):
+        gcvt(PyFloat_AS_DOUBLE(node), 24, output)
+        output += strlen(output)
+    elif node == Py_None:
+        memcpy(output, b"null", 4)
+        output += 4
+    return output
+
+
+cdef inline int _measure_ucs4(uint32_t ucs4) nogil:
+    if ucs4 == 0:
+        return 0
+    if ucs4 == b"\\" or ucs4 == b'"':
+        return 2
+    if ucs4 < 0x20:
+        return 6
+    if ucs4 < 0x80:
+        return 1
+    if ucs4 < 0x0800:
+        return 2
+    if 0xD800 <= ucs4 <= 0xDFFF:
+        return 0
+    if ucs4 < 0x10000:
+        return 3
+    return 4
+
+
+# Adapted from CPython, licensed under PSF2 (BSD-like)
+cdef inline int _ucs4_to_utf8_json(uint32_t ucs4, char *utf8) nogil:
+    if ucs4 == 0:
+        return 0
+    if ucs4 == b"\\" or ucs4 == b'"':
+        utf8[0] = b"\\"
+        utf8[1] = ucs4
+        return 2
+    if ucs4 < 0x20:
+        # Escape control chars
+        utf8[0] = b"\\"
+        utf8[1] = b"u"
+        utf8[2] = b"0"
+        utf8[3] = b"0"
+        utf8[4] = b"0" if ucs4 < 0x10 else b"1"
+        ucs4 &= 0x0F
+        if ucs4 > 0x09:
+            utf8[5] = (ucs4 - 0x0A) + ord(b"A")
+        else:
+            utf8[5] = ucs4 + ord(b"0")
+        return 6
+    if ucs4 < 0x80:
+        # Encode ASCII
+        utf8[0] = ucs4
+        return 1
+    if ucs4 < 0x0800:
+        # Encode Latin-1
+        utf8[0] = 0xc0 | (ucs4 >> 6)
+        utf8[1] = 0x80 | (ucs4 & 0x3f)
+        return 2
+    if 0xD800 <= ucs4 <= 0xDFFF:
+        return 0
+    if ucs4 < 0x10000:
+        utf8[0] = 0xe0 | (ucs4 >> 12)
+        utf8[1] = 0x80 | ((ucs4 >> 6) & 0x3f)
+        utf8[2] = 0x80 | (ucs4 & 0x3f)
+        return 3
+    # Encode UCS4 Unicode ordinals
+    utf8[0] = 0xf0 | (ucs4 >> 18)
+    utf8[1] = 0x80 | ((ucs4 >> 12) & 0x3f)
+    utf8[2] = 0x80 | ((ucs4 >> 6) & 0x3f)
+    utf8[3] = 0x80 | (ucs4 & 0x3f)
+    return 4
+
+
+def json_dumps(obj) -> bytes:
+    cdef Py_ssize_t size
+
+    with nogil:
+        size = _measure_json(<PyObject *> obj)
+    if size < 0:
+        raise ValueError("Unsupported JSON object")
+    buffer = PyBytes_FromStringAndSize(NULL, size)
+    with nogil:
+        _write_json(<PyObject *> obj, PyBytes_AS_STRING(<PyObject *> buffer))
+    return buffer
 
 
 class CorruptedBuffer(ValueError):
@@ -596,6 +861,18 @@ def deserialize_df(bytes buffer) -> DataFrame:
                         arr[y, x] = PyLong_FromLong((<long *> input)[0])
                         input += 8
                         input_size -= 8
+                    elif obj_dtype == ODT_JSON:
+                        if input_size < 4:
+                            raise CorruptedBuffer()
+                        aux = (<uint32_t *> input)[0]
+                        input += 4
+                        input_size -= 4
+                        if input_size < aux:
+                            raise CorruptedBuffer()
+                        arr[y, x] = json.loads(PyUnicode_FromKindAndData(PyUnicode_1BYTE_KIND, input, aux))
+                        input += aux
+                        input_size -= aux
+
         if block_type is DatetimeTZBlock:
             block = block_type(DatetimeArray(arr, dtype=DatetimeTZDtype(tz=timezone.utc)), loc)
         else:
