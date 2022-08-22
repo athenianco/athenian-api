@@ -93,8 +93,15 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     _, default_branches = await BranchMiner.extract_branches(
         settings.native, prefixer, meta_ids, request.mdb, request.cache,
     )
+    unresolved = []
     for repo, name in default_branches.items():
-        model[settings.prefixed_for_native(repo)]["default_branch"] = name
+        try:
+            model[settings.prefixed_for_native(repo)]["default_branch"] = name
+        except KeyError:
+            unresolved.append(repo)
+    if unresolved:
+        log = logging.getLogger(f"{metadata.__package__}.list_release_match_settings")
+        log.error("unresolved repositories in release settings: %s", unresolved)
     return web.json_response(model)
 
 
