@@ -829,7 +829,11 @@ def deserialize_df(bytes buffer) -> DataFrame:
                         subitem_size = (<uint32_t *> input)[1]
                         input += 8
                         input_size -= 8
-                        subdtype = npdtype((chr(subdtype.kind), subitem_size))
+                        subdtype = npdtype((
+                            chr(subdtype.kind),
+                            # U is UCS4
+                            subitem_size if subdtype.kind == b"S" else (subitem_size >> 2),
+                        ))
                         subarr = np.empty(aux, dtype=subdtype)
                         aux *= subitem_size
                         if input_size < aux:
