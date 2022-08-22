@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from itertools import chain
-from typing import Collection, FrozenSet, List, Optional, Set, Tuple, Type, Union
+from typing import Collection, FrozenSet, Iterable, List, Optional, Set, Tuple, Type, Union
 
 import aiomcache
 import morcilla
@@ -111,6 +111,7 @@ def _filter_by_labels(
     return embedded_labels_query
 
 
+@sentry_span
 async def _mine_commits(
     repo_ids: np.ndarray,
     repo_names: np.ndarray,
@@ -191,6 +192,7 @@ async def _mine_prs(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
+    hints: Iterable[str] = (),
 ) -> pd.DataFrame:
     selected = [
         attr_user.label(developer_identity_column),
@@ -218,14 +220,35 @@ async def _mine_prs(
     return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
+@sentry_span
 async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
-    return await _mine_prs(PullRequest.user_node_id, PullRequest.created_at, *args, **kwargs)
+    return await _mine_prs(
+        PullRequest.user_node_id,
+        PullRequest.created_at,
+        *args,
+        **kwargs,
+        hints=[
+            "IndexOnlyScan(pr github_node_pull_request_author_created)",
+            "Rows(pr repo *100)",
+        ],
+    )
 
 
+@sentry_span
 async def _mine_prs_merged(*args, **kwargs) -> pd.DataFrame:
-    return await _mine_prs(PullRequest.merged_by_id, PullRequest.merged_at, *args, **kwargs)
+    return await _mine_prs(
+        PullRequest.merged_by_id,
+        PullRequest.merged_at,
+        *args,
+        **kwargs,
+        hints=[
+            "IndexOnlyScan(pr github_node_pull_request_author_merge_cover)",
+            "Rows(pr repo *100)",
+        ],
+    )
 
 
+@sentry_span
 async def _mine_releases(
     repo_ids: np.ndarray,
     repo_names: np.ndarray,
@@ -289,6 +312,7 @@ async def _mine_releases(
     )
 
 
+@sentry_span
 async def _mine_reviews(
     repo_ids: np.ndarray,
     repo_names: np.ndarray,
@@ -418,10 +442,12 @@ async def _mine_pr_comments(
     return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
+@sentry_span
 async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
     return await _mine_pr_comments(PullRequestComment, *args, **kwargs)
 
 
+@sentry_span
 async def _mine_pr_comments_review(*args, **kwargs) -> pd.DataFrame:
     return await _mine_pr_comments(PullRequestReviewComment, *args, **kwargs)
 
