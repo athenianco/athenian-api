@@ -23,9 +23,10 @@ from athenian.api.models.state.models import (
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
-from tests.conftest import DEFAULT_HEADERS, disable_default_user
+from tests.conftest import disable_default_user
 from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory.state import DEFAULT_ACCOUNT_ID, UserAccountFactory, UserTokenFactory
+from tests.testutils.requester import Requester
 
 vadim_email = "vadim@athenian.co"
 eiso_email = "eiso@athenian.co"
@@ -447,31 +448,31 @@ async def test_become_header(client, headers, sdb, god):
     }
 
 
-class TestChangeUser:
-    async def test_regular(self, client: TestClient) -> None:
+class TestChangeUser(Requester):
+    async def test_regular(self) -> None:
         body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "regular"}
-        items = await self._request(client, json=body)
+        items = await self._request(json=body)
         assert len(items["admins"]) == 1
         assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
         assert len(items["regulars"]) == 1
         assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
-    async def test_invalid_status(self, client: TestClient) -> None:
+    async def test_invalid_status(self) -> None:
         body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "attacker"}
-        response_body = await self._request(client, 400, json=body)
+        response_body = await self._request(400, json=body)
         assert "attacker" in response_body["detail"]
 
-    async def test_admin(self, client: TestClient) -> None:
+    async def test_admin(self) -> None:
         body = {"account": 1, "user": "auth0|5e1f6e2e8bfa520ea5290741", "status": "admin"}
-        items = await self._request(client, json=body)
+        items = await self._request(json=body)
         assert len(items["admins"]) == 2
         assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
         assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
     @pytest.mark.parametrize("membership_check", [False, True])
-    async def test_banish(self, client: TestClient, sdb, membership_check) -> None:
-        response = await client.request(
-            method="GET", path="/v1/invite/generate/1", headers=DEFAULT_HEADERS, json={},
+    async def test_banish(self, sdb, membership_check) -> None:
+        response = await self.client.request(
+            method="GET", path="/v1/invite/generate/1", headers=self.headers, json={},
         )
         link1 = await response.json()
         await assert_existing_row(sdb, Invitation, is_active=True, account_id=1)
@@ -498,7 +499,7 @@ class TestChangeUser:
             "user": "auth0|5e1f6e2e8bfa520ea5290741",
             "status": "banished",
         }
-        items = await self._request(client, json=body)
+        items = await self._request(json=body)
         assert len(items["admins"]) == 1
         assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
         assert len(items["regulars"]) == 0
@@ -507,8 +508,8 @@ class TestChangeUser:
         )
         if not membership_check:
             await assert_missing_row(sdb, Invitation, is_active=True, account_id=1)
-            response = await client.request(
-                method="GET", path="/v1/invite/generate/1", headers=DEFAULT_HEADERS, json={},
+            response = await self.client.request(
+                method="GET", path="/v1/invite/generate/1", headers=self.headers, json={},
             )
             link2 = await response.json()
             assert link1 != link2
@@ -526,24 +527,24 @@ class TestChangeUser:
             (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
         ],
     )
-    async def test_errors(self, client, account, user, status, code):
+    async def test_errors(self, account, user, status, code):
         body = {"account": account, "user": user, "status": status}
-        await self._request(client, code, json=body)
+        await self._request(code, json=body)
 
-    async def test_banish_user_with_token(self, client: TestClient, sdb: Database) -> None:
+    async def test_banish_user_with_token(self, sdb: Database) -> None:
         await models_insert(
             sdb, UserAccountFactory(user_id="auth0|GG"), UserTokenFactory(user_id="auth0|GG"),
         )
 
         body = {"account": DEFAULT_ACCOUNT_ID, "user": "auth0|GG", "status": "banished"}
-        await self._request(client, json=body)
+        await self._request(json=body)
         await self._assert_user_banished(sdb, "auth0|GG")
         await assert_missing_row(sdb, UserToken, user_id="auth0|GG")
 
-    async def _request(self, client: TestClient, assert_status: int = 200, **kwargs: Any) -> dict:
+    async def _request(self, assert_status: int = 200, **kwargs: Any) -> dict:
         path = "/v1/account/user"
-        response = await client.request(
-            method="PUT", path=path, headers=DEFAULT_HEADERS, **kwargs,
+        response = await self.client.request(
+            method="PUT", path=path, headers=self.headers, **kwargs,
         )
         assert response.status == assert_status
         return await response.json()

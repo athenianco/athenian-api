@@ -1,4 +1,6 @@
+import dataclasses
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
 from freezegun import freeze_time
 import numpy as np
@@ -6,10 +8,13 @@ import pandas as pd
 from pandas.errors import OutOfBoundsDatetime
 import pytest
 
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.serialization import (
     FriendlyJson,
+    ParseError,
     deserialize_date,
     deserialize_datetime,
+    deserialize_model,
     serialize_timedelta,
 )
 from tests.testutils.time import dt
@@ -75,38 +80,103 @@ class TestDeserializeDatetime:
         assert deserialize_datetime(s) == datetime(2022, 7, 5, 23, 14, 11, tzinfo=None)
 
 
-def test_serialize_date() -> None:
-    obj = date(1984, 5, 1)
-    assert FriendlyJson.dumps(obj) == '"1984-05-01"'
+class TestDeserializeModel:
+    def test_attribute_map(self) -> None:
+        @dataclasses.dataclass
+        class T(Model):
+            attribute_types = {"a": int, "b": str}
+            attribute_map = {"b": "b_mapped"}
+
+            def __init__(self, a=None, b=None):
+                self._a = a
+                self._b = b
+
+            def _set_a(self, value):
+                self._a = value
+
+            a = property(lambda t: t._a, _set_a)
+
+            def _set_b(self, value):
+                self._b = value
+
+            b = property(lambda t: t._b, _set_b)
+
+        data = {"a": 123, "b_mapped": "foo"}
+
+        t: T = deserialize_model(data, T)
+        assert t.a == 123
+        assert t.b == "foo"
+
+    def test_union_field(self) -> None:
+        @dataclasses.dataclass
+        class T(Model):
+            attribute_types = {"a": int | str}
+
+            def __init__(self, a=None):
+                self._a = a
+
+            def _set_a(self, value):
+                self._a = value
+
+            a = property(lambda t: t._a, _set_a)
+
+        t: T = deserialize_model({"a": 42}, T)
+        assert t.a == 42
+
+        t = deserialize_model({"a": "foo"}, T)
+        assert t.a == "foo"
+
+    def test_optional_field(self) -> None:
+        @dataclasses.dataclass
+        class T(Model):
+            attribute_types = {"a": Optional[date]}
+
+            def __init__(self, a=None):
+                self._a = a
+
+            def _set_a(self, value):
+                self._a = value
+
+            a = property(lambda t: t._a, _set_a)
+
+        t: T = deserialize_model({"a": "2001-01-01"}, T)
+        assert t.a == date(2001, 1, 1)
+        with pytest.raises(ParseError):
+            deserialize_model({"a": "foo"}, T)
 
 
-def test_serialize_timedelta() -> None:
-    td = timedelta(hours=2, seconds=2.2)
-    assert serialize_timedelta(td) == "7202s"
+class TestFriendlyJson:
+    def test_serialize_date(self) -> None:
+        obj = date(1984, 5, 1)
+        assert FriendlyJson.dumps(obj) == '"1984-05-01"'
 
-    td = timedelta(seconds=0.9)
-    assert serialize_timedelta(td) == "0s"
+    def test_serialize_timedelta(self) -> None:
+        td = timedelta(hours=2, seconds=2.2)
+        assert serialize_timedelta(td) == "7202s"
 
+        td = timedelta(seconds=0.9)
+        assert serialize_timedelta(td) == "0s"
 
-def test_serialize_datetime() -> None:
-    obj = [
-        pd.Timestamp(0, tzinfo=timezone.utc),
-        pd.NaT,
-        datetime(year=2020, month=3, day=18, tzinfo=timezone.utc),
-        date(year=2020, month=3, day=18),
-        pd.Timedelta(minutes=1),
-        timedelta(seconds=1),
-    ]
-    s = FriendlyJson.dumps(obj)
-    assert s == '["1970-01-01T00:00:00Z", null, "2020-03-18T00:00:00Z", "2020-03-18", "60s", "1s"]'
+    def test_serialize_datetime(self) -> None:
+        obj = [
+            pd.Timestamp(0, tzinfo=timezone.utc),
+            pd.NaT,
+            datetime(year=2020, month=3, day=18, tzinfo=timezone.utc),
+            date(year=2020, month=3, day=18),
+            pd.Timedelta(minutes=1),
+            timedelta(seconds=1),
+        ]
+        s = FriendlyJson.dumps(obj)
+        assert (
+            s
+            == '["1970-01-01T00:00:00Z", null, "2020-03-18T00:00:00Z", "2020-03-18", "60s", "1s"]'
+        )
 
+    def test_serialize_datetime_no_utc(self) -> None:
+        obj = [pd.Timestamp(0)]
+        with pytest.raises(AssertionError):
+            FriendlyJson.dumps(obj)
 
-def test_serialize_datetime_no_utc() -> None:
-    obj = [pd.Timestamp(0)]
-    with pytest.raises(AssertionError):
-        FriendlyJson.dumps(obj)
-
-
-def test_serialize_numpy() -> None:
-    assert FriendlyJson.serialize(np.int64(7)) == 7
-    assert FriendlyJson.serialize(np.double(7.5)) == 7.5
+    def test_serialize_numpy(self) -> None:
+        assert FriendlyJson.serialize(np.int64(7)) == 7
+        assert FriendlyJson.serialize(np.double(7.5)) == 7.5

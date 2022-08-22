@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from typing import Sequence
 
-from aiohttp.test_utils import TestClient
 import pytest
 
 from athenian.api.db import Database
@@ -12,7 +11,6 @@ from tests.align.utils import (
     build_fragment,
     build_recursive_fields_structure,
 )
-from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import (
     GoalFactory,
@@ -20,9 +18,10 @@ from tests.testutils.factory.state import (
     TeamFactory,
     TeamGoalFactory,
 )
+from tests.testutils.requester import Requester
 
 
-class BaseGoalsTest:
+class BaseGoalsTest(Requester):
     _ALL_GOAL_FIELDS = ("id", "name", "metric", "validFrom", "expiresAt")
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
@@ -96,7 +95,6 @@ class BaseGoalsTest:
         self,
         account_id: int,
         team_id: int,
-        client: TestClient,
         goal_fields=_ALL_GOAL_FIELDS,
         value_fields=_ALL_VALUE_FIELDS,
         team_fields=_ALL_TEAM_FIELDS,
@@ -111,25 +109,24 @@ class BaseGoalsTest:
                 "onlyWithTargets": only_with_targets,
             },
         }
-        return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
+        return await align_graphql_request(self.client, headers=self.headers, json=body)
 
 
 class TestGoalsErrors(BaseGoalsTest):
-    async def test_not_existing_team(self, client: TestClient, sdb: Database) -> None:
-        res = await self._request(1, 1, client)
+    async def test_not_existing_team(self, sdb: Database) -> None:
+        res = await self._request(1, 1)
         assert_extension_error(res, "Team 1 not found or access denied")
 
     async def test_implicit_root_team_no_team_existing(
         self,
-        client: TestClient,
         sdb: Database,
     ) -> None:
-        res = await self._request(1, 0, client)
+        res = await self._request(1, 0)
         assert_extension_error(res, "Root team not found or access denied")
 
 
 class TestGoals(BaseGoalsTest):
-    async def test_no_goals_for_team(self, client: TestClient, sdb: Database) -> None:
+    async def test_no_goals_for_team(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1),
@@ -138,10 +135,10 @@ class TestGoals(BaseGoalsTest):
             TeamGoalFactory(goal_id=1, team_id=1),
         )
 
-        res = await self._request(1, 2, client)
+        res = await self._request(1, 2)
         assert res["data"]["goals"] == []
 
-    async def test_single_team_goal(self, client: TestClient, sdb: Database) -> None:
+    async def test_single_team_goal(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10, name="A-Team", members=[39789, 40020, 40191]),
@@ -153,7 +150,7 @@ class TestGoals(BaseGoalsTest):
             ),
             TeamGoalFactory(goal_id=20, team_id=10, target=1.23),
         )
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
 
         assert len(res["data"]["goals"]) == 1
         goal = res["data"]["goals"][0]
@@ -170,7 +167,7 @@ class TestGoals(BaseGoalsTest):
         assert team_goal["value"]["current"]["float"] == pytest.approx(3.7, 0.1)
         assert team_goal["value"]["initial"]["float"] == pytest.approx(11.5, 0.1)
 
-    async def test_two_teams_jira_metric(self, client: TestClient, sdb: Database) -> None:
+    async def test_two_teams_jira_metric(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10, members=[39789]),
@@ -198,7 +195,7 @@ class TestGoals(BaseGoalsTest):
                 github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
             ),
         )
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
 
         goal_20 = res["data"]["goals"][0]
         assert goal_20["id"] == 20
@@ -229,7 +226,7 @@ class TestGoals(BaseGoalsTest):
         assert team_goal_11["value"]["initial"]["int"] == 3
         assert team_goal_11["value"]["current"]["int"] == 528
 
-    async def test_multiple_teams(self, client: TestClient, sdb: Database) -> None:
+    async def test_multiple_teams(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1),
@@ -243,7 +240,7 @@ class TestGoals(BaseGoalsTest):
             TeamGoalFactory(goal_id=20, team_id=11, target="foo"),
             TeamGoalFactory(goal_id=20, team_id=13, target="bar"),
         )
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
         assert len(res["data"]["goals"]) == 1
         goal = res["data"]["goals"][0]
 
@@ -265,7 +262,7 @@ class TestGoals(BaseGoalsTest):
         assert not team_goal_13["children"]
         assert team_goal_13["value"]["target"]["str"] == "bar"
 
-    async def test_multiple_goals(self, client: TestClient, sdb: Database) -> None:
+    async def test_multiple_goals(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10),
@@ -289,7 +286,7 @@ class TestGoals(BaseGoalsTest):
             TeamGoalFactory(goal_id=21, team_id=11, target=3),
             TeamGoalFactory(goal_id=21, team_id=12, target=4),
         )
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
         assert len(res["data"]["goals"]) == 2
 
         assert (goal_20 := res["data"]["goals"][0])["id"] == 20
@@ -333,7 +330,7 @@ class TestGoals(BaseGoalsTest):
         assert team_goal_13["value"]["target"] is None
         assert not team_goal_13["children"]
 
-    async def test_timedelta_metric(self, client: TestClient, sdb: Database) -> None:
+    async def test_timedelta_metric(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10),
@@ -346,7 +343,7 @@ class TestGoals(BaseGoalsTest):
             TeamGoalFactory(goal_id=20, team_id=10, target="20001s"),
         )
 
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
         assert len(res["data"]["goals"]) == 1
 
         goal = res["data"]["goals"][0]
@@ -356,7 +353,7 @@ class TestGoals(BaseGoalsTest):
         assert goal["teamGoal"]["value"]["current"]["str"] == "3727969s"
         assert goal["teamGoal"]["value"]["initial"]["str"] == "2126373s"
 
-    async def test_only_with_targets_param(self, client: TestClient, sdb: Database) -> None:
+    async def test_only_with_targets_param(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10, parent_id=None),
@@ -365,7 +362,7 @@ class TestGoals(BaseGoalsTest):
             GoalFactory(id=20),
             TeamGoalFactory(goal_id=20, team_id=11, target=1.23),
         )
-        res = await self._request(1, 10, client, only_with_targets=True)
+        res = await self._request(1, 10, only_with_targets=True)
 
         assert len(res["data"]["goals"]) == 1
 
@@ -377,7 +374,7 @@ class TestGoals(BaseGoalsTest):
         # team goal 12 is hidden
         assert len(team_goal_11["children"]) == 0
 
-    async def test_archived_goals_are_excluded(self, client: TestClient, sdb: Database) -> None:
+    async def test_archived_goals_are_excluded(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10),
@@ -386,7 +383,7 @@ class TestGoals(BaseGoalsTest):
             TeamGoalFactory(goal_id=20, team_id=10),
             TeamGoalFactory(goal_id=21, team_id=10),
         )
-        res = await self._request(1, 10, client)
+        res = await self._request(1, 10)
 
         goals = res["data"]["goals"]
         assert [goal["id"] for goal in goals] == [20]

@@ -209,6 +209,25 @@ async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> Row:
     return await sdb.fetch_all(stmt)
 
 
+async def insert_goal_template(account_id: int, name: str, metric: str, sdb: DatabaseLike) -> int:
+    """Insert a new Goal Template."""
+    model = GoalTemplate(account_id=account_id, name=name, metric=metric)
+    values = model.create_defaults().explode()
+    return await sdb.execute(sa.insert(GoalTemplate).values(values))
+
+
+async def delete_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> None:
+    """Delete a Goal Template."""
+    await sdb.execute(sa.delete(GoalTemplate).where(GoalTemplate.id == template_id))
+
+
+async def update_goal_template_in_db(template_id, name: str, sdb: DatabaseLike) -> None:
+    """Update a Goal Template."""
+    values = {GoalTemplate.name: name, GoalTemplate.updated_at: datetime.now(timezone.utc)}
+    stmt = sa.update(GoalTemplate).where(GoalTemplate.id == template_id).values(values)
+    await sdb.execute(stmt)
+
+
 @sentry_span
 async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) -> None:
     """Create the set of default goal templates for the account."""

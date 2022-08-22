@@ -1,7 +1,6 @@
 from datetime import date
 from typing import Any, Dict, List
 
-from aiohttp.test_utils import TestClient
 from freezegun import freeze_time
 from morcilla import Database
 import pytest
@@ -16,13 +15,13 @@ from tests.align.utils import (
     assert_extension_error,
     build_recursive_fields_structure,
 )
-from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import TeamFactory
+from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
 
-class BaseMetricsTest:
+class BaseMetricsTest(Requester):
     def _query(self, depth=4):
         fragment = """
             fragment teamMetricValueFields on TeamMetricValue {
@@ -64,7 +63,6 @@ class BaseMetricsTest:
 
     async def _request(
         self,
-        client: TestClient,
         account_id: int,
         team_id: int,
         metrics: List[str],
@@ -82,7 +80,7 @@ class BaseMetricsTest:
                 "expiresAt": str(expiresAt),
             },
         }
-        return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
+        return await align_graphql_request(self.client, headers=self.headers, json=body)
 
 
 @pytest.fixture(scope="function")
@@ -115,13 +113,11 @@ async def sample_teams(sdb: Database) -> None:
 class TestMetrics(BaseMetricsTest):
     async def test_fetch_all_kinds(
         self,
-        client: TestClient,
         sample_teams,
         mdb,
         precomputed_dead_prs,
     ) -> None:
         res = await self._request(
-            client,
             1,
             1,
             [
@@ -203,13 +199,11 @@ class TestMetrics(BaseMetricsTest):
     )
     async def test_fetch_one_kind(
         self,
-        client: TestClient,
         sample_teams,
         metric: str,
         value: Dict[str, Any],
     ) -> None:
         res = await self._request(
-            client,
             1,
             1,
             [metric],
@@ -229,9 +223,8 @@ class TestMetrics(BaseMetricsTest):
 
         validate_recursively(mv[0]["value"], value)
 
-    async def test_fetch_two(self, client: TestClient, sample_teams):
+    async def test_fetch_two(self, sample_teams):
         res = await self._request(
-            client,
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED, JIRAMetricID.JIRA_RESOLUTION_RATE],
@@ -277,14 +270,13 @@ class TestMetrics(BaseMetricsTest):
             },
         }
 
-    async def test_missing_values_for_subteam(self, client: TestClient, sdb: Database) -> None:
+    async def test_missing_values_for_subteam(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[39789, 40070]),
             TeamFactory(id=2, parent_id=1, members=[39926]),
         )
         res = await self._request(
-            client,
             1,
             1,
             [PullRequestMetricID.PR_REVIEW_TIME],
@@ -303,9 +295,8 @@ class TestMetrics(BaseMetricsTest):
 
 
 class TestMetricsNasty(BaseMetricsTest):
-    async def test_fetch_bad_team(self, client: TestClient) -> None:
+    async def test_fetch_bad_team(self) -> None:
         res = await self._request(
-            client,
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
@@ -327,9 +318,8 @@ class TestMetricsNasty(BaseMetricsTest):
             ],
         }
 
-    async def test_fetch_bad_account(self, client: TestClient, sample_teams) -> None:
+    async def test_fetch_bad_account(self, sample_teams) -> None:
         res = await self._request(
-            client,
             2,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
@@ -351,9 +341,8 @@ class TestMetricsNasty(BaseMetricsTest):
             ],
         }
 
-    async def test_fetch_bad_metric(self, client: TestClient, sample_teams) -> None:
+    async def test_fetch_bad_metric(self, sample_teams) -> None:
         res = await self._request(
-            client,
             1,
             1,
             ["whatever"],
@@ -375,9 +364,8 @@ class TestMetricsNasty(BaseMetricsTest):
             ],
         }
 
-    async def test_fetch_bad_dates_order(self, client: TestClient, sample_teams) -> None:
+    async def test_fetch_bad_dates_order(self, sample_teams) -> None:
         res = await self._request(
-            client,
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
@@ -399,9 +387,8 @@ class TestMetricsNasty(BaseMetricsTest):
             ],
         }
 
-    async def test_dates_far_past(self, client: TestClient, sample_teams) -> None:
+    async def test_dates_far_past(self, sample_teams) -> None:
         res = await self._request(
-            client,
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
@@ -412,11 +399,10 @@ class TestMetricsNasty(BaseMetricsTest):
         assert res.get("data") is None
 
     @freeze_time("2022-03-31")
-    async def test_valid_from_in_the_future(self, client: TestClient, sdb: Database) -> None:
+    async def test_valid_from_in_the_future(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=1, members=[39789]))
 
         res = await self._request(
-            client,
             1,
             1,
             [PullRequestMetricID.PR_RELEASE_COUNT],

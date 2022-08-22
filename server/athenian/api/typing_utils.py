@@ -1,7 +1,7 @@
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
-import sys
+import types
 from typing import Any, Callable, Iterable, Iterator, Mapping, NamedTuple, Optional, TypeVar, Union
 
 import numpy as np
@@ -13,59 +13,33 @@ from athenian.api.tracing import sentry_span
 
 OriginalSpecialForm = type(Any)
 
-if sys.version_info < (3, 10):
 
-    class _VerbatimOptional(OriginalSpecialForm, _root=True):
-        cache = {}
+class _VerbatimUnion(OriginalSpecialForm, _root=True):
+    __slots__ = ("__verbatim__",)
 
-        def __init__(self):
-            super().__init__(
-                "Optional",
-                """
-            Alternative Optional that prevents coercing (), [], and {} attributes to null during
-            serialization.
-            """,
-            )
+    def __init__(self):
+        self._getitem = Union._getitem
+        self._name = Union._name
+        self.__verbatim__ = True
 
-        def __getitem__(self, parameters):
-            typeobj = super().__getitem__(parameters)
-            key = typeobj.__origin__.__reduce__()
-            try:
-                typeobj.__origin__ = self.cache[key]
-            except KeyError:
-                cloned_origin = self.cache[key] = OriginalSpecialForm.__new__(OriginalSpecialForm)
-                for attr in self.__slots__:
-                    setattr(cloned_origin, attr, getattr(typeobj.__origin__, attr))
-                typeobj.__origin__ = cloned_origin
-            typeobj.__origin__.__verbatim__ = True
-            return typeobj
 
-    VerbatimOptional = _VerbatimOptional()
-    VerbatimUnionTypes = (Union,)
-else:
+VerbatimUnion = _VerbatimUnion()
 
-    class _VerbatimUnion(OriginalSpecialForm, _root=True):
-        __slots__ = ("__verbatim__",)
 
-        def __init__(self):
-            self._getitem = Union._getitem
-            self._name = Union._name
-            self.__verbatim__ = True
+@OriginalSpecialForm
+def VerbatimOptional(self, parameters):
+    """Alternative Optional that prevents coercing (), [], and {} attributes to null during \
+    serialization."""
+    return VerbatimUnion[Optional[parameters].__args__]
 
-    VerbatimUnion = _VerbatimUnion()
 
-    @OriginalSpecialForm
-    def VerbatimOptional(self, parameters):
-        """Alternative Optional that prevents coercing (), [], and {} attributes to null during \
-        serialization."""
-        return VerbatimUnion[Optional[parameters].__args__]
-
-    VerbatimUnionTypes = (VerbatimUnion, Union)
+VerbatimUnionTypes = (VerbatimUnion, Union)
 
 
 def is_generic(klass: type):
     """Determine whether klass is a generic class."""
-    return hasattr(klass, "__origin__")
+    # UnionType sadly doesn't define __origin__
+    return hasattr(klass, "__origin__") or isinstance(klass, types.UnionType)
 
 
 def is_dict(klass: type):
@@ -78,9 +52,14 @@ def is_list(klass: type):
     return getattr(klass, "__origin__", None) == list
 
 
-def is_union(klass: type):
+def is_union(klass: object) -> bool:
     """Determine whether klass is a Union."""
-    return getattr(klass, "__origin__", None) in VerbatimUnionTypes
+    return (
+        # old style typing.Union[T0, T1]
+        getattr(klass, "__origin__", None) in VerbatimUnionTypes
+        # new style T0 | T1
+        or isinstance(klass, types.UnionType)
+    )
 
 
 def is_optional(klass: type):

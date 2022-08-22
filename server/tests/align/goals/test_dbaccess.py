@@ -1,5 +1,6 @@
 from operator import itemgetter
 
+from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -7,14 +8,17 @@ from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoun
 from athenian.api.align.goals.dbaccess import (
     create_default_goal_templates,
     delete_empty_goals,
+    delete_goal_template_from_db,
     delete_team_goals,
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
+    insert_goal_template,
     update_goal,
+    update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.db import Database
+from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.testutils.db import (
     assert_existing_row,
@@ -29,6 +33,7 @@ from tests.testutils.factory.state import (
     TeamFactory,
     TeamGoalFactory,
 )
+from tests.testutils.time import dt
 
 
 class TestDeleteTeamGoals:
@@ -159,6 +164,44 @@ class TestGetGoalTemplatesFromDB:
         await models_insert(sdb, GoalTemplateFactory(id=102), GoalTemplateFactory(id=103))
         rows = await get_goal_templates_from_db(1, sdb)
         assert len(rows) == 2
+
+
+class TestInsertGoalTemplate:
+    async def test_base(self, sdb: Database) -> None:
+        await insert_goal_template(1, "T", "m", sdb)
+        await assert_existing_row(sdb, GoalTemplate, account_id=1, name="T", metric="m")
+
+    async def test_duplicated_name(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(account_id=1, name="T"))
+        with pytest.raises(integrity_errors):
+            await insert_goal_template(1, "T", "m0", sdb)
+
+        await assert_missing_row(sdb, GoalTemplate, metric="m")
+
+
+class TestDeleteGoalTemplateFromDB:
+    async def test_delete(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=120))
+        await delete_goal_template_from_db(120, sdb)
+
+    async def test_not_existing(self, sdb: Database) -> None:
+        await delete_goal_template_from_db(120, sdb)
+
+
+class TestUpdateGoalTemplateInDB:
+    @freeze_time("2012-10-26")
+    async def test_update_name(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalTemplateFactory(id=120, name="Tmpl 0", updated_at=dt(2012, 10, 23)),
+        )
+        await update_goal_template_in_db(120, "Tmpl new", sdb)
+        row = await assert_existing_row(sdb, GoalTemplate, id=120, name="Tmpl new")
+        assert ensure_db_datetime_tz(row[GoalTemplate.updated_at.name], sdb) == dt(2012, 10, 26)
+
+    async def test_not_found(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalTemplateFactory(id=120, name="T0"))
+        await update_goal_template_in_db(121, "T1", sdb)
+        await assert_existing_row(sdb, GoalTemplate, id=120, name="T0")
 
 
 class TestCreateDefaultGoalTemplates:
