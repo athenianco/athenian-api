@@ -388,16 +388,20 @@ async def god(sdb) -> None:
     )
 
 
-DEFAULT_HEADERS = {
-    "Accept": "application/json",
-    "Content-Type": "application/json",
-    "Origin": "http://localhost",
-}
-
-
 @pytest.fixture(scope="function")
 def headers() -> Dict[str, str]:
-    return dict(DEFAULT_HEADERS)
+    # DO NOT MAKE THIS A GLOBAL SCOPE VARIABLE
+    # THIS MUST BE A FIXTURE
+    # Otherwise, it is too easy to mutate.
+    return {
+        # DO NOT
+        "Accept": "application/json",
+        # MAKE THIS
+        "Content-Type": "application/json",
+        # A GLOBAL
+        "Origin": "http://localhost",
+        # VARIABLE
+    }
 
 
 @pytest.fixture(scope="session")

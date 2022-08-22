@@ -2,7 +2,6 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import json
 
-from aiohttp.test_utils import TestClient
 import numpy as np
 import pandas as pd
 import pytest
@@ -31,10 +30,10 @@ from athenian.api.models.web import (
     ReleaseMetricID,
 )
 from athenian.api.serialization import FriendlyJson
-from tests.conftest import DEFAULT_HEADERS
+from tests.testutils.requester import Requester
 
 
-class TestCalcMetricsPRs:
+class TestCalcMetricsPRs(Requester):
     """Tests for endpoint /v1/metrics/pull_requests"""
 
     # TODO: fix response validation against the schema
@@ -83,7 +82,7 @@ class TestCalcMetricsPRs:
             (PullRequestMetricID.PR_DEPLOYMENT_TIME, 0),  # because pdb is empty
         ],
     )
-    async def test_smoke(self, client, metric, count, app, client_cache):
+    async def test_smoke(self, metric, count, app, client_cache):
         """Trivial test to prove that at least something is working."""
         req_body = {
             "for": [
@@ -108,7 +107,7 @@ class TestCalcMetricsPRs:
         }
 
         for _ in range(2):
-            body = await self._request(client, json=req_body)
+            body = await self._request(json=req_body)
             cm = CalculatedPullRequestMetrics.from_dict(body)
             assert len(cm.calculated) == 1
             assert len(cm.calculated[0].values) > 0
@@ -123,16 +122,16 @@ class TestCalcMetricsPRs:
                     s += m is not None
             assert s == count
 
-    async def _request(self, client: TestClient, *, assert_status=200, **kwargs) -> dict:
-        response = await client.request(
-            method="POST", path="/v1/metrics/pull_requests", headers=DEFAULT_HEADERS, **kwargs,
+    async def _request(self, *, assert_status=200, **kwargs) -> dict:
+        response = await self.client.request(
+            method="POST", path="/v1/metrics/pull_requests", headers=self.headers, **kwargs,
         )
         assert response.status == assert_status
         return await response.json()
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_all_time(self, client, headers):
+    async def test_all_time(self, headers):
         """https://athenianco.atlassian.net/browse/ENG-116"""
         devs = ["github.com/vmarkovtsev", "github.com/mcuadros"]
         for_block = {
@@ -166,7 +165,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        body = await self._request(client, json=body)
+        body = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(body)
         assert cm.calculated[0].values[0].date == date(year=2015, month=10, day=13)
         assert cm.calculated[0].values[-1].date <= date(year=2019, month=3, day=15)
@@ -224,7 +223,7 @@ class TestCalcMetricsPRs:
         assert cscores > 0
         assert all((v == 2) for v in gcounts.values())
 
-    async def test_access_denied(self, client):
+    async def test_access_denied(self):
         """https://athenianco.atlassian.net/browse/ENG-116"""
         body = {
             "for": [
@@ -245,7 +244,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        await self._request(client, json=body, assert_status=403)
+        await self._request(json=body, assert_status=403)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
@@ -253,7 +252,7 @@ class TestCalcMetricsPRs:
         ("devs", "date_from"),
         ([{"with": {}}, "2019-11-28"], [{}, "2018-09-28"]),
     )
-    async def test_empty_devs_tight_date(self, client, devs, date_from):
+    async def test_empty_devs_tight_date(self, devs, date_from):
         """https://athenianco.atlassian.net/browse/ENG-126"""
         body = {
             "date_from": date_from,
@@ -270,7 +269,7 @@ class TestCalcMetricsPRs:
             "account": 1,
             "metrics": list(PullRequestMetricID),
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
 
@@ -300,7 +299,7 @@ class TestCalcMetricsPRs:
             (1, "0015-10-13", [0, 1], None, "{1}", 400),
         ],
     )
-    async def test_nasty_input(self, client, account, date_to, quantiles, lines, in_, code, mdb):
+    async def test_nasty_input(self, account, date_to, quantiles, lines, in_, code, mdb):
         """What if we specify a date that does not exist?"""
         body = {
             "for": [
@@ -324,11 +323,11 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": account,
         }
-        self._request(client, assert_status=code, json=body)
+        self._request(assert_status=code, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_reposet(self, client):
+    async def test_reposet(self):
         """Substitute {id} with the real repos."""
         body = {
             "for": [
@@ -344,7 +343,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         assert cm.calculated[0].for_.repositories == ["{1}"]
@@ -374,7 +373,7 @@ class TestCalcMetricsPRs:
             (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 4395),
         ],
     )
-    async def test_counts_sums(self, client, metric, count):
+    async def test_counts_sums(self, metric, count):
         body = {
             "for": [
                 {
@@ -392,7 +391,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         s = 0
         for item in res["calculated"][0]["values"]:
             assert "confidence_mins" not in item
@@ -430,7 +429,7 @@ class TestCalcMetricsPRs:
         ],
     )
     # fmt: on
-    async def test_averages(self, client, with_bots, values, sdb):
+    async def test_averages(self, with_bots, values, sdb):
         if with_bots:
             await sdb.execute(
                 insert(Team).values(
@@ -451,12 +450,12 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         assert [v["values"] for v in res["calculated"][0]["values"]] == values
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_sizes(self, client):
+    async def test_sizes(self):
         body = {
             "for": [{"with": {}, "repositories": ["{1}"]}],
             "metrics": [PullRequestMetricID.PR_SIZE, PullRequestMetricID.PR_MEDIAN_SIZE],
@@ -466,7 +465,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        rbody = await self._request(client, json=body)
+        rbody = await self._request(json=body)
         values = [v["values"] for v in rbody["calculated"][0]["values"]]
         assert values == [[296, 54]]
         for ts in rbody["calculated"][0]["values"]:
@@ -474,18 +473,18 @@ class TestCalcMetricsPRs:
                 assert cmin < v < cmax
 
         body["quantiles"] = [0, 0.9]
-        rbody = await self._request(client, json=body)
+        rbody = await self._request(json=body)
         values = [v["values"] for v in rbody["calculated"][0]["values"]]
         assert values == [[177, 54]]
 
         body["granularities"].append("month")
-        rbody = await self._request(client, json=body)
+        rbody = await self._request(json=body)
         values = [v["values"] for v in rbody["calculated"][0]["values"]]
         assert values == [[177, 54]]
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_index_error(self, client):
+    async def test_index_error(self):
         body = {
             "for": [
                 {
@@ -506,11 +505,11 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        await self._request(client, json=body)
+        await self._request(json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_ratio_flow(self, client, headers):
+    async def test_ratio_flow(self, headers):
         """https://athenianco.atlassian.net/browse/ENG-411"""
         body = {
             "date_from": "2016-01-01",
@@ -525,7 +524,7 @@ class TestCalcMetricsPRs:
                 PullRequestMetricID.PR_CLOSED,
             ],
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         for v in cm.calculated[0].values:
@@ -545,7 +544,7 @@ class TestCalcMetricsPRs:
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_exclude_inactive_full_span(self, client):
+    async def test_exclude_inactive_full_span(self):
         body = {
             "date_from": "2017-01-01",
             "date_to": "2017-01-11",
@@ -555,13 +554,13 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": True,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 6
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_exclude_inactive_split(self, client):
+    async def test_exclude_inactive_split(self):
         body = {
             "date_from": "2016-12-21",
             "date_to": "2017-01-11",
@@ -571,7 +570,7 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": True,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 1
         assert cm.calculated[0].values[1].date == date(2017, 1, 1)
@@ -579,7 +578,7 @@ class TestCalcMetricsPRs:
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_filter_authors(self, client):
+    async def test_filter_authors(self):
         body = {
             "date_from": "2017-01-01",
             "date_to": "2017-01-11",
@@ -594,12 +593,12 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 1
 
     @pytest.mark.app_validate_responses(False)
-    async def test_filter_team(self, client, sample_team):
+    async def test_filter_team(self, sample_team):
         body = {
             "date_from": "2017-01-01",
             "date_to": "2017-01-11",
@@ -614,13 +613,13 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 4
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_group_authors(self, client):
+    async def test_group_authors(self):
         body = {
             "date_from": "2017-01-01",
             "date_to": "2017-04-11",
@@ -638,7 +637,7 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 13
         assert cm.calculated[0].for_.with_.author == ["github.com/mcuadros"]
@@ -648,7 +647,7 @@ class TestCalcMetricsPRs:
         assert not cm.calculated[1].for_.with_.author
 
     @pytest.mark.app_validate_responses(False)
-    async def test_group_team(self, client, sample_team):
+    async def test_group_team(self, sample_team):
         team_str = "{%d}" % sample_team
         body = {
             "date_from": "2017-01-01",
@@ -664,7 +663,7 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 21
         assert cm.calculated[0].for_.with_.author == [team_str]
@@ -675,7 +674,7 @@ class TestCalcMetricsPRs:
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_labels_include(self, client):
+    async def test_labels_include(self):
         body = {
             "date_from": "2018-09-01",
             "date_to": "2018-11-18",
@@ -690,13 +689,13 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_ALL_COUNT],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 6
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_quantiles(self, client):
+    async def test_quantiles(self):
         body = {
             "date_from": "2018-06-01",
             "date_to": "2018-11-18",
@@ -716,12 +715,12 @@ class TestCalcMetricsPRs:
             "metrics": [PullRequestMetricID.PR_WIP_TIME],
             "exclude_inactive": False,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         wip1 = cm.calculated[0].values[0].values[0]
 
         body["quantiles"] = [0, 0.5]
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         wip2 = cm.calculated[0].values[0].values[0]
         assert int(wip1[:-1]) < int(wip2[:-1])  # yes, not >, here is why:
@@ -741,11 +740,11 @@ class TestCalcMetricsPRs:
         # We discard 1191 and the overall average becomes bigger.
 
         body["granularities"] = ["week", "month"]
-        await self._request(client, json=body)
+        await self._request(json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_jira(self, client):
+    async def test_jira(self):
         """Metrics over PRs filtered by JIRA properties."""
         body = {
             "for": [
@@ -766,14 +765,14 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         assert cm.calculated[0].values[0].values[0] == "478544s"
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_jira_disabled_projects(self, client, disabled_dev):
+    async def test_jira_disabled_projects(self, disabled_dev):
         body = {
             "for": [
                 {
@@ -790,14 +789,14 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         assert cm.calculated[0].values[0].values[0] is None
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_jira_custom_projects(self, client):
+    async def test_jira_custom_projects(self):
         body = {
             "for": [
                 {
@@ -815,14 +814,14 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         assert cm.calculated[0].values[0].values[0] is None
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_jira_only_custom_projects(self, client):
+    async def test_jira_only_custom_projects(self):
         body = {
             "for": [{"repositories": ["{1}"], "jira": {"projects": ["DEV"]}}],
             "metrics": [PullRequestMetricID.PR_MERGED],
@@ -832,14 +831,14 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
         assert cm.calculated[0].values[0].values[0] == 45  # > 400 without JIRA projects
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_groups_smoke(self, client):
+    async def test_groups_smoke(self):
         """Two repository groups."""
         body = {
             "for": [
@@ -856,7 +855,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated) == 2
         assert cm.calculated[0] == cm.calculated[1]
@@ -864,7 +863,7 @@ class TestCalcMetricsPRs:
         assert cm.calculated[0].for_.repositories == ["{1}"]
 
     @pytest.mark.parametrize("repogroups", [[[0, 0]], [[0, -1]], [[0, 1]]])
-    async def test_groups_nasty(self, client, repogroups):
+    async def test_groups_nasty(self, repogroups):
         """Two repository groups."""
         body = {
             "for": [
@@ -881,11 +880,11 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        await self._request(client, assert_status=400, json=body)
+        await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_lines_smoke(self, client):
+    async def test_lines_smoke(self):
         """Two repository groups."""
         body = {
             "for": [
@@ -902,7 +901,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated) == 3
         assert cm.calculated[0].values[0].values[0] == 3
@@ -913,7 +912,7 @@ class TestCalcMetricsPRs:
         assert cm.calculated[2].for_.lines == [100000, 100500]
 
         body["for"][0]["lines"] = [50, 100500]
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated) == 1
         assert cm.calculated[0].values[0].values[0] == 6
@@ -932,7 +931,7 @@ class TestCalcMetricsPRs:
             PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
         ],
     )
-    async def test_calc_metrics_prs_deployments_no_env(self, client, metric):
+    async def test_calc_metrics_prs_deployments_no_env(self, metric):
         body = {
             "for": [
                 {
@@ -948,11 +947,11 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        await self._request(client, assert_status=400, json=body)
+        await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_deployments_smoke(self, client, precomputed_deployments):
+    async def test_deployments_smoke(self, precomputed_deployments):
         body = {
             "for": [
                 {"repositories": ["{1}"], "environments": ["staging", "production"]},
@@ -969,7 +968,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
             [[None, "62533037s"], [None, "65158487s"], [None, "66004050s"], [0, 513]],
@@ -1013,12 +1012,12 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [counts]
 
     @pytest.mark.app_validate_responses(False)
-    async def test_logical_dupes(self, client, logical_settings_db, sdb):
+    async def test_logical_dupes(self, logical_settings_db, sdb):
         await sdb.execute(
             insert(ReleaseSetting).values(
                 ReleaseSetting(
@@ -1068,7 +1067,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": False,
             "account": 1,
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [[250, 49, 194, 189]]
 
@@ -1102,7 +1101,7 @@ class TestCalcMetricsPRs:
             "exclude_inactive": True,
             "account": 1,
         }
-        result = await self._request(client, json=body)
+        result = await self._request(json=body)
         assert result["calculated"][0]["values"][0]["values"] == ["763080s", 79, 61, 21, 102]
         time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
         time_to = datetime(year=2017, month=12, day=31, tzinfo=timezone.utc)
@@ -1131,12 +1130,12 @@ class TestCalcMetricsPRs:
             releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0,
         )
         assert ignored == 1
-        result = await self._request(client, json=body)
+        result = await self._request(json=body)
         assert result["calculated"][0]["values"][0]["values"] == ["779385s", 65, 61, 21, 102]
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_pr_reviewed_ratio(self, client, headers):
+    async def test_pr_reviewed_ratio(self, headers):
         body = {
             "date_from": "2016-01-01",
             "date_to": "2020-01-16",
@@ -1150,7 +1149,7 @@ class TestCalcMetricsPRs:
                 PullRequestMetricID.PR_NOT_REVIEWED,
             ],
         }
-        res = await self._request(client, json=body)
+        res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
 
         for v in cm.calculated[0].values:

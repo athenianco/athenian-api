@@ -505,7 +505,7 @@ class Auth0:
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
 
         request.is_default_user = request.uid == self._default_user_id
-        sentry_sdk.set_user({"id": request.uid})
+        sentry_sdk.set_user({"id": request.uid, "ip_address": request.headers.get("Client-IP")})
 
         async def get_user_info() -> User:
             if method != "bearer" or (god is not None and request.god_id is not None):

@@ -9,7 +9,12 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.db import integrity_errors
 from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
-from athenian.api.models.web import DatabaseConflict, GoalTemplate, GoalTemplateCreateRequest
+from athenian.api.models.web import (
+    CreatedIdentifier,
+    DatabaseConflict,
+    GoalTemplate,
+    GoalTemplateCreateRequest,
+)
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 
@@ -65,6 +70,8 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
         )
     except integrity_errors:
         raise ResponseError(
-            DatabaseConflict(detail="Goal Template named '%s' already exists."),
+            DatabaseConflict(
+                detail=f"Goal Template named '{create_request.name}' already exists.",
+            ),
         ) from None
-    return model_response({"id": template_id})
+    return model_response(CreatedIdentifier(template_id))

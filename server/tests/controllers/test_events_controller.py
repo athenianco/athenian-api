@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 import json
 from typing import Any, Optional
 
-from aiohttp.test_utils import TestClient
 from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
@@ -23,9 +22,9 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
 from athenian.api.models.web import ReleaseNotificationStatus
-from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory
+from tests.testutils.requester import Requester
 
 
 @pytest.fixture(scope="function")
@@ -291,10 +290,10 @@ async def test_notify_release_default_user(client, headers, sdb):
     assert response.status == 403
 
 
-class TestClearPrecomputedEvents:
+class TestClearPrecomputedEvents(Requester):
     @pytest.mark.parametrize("devenv", [False, True])
     @freeze_time("2020-01-01")
-    async def test_clear_releases_smoke(self, client, pdb, disable_default_user, app, devenv):
+    async def test_clear_releases_smoke(self, pdb, disable_default_user, app, devenv):
         await models_insert(
             pdb,
             GitHubDonePullRequestFactsFactory(
@@ -326,7 +325,7 @@ class TestClearPrecomputedEvents:
         )
         body = {"account": 1, "repositories": ["{1}"], "targets": ["release"]}
         app._devenv = devenv
-        await self._request(client, json=body)
+        await self._request(json=body)
         for table, n in (
             (GitHubDonePullRequestFacts, 292),
             (GitHubMergedPullRequestFacts, 246),
@@ -335,7 +334,7 @@ class TestClearPrecomputedEvents:
             assert len(await pdb.fetch_all(select([table]))) == n, table
 
     @freeze_time("2020-01-01")
-    async def test_clear_deployments(self, client, pdb, disable_default_user):
+    async def test_clear_deployments(self, pdb, disable_default_user):
         await pdb.execute(
             insert(GitHubDeploymentFacts).values(
                 GitHubDeploymentFacts(
@@ -348,7 +347,7 @@ class TestClearPrecomputedEvents:
             ),
         )
         body = {"account": 1, "repositories": ["{1}"], "targets": ["deployment"]}
-        await self._request(client, json=body)
+        await self._request(json=body)
         rows = await pdb.fetch_all(select([GitHubDeploymentFacts]))
         assert len(rows) == 1
         row = rows[0]
@@ -375,18 +374,18 @@ class TestClearPrecomputedEvents:
             ),
         ],
     )
-    async def test_nasty_input(self, client, body, status, disable_default_user):
-        await self._request(client, status, json=body)
+    async def test_nasty_input(self, body, status, disable_default_user):
+        await self._request(status, json=body)
 
-    @classmethod
-    async def _request(cls, client: TestClient, assert_status: int = 200, **kwargs: Any) -> None:
+    async def _request(self, assert_status: int = 200, **kwargs: Any) -> None:
         path = "/v1/events/clear_cache"
-        headers = DEFAULT_HEADERS
-        response = await client.request(method="POST", path=path, headers=headers, **kwargs)
+        response = await self.client.request(
+            method="POST", path=path, headers=self.headers, **kwargs,
+        )
         assert response.status == assert_status
 
 
-class TestNotifyDeployments:
+class TestNotifyDeployments(Requester):
     @pytest.mark.parametrize(
         "ref, vhash",
         [
@@ -399,7 +398,6 @@ class TestNotifyDeployments:
     )
     async def test_smoke(
         self,
-        client,
         token,
         rdb,
         ref,
@@ -418,7 +416,7 @@ class TestNotifyDeployments:
                 "labels": {"one": 1, 2: "two"},
             },
         ]
-        await self._request(client, token, json=body)
+        await self._request(token, json=body)
         rows = await rdb.fetch_all(select([DeployedComponent]))
         assert len(rows) == 1
         row = dict(rows[0])
@@ -471,7 +469,7 @@ class TestNotifyDeployments:
             "environment": "production",
         }
 
-    async def test_duplicate(self, client, token, disable_default_user):
+    async def test_duplicate(self, token, disable_default_user):
         body = [
             {
                 "components": [{"repository": "github.com/src-d/go-git", "reference": "xxx"}],
@@ -482,8 +480,8 @@ class TestNotifyDeployments:
                 "labels": {"one": 1},
             },
         ]
-        await self._request(client, token, json=body)
-        await self._request(client, token, 409, json=body)
+        await self._request(token, json=body)
+        await self._request(token, 409, json=body)
 
     @pytest.mark.parametrize(
         "body, code",
@@ -565,10 +563,10 @@ class TestNotifyDeployments:
             ),
         ],
     )
-    async def test_nasty_input(self, client, token, body, code, disable_default_user):
-        await self._request(client, token, code, json=[body])
+    async def test_nasty_input(self, token, body, code, disable_default_user):
+        await self._request(token, code, json=[body])
 
-    async def test_unauthorized(self, client: TestClient) -> None:
+    async def test_unauthorized(self) -> None:
         json = [
             {
                 "components": [],
@@ -576,9 +574,9 @@ class TestNotifyDeployments:
                 "date_started": "2021-01-12T00:00:00Z",
             },
         ]
-        await self._request(client, None, 401, json=json)
+        await self._request(None, 401, json=json)
 
-    async def test_422(self, client, token, sdb, disable_default_user):
+    async def test_422(self, token, sdb, disable_default_user):
         await sdb.execute(sa.delete(AccountGitHubAccount))
         json = [
             {
@@ -589,9 +587,9 @@ class TestNotifyDeployments:
                 "conclusion": "FAILURE",
             },
         ]
-        await self._request(client, token, 422, json=json)
+        await self._request(token, 422, json=json)
 
-    async def test_default_user(self, client, token, sdb):
+    async def test_default_user(self, token, sdb):
         json = [
             {
                 "components": [{"repository": "github.com/src-d/go-git", "reference": "xxx"}],
@@ -601,9 +599,9 @@ class TestNotifyDeployments:
                 "conclusion": "FAILURE",
             },
         ]
-        await self._request(client, token, 403, json=json)
+        await self._request(token, 403, json=json)
 
-    async def test_date_invalid_timezone_name(self, client, token, disable_default_user, rdb):
+    async def test_date_invalid_timezone_name(self, token, disable_default_user, rdb):
         await rdb.execute(sa.delete(DeploymentNotification))
         body = [
             {
@@ -614,9 +612,9 @@ class TestNotifyDeployments:
                 "conclusion": "SUCCESS",
             },
         ]
-        await self._request(client, token, 400, json=body)
+        await self._request(token, 400, json=body)
 
-    async def test_date_with_no_timezone_received(self, client, token, disable_default_user, rdb):
+    async def test_date_with_no_timezone_received(self, token, disable_default_user, rdb):
         await rdb.execute(sa.delete(DeploymentNotification))
         body = [
             {
@@ -627,21 +625,19 @@ class TestNotifyDeployments:
                 "conclusion": "SUCCESS",
             },
         ]
-        await self._request(client, token, 400, json=body)
+        await self._request(token, 400, json=body)
 
-    @classmethod
     async def _request(
-        cls,
-        client: TestClient,
+        self,
         token: Optional[str],
         assert_status: int = 200,
         **kwargs: Any,
     ) -> None:
-        headers = DEFAULT_HEADERS.copy()
+        headers = self.headers.copy()
         if token is not None:
             headers["X-API-Key"] = token
         path = "/v1/events/deployments"
-        response = await client.request(method="POST", path=path, headers=headers, **kwargs)
+        response = await self.client.request(method="POST", path=path, headers=headers, **kwargs)
         assert response.status == assert_status
         if assert_status == 200:
             assert await response.json() == {}

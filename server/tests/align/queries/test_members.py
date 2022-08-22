@@ -1,20 +1,18 @@
 from typing import Optional, Sequence
 
-from aiohttp.test_utils import TestClient
-
 from athenian.api.db import Database
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
     get_extension_error_obj,
 )
-from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import DBCleaner, model_insert_stmt, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import MappedJIRAIdentityFactory, TeamFactory
+from tests.testutils.requester import Requester
 
 
-class BaseMembersTest:
+class BaseMembersTest(Requester):
     _DEFAULT_FIELDS = ("login", "name", "email", "picture", "jiraUser")
 
     def _query(self, fields: Sequence[str]):
@@ -39,7 +37,6 @@ class BaseMembersTest:
         self,
         account_id: int,
         team_id: int,
-        client: TestClient,
         extra_headers: Optional[dict] = None,
         fields: Sequence[str] = _DEFAULT_FIELDS,
         recursive: Optional[bool] = None,
@@ -48,44 +45,40 @@ class BaseMembersTest:
         if recursive is not None:
             variables["recursive"] = recursive
         body = {"query": self._query(fields), "variables": variables}
-        headers = {**DEFAULT_HEADERS, **extra_headers} if extra_headers else DEFAULT_HEADERS
-        return await align_graphql_request(client, headers=headers, json=body)
+        headers = {**self.headers, **extra_headers} if extra_headers else self.headers
+        return await align_graphql_request(self.client, headers=headers, json=body)
 
 
 class TestMembersErrors(BaseMembersTest):
-    async def test_auth_failure(self, client: TestClient, sdb: Database) -> None:
+    async def test_auth_failure(self, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[1, 2])))
         headers = {"Authorization": "Bearer invalid"}
-        res = await self._request(1, 1, client, headers)
+        res = await self._request(1, 1, headers)
         error = get_extension_error_obj(res)["detail"]
         assert "Error decoding token headers" in error
 
-    async def test_team_not_found(self, client: TestClient) -> None:
-        res = await self._request(1, 999, client)
+    async def test_team_not_found(self) -> None:
+        res = await self._request(1, 999)
         assert_extension_error(res, "Team 999 not found or access denied")
 
-    async def test_team_not_found_recursive(self, client: TestClient) -> None:
-        res = await self._request(1, 999, client, recursive=True)
+    async def test_team_not_found_recursive(self) -> None:
+        res = await self._request(1, 999, recursive=True)
         assert_extension_error(res, "Team 999 not found or access denied")
 
-    async def test_root_team_multiple_roots(self, client: TestClient, sdb: Database):
+    async def test_root_team_multiple_roots(self, sdb: Database):
         for model in (TeamFactory(), TeamFactory()):
             await sdb.execute(model_insert_stmt(model))
 
-        res = await self._request(1, 0, client)
+        res = await self._request(1, 0)
         assert_extension_error(res, "Account 1 has multiple root teams")
 
-    async def test_root_team_no_team_exists(self, client: TestClient, sdb: Database):
-        res = await self._request(1, 0, client)
+    async def test_root_team_no_team_exists(self, sdb: Database):
+        res = await self._request(1, 0)
         assert_extension_error(res, "Root team not found or access denied")
 
 
 class TestMembers(BaseMembersTest):
-    async def test_specific_non_root_team_few_fields(
-        self,
-        client: TestClient,
-        sdb: Database,
-    ) -> None:
+    async def test_specific_non_root_team_few_fields(self, sdb: Database) -> None:
         # members id are from the 6 MB metadata db fixture
         await models_insert(
             sdb,
@@ -93,60 +86,60 @@ class TestMembers(BaseMembersTest):
             TeamFactory(id=2, members=[40078, 39652900], parent_id=1),
         )
 
-        res = await self._request(1, 2, client, fields=("login", "name"))
+        res = await self._request(1, 2, fields=("login", "name"))
         assert res["data"]["members"] == [
             {"login": "github.com/leantrace", "name": "Alexander Schamne"},
             {"login": "github.com/reujab", "name": "Christopher Knight"},
         ]
 
-    async def test_specific_non_root_team(self, client: TestClient, sdb: Database) -> None:
+    async def test_specific_non_root_team(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[]),
             TeamFactory(id=2, members=[40078, 39652900], parent_id=1),
         )
 
-        res = await self._request(1, 2, client)
+        res = await self._request(1, 2)
         res_members = res["data"]["members"]
         assert res_members[0]["email"] == "alexander.schamne@gmail.com"
         assert res_members[1]["email"] == "reujab@gmail.com"
 
-    async def test_explicit_root_team(self, client: TestClient, sdb: Database) -> None:
+    async def test_explicit_root_team(self, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[40078], parent_id=None)))
-        res = await self._request(1, 1, client, fields=("login",))
+        res = await self._request(1, 1, fields=("login",))
         logins = [m["login"] for m in res["data"]["members"]]
         assert logins == ["github.com/reujab"]
 
-    async def test_implicit_root_team(self, client: TestClient, sdb: Database) -> None:
+    async def test_implicit_root_team(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[]),
             TeamFactory(id=2, parent_id=1, members=[3]),
             TeamFactory(id=3, parent_id=1, members=[3, 4]),
         )
-        res = await self._request(1, 0, client, fields=("login",))
+        res = await self._request(1, 0, fields=("login",))
         assert res["data"]["members"] == []
 
-    async def test_recursive_param(self, client: TestClient, sdb: Database) -> None:
+    async def test_recursive_param(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[39652900]),
             TeamFactory(id=2, parent_id=1, members=[40078]),
         )
 
-        res = await self._request(1, 1, client, recursive=True)
+        res = await self._request(1, 1, recursive=True)
         expected = ["github.com/leantrace", "github.com/reujab"]
         assert [m["login"] for m in res["data"]["members"]] == expected
 
-        res = await self._request(1, 1, client, recursive=False)
+        res = await self._request(1, 1, recursive=False)
         expected = ["github.com/leantrace"]
         assert [m["login"] for m in res["data"]["members"]] == expected
 
-        res = await self._request(1, 1, client)
+        res = await self._request(1, 1)
         expected = ["github.com/leantrace"]
         assert [m["login"] for m in res["data"]["members"]] == expected
 
-    async def test_result_ordering(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+    async def test_result_ordering(self, sdb: Database, mdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[100, 101, 102, 103]),
@@ -162,13 +155,13 @@ class TestMembers(BaseMembersTest):
             mdb_cleaner.add_models(*models)
             await models_insert(mdb, *models)
 
-            res = await self._request(1, 1, client, recursive=True)
+            res = await self._request(1, 1, recursive=True)
 
         members = res["data"]["members"]
         assert [m["login"] for m in members] == ["d", "c", "b", "a"]
         assert [m["name"] for m in members] == ["aa", "Foo Bar", "zz-Top", None]
 
-    async def test_jira_user_field(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+    async def test_jira_user_field(self, sdb: Database, mdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[100, 101]),
@@ -183,7 +176,7 @@ class TestMembers(BaseMembersTest):
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb, *models)
-            res = await self._request(1, 1, client)
+            res = await self._request(1, 1)
 
         members = res["data"]["members"]
         assert [m["jiraUser"] for m in members] == ["My JIRA name", None]
