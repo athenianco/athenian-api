@@ -7,9 +7,15 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.align.models import CreateGoalInputFields
+from athenian.api.align.models import (
+    CreateGoalInputFields,
+    TeamGoalChangeFields,
+    TeamGoalInputFields,
+    UpdateGoalInputFields,
+)
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
+from athenian.api.models.web import PullRequestMetricID
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
@@ -37,6 +43,9 @@ _USER_ID = "github|1"
 
 
 class BaseGoalTest:
+    _TEMPLATE_NAME = "T0"
+    _TEMPLATE_METRIC = PullRequestMetricID.PR_REVIEW_TIME
+
     @pytest.fixture(autouse=True, scope="function")
     async def setup(self, sdb):
         await sdb.execute(model_insert_stmt(UserAccountFactory(user_id=_USER_ID)))
@@ -83,9 +92,9 @@ class BaseCreateGoalTest(BaseGoalTest):
         kwargs.setdefault(
             CreateGoalInputFields.metric, TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
         )
-        kwargs.setdefault("validFrom", "2022-01-01")
-        kwargs.setdefault("expiresAt", "2022-03-31")
-        kwargs.setdefault("teamGoals", [])
+        kwargs.setdefault(CreateGoalInputFields.validFrom, "2022-01-01")
+        kwargs.setdefault(CreateGoalInputFields.expiresAt, "2022-03-31")
+        kwargs.setdefault(CreateGoalInputFields.teamGoals, [])
         return kwargs
 
 
@@ -100,12 +109,9 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await self._assert_no_goal_exists(sdb)
 
     async def test_invalid_date(self, client: TestClient, sdb: Database) -> None:
-        variables = {
-            "createGoalInput": self._mk_input(validFrom="not-a-date"),
-            "accountId": 1,
-        }
+        variables = {"createGoalInput": self._mk_input(validFrom="not-date"), "accountId": 1}
         res = await self._request(variables, client)
-        assert "not-a-date" in res["errors"][0]["message"]
+        assert "not-date" in res["errors"][0]["message"]
         await self._assert_no_goal_exists(sdb)
 
     async def test_missing_date(self, client: TestClient, sdb: Database) -> None:
@@ -134,8 +140,8 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
 
         team_goals = [
-            {"teamId": 10, "target": {"int": 42}},
-            {"teamId": 10, "target": {"int": 44}},
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 44}},
         ]
         variables = {
             "createGoalInput": self._mk_input(teamGoals=team_goals),
@@ -148,7 +154,12 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
     async def test_unexisting_team(self, client: TestClient, sdb: Database) -> None:
         variables = {
-            "createGoalInput": self._mk_input(teamGoals={"teamId": 10, "target": {"int": 10}}),
+            "createGoalInput": self._mk_input(
+                teamGoals={
+                    TeamGoalInputFields.teamId: 10,
+                    TeamGoalInputFields.target: {"int": 10},
+                },
+            ),
             "accountId": 1,
         }
         res = await self._request(variables, client)
@@ -160,8 +171,8 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await models_insert(sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=2, id=20))
 
         team_goals = [
-            {"teamId": 10, "target": {"int": 42}},
-            {"teamId": 20, "target": {"int": 44}},
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+            {TeamGoalInputFields.teamId: 20, TeamGoalInputFields.target: {"int": 44}},
         ]
         variables = {
             "createGoalInput": self._mk_input(teamGoals=team_goals),
@@ -169,13 +180,15 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         }
         res = await self._request(variables, client)
         assert "data" not in res
-        assert_extension_error(res, "Some teamId-s don't exist or access denied: 20")
+        assert_extension_error(
+            res, f"Some {TeamGoalInputFields.teamId}-s don't exist or access denied: 20",
+        )
         await self._assert_no_goal_exists(sdb)
 
     async def test_inverted_dates(self, client: TestClient, sdb: Database):
         await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
 
-        team_goals = [{"teamId": 10, "target": {"int": 42}}]
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
 
         variables = {
             "createGoalInput": self._mk_input(
@@ -187,13 +200,15 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         }
         res = await self._request(variables, client)
         assert "data" not in res
-        assert_extension_error(res, "Goal expiresAt cannot precede validFrom")
+        assert_extension_error(
+            res, f"Goal {CreateGoalInputFields.expiresAt} cannot precede validFrom",
+        )
         await assert_missing_row(sdb, Goal, account_id=1)
 
     async def test_default_user_forbidden(self, client: TestClient, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
 
-        team_goals = [{"teamId": 10, "target": {"int": 42}}]
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
 
         variables = {
             "createGoalInput": self._mk_input(teamGoals=team_goals),
@@ -209,7 +224,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await models_insert(
             sdb,
             GoalFactory(
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                name="Goal0",
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -217,9 +232,12 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         )
         variables = {
             "createGoalInput": self._mk_input(
+                name="Goal0",
                 validFrom="2021-01-01",
                 expiresAt="2021-03-31",
-                teamGoals=[{"teamId": 100, "target": {"int": 0}}],
+                teamGoals=[
+                    {TeamGoalInputFields.teamId: 100, TeamGoalInputFields.target: {"int": 0}},
+                ],
             ),
             "accountId": 1,
         }
@@ -233,14 +251,17 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, client: TestClient, sdb: Database) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
+        await models_insert(
+            sdb,
+            TeamFactory(owner_id=1, id=10),
+        )
 
-        team_goals = [{"teamId": 10, "target": {"int": 42}}]
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
 
         variables = {
             "createGoalInput": self._mk_input(
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
-                metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
+                name="G0",
+                metric=PullRequestMetricID.PR_COMMENTS_PER,
                 validFrom="2022-01-01",
                 expiresAt="2022-12-31",
                 teamGoals=team_goals,
@@ -258,8 +279,8 @@ class TestCreateGoals(BaseCreateGoalTest):
             Goal,
             id=new_goal_id,
             account_id=1,
-            name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
-            metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
+            name="G0",
+            metric=PullRequestMetricID.PR_COMMENTS_PER,
         )
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
@@ -273,14 +294,18 @@ class TestCreateGoals(BaseCreateGoalTest):
         await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10, target=42)
 
     async def test_create_multiple_team_goals(self, client: TestClient, sdb: Database) -> None:
-        await models_insert(sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=20))
+        await models_insert(
+            sdb,
+            TeamFactory(owner_id=1, id=10),
+            TeamFactory(owner_id=1, id=20),
+        )
 
         team_goals = [
-            {"teamId": 10, "target": {"int": 42}},
-            {"teamId": 20, "target": {"str": "foobar"}},
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+            {TeamGoalInputFields.teamId: 20, TeamGoalInputFields.target: {"str": "foobar"}},
         ]
         variables = {
-            "createGoalInput": self._mk_input(teamGoals=team_goals),
+            "createGoalInput": self._mk_input(teamGoals=team_goals, name="G1"),
             "accountId": 1,
         }
         res = await self._request(variables, client)
@@ -289,7 +314,9 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        await assert_existing_row(
+            sdb, Goal, id=new_goal_id, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME,
+        )
 
         team_goals = await sdb.fetch_all(
             sa.select(TeamGoal).where(TeamGoal.goal_id == 1).order_by(TeamGoal.team_id),
@@ -297,13 +324,13 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert len(team_goals) == 2
 
         assert team_goals[0]["team_id"] == 10
-        assert team_goals[0]["target"] == 42
+        assert team_goals[0][TeamGoalInputFields.target] == 42
         assert team_goals[1]["team_id"] == 20
-        assert team_goals[1]["target"] == "foobar"
+        assert team_goals[1][TeamGoalInputFields.target] == "foobar"
 
     async def test_datetime_as_date(self, client: TestClient, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
-        team_goals = [{"teamId": 10, "target": {"int": 42}}]
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
 
         variables = {
             "createGoalInput": self._mk_input(
@@ -317,7 +344,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert "errors" not in res
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        goal_row = await sdb.fetch_one(sa.select(Goal).where(Goal.id == new_goal_id))
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id)
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 5, 4, tzinfo=timezone.utc,
         )
@@ -328,7 +355,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             sdb,
             GoalFactory(
                 id=100,
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
+                name="G1",
                 valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
                 expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
             ),
@@ -342,7 +369,9 @@ class TestCreateGoals(BaseCreateGoalTest):
                 metric=TEMPLATES_COLLECTION[2][CreateGoalInputFields.metric],
                 validFrom="2022-01-01",
                 expiresAt="2022-03-31",
-                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+                teamGoals=[
+                    {TeamGoalInputFields.teamId: 100, TeamGoalInputFields.target: {"int": 1}},
+                ],
             ),
             "accountId": 1,
         }
@@ -356,21 +385,24 @@ class TestCreateGoals(BaseCreateGoalTest):
         variables["createGoalInput"][CreateGoalInputFields.metric] = TEMPLATES_COLLECTION[1][
             CreateGoalInputFields.metric
         ]
-        variables["createGoalInput"]["expiresAt"] = "2022-06-30"
+        variables["createGoalInput"][CreateGoalInputFields.expiresAt] = "2022-06-30"
 
         res = await self._request(variables, client)
         assert "errors" not in res
 
-        # same template and interval but different account
+        # same interval but different account
         await models_insert(
             sdb,
             AccountFactory(id=5),
             UserAccountFactory(account_id=5, user_id="gh|XXX"),
             TeamFactory(id=200, owner_id=5),
         )
-        variables["createGoalInput"]["expiresAt"] = "2022-03-31"
+        variables["createGoalInput"][CreateGoalInputFields.name] = "G1"
+        variables["createGoalInput"][CreateGoalInputFields.expiresAt] = "2022-03-31"
         variables["accountId"] = 5
-        variables["createGoalInput"]["teamGoals"] = [{"teamId": 200, "target": {"int": 1}}]
+        variables["createGoalInput"][CreateGoalInputFields.teamGoals] = [
+            {TeamGoalInputFields.teamId: 200, TeamGoalInputFields.target: {"int": 1}},
+        ]
         res = await self._request(variables, client, user_id="gh|XXX")
         assert "errors" not in res
 
@@ -385,7 +417,9 @@ class TestCreateGoals(BaseCreateGoalTest):
                 metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
                 validFrom="2023-01-01",
                 expiresAt="2023-12-31",
-                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+                teamGoals=[
+                    {TeamGoalInputFields.teamId: 100, TeamGoalInputFields.target: {"int": 1}},
+                ],
             ),
             "accountId": 1,
         }
@@ -498,10 +532,16 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
 
         team_changes = [
-            {"teamId": 10, "target": {"int": 10}},
-            {"teamId": 10, "remove": True},
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 10}},
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True},
         ]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "Multiple changes for teamId-s: 10")
 
@@ -509,10 +549,20 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10), TeamFactory(id=20))
 
         team_changes = [
-            {"teamId": 10, "target": {"int": 10}, "remove": True},
-            {"teamId": 20, "remove": False},
+            {
+                TeamGoalChangeFields.teamId: 10,
+                TeamGoalChangeFields.target: {"int": 10},
+                TeamGoalChangeFields.remove: True,
+            },
+            {TeamGoalChangeFields.teamId: 20, TeamGoalChangeFields.remove: False},
         ]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         error = get_extension_error_obj(res)["detail"]
         assert "Both remove and new target present for teamId-s: 10" in error
@@ -521,8 +571,14 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
     async def test_invalid_team_target(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
 
-        team_changes = [{"teamId": 10, "target": {}}]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        team_changes = [{TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {}}]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         error = get_extension_error_obj(res)["detail"]
         assert "Invalid target for teamId-s: 10" in error
@@ -535,8 +591,14 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
             TeamGoalFactory(team_id=10, goal_id=100),
         )
 
-        team_changes = [{"teamId": 10, "remove": True}]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        team_changes = [{TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True}]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "TeamGoal-s to remove not found for teams: 10")
         await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=100)
@@ -544,15 +606,31 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
     async def test_goal_account_mismatch(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100, account_id=2), TeamFactory(id=10))
 
-        team_changes = [{"teamId": 10, "target": {"int": 10}}]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 10}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "Goal 100 doesn't exist or access denied")
 
     async def test_assign_team_account_mismatch(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10, owner_id=2))
-        team_changes = [{"teamId": 10, "target": {"int": 10}}]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 10}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "Team-s don't exist or access denied: 10")
         await assert_missing_row(sdb, TeamGoal, team_id=10)
@@ -574,26 +652,38 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         )
 
         team_changes = [
-            {"teamId": 10, "remove": True},
-            {"teamId": 20, "remove": True},
-            {"teamId": 30, "target": {"float": 4.2}},
-            {"teamId": 40, "target": {"int": 42}},
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True},
+            {TeamGoalChangeFields.teamId: 20, TeamGoalChangeFields.remove: True},
+            {TeamGoalChangeFields.teamId: 30, TeamGoalChangeFields.target: {"float": 4.2}},
+            {TeamGoalChangeFields.teamId: 40, TeamGoalChangeFields.target: {"int": 42}},
         ]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "TeamGoal-s to remove not found for teams: 20")
 
         await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=100)
         # goal for team 30 not changed
         team30_row = await assert_existing_row(sdb, TeamGoal, team_id=30, goal_id=100)
-        assert team30_row["target"] == 9999
+        assert team30_row[TeamGoalChangeFields.target] == 9999
         # goal for team 40 not created
         await assert_missing_row(sdb, TeamGoal, team_id=40, goal_id=100)
 
     async def test_default_user_forbidden(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
-        team_changes = [{"teamId": 10, "target": {"int": 10}}]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        team_changes = [{TeamGoalChangeFields.teamId: 10, TeamGoalInputFields.target: {"int": 10}}]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client, user_id=None)
         assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
         await assert_missing_row(sdb, TeamGoal, team_id=10)
@@ -602,8 +692,14 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         await models_insert(
             sdb, GoalFactory(id=20), TeamFactory(id=10), TeamGoalFactory(team_id=10, goal_id=20),
         )
-        team_changes = {"teamId": 10, "remove": True}
-        variables = {"accountId": 1, "input": {"goalId": 20, "teamGoalChanges": team_changes}}
+        team_changes = {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True}
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 20,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert_extension_error(res, "Impossible to remove all TeamGoal-s from the Goal")
 
@@ -613,7 +709,7 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
 class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_no_team_goal_changes(self, client: TestClient, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(GoalFactory(id=100, account_id=1)))
-        variables = {"accountId": 1, "input": {"goalId": 100}}
+        variables = {"accountId": 1, "input": {UpdateGoalInputFields.goalId: 100}}
         res = await self._request(variables, client)
         assert "errors" not in res
 
@@ -628,10 +724,16 @@ class TestUpdateGoal(BaseUpdateGoalTest):
             TeamGoalFactory(team_id=20, goal_id=101),
             TeamGoalFactory(team_id=30, goal_id=101),
         )
-        team_changes = [{"teamId": 10, "remove": True}, {"teamId": 20, "remove": True}]
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True},
+            {TeamGoalChangeFields.teamId: 20, TeamGoalChangeFields.remove: True},
+        ]
         variables = {
             "accountId": 1,
-            "input": {"goalId": 101, "teamGoalChanges": team_changes},
+            "input": {
+                UpdateGoalInputFields.goalId: 101,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
         }
         res = await self._request(variables, client)
         assert res["data"]["updateGoal"]["goal"]["id"] == 101
@@ -661,11 +763,17 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         )
 
         team_changes = [
-            {"teamId": 10, "remove": True},
-            {"teamId": 20, "target": {"int": 8888}},
-            {"teamId": 30, "target": {"int": 7777}},
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True},
+            {TeamGoalChangeFields.teamId: 20, TeamGoalChangeFields.target: {"int": 8888}},
+            {TeamGoalChangeFields.teamId: 30, TeamGoalChangeFields.target: {"int": 7777}},
         ]
-        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
         res = await self._request(variables, client)
         assert "errors" not in res
         assert res["data"]["updateGoal"]["goal"]["id"] == 100
@@ -675,18 +783,27 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         await assert_missing_row(sdb, TeamGoal, team_id=10, goal_id=100)
 
         team_goal_20_row = await assert_existing_row(sdb, TeamGoal, team_id=20, goal_id=100)
-        assert team_goal_20_row["target"] == 8888
+        assert team_goal_20_row[TeamGoalChangeFields.target] == 8888
         expected_created_at = datetime(1, 1, 2, tzinfo=timezone.utc)
-        assert ensure_db_datetime_tz(team_goal_20_row["created_at"], sdb) == expected_created_at
+        assert (
+            ensure_db_datetime_tz(team_goal_20_row[TeamGoal.created_at.name], sdb)
+            == expected_created_at
+        )
         expected_updated_at = datetime(2022, 4, 1, 9, 30, tzinfo=timezone.utc)
-        assert ensure_db_datetime_tz(team_goal_20_row["updated_at"], sdb) == expected_updated_at
+        assert (
+            ensure_db_datetime_tz(team_goal_20_row[TeamGoal.updated_at.name], sdb)
+            == expected_updated_at
+        )
 
         team_goal_30_row = await assert_existing_row(sdb, TeamGoal, team_id=30, goal_id=100)
-        assert team_goal_30_row["target"] == 7777
+        assert team_goal_30_row[TeamGoalChangeFields.target] == 7777
 
     async def test_update_archived(self, client: TestClient, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100, archived=False))
-        variables = {"accountId": 1, "input": {"goalId": 100, "archived": True}}
+        variables = {
+            "accountId": 1,
+            "input": {UpdateGoalInputFields.goalId: 100, UpdateGoalInputFields.archived: True},
+        }
         res = await self._request(variables, client)
         assert "errors" not in res
         await assert_existing_row(sdb, Goal, id=100, archived=True)

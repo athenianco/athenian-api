@@ -301,6 +301,7 @@ class UpdateGoalInputFields(metaclass=Enum):
     """Fields definitions for GraphQL UpdateGoalInput type."""
 
     goalId = "goalId"
+    archived = "archived"
     teamGoalChanges = "teamGoalChanges"
 
 

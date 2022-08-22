@@ -44,7 +44,7 @@ async def resolve_create_goal(
     input: dict[str, Any],
 ) -> dict[str, Any]:
     """Create a Goal."""
-    creation_info = _parse_create_goal_input(input, accountId)
+    creation_info = await _parse_create_goal_input(input, accountId)
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -81,7 +81,7 @@ async def resolve_update_goal(
     input: dict,
 ) -> dict:
     """Update an existing Goal."""
-    update = _parse_update_goal_input(input, accountId)
+    update = _parse_update_goal_input(input)
     goal_id = input[UpdateGoalInputFields.goalId]
     result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
@@ -109,9 +109,10 @@ def validate_goal_metric(value: str) -> None:
 
 
 @sentry_span
-def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCreationInfo:
+async def _parse_create_goal_input(input: dict[str, Any], account: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     validate_goal_metric(input[CreateGoalInputFields.metric])
+
     team_goals = [
         _parse_team_goal_input(tg_input) for tg_input in input[CreateGoalInputFields.teamGoals]
     ]
@@ -128,7 +129,7 @@ def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCrea
         raise GoalMutationError("Goal expiresAt cannot precede validFrom")
 
     goal = Goal(
-        account_id=account_id,
+        account_id=account,
         name=input[CreateGoalInputFields.name],
         metric=input[CreateGoalInputFields.metric],
         valid_from=valid_from,
@@ -164,7 +165,7 @@ class GoalUpdateInfo:
 
 
 @sentry_span
-def _parse_update_goal_input(input: dict[str, Any], account_id: int) -> GoalUpdateInfo:
+def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
     deletions = []
     assignments = []
 

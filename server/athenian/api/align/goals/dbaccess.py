@@ -201,6 +201,14 @@ async def get_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> Row:
     return template
 
 
+async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> Row:
+    """Return all account GoalTemplate-s, ordered by id."""
+    stmt = (
+        sa.select(GoalTemplate).where(GoalTemplate.account_id == account).order_by(GoalTemplate.id)
+    )
+    return await sdb.fetch_all(stmt)
+
+
 @sentry_span
 async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) -> None:
     """Create the set of default goal templates for the account."""
