@@ -93,7 +93,7 @@ async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Resp
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
     await delete_goal_template_from_db(id, request.sdb)
-    return web.json_response()
+    return web.json_response({})
 
 
 async def update_goal_template(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
@@ -111,4 +111,4 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
     await update_goal_template_in_db(id, update_request.name, request.sdb)
-    return web.json_response()
+    return web.json_response({})
