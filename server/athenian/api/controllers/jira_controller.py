@@ -814,15 +814,16 @@ async def _issue_flow(
         )
         if not existing_mask.all():
             prs_df = prs_df.take(np.flatnonzero(existing_mask))
-        found_repos = set(prs_df[PullRequest.repository_full_name.name].unique())
-        if ambiguous.keys() - found_repos:
+        found_repos_arr = prs_df[PullRequest.repository_full_name.name].unique()
+        found_repos_set = set(found_repos_arr)
+        if ambiguous.keys() - found_repos_set:
             # there are archived or disabled repos
-            ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos}
+            ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos_set}
         related_branches = branches.take(
             np.flatnonzero(
                 np.in1d(
-                    branches[Branch.repository_full_name.name].values.astype("S"),
-                    prs_df[PullRequest.repository_full_name.name].unique().astype("S"),
+                    branches[Branch.repository_full_name.name].values.astype("U"),
+                    found_repos_arr.astype("U"),
                 ),
             ),
         )
