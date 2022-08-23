@@ -186,7 +186,7 @@ def AllOf(
             consumed.update(cls.attribute_types)
         if extra := kwargs.keys() - consumed:
             raise TypeError(
-                "%s does not support these keyword arguments: %s", type(self).__name__, extra,
+                "%s does not support these keyword arguments: %s" % (type(self).__name__, extra),
             )
 
     allOf = Slots(
