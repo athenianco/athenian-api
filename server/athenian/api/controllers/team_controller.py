@@ -270,7 +270,11 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
 
 @disable_default_user
 @weight(0.5)
-async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
+async def resync_teams(
+    request: AthenianWebRequest,
+    id: int,
+    unmapped: bool = False,
+) -> web.Response:
     """Delete all the teams belonging to the account and then clone from GitHub.
 
     The "Bots" team and the "Root" artificial team will remain intact.
@@ -280,6 +284,7 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     "Root" team will need to be already present for this operation to succeed.
 
     :param id: Numeric identifier of the account.
+    :param unmapped: Value indicating whether we should remove teams that are not backed by GitHub.
     """
     account = id
     if not await get_user_account_status_from_request(request, account):
@@ -289,7 +294,7 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
             ),
         )
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
-    await sync_teams(account, meta_ids, request.sdb, request.mdb, force=True)
+    await sync_teams(account, meta_ids, request.sdb, request.mdb, force=True, unmapped=unmapped)
     teams = await request.sdb.fetch_all(
         select([Team]).where(Team.owner_id == account).order_by(Team.name),
     )

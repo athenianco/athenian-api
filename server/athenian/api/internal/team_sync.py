@@ -34,12 +34,14 @@ async def sync_teams(
     *,
     dry_run: bool = False,
     force: bool = False,
+    unmapped: bool = False,
 ) -> None:
     """
     Sync the teams from metadata DB to state DB.
 
     :param force: Value indicating whether to delete all the teams which are mismatched in mdb. \
                   If False, we abort the call in this situation.
+    :param unmapped: Value indicating whether we shall delete any team without `origin_node_id`.
     """
     meta_teams = await _MetaTeams.from_db(meta_ids, mdb)
     all_members = await meta_teams.get_all_members()
@@ -48,7 +50,7 @@ async def sync_teams(
     )
     async with sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            state_teams = await _StateTeams.from_db(account, sdb_conn, force)
+            state_teams = await _StateTeams.from_db(account, sdb_conn, force, unmapped)
 
             new_meta_teams, existing_meta_teams = meta_teams.triage_new_and_existing(state_teams)
             gone_state_teams = state_teams.get_gone(meta_teams)
@@ -89,7 +91,7 @@ class _MetaTeams:
         for r in self._rows:
             target = existing if r[MetadataTeam.id.name] in existing_state_teams else new
             target.append(r)
-        return (new, existing)
+        return new, existing
 
     async def get_all_members(self) -> dict[int, list[int]]:
         ids = [r[MetadataTeam.id.name] for r in self._rows]
@@ -101,21 +103,33 @@ class _MetaTeams:
 
 
 class _StateTeams:
-    def __init__(self, rows: Sequence[Row], root_team_id: int, force: bool):
+    def __init__(self, rows: Sequence[Row], root_team_id: int, force: bool, unmapped: bool):
         self._rows = rows
         self._root_team_id = root_team_id
-        self._existing = {id_: r for r in rows if (id_ := r[Team.origin_node_id.name]) is not None}
+        self._existing = {
+            id_: r
+            for r in rows
+            if (id_ := r[Team.origin_node_id.name]) is not None
+            or (unmapped and id_ != root_team_id and r[Team.name.name] != Team.BOTS)
+        }
         self._created: dict[int, int] = {}
         self.force = force
+        self.unmapped = unmapped
         self._check_unmapped()
 
     @classmethod
-    async def from_db(cls, account: int, sdb_conn: Connection, force: bool) -> _StateTeams:
+    async def from_db(
+        cls,
+        account: int,
+        sdb_conn: Connection,
+        force: bool,
+        unmapped: bool,
+    ) -> _StateTeams:
         where = [Team.owner_id == account, Team.name != Team.BOTS, Team.parent_id.isnot(None)]
         query = sa.select(Team).where(*where)
         root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
         rows = await sdb_conn.fetch_all(query)
-        return cls(rows, root_team_id, force)
+        return cls(rows, root_team_id, force, unmapped)
 
     @property
     def existing_by_origin_node_id(self) -> dict[int, Row]:
