@@ -347,6 +347,30 @@ class TestResyncTeams(Requester):
             "github.com/eiso",
         ]
 
+    async def test_unmapped(self, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
+        body = await self._request(1)
+        teams = {t["id"] for t in body}
+        assert len(teams) == 8
+        assert 5 in teams
+        await sdb.execute(
+            update(Team)
+            .where(Team.id == 5)
+            .values(
+                {
+                    Team.origin_node_id: None,
+                    Team.updated_at: datetime.now(timezone.utc),
+                },
+            ),
+        )
+        body = await self._request(1, unmapped=True)
+        teams = {t["id"] for t in body}
+        assert len(teams) == 8
+        assert 5 not in teams
+        actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+        assert len(actual_teams) == 8
+        assert 5 not in {r[Team.id.name] for r in actual_teams}
+
     async def test_default_user(self) -> None:
         await self._request(1, 403)
 
@@ -384,8 +408,9 @@ class TestResyncTeams(Requester):
         self,
         account_id: int,
         assert_status: int = 200,
+        unmapped: bool = False,
     ) -> list[dict]:
-        path = f"/v1/teams/{account_id}"
+        path = f"/v1/teams/{account_id}{'?unmapped=true' if unmapped else ''}"
         response = await self.client.request(method="DELETE", path=path, headers=self.headers)
         assert response.status == assert_status
         return await response.json()
