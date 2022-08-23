@@ -562,6 +562,16 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         raise ResponseError(
             ForbiddenError(f"Access denied to `{web_model.parent}` or it does not exist."),
         )
+    if web_model.prs.title:
+        try:
+            re.compile(web_model.prs.title)
+        except re.error as e:
+            raise ResponseError(
+                InvalidRequestError(
+                    ".prs.title",
+                    f'Invalid regular expression: "{web_model.prs.title}": {e}',
+                ),
+            ) from e
     db_model = LogicalRepository(
         account_id=web_model.account,
         name=web_model.name,
@@ -569,6 +579,16 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         prs={"title": web_model.prs.title, "labels": web_model.prs.labels_include},
     ).create_defaults()
     if (deployments := web_model.deployments) is not None:
+        if deployments.title:
+            try:
+                re.compile(deployments.title)
+            except re.error as e:
+                raise ResponseError(
+                    InvalidRequestError(
+                        ".deployments.title",
+                        f'Invalid regular expression: "{deployments.title}": {e}',
+                    ),
+                ) from e
         db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
     settings = Settings.from_request(request, web_model.account)
     full_name = f"{repo}/{web_model.name}"
