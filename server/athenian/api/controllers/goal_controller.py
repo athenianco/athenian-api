@@ -12,7 +12,7 @@ from athenian.api.align.goals.dbaccess import (
     parse_goal_repositories,
     update_goal_template_in_db,
 )
-from athenian.api.db import integrity_errors, Row
+from athenian.api.db import Row, integrity_errors
 from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate
@@ -21,7 +21,8 @@ from athenian.api.models.web import (
     DatabaseConflict,
     GoalTemplate,
     GoalTemplateCreateRequest,
-    GoalTemplateUpdateRequest, InvalidRequestError,
+    GoalTemplateUpdateRequest,
+    InvalidRequestError,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response

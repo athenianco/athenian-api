@@ -244,9 +244,9 @@ class TestParseGoalRepositories:
         identities = parse_goal_repositories(val)
         assert identities is not None
         assert all(isinstance(ident, RepositoryReference) for ident in identities)
-        assert identities[0].repo_id == 123
+        assert identities[0].node_id == 123
         assert identities[0].logical_name is None
-        assert identities[1].repo_id == 456
+        assert identities[1].node_id == 456
         assert identities[1].logical_name == "logical"
 
 
@@ -256,4 +256,4 @@ class TestDumpGoalRepositories:
 
     def test_some_identities(self) -> None:
         idents = [RepositoryReference(1, "a"), RepositoryReference(2, None)]
-        assert dump_goal_repositories(idents) == [[1, "a"], [2, None]]
+        assert dump_goal_repositories(idents) == [(1, "a"), (2, None)]
