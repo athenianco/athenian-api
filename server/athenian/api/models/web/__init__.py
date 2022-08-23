@@ -1,31 +1,20 @@
 from athenian.api.models.web.accepted_invitation import AcceptedInvitation
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_status import AccountStatus
-from athenian.api.models.web.account_user_change_request import (
-    AccountUserChangeRequest,
-    UserChangeStatus,
-)
+from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, UserChangeStatus
 from athenian.api.models.web.base_model_ import AllOf, Enum, MappingModel, Model, Slots
 from athenian.api.models.web.calculated_code_check_histogram import CalculatedCodeCheckHistogram
 from athenian.api.models.web.calculated_code_check_metrics import CalculatedCodeCheckMetrics
-from athenian.api.models.web.calculated_code_check_metrics_item import (
-    CalculatedCodeCheckMetricsItem,
-)
+from athenian.api.models.web.calculated_code_check_metrics_item import CalculatedCodeCheckMetricsItem
 from athenian.api.models.web.calculated_deployment_metric import CalculatedDeploymentMetric
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
-from athenian.api.models.web.calculated_developer_metrics_item import (
-    CalculatedDeveloperMetricsItem,
-)
+from athenian.api.models.web.calculated_developer_metrics_item import CalculatedDeveloperMetricsItem
 from athenian.api.models.web.calculated_jira_histogram import CalculatedJIRAHistogram
 from athenian.api.models.web.calculated_jira_metric_values import CalculatedJIRAMetricValues
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
-from athenian.api.models.web.calculated_pull_request_histogram import (
-    CalculatedPullRequestHistogram,
-)
+from athenian.api.models.web.calculated_pull_request_histogram import CalculatedPullRequestHistogram
 from athenian.api.models.web.calculated_pull_request_metrics import CalculatedPullRequestMetrics
-from athenian.api.models.web.calculated_pull_request_metrics_item import (
-    CalculatedPullRequestMetricsItem,
-)
+from athenian.api.models.web.calculated_pull_request_metrics_item import CalculatedPullRequestMetricsItem
 from athenian.api.models.web.calculated_release_metric import CalculatedReleaseMetric
 from athenian.api.models.web.code_bypassing_p_rs_measurement import CodeBypassingPRsMeasurement
 from athenian.api.models.web.code_check_histogram_definition import CodeCheckHistogramDefinition
@@ -40,11 +29,7 @@ from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
 from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
-from athenian.api.models.web.common_metrics_properties import (
-    CommonMetricsProperties,
-    GranularitiesMixin,
-    QuantilesMixin,
-)
+from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties, GranularitiesMixin, QuantilesMixin
 from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.contributor_identity import ContributorIdentity
 from athenian.api.models.web.create_token_request import CreateTokenRequest
@@ -53,18 +38,12 @@ from athenian.api.models.web.created_token import CreatedToken
 from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
 from athenian.api.models.web.dependency_failed_error import MissingSettingsError
 from athenian.api.models.web.deployed_component import DeployedComponent
-from athenian.api.models.web.deployment_analysis import (
-    DeploymentAnalysis,
-    DeploymentAnalysisUnsealed,
-)
+from athenian.api.models.web.deployment_analysis import DeploymentAnalysis, DeploymentAnalysisUnsealed
 from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisCode
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
 from athenian.api.models.web.deployment_metric_id import DeploymentMetricID
 from athenian.api.models.web.deployment_metrics_request import DeploymentMetricsRequest
-from athenian.api.models.web.deployment_notification import (
-    DeploymentNotification,
-    DeploymentNotificationUnsealed,
-)
+from athenian.api.models.web.deployment_notification import DeploymentNotification, DeploymentNotificationUnsealed
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -91,29 +70,14 @@ from athenian.api.models.web.filtered_jira_stuff import FilteredJIRAStuff
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
-from athenian.api.models.web.for_set_common import (
-    CommonPullRequestFilters,
-    ForSetLines,
-    RepositoryGroupsMixin,
-    make_common_pull_request_filters,
-)
+from athenian.api.models.web.for_set_common import CommonPullRequestFilters, ForSetLines, make_common_pull_request_filters, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_deployments import ForSetDeployments
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
-from athenian.api.models.web.generic_error import (
-    BadRequestError,
-    DatabaseConflict,
-    ForbiddenError,
-    GenericError,
-    NotFoundError,
-    ServerNotImplementedError,
-    ServiceUnavailableError,
-    TooManyRequestsError,
-    UnauthorizedError,
-)
+from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, ServiceUnavailableError, TooManyRequestsError, UnauthorizedError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
-from athenian.api.models.web.goal_template import GoalTemplate
+from athenian.api.models.web.goal_template import GoalTemplate, GoalTemplateCommon
 from athenian.api.models.web.goal_template_create_request import GoalTemplateCreateRequest
 from athenian.api.models.web.goal_template_update_request import GoalTemplateUpdateRequest
 from athenian.api.models.web.granularity import Granularity, GranularityMixin
@@ -142,10 +106,7 @@ from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
-from athenian.api.models.web.jira_metrics_request import (
-    JIRAMetricsRequest,
-    JIRAMetricsRequestSpecials,
-)
+from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest, JIRAMetricsRequestSpecials
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
@@ -169,9 +130,7 @@ from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_event import PullRequestEvent
-from athenian.api.models.web.pull_request_histogram_definition import (
-    PullRequestHistogramDefinition,
-)
+from athenian.api.models.web.pull_request_histogram_definition import PullRequestHistogramDefinition
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
@@ -199,9 +158,7 @@ from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.models.web.repository_set_with_name import RepositorySetWithName
-from athenian.api.models.web.set_mapped_jira_identities_request import (
-    SetMappedJIRAIdentitiesRequest,
-)
+from athenian.api.models.web.set_mapped_jira_identities_request import SetMappedJIRAIdentitiesRequest
 from athenian.api.models.web.share import Share
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress

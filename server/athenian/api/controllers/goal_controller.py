@@ -21,7 +21,7 @@ from athenian.api.models.web import (
     DatabaseConflict,
     GoalTemplate,
     GoalTemplateCreateRequest,
-    GoalTemplateUpdateRequest,
+    GoalTemplateUpdateRequest, InvalidRequestError,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
@@ -90,7 +90,6 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     repositories = await _parse_request_repositories(
         create_request.repositories, request, create_request.account,
     )
-
     values = {
         DBGoalTemplate.account_id.name: create_request.account,
         DBGoalTemplate.name.name: create_request.name,
@@ -139,12 +138,12 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
         )
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
-    await update_goal_template_in_db(id, request.sdb, name=update_request.name)
     repositories = await _parse_request_repositories(
         update_request.repositories, request, account_id,
     )
     values = {
         DBGoalTemplate.name.name: update_request.name,
+        DBGoalTemplate.metric.name: update_request.metric,
         DBGoalTemplate.repositories.name: repositories,
     }
     await update_goal_template_in_db(id, request.sdb, **values)
@@ -155,9 +154,11 @@ async def _parse_request_repositories(
     repo_names: Optional[list[str]],
     request: AthenianWebRequest,
     account_id: int,
-) -> Optional[list[list]]:
+) -> Optional[list[tuple[int, str]]]:
     if repo_names is None:
         return None
-    else:
-        mapper = await Prefixer.from_request(request, account_id)
-        return dump_goal_repositories(mapper.prefixed_repo_names_to_identities(repo_names))
+    prefixer = await Prefixer.from_request(request, account_id)
+    try:
+        return dump_goal_repositories(prefixer.prefixed_repo_names_to_identities(repo_names))
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(".repositories", str(e)))

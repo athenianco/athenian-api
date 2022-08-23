@@ -9,9 +9,9 @@ from athenian.api.models.web import (
     PullRequestMetricID,
 )
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
-from tests.testutils.requester import Requester
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import AccountFactory, GoalTemplateFactory
+from tests.testutils.requester import Requester
 
 
 class TestGetGoalTemplate(Requester):
@@ -115,41 +115,48 @@ class BaseCreateGoalTemplateTest(Requester):
 
 class TestCreateGoalTemplateErrors(BaseCreateGoalTemplateTest):
     async def test_empty_name(self, sdb: Database) -> None:
-        req = GoalTemplateCreateRequest(1, PullRequestMetricID.PR_CLOSED, "")
+        req = GoalTemplateCreateRequest(account=1, metric=PullRequestMetricID.PR_CLOSED, name="")
         await self._request(400, json=req.to_dict())
         await assert_missing_row(sdb, GoalTemplate, account_id=1)
 
     async def test_account_mismatch(self, sdb: Database) -> None:
-        req = GoalTemplateCreateRequest(3, PullRequestMetricID.PR_CLOSED, "My template")
+        req = GoalTemplateCreateRequest(
+            account=3, metric=PullRequestMetricID.PR_CLOSED, name="My template",
+        )
         await self._request(404, json=req.to_dict())
         await assert_missing_row(sdb, GoalTemplate, account_id=3)
 
     async def test_duplicated_name(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(name="T0"))
-        req = GoalTemplateCreateRequest(1, PullRequestMetricID.PR_CLOSED, "T0")
+        req = GoalTemplateCreateRequest(account=1, metric=PullRequestMetricID.PR_CLOSED, name="T0")
         await self._request(409, json=req.to_dict())
 
     async def test_invalid_metric(self, sdb: Database) -> None:
         for invalid_metric in ("foo", "", DeveloperMetricID.REVIEW_REJECTIONS):
-            req = GoalTemplateCreateRequest(1, invalid_metric, "T0")
+            req = GoalTemplateCreateRequest(account=1, metric=invalid_metric, name="T0")
             await self._request(400, json=req.to_dict())
         await assert_missing_row(sdb, GoalTemplate, account_id=1)
 
-    async def test_invalid_repositories_format(self, client: TestClient, sdb: Database) -> None:
-        req = GoalTemplateCreateRequest(1, PullRequestMetricID.PR_CLOSED, "T0", repositories=[1])
-        await self._request(client, 400, json=req.to_dict())
-
-    async def test_unknown_repository(self, client: TestClient, sdb: Database) -> None:
+    async def test_invalid_repositories_format(self, sdb: Database) -> None:
         req = GoalTemplateCreateRequest(
-            1, PullRequestMetricID.PR_CLOSED, "T0", repositories=["github.com/org/repo"],
+            account=1, metric=PullRequestMetricID.PR_CLOSED, name="T0", repositories=[1],
         )
-        await self._request(client, 400, json=req.to_dict())
+        await self._request(400, json=req.to_dict())
+
+    async def test_unknown_repository(self, sdb: Database) -> None:
+        req = GoalTemplateCreateRequest(
+            account=1,
+            metric=PullRequestMetricID.PR_CLOSED,
+            name="T0",
+            repositories=["github.com/org/repo"],
+        )
+        await self._request(400, json=req.to_dict())
         await assert_missing_row(sdb, GoalTemplate, name="T0")
 
 
 class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
     async def test_base(self, sdb: Database) -> None:
-        req = GoalTemplateCreateRequest(1, PullRequestMetricID.PR_OPENED, "T0")
+        req = GoalTemplateCreateRequest(account=1, metric=PullRequestMetricID.PR_OPENED, name="T0")
         res = await self._request(json=req.to_dict())
         template_id = res["id"]
         row = await assert_existing_row(
@@ -157,31 +164,26 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
         )
         assert row[GoalTemplate.repositories.name] is None
 
-    async def test_with_repositories(
-        self,
-        client: TestClient,
-        sdb: Database,
-        mdb: Database,
-    ) -> None:
+    async def test_with_repositories(self, sdb: Database, mdb_rw: Database) -> None:
         req = GoalTemplateCreateRequest(
-            1,
-            PullRequestMetricID.PR_CLOSED,
-            "T0",
+            account=1,
+            metric=PullRequestMetricID.PR_CLOSED,
+            name="T0",
             repositories=[
                 "github.com/org/a-repo",
                 "github.com/org/b-repo/l",
                 "github.com/org/b-repo/l2",
             ],
         )
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             mdb_models = [
                 md_factory.RepositoryFactory(node_id=200, full_name="org/a-repo"),
                 md_factory.RepositoryFactory(node_id=201, full_name="org/b-repo"),
             ]
             mdb_cleaner.add_models(*mdb_models)
-            await models_insert(mdb, *mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
 
-            res = await self._request(client, json=req.to_dict())
+            res = await self._request(json=req.to_dict())
         template_id = res["id"]
         row = await assert_existing_row(sdb, GoalTemplate, id=template_id, account_id=1, name="T0")
         assert row[GoalTemplate.repositories.name] == [[200, None], [201, "l"], [201, "l2"]]
@@ -190,7 +192,7 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
         await models_insert(
             sdb, AccountFactory(id=11), GoalTemplateFactory(name="T0", account_id=11),
         )
-        req = GoalTemplateCreateRequest(1, PullRequestMetricID.PR_OPENED, "T0")
+        req = GoalTemplateCreateRequest(account=1, metric=PullRequestMetricID.PR_OPENED, name="T0")
         res = await self._request(json=req.to_dict())
         template_id = res["id"]
         await assert_existing_row(sdb, GoalTemplate, account_id=1, id=template_id, name="T0")
@@ -240,7 +242,7 @@ class BaseUpdateGoalTemplateTest(Requester):
 
 class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
     async def test_not_found(self, sdb: Database) -> None:
-        req = GoalTemplateUpdateRequest("new-name")
+        req = GoalTemplateUpdateRequest("new-name", metric=PullRequestMetricID.PR_DONE)
         await self._request(1121, 404, json=req.to_dict())
         await assert_missing_row(sdb, GoalTemplate, id=1121)
 
@@ -248,32 +250,32 @@ class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
         await models_insert(
             sdb, AccountFactory(id=10), GoalTemplateFactory(id=1111, account_id=10, name="T0"),
         )
-        req = GoalTemplateUpdateRequest("new-name")
+        req = GoalTemplateUpdateRequest("new-name", metric=PullRequestMetricID.PR_DONE)
         await self._request(1111, 404, json=req.to_dict())
         await assert_existing_row(sdb, GoalTemplate, id=1111, name="T0")
 
     async def test_empty_name(self, sdb: Database) -> None:
         await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
-        req = GoalTemplateUpdateRequest("")
+        req = GoalTemplateUpdateRequest(name="", metric=PullRequestMetricID.PR_DONE)
         await self._request(111, 400, json=req.to_dict())
         await assert_existing_row(sdb, GoalTemplate, id=111, name="T0")
 
     async def test_null_name(self, sdb: Database) -> None:
         await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
-        req = GoalTemplateUpdateRequest(None)
+        req = GoalTemplateUpdateRequest(None, metric=PullRequestMetricID.PR_DONE)
         await self._request(111, 400, json=req.to_dict())
         await assert_existing_row(sdb, GoalTemplate, id=111, name="T0")
 
-    async def test_invalid_repositories(self, client: TestClient, sdb: Database) -> None:
+    async def test_invalid_repositories(self, sdb: Database) -> None:
         await models_insert(
             sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, repositories=[[1, None]]),
         )
-        req_body = GoalTemplateUpdateRequest("T").to_dict()
+        req_body = GoalTemplateUpdateRequest("T", metric=PullRequestMetricID.PR_DONE).to_dict()
         req_body["repositories"] = 42
-        await self._request(client, 111, 400, json=req_body)
+        await self._request(111, 400, json=req_body)
 
         req_body["repositories"] = ["github.com/not/existing"]
-        await self._request(client, 111, 400, json=req_body)
+        await self._request(111, 400, json=req_body)
 
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
         assert row[GoalTemplate.repositories.name] == [[1, None]]
@@ -282,16 +284,22 @@ class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
 class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
     async def test_update_name(self, sdb: Database) -> None:
         await models_insert(sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, name="T0"))
-        req = GoalTemplateUpdateRequest("T1")
+        req = GoalTemplateUpdateRequest("T1", metric=PullRequestMetricID.PR_DONE)
         await self._request(111, json=req.to_dict())
         await assert_existing_row(sdb, GoalTemplate, id=111, name="T1")
 
-    async def test_update_repositories(
-        self,
-        client: TestClient,
-        sdb: Database,
-        mdb: Database,
-    ) -> None:
+    async def test_update_metric(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=10),
+            GoalTemplateFactory(id=111, repositories=[[10, None]]),
+        )
+        req = GoalTemplateUpdateRequest("T1", metric=PullRequestMetricID.PR_MERGED)
+        await self._request(111, json=req.to_dict())
+        row = await assert_existing_row(sdb, GoalTemplate, id=111)
+        assert row[GoalTemplate.metric.name] == req.metric
+
+    async def test_update_repositories(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
             sdb,
             AccountFactory(id=10),
@@ -299,19 +307,20 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
         )
         req = GoalTemplateUpdateRequest(
             "T1",
+            metric=PullRequestMetricID.PR_DONE,
             repositories=["g.com/o/a", "g.com/o/b", "g.com/o/c/l1", "g.com/o/c/l2"],
         )
 
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             mdb_models = [
                 md_factory.RepositoryFactory(node_id=20, full_name="o/a"),
                 md_factory.RepositoryFactory(node_id=21, full_name="o/b"),
                 md_factory.RepositoryFactory(node_id=22, full_name="o/c"),
             ]
             mdb_cleaner.add_models(*mdb_models)
-            await models_insert(mdb, *mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
 
-            await self._request(client, 111, json=req.to_dict())
+            await self._request(111, json=req.to_dict())
 
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
         assert row[GoalTemplate.repositories.name] == [

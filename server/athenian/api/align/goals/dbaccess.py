@@ -254,12 +254,12 @@ def parse_goal_repositories(val: Optional[list[list]]) -> Optional[list[Reposito
 
 def dump_goal_repositories(
     repo_idents: Optional[Sequence[RepositoryReference]],
-) -> Optional[list[list]]:
+) -> Optional[list[tuple[int, str]]]:
     """Dump the sequence of RepositoryReference-s in the format used by DB repositories JSON \
     column."""
     if repo_idents is None:
         return None
-    return [[ident.repo_id, ident.logical_name] for ident in repo_idents]
+    return [(ident.node_id, ident.logical_name) for ident in repo_idents]
 
 
 @sentry_span

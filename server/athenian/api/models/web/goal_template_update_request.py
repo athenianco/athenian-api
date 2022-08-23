@@ -1,5 +1,5 @@
-from athenian.api.models.web.goal_template import BaseGoalTemplateModel
+from athenian.api.models.web.goal_template import GoalTemplateCommon
 
 
-class GoalTemplateUpdateRequest(BaseGoalTemplateModel):
-    """Goal Template update request."""
+class GoalTemplateUpdateRequest(GoalTemplateCommon):
+    """Goal template update request."""
