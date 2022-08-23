@@ -769,7 +769,11 @@ class Settings:
         pointer_root: str = "",
     ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
-        for propname, s in (("branches", ReleaseMatch.branch), ("tags", ReleaseMatch.tag)):
+        for propname, s in (
+            ("branches", ReleaseMatch.branch),
+            ("tags", ReleaseMatch.tag),
+            ("events", ReleaseMatch.event),
+        ):
             propval = locals()[propname]
             if match in (s, ReleaseMatch.tag_or_branch) and not propval:
                 raise ResponseError(
@@ -778,12 +782,14 @@ class Settings:
                         detail='Value may not be empty given "match" = "%s"' % match.name,
                     ),
                 )
+            if propname == "events" and propval is None:
+                continue
             try:
                 re.compile(propval)
-            except re.error as e:
+            except (re.error, TypeError) as e:
                 raise ResponseError(
                     InvalidRequestError(
-                        f"{pointer_root}.{propname}", detail="Invalid regular expression: %s" % e,
+                        f"{pointer_root}.{propname}", detail=f"Invalid regular expression: {e}",
                     ),
                 ) from None
         if not branches:

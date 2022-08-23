@@ -1580,7 +1580,7 @@ async def test_set_logical_repository_clean_deployments(
         json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 200
+    assert response.status == 200, body
 
     pr_depl_row = await pdb.fetch_one(
         select(GitHubPullRequestDeployment).where(
@@ -1591,13 +1591,23 @@ async def test_set_logical_repository_clean_deployments(
 
 
 @pytest.mark.parametrize(
-    "account, name, parent, match, code",
+    "account, name, parent, prs, match, extra, code",
     [
-        (2, "alpha", "github.com/src-d/go-git", "tag", 403),
-        (3, "alpha", "github.com/src-d/go-git", "tag", 404),
-        (1, "alpha", "github.com/athenianco/athenian-api", "tag", 403),
-        (1, "", "github.com/src-d/go-git", "tag", 400),
-        (1, "alpha", "github.com/src-d/go-git", "branch", 400),
+        (2, "alpha", "github.com/src-d/go-git", None, "tag", {}, 403),
+        (3, "alpha", "github.com/src-d/go-git", None, "tag", {}, 404),
+        (1, "alpha", "github.com/athenianco/athenian-api", None, "tag", {}, 403),
+        (1, "", "github.com/src-d/go-git", None, "tag", {}, 400),
+        (1, "alpha", "github.com/src-d/go-git", None, "branch", {}, 400),
+        (
+            1,
+            "alpha",
+            "github.com/src-d/go-git",
+            None,
+            "tag",
+            {"deployments": {"title": "(f*+"}},
+            400,
+        ),
+        (1, "alpha", "github.com/src-d/go-git", "(f*+", "tag", {}, 400),
     ],
 )
 async def test_set_logical_repository_nasty_input(
@@ -1606,7 +1616,9 @@ async def test_set_logical_repository_nasty_input(
     account,
     name,
     parent,
+    prs,
     match,
+    extra,
     code,
 ):
     body = {
@@ -1614,13 +1626,14 @@ async def test_set_logical_repository_nasty_input(
         "name": name,
         "parent": parent,
         "prs": {
-            "title": ".*[Aa]argh",
+            "title": ".*[Aa]argh" if not prs else prs,
         },
         "releases": {
             "branches": "master",
             "tags": "v.*",
             "match": match,
         },
+        **extra,
     }
     response = await client.request(
         method="PUT",
