@@ -175,7 +175,7 @@ class TestPrecomputeReposet:
     async def test_bots_team_members_are_synced(
         self,
         sdb: Database,
-        mdb: Database,
+        mdb_rw: Database,
         pdb: Database,
         rdb: Database,
     ) -> None:
@@ -188,7 +188,7 @@ class TestPrecomputeReposet:
             RepositorySetFactory(owner_id=11, precomputed=True),
             TeamFactory(owner_id=11, name=Team.BOTS, members=[]),
         )
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 # to be recognized as bots by Bots an entry must be in Bot table
                 md_factory.BotFactory(acc_id=meta_id, login="bot0"),
@@ -196,14 +196,16 @@ class TestPrecomputeReposet:
                 md_factory.UserFactory(acc_id=meta_id, node_id=101, login="u0"),
             ]
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
-            await mdb.fetch_all(sa.select(md_factory.BotFactory._meta.model))
+            await models_insert(mdb_rw, *models)
+            await mdb_rw.fetch_all(sa.select(md_factory.BotFactory._meta.model))
 
             reposet_row = await assert_existing_row(sdb, RepositorySet, owner_id=11)
             reposet = RepositorySet(**reposet_row)
-            ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+            ctx = build_context(sdb=sdb, mdb=mdb_rw, pdb=pdb, rdb=rdb)
 
-            ns = _namespace()
+            ns = _namespace(
+                skip_jira=True, skip_prs=True, skip_releases=True, skip_deployments=True,
+            )
             await precompute_reposet(
                 reposet, (meta_id,), ctx, ns, dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
             )
@@ -224,6 +226,9 @@ def _namespace(**kwargs: Any) -> Namespace:
     kwargs.setdefault("prometheus_pushgateway", None)
     kwargs.setdefault("timeout", 1000)
     kwargs.setdefault("skip_teams", False)
+    kwargs.setdefault("skip_prs", False)
+    kwargs.setdefault("skip_releases", False)
+    kwargs.setdefault("skip_deployments", False)
     ns = Namespace(**kwargs)
     ns.time_from = None
     return ns
@@ -302,39 +307,39 @@ class TestEnsureRootTeam:
 
 
 class TestSyncBotsTeamMembers:
-    async def test_members_are_added(self, sdb: Database, mdb: Database) -> None:
-        async with DBCleaner(mdb) as mdb_cleaner:
+    async def test_members_are_added(self, sdb: Database, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.UserFactory(node_id=100, login="u0"),
                 md_factory.UserFactory(node_id=101, login="u1"),
                 md_factory.UserFactory(node_id=102, login="u2"),
             ]
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
+            await models_insert(mdb_rw, *models)
             await models_insert(sdb, TeamFactory(name=Team.ROOT, id=97))
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
 
             local_bots = {"u0", "u1", "u2"}
 
-            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-            await _ensure_bot_team(1, local_bots, 97, prefixer, sdb, mdb, logging.getLogger())
+            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb_rw, None)
+            await _ensure_bot_team(1, local_bots, 97, prefixer, sdb, mdb_rw, logging.getLogger())
 
             team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
             assert team_row[Team.members.name] == [100, 101, 102]
 
-    async def test_no_update_needed(self, sdb: Database, mdb: Database) -> None:
-        async with DBCleaner(mdb) as mdb_cleaner:
+    async def test_no_update_needed(self, sdb: Database, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.UserFactory(node_id=100, login="u0"),
                 md_factory.UserFactory(node_id=101, login="u1"),
             ]
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
+            await models_insert(mdb_rw, *models)
 
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100, 101]))
 
-            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-            await _ensure_bot_team(1, {"u0"}, 1, prefixer, sdb, mdb, logging.getLogger())
+            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb_rw, None)
+            await _ensure_bot_team(1, {"u0"}, 1, prefixer, sdb, mdb_rw, logging.getLogger())
 
             team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
             assert team_row[Team.members.name] == [100, 101]

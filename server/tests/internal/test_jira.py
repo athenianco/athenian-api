@@ -202,11 +202,11 @@ class TestDisableEmptyProjects:
         assert keys == {"ENG"}
 
     @freeze_time("2020-01-01")
-    async def test_duplicate_proj_keys(self, sdb: Database, mdb: Database) -> None:
+    async def test_duplicate_proj_keys(self, sdb: Database, mdb_rw: Database) -> None:
         ACC_ID = 4
         MD_ACC_ID = 104
         JIRA_INST_ID = 204
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             await models_insert(
                 sdb,
                 AccountFactory(id=ACC_ID),
@@ -225,9 +225,11 @@ class TestDisableEmptyProjects:
                 md_factory.JIRAIssueFactory(acc_id=JIRA_INST_ID, project_id="102", created=old_dt),
             ]
             mdb_cleaner.add_models(*md_models)
-            await models_insert(mdb, *md_models)
+            await models_insert(mdb_rw, *md_models)
 
-            n_disabled = await disable_empty_projects(ACC_ID, (MD_ACC_ID,), sdb, mdb, None, None)
+            n_disabled = await disable_empty_projects(
+                ACC_ID, (MD_ACC_ID,), sdb, mdb_rw, None, None,
+            )
 
         # PRJ1 key must be disabled since both 101 and 111 are to be disabled (old first issue)
         # PRJ2 key must not be disabled since 122 is not to be disabled (no issues)

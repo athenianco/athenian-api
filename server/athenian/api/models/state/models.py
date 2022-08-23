@@ -403,6 +403,20 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     valid_from = Column(TIMESTAMP(timezone=True), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     archived = Column(Boolean, default=False, nullable=False, server_default="false")
+    environments = Column(JSONType, nullable=True)
+    """The deployment environments defining the goal scope."""
+    jira_projects = Column(JSONType, nullable=True)
+    """The JIRA projects defining the goal scope."""
+    jira_priorities = Column(JSONType, nullable=True)
+    """The JIRA priorities defining the goal scope."""
+    jira_issue_types = Column(JSONType, nullable=True)
+    """The JIRA issue types defining the goal scope."""
+    repositories = Column(JSONType, nullable=True)
+    """The repositories defining the goal scope.
+
+    Each repository is represented as a couple [node_id, logical_repo_name].
+
+    """
 
 
 class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -423,6 +437,19 @@ class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
     )
     name = Column(String, nullable=False)
     metric = Column(String, nullable=False)
+    environments = Column(JSONType, nullable=True)
+    """The deployment environments definint the goal template scope."""
+    jira_projects = Column(JSONType, nullable=True)
+    """The JIRA projects defining the goal template scope."""
+    jira_priorities = Column(JSONType, nullable=True)
+    """The JIRA priorities defining the goal template scope."""
+    jira_issue_types = Column(JSONType, nullable=True)
+    """The JIRA issue types defining the goal template scope."""
+    repositories = Column(JSONType, nullable=True)
+    """The repositories defining the goal template scope.
+
+    Each repository is represented as a couple [node_id, logical_repo_name].
+    """
 
 
 class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):

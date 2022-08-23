@@ -654,12 +654,14 @@ async def mdb(_mdb, worker_id, event_loop, request):
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
             _mdb = await _connect_to_db(metadata_db, event_loop, request)
+    _mdb.is_rw = False
     return _mdb
 
 
 @pytest.fixture(scope="function")
 async def mdb_rw(mdb, event_loop, worker_id, request):
     if mdb.url.dialect != "sqlite":
+        mdb.is_rw = True
         return mdb
     # check whether the database is locked
     # IDK why it happens in the CI sometimes
@@ -686,6 +688,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
             mdb = await _connect_to_db(metadata_db, event_loop, request)
         finally:
             await mdb.execute(delete(Account).where(Account.id == 777))
+    mdb.is_rw = True
     return mdb
 
 

@@ -10,8 +10,8 @@ from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 
 
 class TestGetMetaTeamsMembers:
-    async def test_base(self, mdb: Database) -> None:
-        async with DBCleaner(mdb) as mdb_cleaner:
+    async def test_base(self, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = (
                 md_factory.TeamFactory(id=200),
                 md_factory.TeamFactory(id=201),
@@ -23,9 +23,11 @@ class TestGetMetaTeamsMembers:
                 md_factory.TeamMemberFactory(parent_id=203, child_id=13),
             )
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
+            await models_insert(mdb_rw, *models)
 
-            members = await get_meta_teams_members([200, 201, 202], [DEFAULT_MD_ACCOUNT_ID], mdb)
+            members = await get_meta_teams_members(
+                [200, 201, 202], [DEFAULT_MD_ACCOUNT_ID], mdb_rw,
+            )
             assert members[200] == [10, 11]
             assert members[201] == [12]
             assert members[202] == []

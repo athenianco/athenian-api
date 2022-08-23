@@ -1,3 +1,5 @@
+from typing import Optional
+
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
@@ -13,7 +15,12 @@ class GoalTemplate(Model):
         "metric": str,
     }
 
-    def __init__(self, id: int = None, name: str = None, metric: str = None):
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        name: Optional[str] = None,
+        metric: Optional[str] = None,
+    ):
         """GoalTemplate - a model defined in OpenAPI
 
         :param id: The id of this GoalTemplate.
@@ -22,8 +29,6 @@ class GoalTemplate(Model):
         """
         self._id = id
         self._name = name
-        if metric is not None:
-            self._validate_metric(metric)
         self._metric = metric
 
     @property

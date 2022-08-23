@@ -85,7 +85,9 @@ class DBCleaner:
     the DBCleaner context manager exists.
     """
 
-    def __init__(self, db: DatabaseLike) -> None:
+    def __init__(self, db: Database) -> None:
+        assert isinstance(db, Database)
+        assert getattr(db, "is_rw", False), "must use the mdb_rw fixture"
         self._db = db
         self._to_clean: list[tuple[DeclarativeMeta, dict]] = []
 
