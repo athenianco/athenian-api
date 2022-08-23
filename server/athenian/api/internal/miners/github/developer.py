@@ -217,6 +217,8 @@ async def _mine_prs(
         query = await generate_jira_prs_query(filters, jira, None, mdb, cache, columns=selected)
     else:
         query = select(selected).where(and_(*filters))
+        for hint in hints:
+            query = query.with_statement_hint(hint)
     return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
