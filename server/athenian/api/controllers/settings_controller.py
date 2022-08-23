@@ -653,9 +653,7 @@ async def _find_matching_logical_repository(
 
     Return the matched logical repo row, if any, and a boolean telling if the
     existing logical repo is identical to the compared logical repo also considering
-    extra properties and `release_match_setting`
-
-
+    extra properties and `release_match_setting`.
     """
     existing = await sdb_conn.fetch_one(
         select([LogicalRepository]).where(

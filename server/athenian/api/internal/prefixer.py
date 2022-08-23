@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import dataclasses
 from dataclasses import dataclass
 import pickle
 from typing import Dict, Iterable, List, Optional
@@ -9,6 +12,87 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Repository, User
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RepositoryName:
+    """Parsed name of a repository.
+
+    Possible formats:
+
+    - repository name: "owner/reponame"
+    - logical repository name: "owner/reponame/logicalname".
+    - prefixed repository name: "provider.com/owner/reponame"
+    - prefixed logical repository name: "provider.com/owner/reponame/logicalname"
+    """
+
+    prefix: Optional[str]
+    owner: str
+    physical: str
+    logical: Optional[str]
+
+    @classmethod
+    def from_prefixed(cls, prefixed_name: str) -> RepositoryName:
+        """Build the name one of the "prefixed" formats."""
+        if prefixed_name.count("/") < 2:
+            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
+
+        prefix, rest = prefixed_name.split("/", 1)
+
+        if "." not in prefix:
+            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
+
+        org, rest = rest.split("/", 1)
+
+        if "/" in rest:
+            physical, logical = rest.split("/", 1)
+        else:
+            physical = rest
+            logical = None
+        return RepositoryName(prefix, org, physical, logical)
+
+    @property
+    def is_logical(self) -> bool:
+        """Whether the name refers to a logical repository."""
+        return self.logical is not None
+
+    def with_logical(self, logical: Optional[str]) -> RepositoryName:
+        """Return a new RepositoryName for the same physical repository with an optional logical \
+        name."""
+        return dataclasses.replace(self, logical=logical)
+
+    @property
+    def unprefixed_physical(self) -> str:
+        """Return the unprefixed physical name of the repository."""
+        return f"{self.owner}/{self.physical}"
+
+    def __str__(self) -> str:
+        """Return the canonical full repository name."""
+        return (
+            f"{(self.prefix + '/') if self.prefix else ''}"
+            f"{self.owner}/{self.physical}"
+            f"{('/' + self.logical) if self.logical else ''}"
+        )
+
+    def __sentry_repr__(self) -> str:
+        """Format for Sentry the same way as regular str()."""
+        return str(self)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RepositoryReference:
+    """The identity of a repository, physical or logical."""
+
+    node_id: int
+    """
+    The identifier of the physical repository
+
+    It's a reference to the mdb's `Repository.node_id` column.
+    """
+    logical_name: Optional[str]
+    """
+    The logical name of repository, if this is a logical repository.
+    """
 
 
 def strip_proto(url: str) -> str:
@@ -126,6 +210,38 @@ class Prefixer:
             return "/".join([physical_repo, logical_name])
         except KeyError:
             return None
+
+    def prefixed_repo_names_to_identities(
+        self,
+        repo_names: Iterable[str],
+    ) -> list[RepositoryReference]:
+        """Convert a list of prefixed repository names to RepositoryReference-s."""
+        repos = []
+        repo_name_to_node = self.repo_name_to_node.__getitem__
+        for repo_name in repo_names:
+            name = RepositoryName.from_prefixed(repo_name)
+            try:
+                physical_id = repo_name_to_node(name.unprefixed_physical)
+            except KeyError:
+                raise ValueError(f"Unknown repository {repo_name}") from None
+            repos.append(RepositoryReference(physical_id, name.logical))
+        return repos
+
+    def repo_identities_to_prefixed_names(
+        self,
+        repo_identities: Iterable[RepositoryReference],
+    ) -> list[str]:
+        """Convert a list of RepositoryReference to a list of prefixed repository names."""
+        repo_names = []
+        repo_node_to_prefixed_name = self.repo_node_to_prefixed_name.__getitem__
+        for repo in repo_identities:
+            try:
+                physical_name = repo_node_to_prefixed_name(repo.node_id)
+            except KeyError:
+                raise ValueError(f"Invalid repo_id {repo.node_id}") from None
+            name = RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name)
+            repo_names.append(str(name))
+        return repo_names
 
     def __str__(self) -> str:
         """Implement str()."""

@@ -34,8 +34,8 @@ from athenian.api.internal.logical_repos import (
     coerce_prefixed_logical_repos,
     drop_logical_repo,
 )
-from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import RepositoryName, resolve_repos
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
+from athenian.api.internal.reposet import resolve_repos
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting

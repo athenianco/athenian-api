@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
@@ -584,67 +583,3 @@ async def refresh_repository_names(
     await gather(*updates)
     all_reposet_names.sort()
     return all_reposet_names
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RepositoryName:
-    """Parsed name of a repository.
-
-    Possible formats:
-
-    - repository name: "owner/reponame"
-    - logical repository name: "owner/reponame/logicalname".
-    - prefixed repository name: "provider.com/owner/reponame"
-    - prefixed logical repository name: "provider.com/owner/reponame/logicalname"
-    """
-
-    prefix: Optional[str]
-    owner: str
-    physical: str
-    logical: Optional[str]
-
-    @classmethod
-    def from_prefixed(cls, prefixed_name: str) -> RepositoryName:
-        """Build the name one of the "prefixed" formats."""
-        if prefixed_name.count("/") < 2:
-            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
-
-        prefix, rest = prefixed_name.split("/", 1)
-
-        if "." not in prefix:
-            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
-
-        org, rest = rest.split("/", 1)
-
-        if "/" in rest:
-            physical, logical = rest.split("/", 1)
-        else:
-            physical = rest
-            logical = None
-        return RepositoryName(prefix, org, physical, logical)
-
-    @property
-    def is_logical(self) -> bool:
-        """Whether the name refers to a logical repository."""
-        return self.logical is not None
-
-    def with_logical(self, logical: Optional[str]) -> RepositoryName:
-        """Return a new RepoName for the same physical repository with an optional logical name."""
-        return dataclasses.replace(self, logical=logical)
-
-    @property
-    def unprefixed_physical(self) -> str:
-        """Return the unprefixed physical name of the repository."""
-        return f"{self.owner}/{self.physical}"
-
-    def __str__(self) -> str:
-        """Return the canonical full repository name."""
-        return (
-            f"{(self.prefix + '/') if self.prefix else ''}"
-            f"{self.owner}/{self.physical}"
-            f"{('/' + self.logical) if self.logical else ''}"
-        )
-
-    def __sentry_repr__(self) -> str:
-        """Format for Sentry the same way as regular str()."""
-        return str(self)

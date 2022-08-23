@@ -414,7 +414,7 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     repositories = Column(JSONType, nullable=True)
     """The repositories defining the goal scope.
 
-    Each repository is represented as a couple [repo_id, logical_repo_name].
+    Each repository is represented as a couple [node_id, logical_repo_name].
 
     """
 
@@ -448,7 +448,7 @@ class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
     repositories = Column(JSONType, nullable=True)
     """The repositories defining the goal template scope.
 
-    Each repository is represented as a couple [repo_id, logical_repo_name].
+    Each repository is represented as a couple [node_id, logical_repo_name].
     """
 
 
