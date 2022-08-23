@@ -139,13 +139,13 @@ class TestMembers(BaseMembersTest):
         expected = ["github.com/leantrace"]
         assert [m["login"] for m in res["data"]["members"]] == expected
 
-    async def test_result_ordering(self, sdb: Database, mdb: Database) -> None:
+    async def test_result_ordering(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[100, 101, 102, 103]),
         )
 
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.UserFactory(node_id=100, html_url="https://c", name="Foo Bar"),
                 md_factory.UserFactory(node_id=101, html_url="https://a", name=None),
@@ -153,7 +153,7 @@ class TestMembers(BaseMembersTest):
                 md_factory.UserFactory(node_id=103, html_url="https://d", name="aa"),
             ]
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
+            await models_insert(mdb_rw, *models)
 
             res = await self._request(1, 1, recursive=True)
 
@@ -161,21 +161,21 @@ class TestMembers(BaseMembersTest):
         assert [m["login"] for m in members] == ["d", "c", "b", "a"]
         assert [m["name"] for m in members] == ["aa", "Foo Bar", "zz-Top", None]
 
-    async def test_jira_user_field(self, sdb: Database, mdb: Database) -> None:
+    async def test_jira_user_field(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[100, 101]),
             MappedJIRAIdentityFactory(github_user_id=100, jira_user_id="200"),
         )
 
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.UserFactory(node_id=100),
                 md_factory.UserFactory(node_id=101),
                 md_factory.JIRAUserFactory(id="200", display_name="My JIRA name"),
             ]
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
+            await models_insert(mdb_rw, *models)
             res = await self._request(1, 1)
 
         members = res["data"]["members"]

@@ -64,13 +64,13 @@ class TestCopyTeamsAsNeeded:
         assert created_teams == []
         assert n == len(loaded_teams)
 
-    async def test_meta_team_invalid_parent(self, sdb: Database, mdb: Database) -> None:
+    async def test_meta_team_invalid_parent(self, sdb: Database, mdb_rw: Database) -> None:
         (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
 
-        async with DBCleaner(mdb) as mdb_cleaner:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = (md_factory.TeamFactory(node_id=101, parent_team_id=1010110101, name="T"),)
             mdb_cleaner.add_models(*models)
-            await models_insert(mdb, *models)
-            await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb, None)
+            await models_insert(mdb_rw, *models)
+            await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb_rw, None)
 
         await assert_existing_row(sdb, Team, name="T", origin_node_id=101, parent_id=root_team_id)

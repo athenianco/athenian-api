@@ -91,15 +91,15 @@ class TestRepoIdentitiesMapper:
         with pytest.raises(ValueError):
             prefixer.repo_identities_to_prefixed_names([RepositoryReference(2, None)])
 
-    async def test_with_real_prefixer(self, mdb: Database) -> None:
-        async with DBCleaner(mdb) as mdb_cleaner:
+    async def test_with_real_prefixer(self, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
             mdb_models = [
                 md_factory.RepositoryFactory(node_id=1, full_name="athenianco/repo-A"),
                 md_factory.RepositoryFactory(node_id=2, full_name="athenianco/repo-B"),
             ]
             mdb_cleaner.add_models(*mdb_models)
-            await models_insert(mdb, *mdb_models)
-            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
+            await models_insert(mdb_rw, *mdb_models)
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
 
         names = prefixer.repo_identities_to_prefixed_names(
             [
