@@ -409,7 +409,7 @@ async def _mine_deployments(
     releases = releases.result()
     # releases = releases.iloc[:0]  # uncomment to disable pdb
     # invalidate release facts with previously computed  invalid deploy names
-    if invalidated.size:
+    if invalidated.size and not releases.empty:
         releases = releases.take(
             np.flatnonzero(
                 ~in1d_str(
@@ -625,7 +625,23 @@ async def _fetch_precomputed_deployed_releases(
 ) -> pd.DataFrame:
     assert repo_names
     reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
+    batches = []
     queries = []
+
+    def append_batch(i: int) -> None:
+        query = union_all(*queries)
+        queries.clear()
+        for j in range(i - len(queries) + 2, i + 2):
+            query = query.with_statement_hint(f"HashJoin(ghrd{j} prel{j})")
+        batches.append(
+            read_sql_query(
+                query,
+                pdb,
+                [GitHubReleaseDeployment.deployment_name, *PrecomputedRelease.__table__.columns],
+            ),
+        )
+
+    batch_size = 10
     for i, ((m, v), repos) in enumerate(reverse_settings.items(), start=1):
         ghrd = aliased(GitHubReleaseDeployment, name=f"ghrd{i}")
         prel = aliased(PrecomputedRelease, name=f"prel{i}")
@@ -652,14 +668,17 @@ async def _fetch_precomputed_deployed_releases(
                 ),
             ),
         )
-    query = union_all(*queries)
-    for i in range(1, len(reverse_settings) + 1):
-        query = query.with_statement_hint(f"HashJoin(ghrd{i} prel{i})")
-    releases = await read_sql_query(
-        query,
-        pdb,
-        [GitHubReleaseDeployment.deployment_name, *PrecomputedRelease.__table__.columns],
-    )
+        if len(queries) == batch_size:
+            append_batch(i)
+    if queries:
+        append_batch(len(reverse_settings))
+    if not batches:
+        return pd.DataFrame()
+    releases = await gather(*batches, op="_fetch_precomputed_deployed_releases/batches")
+    if len(releases) == 1:
+        releases = releases[0]
+    else:
+        releases = pd.concat(releases, ignore_index=True)
     releases = set_matched_by_from_release_match(releases, False)
     del releases[PrecomputedRelease.acc_id.name]
     return await _postprocess_deployed_releases(
