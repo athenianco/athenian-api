@@ -80,10 +80,6 @@ class TestUpdateGoal:
         goal = await assert_existing_row(sdb, Goal, id=10)
         assert not goal[Goal.archived.name]
 
-    async def test_goal_not_found(self, sdb: Database) -> None:
-        with pytest.raises(GoalMutationError):
-            await self._update(1, 1, sdb, archived=False)
-
     @classmethod
     async def _update(cls, acc_id: int, goal_id: int, sdb: Database, *, archived: bool) -> None:
         async with transaction_conn(sdb) as sdb_conn:

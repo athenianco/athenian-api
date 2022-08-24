@@ -18,7 +18,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     integrity_errors,
 )
-from athenian.api.internal.prefixer import RepositoryReference
+from athenian.api.internal.prefixer import Prefixer, RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -29,7 +29,6 @@ class GoalCreationInfo:
 
     - the goal itself
     - the list of TeamGoal-s
-
     """
 
     goal: Goal
@@ -42,6 +41,17 @@ class TeamGoalTargetAssignment:
 
     team_id: int
     target: int | float | str
+
+
+@sentry_span
+async def fetch_goal(account: int, id: int, sdb: DatabaseLike) -> Row:
+    """Load the Goal by ID and account ID."""
+    return await sdb.fetch_one(
+        sa.select(Goal).where(
+            Goal.account_id == account,
+            Goal.id == id,
+        ),
+    )
 
 
 @sentry_span
@@ -76,9 +86,9 @@ async def delete_goal(account_id: int, goal_id: int, sdb_conn: Connection) -> No
     where_clause = sa.and_(Goal.account_id == account_id, Goal.id == goal_id)
     # no rowcount support in morcilla, no delete ... returning support in sqlalchemy / sqlite,
     # so two queries are needed
-    select_stmt = sa.select(sa.func.count(Goal.id)).where(where_clause)
-    if await sdb_conn.fetch_val(select_stmt) == 0:
-        raise GoalMutationError(f"Goal {goal_id} not found", HTTPStatus.NOT_FOUND)
+    select_stmt = sa.select(Goal.id).where(where_clause)
+    if await sdb_conn.fetch_val(select_stmt) is None:
+        raise GoalMutationError(f"Goal {goal_id} not found or access denied", HTTPStatus.NOT_FOUND)
 
     await sdb_conn.execute(sa.delete(Goal).where(where_clause))
 
@@ -142,18 +152,31 @@ async def update_goal(
     sdb_conn: Connection,
     **kwargs,
 ) -> None:
-    """Update the properties of an existing Goal."""
+    """Update the properties of an existing Goal.
+
+    Must check access in advance!
+    """
     assert await conn_in_transaction(sdb_conn)
-
-    # morcilla/asyncpg don't return update rowcount, two queries are needed
-    where = sa.and_(Goal.account_id == account_id, Goal.id == goal_id)
-    select_stmt = sa.select(Goal).where(where).with_for_update()
-    if await sdb_conn.fetch_one(select_stmt) is None:
-        raise GoalMutationError(f"Goal {goal_id} not found", HTTPStatus.NOT_FOUND)
-
     values = {**kwargs, Goal.updated_at: datetime.now(timezone.utc)}
-    update_stmt = sa.update(Goal).where(where).values(values)
-    await sdb_conn.execute(update_stmt)
+    await sdb_conn.execute(
+        sa.update(Goal).where(Goal.account_id == account_id, Goal.id == goal_id).values(values),
+    )
+    # for now: update all the connected team goals
+    # we will remove this once we switch to independent team goals
+    # fmt: off
+    dependent_values = {
+        k: v for k, v in values.items() if k in (
+            Goal.repositories.name,
+            Goal.jira_projects.name,
+            Goal.jira_priorities.name,
+            Goal.jira_issue_types.name,
+        )
+    }
+    # fmt: on
+    if dependent_values:
+        await sdb_conn.execute(
+            sa.update(TeamGoal).where(TeamGoal.goal_id == goal_id).values(dependent_values),
+        )
 
 
 @sentry_span
@@ -259,6 +282,28 @@ def dump_goal_repositories(
     if repo_idents is None:
         return None
     return [(ident.node_id, ident.logical_name) for ident in repo_idents]
+
+
+def resolve_goal_repositories(
+    repos: Optional[Iterable[tuple[int, Optional[str]]]],
+    prefixer: Prefixer,
+) -> Optional[tuple[str]]:
+    """Dereference the repository IDs and append logical names."""
+    if repos is None:
+        return None
+    repo_node_to_name = prefixer.repo_node_to_name.__getitem__
+    repos, to_resolve = [], repos
+    for node_id, logical in to_resolve:
+        try:
+            physical = repo_node_to_name(node_id)
+        except KeyError:
+            continue
+        if not logical:
+            repo = physical
+        else:
+            repo = f"{physical}/{logical}"
+        repos.append(repo)
+    return tuple(repos)
 
 
 @sentry_span

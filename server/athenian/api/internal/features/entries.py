@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from datetime import datetime, timezone
-from functools import partial, reduce
+from functools import partial
 from itertools import chain
 import logging
 import pickle
@@ -51,7 +51,6 @@ from athenian.api.internal.features.github.release_metrics import (
     ReleaseBinnedMetricCalculator,
     calculate_logical_release_duplication_mask,
     group_releases_by_participants,
-    merge_release_participants,
 )
 from athenian.api.internal.features.github.unfresh_pull_request_metrics import (
     UnfreshPullRequestFactsFetcher,
@@ -66,6 +65,7 @@ from athenian.api.internal.features.jira.issue_metrics import (
 from athenian.api.internal.features.metric_calculator import (
     DEFAULT_QUANTILE_STRIDE,
     MetricCalculatorEnsemble,
+    deduplicate_groups,
     group_by_repo,
     group_to_indexes,
 )
@@ -109,6 +109,7 @@ from athenian.api.internal.miners.types import (
     PullRequestFacts,
     ReleaseFacts,
     ReleaseParticipants,
+    ReleaseParticipationKind,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
@@ -334,7 +335,7 @@ class MetricEntriesCalculator:
         """
         assert isinstance(repositories, (tuple, list))
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = _merge_participants(participants)
+        all_participants = self._merge_pr_participants(participants)
         calc = PullRequestBinnedMetricCalculator(
             metrics,
             quantiles,
@@ -376,16 +377,22 @@ class MetricEntriesCalculator:
         )
         return calc(df_facts, time_intervals, groups)
 
+    @staticmethod
+    def _merge_pr_participants(participants: Iterable[PRParticipants]) -> PRParticipants:
+        all_participants = {}
+        for p in participants:
+            for k, v in p.items():
+                all_participants.setdefault(k, set()).update(v)
+        return all_participants
+
     @sentry_span
     @cached(
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda requests, quantiles, labels, jira, exclude_inactive, bots, release_settings, logical_settings, **kwargs: (  # noqa
+        key=lambda requests, quantiles, exclude_inactive, bots, release_settings, logical_settings, **kwargs: (  # noqa
             ",".join(str(req) for req in requests),
             ",".join(str(q) for q in quantiles),
-            labels,
-            jira,
             exclude_inactive,
             release_settings,
             logical_settings,
@@ -394,10 +401,8 @@ class MetricEntriesCalculator:
     )
     async def batch_calc_pull_request_metrics_line_github(
         self,
-        requests: Sequence[PullRequestMetricsLineRequest],
+        requests: Sequence[MetricsLineRequest],
         quantiles: Sequence[float | int],
-        labels: LabelFilter,
-        jira: JIRAFilter,
         exclude_inactive: bool,
         bots: set[str],
         release_settings: ReleaseSettings,
@@ -414,25 +419,26 @@ class MetricEntriesCalculator:
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_pull_request_metrics_line_github()` multiple times.
-
         """
         all_repositories = set(
-            chain.from_iterable(chain.from_iterable(request.repositories) for request in requests),
+            chain.from_iterable(t.repositories for request in requests for t in request.teams),
         )
-        all_participants = _merge_participants(
-            list(chain.from_iterable(request.participants for request in requests)),
+        all_participants = self._merge_pr_participants(
+            t.participants for request in requests for t in request.teams
         )
+        assert all_repositories
+        assert sum(bool(v) for v in all_participants.values())
         all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
         all_metrics = set(chain.from_iterable(request.metrics for request in requests))
-
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
+
         df_facts = await self.calc_pull_request_facts_github(
             time_from,
             time_to,
             all_repositories,
             all_participants,
-            labels,
-            jira,
+            LabelFilter.empty(),
+            JIRAFilter.empty(),  # could be deduced from requests
             exclude_inactive,
             bots,
             release_settings,
@@ -449,26 +455,34 @@ class MetricEntriesCalculator:
 
         results = []
         for request in requests:
-            lines_grouper = partial(group_prs_by_lines, request.lines)
-            repo_grouper = partial(
-                group_by_repo, PullRequest.repository_full_name.name, request.repositories,
+            groups = np.empty(len(request.teams), dtype=object)
+            group = np.empty(len(df_facts), dtype=np.uint8)
+            for i, group_by_filter in enumerate(
+                zip(
+                    group_by_repo(
+                        PullRequest.repository_full_name.name,
+                        [t.repositories for t in request.teams],
+                        df_facts,
+                    ),
+                    group_prs_by_participants([t.participants for t in request.teams], df_facts),
+                ),
+            ):
+                group[:] = 0
+                for g in group_by_filter:
+                    group[g] += 1
+                groups[i] = np.flatnonzero(group == len(group_by_filter))
+            groups = deduplicate_groups(
+                groups,
+                df_facts,
+                deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
+                deduplicate_mask=dedupe_mask,
             )
-            with_grouper = partial(group_prs_by_participants, request.participants)
             calc = PullRequestBinnedMetricCalculator(
                 request.metrics,
                 quantiles,
                 self._quantile_stride,
                 exclude_inactive=exclude_inactive,
-                environments=request.environments,
-            )
-
-            groups = group_to_indexes(
-                df_facts,
-                lines_grouper,
-                repo_grouper,
-                with_grouper,
-                deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
-                deduplicate_mask=dedupe_mask,
+                # environments=request.environments,
             )
             results.append(calc(df_facts, request.time_intervals, groups))
 
@@ -523,7 +537,7 @@ class MetricEntriesCalculator:
         :return: defs x lines x repositories x participants -> list[tuple[metric ID, Histogram]].
         """
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = _merge_participants(participants)
+        all_participants = self._merge_pr_participants(participants)
         try:
             calc = PullRequestBinnedHistogramCalculator(
                 defs.values(), quantiles, environments=[environment],
@@ -753,7 +767,7 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        all_participants = merge_release_participants(participants)
+        all_participants = self._merge_release_participants(participants)
         releases, _, matched_bys, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -775,7 +789,7 @@ class MetricEntriesCalculator:
             with_avatars=False,
             with_pr_titles=False,
         )
-        df_facts = df_from_structs([f for _, f in releases])
+        df_facts = df_from_structs((f for _, f in releases), length=len(releases))
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         dedupe_mask = calculate_logical_release_duplication_mask(
@@ -791,16 +805,24 @@ class MetricEntriesCalculator:
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
 
+    @staticmethod
+    def _merge_release_participants(
+        participants: Iterable[ReleaseParticipants],
+    ) -> ReleaseParticipants:
+        merged: dict[ReleaseParticipationKind, set[int]] = {}
+        for dikt in participants:
+            for k, v in dikt.items():
+                merged.setdefault(k, set()).update(v)
+        return {k: list(v) for k, v in merged.items()}
+
     @sentry_span
     @cached(
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda requests, quantiles, labels, jira, release_settings, logical_settings, **kwargs: (  # noqa
+        key=lambda requests, quantiles, release_settings, logical_settings, **kwargs: (
             ",".join(str(req) for req in requests),
             ",".join(str(q) for q in quantiles),
-            labels,
-            jira,
             release_settings,
             logical_settings,
         ),
@@ -808,10 +830,8 @@ class MetricEntriesCalculator:
     )
     async def batch_calc_release_metrics_line_github(
         self,
-        requests: Sequence[ReleaseMetricsLineRequest],
+        requests: Sequence[MetricsLineRequest],
         quantiles: Sequence[float],
-        labels: LabelFilter,
-        jira: JIRAFilter,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
@@ -825,15 +845,14 @@ class MetricEntriesCalculator:
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_release_metrics_line_github()` multiple times.
-
         """
         all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
         all_repositories = set(
-            chain.from_iterable(chain.from_iterable(request.repositories) for request in requests),
+            chain.from_iterable(t.repositories for request in requests for t in request.teams),
         )
-        all_participants = merge_release_participants(
-            chain.from_iterable(request.participants for request in requests),
+        all_participants = self._merge_release_participants(
+            t.participants for request in requests for t in request.teams
         )
         releases, _, _, _ = await mine_releases(
             all_repositories,
@@ -842,8 +861,8 @@ class MetricEntriesCalculator:
             default_branches,
             time_from,
             time_to,
-            labels,
-            jira,
+            LabelFilter.empty(),
+            JIRAFilter.empty(),  # should be possible to deduce from requests
             release_settings,
             logical_settings,
             prefixer,
@@ -856,25 +875,39 @@ class MetricEntriesCalculator:
             with_avatars=False,
             with_pr_titles=False,
         )
-        df_facts = df_from_structs([f for _, f in releases])
+        df_facts = df_from_structs((f for _, f in releases), length=len(releases))
 
         results = []
         for request in requests:
-            calc = ReleaseBinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
-            repo_grouper = partial(
-                group_by_repo, Release.repository_full_name.name, request.repositories,
-            )
-            participant_grouper = partial(group_releases_by_participants, request.participants)
+            groups = np.empty(len(request.teams), dtype=object)
+            group = np.empty(len(df_facts), dtype=np.uint8)
+            for i, group_by_filter in enumerate(
+                zip(
+                    group_by_repo(
+                        Release.repository_full_name.name,
+                        [t.repositories for t in request.teams],
+                        df_facts,
+                    ),
+                    group_releases_by_participants(
+                        [t.participants for t in request.teams],
+                        df_facts,
+                    ),
+                ),
+            ):
+                group[:] = 0
+                for g in group_by_filter:
+                    group[g] += 1
+                groups[i] = np.flatnonzero(group == len(group_by_filter))
             dedupe_mask = calculate_logical_release_duplication_mask(
                 df_facts, release_settings, logical_settings,
             )
-            groups = group_to_indexes(
+            groups = deduplicate_groups(
+                groups,
                 df_facts,
-                participant_grouper,
-                repo_grouper,
                 deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
                 deduplicate_mask=dedupe_mask,
             )
+            calc = ReleaseBinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
             results.append(calc(df_facts, request.time_intervals, groups))
 
         return results
@@ -1150,7 +1183,7 @@ class MetricEntriesCalculator:
                  2. Labels by which we grouped the issues.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        reporters, assignees, commenters = self._compile_jira_participants(participants)
+        reporters, assignees, commenters = self._merge_jira_participants(participants)
         issues = await fetch_jira_issues(
             jira_ids,
             time_from,
@@ -1185,14 +1218,9 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda requests, quantiles, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+        key=lambda requests, quantiles, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
             ",".join(str(req) for req in requests),
             ",".join(str(q) for q in quantiles),
-            label_filter,
-            split_by_label,
-            ",".join(sorted(priorities)),
-            ",".join(sorted(types)),
-            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
             exclude_inactive,
             release_settings,
             logical_settings,
@@ -1201,41 +1229,39 @@ class MetricEntriesCalculator:
     )
     async def batch_calc_jira_metrics_line_github(
         self,
-        requests: Sequence[JIRAMetricsLineRequest],
+        requests: Sequence[MetricsLineRequest],
         quantiles: Sequence[float],
-        label_filter: LabelFilter,
-        split_by_label: bool,
-        priorities: Collection[str],
-        types: Collection[str],
-        epics: Collection[str] | bool,
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
     ) -> Sequence[np.ndarray]:
-        """Execute a set of requests for jira metrics.
+        """
+        Execute a set of requests for jira metrics.
 
         A numpy array is returned for every request in `requests`.  The numpy array has the same
         format as the first item returned by `calc_jira_metrics_line_github()`.
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_jira_metrics_line_github()` multiple times.
-
         """
         all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
-        all_participants = list(chain.from_iterable(req.participants for req in requests))
-        reporters, assignees, commenters = self._compile_jira_participants(all_participants)
+        reporters, assignees, commenters = self._merge_jira_participants(
+            [t.participants for request in requests for t in request.teams],
+        )
+        assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
             jira_ids,
             time_from,
             time_to,
             exclude_inactive,
-            label_filter,
-            priorities,
-            types,
-            epics,
+            LabelFilter.empty(),
+            # we can deduce the common superset from requests if possible
+            [],
+            [],
+            [],
             reporters,
             assignees,
             commenters,
@@ -1248,15 +1274,16 @@ class MetricEntriesCalculator:
             self._mdb,
             self._pdb,
             self._cache,
-            extra_columns=participant_columns if len(all_participants) > 1 else (),
+            extra_columns=participant_columns,
         )
-        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
 
         results = []
         for request in requests:
             calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
-            groupers = partial(split_issues_by_participants, request.participants), label_splitter
-            groups = group_to_indexes(issues, *groupers)
+            groups = group_to_indexes(
+                issues,
+                partial(split_issues_by_participants, [t.participants for t in request.teams]),
+            )
             results.append(calc(issues, request.time_intervals, groups))
 
         return results
@@ -1304,7 +1331,7 @@ class MetricEntriesCalculator:
         jira_ids: Optional[JIRAConfig],
     ) -> np.ndarray:
         """Calculate histograms over JIRA issues."""
-        reporters, assignees, commenters = self._compile_jira_participants(participants)
+        reporters, assignees, commenters = self._merge_jira_participants(participants)
         issues = await fetch_jira_issues(
             jira_ids,
             time_from,
@@ -1336,8 +1363,8 @@ class MetricEntriesCalculator:
         return calc(issues, [[time_from, time_to]], with_groups, defs)
 
     @staticmethod
-    def _compile_jira_participants(
-        participants: list[JIRAParticipants],
+    def _merge_jira_participants(
+        participants: Collection[JIRAParticipants],
     ) -> tuple[Collection[str], Collection[str], Collection[str]]:
         reporters = list(
             set(
@@ -1773,15 +1800,6 @@ class MetricEntriesCalculator:
         return all_facts_df, with_jira_map
 
 
-def _merge_participants(participants: Sequence[PRParticipants]) -> PRParticipants:
-    all_participants = {}
-    if participants:
-        for k in PRParticipationKind:
-            if kp := reduce(lambda x, y: x.union(y), [p.get(k, set()) for p in participants]):
-                all_participants[k] = kp
-    return all_participants
-
-
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
     return ",".join(str(sorted(r)) for r in repositories)
 
@@ -1811,96 +1829,40 @@ def make_calculator(
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MetricsLineRequest:
-    """Common base for multiple metrics request classess."""
+    """Common base for multiple metrics request classes."""
 
     metrics: Sequence[str]
     time_intervals: Sequence[Sequence[datetime]]
+    teams: Sequence[TeamSpecificFilters]
+
+    def __str__(self) -> str:
+        """Summarize the request."""
+        return (
+            f"<[{', '.join(self.metrics)}],"
+            f" [{', '.join('[%s]' % ', '.join(str(d) for d in s) for s in self.time_intervals)}],"
+            f" [{', '.join(str(f) for f in self.teams)}]>"
+        )
+
+    def __sentry_repr__(self) -> str:
+        """Format for Sentry reports."""
+        return str(self)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class PullRequestMetricsLineRequest(MetricsLineRequest):
-    """Information for a single pull request metrics request."""
+class TeamSpecificFilters:
+    """Filters that are different for each team."""
 
-    lines: Sequence[int]
-    environments: Sequence[str]
-    repositories: Sequence[Collection[str]]
-    participants: list[PRParticipants]
-
-    def __str__(self) -> str:
-        """Return the string representation of the object.
-
-        Representations are equals if and only if objects are equals.
-        """
-        components = ",".join(
-            (
-                ";".join(self.metrics),
-                ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
-                ",".join(str(n) for n in self.lines),
-                ",".join(sorted(self.environments)),
-                _compose_cache_key_repositories(self.repositories),
-                _compose_cache_key_participants(self.participants),
-            ),
-        )
-        return f"[{components}]"
-
-    def __sentry_repr__(self) -> str:
-        """Return the sentry string representation of the object."""
-        return "\n".join(
-            f"{f.name}[{len(getattr(self, f.name))}]" for f in dataclasses.fields(self)
-        )
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ReleaseMetricsLineRequest(MetricsLineRequest):
-    """Information for a single release metrics request."""
-
-    repositories: Sequence[Collection[str]]
-    participants: list[ReleaseParticipants]
+    team_id: int
+    repositories: Sequence[str]
+    participants: PRParticipants | ReleaseParticipants | JIRAParticipants
 
     def __str__(self) -> str:
-        """Return the string representation of the object.
+        """Format the filters as a stable string."""
+        # participants are fully defined by the team ID
+        return f"{self.team_id}|{','.join(self.repositories)}"
 
-        Representations are equals if and only if objects are equals.
-        """
-        components = ",".join(
-            (
-                ";".join(self.metrics),
-                ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
-                _compose_cache_key_repositories(self.repositories),
-                _compose_cache_key_participants(self.participants),
-            ),
-        )
-        return f"[{components}]"
-
-    def __sentry_repr__(self) -> str:
-        """Return the sentry string representation of the object."""
-        return "\n".join(
-            f"{f.name}[{len(getattr(self, f.name))}]" for f in dataclasses.fields(self)
-        )
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class JIRAMetricsLineRequest(MetricsLineRequest):
-    """Information for a single jira metrics request."""
-
-    participants: list[JIRAParticipants]
-
-    def __str__(self) -> str:
-        """Return the string representation of the object.
-
-        Representations are equals if and only if objects are equals.
-        """
-        components = ",".join(
-            (
-                ";".join(self.metrics),
-                ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
-                _compose_cache_key_participants(self.participants),
-            ),
-        )
-        return f"[{components}]"
-
-    def __sentry_repr__(self) -> str:
-        """Return the sentry string representation of the object."""
-        return "\n".join(
-            f"{f.name}[{len(getattr(self, f.name))}]" for f in dataclasses.fields(self)
-        )
+    def __sentry_repr__(self):
+        """Format for Sentry."""
+        dikt = dataclasses.asdict(self)
+        del dikt["participants"]  # fully defined by the team ID
+        return str(dikt)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, Optional, Sequence
 
 from ariadne import MutationType
@@ -14,6 +15,7 @@ from athenian.api.align.goals.dbaccess import (
     assign_team_goals,
     delete_goal,
     delete_team_goals,
+    fetch_goal,
     insert_goal,
     update_goal,
 )
@@ -28,6 +30,7 @@ from athenian.api.align.models import (
     UpdateRepositoriesInputFields,
 )
 from athenian.api.ariadne import ariadne_disable_default_user
+from athenian.api.async_utils import gather
 from athenian.api.controllers.goal_controller import parse_request_repositories
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
@@ -84,8 +87,13 @@ async def resolve_update_goal(
     input: dict,
 ) -> dict:
     """Update an existing Goal."""
-    update = await _parse_update_goal_input(input, info.context, accountId)
     goal_id = input[UpdateGoalInputFields.goalId]
+    update, goal = await gather(
+        _parse_update_goal_input(input, info.context, accountId),
+        fetch_goal(accountId, goal_id, info.context.sdb),
+    )
+    if goal is None:
+        raise GoalMutationError(f"Goal {goal_id} not found or access denied", HTTPStatus.NOT_FOUND)
     result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
     async with info.context.sdb.connection() as sdb_conn:

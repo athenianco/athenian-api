@@ -21,7 +21,6 @@ async def main(
     With partition argument accounts are returned in two groups:
     - never precomputed accounts ("fresh" group)
     - already precomputed accounts ("precomputed" group)
-
     """
     log, sdb = context.log, context.sdb
 

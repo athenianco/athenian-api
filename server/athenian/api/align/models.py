@@ -120,7 +120,6 @@ class TeamTree(Model):
         """Return a copy of the object with children property replaced.
 
         Properties depending from `children` retain the original value of the object.
-
         """
         copy = self.copy()
         copy._children = children
@@ -328,6 +327,7 @@ class MetricParamsFields(metaclass=Enum):
 
     teamId = "teamId"
     metrics = "metrics"
+    repositories = "repositories"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
 

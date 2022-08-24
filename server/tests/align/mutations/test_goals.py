@@ -626,7 +626,7 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
             },
         }
         res = await self._request(variables)
-        assert_extension_error(res, "TeamGoal-s to remove not found for teams: 10")
+        assert_extension_error(res, "Goal 100 not found or access denied")
         await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=100)
 
     async def test_goal_account_mismatch(self, sdb: Database) -> None:
@@ -643,7 +643,7 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
             },
         }
         res = await self._request(variables)
-        assert_extension_error(res, "Goal 100 doesn't exist or access denied")
+        assert_extension_error(res, "Goal 100 not found or access denied")
 
     async def test_assign_team_account_mismatch(self, sdb: Database) -> None:
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10, owner_id=2))
