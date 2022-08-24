@@ -17,7 +17,7 @@ def get_extension_error_obj(response: dict) -> dict:
 
 def assert_extension_error(response: dict, error: str) -> None:
     """Check the first extension error of the graphql response."""
-    assert get_extension_error_obj(response)["detail"] == error
+    assert error in get_extension_error_obj(response)["detail"]
 
 
 def build_recursive_fields_structure(
