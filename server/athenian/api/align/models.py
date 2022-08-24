@@ -285,6 +285,7 @@ class CreateGoalInputFields(metaclass=Enum):
 
     name = "name"
     metric = "metric"
+    repositories = "repositories"
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
@@ -297,12 +298,21 @@ class TeamGoalInputFields(metaclass=Enum):
     target = "target"
 
 
+class UpdateRepositoriesInputFields(metaclass=Enum):
+    """Fields of the input to update Goal's repositories."""
+
+    value = "value"
+
+
 class UpdateGoalInputFields(metaclass=Enum):
     """Fields definitions for GraphQL UpdateGoalInput type."""
 
     goalId = "goalId"
     archived = "archived"
     teamGoalChanges = "teamGoalChanges"
+    repositories = "repositories"
+    name = "name"
+    metric = "metric"
 
 
 class TeamGoalChangeFields(metaclass=Enum):

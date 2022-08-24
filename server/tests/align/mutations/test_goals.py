@@ -11,6 +11,7 @@ from athenian.api.align.models import (
     TeamGoalChangeFields,
     TeamGoalInputFields,
     UpdateGoalInputFields,
+    UpdateRepositoriesInputFields,
 )
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
@@ -79,7 +80,6 @@ class BaseCreateGoalTest(BaseGoalTest):
             goal {
               id
             }
-            errors
           }
         }
     """
@@ -248,9 +248,32 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
         assert (await count(sdb, Goal, Goal.account_id == 1)) == 1
 
+    async def test_bad_repositories(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(owner_id=1, id=10),
+        )
+        variables = {
+            "createGoalInput": self._mk_input(
+                teamGoals=[
+                    {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+                ],
+                repositories=["github.com/athenianco/xxx"],
+            ),
+            "accountId": 1,
+        }
+        res = await self._request(variables)
+        assert "repository" in res["errors"][0]["extensions"]["detail"]
+        await self._assert_no_goal_exists(sdb)
+
 
 class TestCreateGoals(BaseCreateGoalTest):
-    async def test_create_single_team_goal(self, sdb: Database) -> None:
+    @pytest.mark.parametrize("repos", [None, ["github.com/src-d/go-git/alpha"]])
+    async def test_create_single_team_goal(
+        self,
+        sdb: Database,
+        repos: Optional[list[str]],
+    ) -> None:
         await models_insert(
             sdb,
             TeamFactory(owner_id=1, id=10),
@@ -262,6 +285,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             "createGoalInput": self._mk_input(
                 name="G0",
                 metric=PullRequestMetricID.PR_COMMENTS_PER,
+                repositories=repos,
                 validFrom="2022-01-01",
                 expiresAt="2022-12-31",
                 teamGoals=team_goals,
@@ -291,6 +315,11 @@ class TestCreateGoals(BaseCreateGoalTest):
             2023, 1, 1, tzinfo=timezone.utc,
         )
 
+        if repos is None:
+            assert goal_row[Goal.repositories.name] is None
+        else:
+            assert goal_row[Goal.repositories.name] == [[40550, "alpha"]]
+
         await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10, target=42)
 
     async def test_create_multiple_team_goals(self, sdb: Database) -> None:
@@ -310,7 +339,6 @@ class TestCreateGoals(BaseCreateGoalTest):
         }
         res = await self._request(variables)
         assert "errors" not in res
-        assert res["data"]["createGoal"]["errors"] is None
 
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
@@ -702,6 +730,22 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
 
         await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20)
 
+    async def test_bad_repositories(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100))
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.repositories: {
+                    UpdateRepositoriesInputFields.value: ["github.com/athenianco/xxx"],
+                },
+            },
+        }
+        res = await self._request(variables)
+        assert_extension_error(res, "repository")
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] is None
+
 
 class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_no_team_goal_changes(self, sdb: Database) -> None:
@@ -804,3 +848,52 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         res = await self._request(variables)
         assert "errors" not in res
         await assert_existing_row(sdb, Goal, id=100, archived=True)
+
+    async def test_update_name(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100, archived=False))
+        variables = {
+            "accountId": 1,
+            "input": {UpdateGoalInputFields.goalId: 100, UpdateGoalInputFields.name: "Vadim"},
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        await assert_existing_row(sdb, Goal, id=100, name="Vadim")
+
+    async def test_update_repositories(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100))
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.repositories: {
+                    UpdateRepositoriesInputFields.value: ["github.com/src-d/go-git"],
+                },
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, None]]
+
+        variables = {
+            "accountId": 1,
+            "input": {UpdateGoalInputFields.goalId: 100},
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, None]]
+
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.repositories: {
+                    UpdateRepositoriesInputFields.value: None,
+                },
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] is None

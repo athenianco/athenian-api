@@ -25,10 +25,13 @@ from athenian.api.align.models import (
     TeamGoalChangeFields,
     TeamGoalInputFields,
     UpdateGoalInputFields,
+    UpdateRepositoriesInputFields,
 )
 from athenian.api.ariadne import ariadne_disable_default_user
+from athenian.api.controllers.goal_controller import parse_request_repositories
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
+from athenian.api.request import AthenianWebRequest
 from athenian.api.tracing import sentry_span
 
 mutation = MutationType()
@@ -44,7 +47,7 @@ async def resolve_create_goal(
     input: dict[str, Any],
 ) -> dict[str, Any]:
     """Create a Goal."""
-    creation_info = await _parse_create_goal_input(input, accountId)
+    creation_info = await _parse_create_goal_input(input, info.context, accountId)
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -81,23 +84,27 @@ async def resolve_update_goal(
     input: dict,
 ) -> dict:
     """Update an existing Goal."""
-    update = _parse_update_goal_input(input)
+    update = await _parse_update_goal_input(input, info.context, accountId)
     goal_id = input[UpdateGoalInputFields.goalId]
     result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
-    deletions = update.team_goal_deletions
-    assignments = update.team_goal_assignments
-    if not deletions and not assignments and update.archived is None:
-        return result
-
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            if deletions:
+            if deletions := update.team_goal_deletions:
                 await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
-            if assignments:
+            if assignments := update.team_goal_assignments:
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
+            kw = {}
+            if update.repositories is not None:
+                kw[Goal.repositories.name] = (
+                    None if update.repositories.remove else update.repositories.value
+                )
             if update.archived is not None:
-                await update_goal(accountId, goal_id, sdb_conn, archived=update.archived)
+                kw[Goal.archived.name] = update.archived
+            if update.name is not None:
+                kw[Goal.name.name] = update.name
+            if kw:
+                await update_goal(accountId, goal_id, sdb_conn, **kw)
 
     return result
 
@@ -109,7 +116,11 @@ def validate_goal_metric(value: str) -> None:
 
 
 @sentry_span
-async def _parse_create_goal_input(input: dict[str, Any], account: int) -> GoalCreationInfo:
+async def _parse_create_goal_input(
+    input: dict[str, Any],
+    request: AthenianWebRequest,
+    account_id: int,
+) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     validate_goal_metric(input[CreateGoalInputFields.metric])
 
@@ -128,10 +139,15 @@ async def _parse_create_goal_input(input: dict[str, Any], account: int) -> GoalC
     if expires_at < valid_from:
         raise GoalMutationError("Goal expiresAt cannot precede validFrom")
 
+    repositories = await parse_request_repositories(
+        input.get(CreateGoalInputFields.repositories), request, account_id,
+    )
+
     goal = Goal(
-        account_id=account,
+        account_id=account_id,
         name=input[CreateGoalInputFields.name],
         metric=input[CreateGoalInputFields.metric],
+        repositories=repositories,
         valid_from=valid_from,
         expires_at=expires_at,
     )
@@ -155,17 +171,32 @@ def _parse_team_goal_target(team_goal_target: dict) -> int | float | str:
     return next(tgt for tgt in team_goal_target.values() if tgt is not None)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class RepositoriesUpdateInfo:
+    """The information to update the repositories filter in a goal."""
+
+    value: list[tuple[int, str]]
+    remove: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GoalUpdateInfo:
     """The information to update an existing Goal."""
 
     team_goal_deletions: Sequence[int]
     team_goal_assignments: Sequence[TeamGoalTargetAssignment]
     archived: Optional[bool]
+    name: Optional[str]
+    metric: Optional[str]
+    repositories: Optional[RepositoriesUpdateInfo]
 
 
 @sentry_span
-def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
+async def _parse_update_goal_input(
+    input: dict[str, Any],
+    request: AthenianWebRequest,
+    account_id: int,
+) -> GoalUpdateInfo:
     deletions = []
     assignments = []
 
@@ -208,4 +239,19 @@ def _parse_update_goal_input(input: dict[str, Any]) -> GoalUpdateInfo:
     if errors:
         raise GoalMutationError("; ".join(errors))
 
-    return GoalUpdateInfo(deletions, assignments, input.get("archived"))
+    if (repositories := input.get(UpdateGoalInputFields.repositories)) is not None:
+        if (value := repositories[UpdateRepositoriesInputFields.value]) is None:
+            repositories = RepositoriesUpdateInfo([], True)
+        else:
+            repositories = RepositoriesUpdateInfo(
+                await parse_request_repositories(value, request, account_id), False,
+            )
+
+    return GoalUpdateInfo(
+        team_goal_deletions=deletions,
+        team_goal_assignments=assignments,
+        archived=input.get(UpdateGoalInputFields.archived),
+        name=input.get(UpdateGoalInputFields.name),
+        metric=input.get(UpdateGoalInputFields.metric),
+        repositories=repositories,
+    )

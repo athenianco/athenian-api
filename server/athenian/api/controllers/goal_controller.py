@@ -88,7 +88,7 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     create_request = GoalTemplateCreateRequest.from_dict(body)
     await get_user_account_status_from_request(request, create_request.account)
 
-    repositories = await _parse_request_repositories(
+    repositories = await parse_request_repositories(
         create_request.repositories, request, create_request.account,
     )
     values = {
@@ -139,7 +139,7 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
         )
     except ResponseError:
         raise GoalTemplateNotFoundError(id) from None
-    repositories = await _parse_request_repositories(
+    repositories = await parse_request_repositories(
         update_request.repositories, request, account_id,
     )
     values = {
@@ -151,11 +151,12 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     return web.json_response({})
 
 
-async def _parse_request_repositories(
+async def parse_request_repositories(
     repo_names: Optional[list[str]],
     request: AthenianWebRequest,
     account_id: int,
 ) -> Optional[list[tuple[int, str]]]:
+    """Resolve repository node IDs from the prefixed names."""
     if repo_names is None:
         return None
     prefixer = await Prefixer.from_request(request, account_id)
