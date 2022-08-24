@@ -2,7 +2,7 @@ from bisect import bisect_left, bisect_right
 from datetime import datetime, timezone
 import logging
 import re
-from typing import Optional, Sequence, Tuple
+from typing import Coroutine, Iterable, Optional, Sequence, Tuple
 
 from aiohttp import web
 from morcilla import Connection
@@ -72,6 +72,7 @@ from athenian.api.models.web import (
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
+from athenian.api.tracing import sentry_span
 
 
 async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
@@ -619,10 +620,12 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                     )
 
         else:
-            # new logical repo invalidates logical deployments
-            await _clean_logical_deployments(
-                [repo], web_model.account, request.pdb, op="_clean_logical_deployments/sql",
-            )
+            # new logical repo invalidates logical deployments and physical repository
+            tasks = list(
+                _schedule_pdb_reset_for_logical_repo(repo, web_model.account, request.pdb),
+            ) + [_clean_logical_deployments([repo], web_model.account, request.pdb)]
+            await gather(*tasks, op="_clean_physical_repository")
+
         async with sdb_conn.transaction():
             settings._sdb = sdb_conn
             # create the logical repository setting
@@ -712,6 +715,7 @@ async def _delete_logical_repository(
     sdb: DatabaseLike,
     pdb: Database,
 ) -> None:
+    @sentry_span
     async def clean_repository_sets():
         rows = await sdb.fetch_all(
             select([RepositorySet]).where(RepositorySet.owner_id == account),
@@ -752,8 +756,21 @@ async def _delete_logical_repository(
             ),
         ),
         clean_repository_sets(),
+        *_schedule_pdb_reset_for_logical_repo(full_name, account, pdb),
     ]
+    await gather(*tasks, op="_delete_logical_repository")
+
+
+def _schedule_pdb_reset_for_logical_repo(
+    full_name: str,
+    account: int,
+    pdb: Database,
+) -> Iterable[Coroutine]:
     physical_repo = drop_logical_repo(full_name)
+    if physical_repo == full_name:
+        repos = [full_name]
+    else:
+        repos = [physical_repo, full_name]
     for model in (
         GitHubDonePullRequestFacts,
         GitHubMergedPullRequestFacts,
@@ -762,25 +779,16 @@ async def _delete_logical_repository(
         GitHubReleaseFacts,
         GitHubReleaseMatchTimespan,
     ):
-        tasks.append(
-            pdb.execute(
-                delete(model).where(
-                    and_(
-                        model.acc_id == account,
-                        model.repository_full_name.in_([full_name, physical_repo]),
-                    ),
-                ),
-            ),
+        yield pdb.execute(
+            delete(model).where(model.acc_id == account, model.repository_full_name.in_(repos)),
         )
-    clean_deployments_coro = _clean_logical_deployments([full_name, physical_repo], account, pdb)
-    await gather(*tasks, clean_deployments_coro, op="_delete_logical_repository/sql")
+    yield _clean_logical_deployments(repos, account, pdb)
 
 
 async def _clean_logical_deployments(
     repos: Sequence[str],
     account: int,
     pdb: DatabaseLike,
-    op: str = None,
 ) -> None:
     """Delete all deployments info about `repos` from pdb."""
     deployment_models = (
@@ -818,7 +826,7 @@ async def _clean_logical_deployments(
             ),
         )
         tasks.append(pdb.execute(facts_delete_stmt))
-    await gather(*tasks, op=op)
+    await gather(*tasks, op="_clean_logical_deployments/sql")
 
 
 @only_admin
