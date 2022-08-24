@@ -7,12 +7,15 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     contains_logical_repos,
     drop_logical_repo,
 )
-from athenian.api.internal.settings import ReleaseMatch, Settings
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, Settings
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import (
     GitHubDeploymentFacts,
     GitHubDonePullRequestFacts,
@@ -1439,18 +1442,71 @@ async def test_delete_logical_repository_nasty_input(
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-async def test_set_logical_repository_smoke(client, headers, sdb):
+@pytest.mark.parametrize("with_precomputed_reset_check", [False, True])
+@with_defer
+async def test_set_logical_repository_smoke(
+    client,
+    headers,
+    metrics_calculator_factory,
+    sdb,
+    mdb,
+    bots,
+    release_match_setting_tag,
+    prefixer,
+    with_precomputed_reset_check,
+):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    if with_precomputed_reset_check:
+        await metrics_calculator_no_cache.calc_pull_request_facts_github(
+            time_from,
+            time_to,
+            {"src-d/go-git"},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            False,
+            False,
+        )
+        await wait_deferred()
     await _test_set_logical_repository(client, headers, sdb, 1)
+    settings = Settings.from_account(1, sdb, mdb, None, None)
+    df_post = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        time_from,
+        time_to,
+        {"src-d/go-git", "src-d/go-git/alpha"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        await settings.list_release_matches(),
+        await settings.list_logical_repositories(prefixer),
+        prefixer,
+        False,
+        False,
+    )
+    assert (
+        df_post[PullRequest.repository_full_name.name].values == "src-d/go-git/alpha"
+    ).sum() == 90
 
 
 async def _test_set_logical_repository(client, headers, sdb, n):
+    title = "[Ff]ix.*"
+    labels = ["bug", "fix", "plumbing", "enhancement"]
     body = {
         "account": 1,
         "name": "alpha",
         "parent": "github.com/src-d/go-git",
         "prs": {
-            "title": ".*[Aa]argh",
-            "labels_include": ["bug", "fix"],
+            "title": title,
+            "labels_include": labels,
         },
         "releases": {
             "branches": "master",
@@ -1472,8 +1528,8 @@ async def _test_set_logical_repository(client, headers, sdb, n):
     assert len(rows) == n
     assert rows[0][LogicalRepository.name.name] == "alpha"
     assert rows[0][LogicalRepository.prs.name] == {
-        "title": ".*[Aa]argh",
-        "labels": ["bug", "fix"],
+        "title": title,
+        "labels": labels,
     }
     row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name][:3] == [
