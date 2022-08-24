@@ -2,7 +2,18 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import (
+    Collection,
+    Dict,
+    Iterable,
+    KeysView,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import aiomcache
 import numpy as np
@@ -47,6 +58,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import in1d_str
 
 
 class FilterCommitsProperty(Enum):
@@ -168,7 +180,16 @@ async def extract_commits(
     tasks = [
         commits_task,
         fetch_repository_commits_from_scratch(
-            repos, branch_miner, True, prefixer, account, meta_ids, mdb, pdb, cache,
+            repos,
+            branch_miner,
+            only_default_branch,
+            True,
+            prefixer,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            cache,
         ),
     ]
     commits, (dags, branches, default_branches) = await gather(*tasks, op="extract_commits/fetch")
@@ -445,6 +466,7 @@ async def fetch_repository_commits_no_branch_dates(
 async def fetch_repository_commits_from_scratch(
     repos: Iterable[str],
     branch_miner: BranchMiner,
+    only_default_branch: bool,
     prune: bool,
     prefixer: Prefixer,
     account: int,
@@ -463,6 +485,18 @@ async def fetch_repository_commits_from_scratch(
         branch_miner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     )
+    if only_default_branch:
+        branch_index = np.char.add(
+            branches[Branch.repository_full_name.name].values.astype("U"),
+            branches[Branch.branch_name.name].values.astype("U"),
+        )
+        if isinstance(repos, (set, frozenset, KeysView)):
+            repos = list(repos)
+        default_set = np.char.add(
+            np.array(repos, dtype="U"),
+            np.array([defaults.get(r) for r in repos], dtype="U"),
+        )
+        branches = branches.take(np.flatnonzero(in1d_str(branch_index, default_set)))
     dags = await fetch_repository_commits_no_branch_dates(
         pdags, branches, BRANCH_FETCH_COMMITS_COLUMNS, prune, account, meta_ids, mdb, pdb, cache,
     )
