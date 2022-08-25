@@ -130,6 +130,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             title=kwargs["title"],
                             author_id=kwargs["user_node_id"],
                             merged=kwargs["merged"],
+                            merged_by_id=kwargs["merged_by_id"],
                             merged_at=kwargs["merged_at"],
                             merge_commit_id=kwargs["merge_commit_id"],
                             additions=kwargs["additions"],

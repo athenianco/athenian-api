@@ -19,7 +19,7 @@ from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import (
-    PullRequest,
+    NodePullRequest,
     PullRequestComment,
     PullRequestLabel,
     PullRequestReview,
@@ -88,22 +88,18 @@ def _filter_by_labels(
     if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
         filters.append(
             exists().where(
-                and_(
-                    PullRequestLabel.acc_id == other_model_acc_id,
-                    PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
-                    func.lower(PullRequestLabel.name).in_(all_in_labels),
-                ),
+                PullRequestLabel.acc_id == other_model_acc_id,
+                PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
+                func.lower(PullRequestLabel.name).in_(all_in_labels),
             ),
         )
     if labels.exclude:
         filters.append(
             not_(
                 exists().where(
-                    and_(
-                        PullRequestLabel.acc_id == other_model_acc_id,
-                        PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
-                        func.lower(PullRequestLabel.name).in_(labels.exclude),
-                    ),
+                    PullRequestLabel.acc_id == other_model_acc_id,
+                    PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
+                    func.lower(PullRequestLabel.name).in_(labels.exclude),
                 ),
             ),
         )
@@ -196,25 +192,41 @@ async def _mine_prs(
 ) -> pd.DataFrame:
     selected = [
         attr_user.label(developer_identity_column),
-        PullRequest.repository_node_id.label(developer_repository_column),
+        NodePullRequest.repository_id.label(developer_repository_column),
         attr_filter,
     ]
     filters = [
         attr_filter.between(time_from, time_to),
         attr_user.in_(dev_ids),
-        PullRequest.repository_node_id.in_(repo_ids),
-        PullRequest.acc_id.in_(meta_ids),
+        NodePullRequest.repository_id.in_(repo_ids),
+        NodePullRequest.acc_id.in_(meta_ids),
     ]
     if labels:
-        _filter_by_labels(PullRequest.acc_id, PullRequest.node_id, labels, filters)
+        _filter_by_labels(NodePullRequest.acc_id, NodePullRequest.node_id, labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, None, mdb, cache, columns=selected, seed=PullRequest,
+                filters,
+                jira,
+                None,
+                mdb,
+                cache,
+                columns=selected,
+                seed=NodePullRequest,
+                on=(NodePullRequest.node_id, NodePullRequest.acc_id),
             )
         else:
             query = select(selected).where(and_(*filters))
     elif jira:
-        query = await generate_jira_prs_query(filters, jira, None, mdb, cache, columns=selected)
+        query = await generate_jira_prs_query(
+            filters,
+            jira,
+            None,
+            mdb,
+            cache,
+            columns=selected,
+            seed=NodePullRequest,
+            on=(NodePullRequest.node_id, NodePullRequest.acc_id),
+        )
     else:
         query = select(selected).where(and_(*filters))
         for hint in hints:
@@ -225,13 +237,13 @@ async def _mine_prs(
 @sentry_span
 async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
     return await _mine_prs(
-        PullRequest.user_node_id,
-        PullRequest.created_at,
+        NodePullRequest.user_node_id,
+        NodePullRequest.created_at,
         *args,
         **kwargs,
         hints=[
-            "IndexOnlyScan(pr github_node_pull_request_author_created)",
-            "Rows(pr repo *100)",
+            f"IndexOnlyScan({NodePullRequest.__tablename__} "
+            "github_node_pull_request_author_created)",
         ],
     )
 
@@ -239,13 +251,13 @@ async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
 @sentry_span
 async def _mine_prs_merged(*args, **kwargs) -> pd.DataFrame:
     return await _mine_prs(
-        PullRequest.merged_by_id,
-        PullRequest.merged_at,
+        NodePullRequest.merged_by_id,
+        NodePullRequest.merged_at,
         *args,
         **kwargs,
         hints=[
-            "IndexOnlyScan(pr github_node_pull_request_author_merge_cover)",
-            "Rows(pr repo *100)",
+            f"IndexOnlyScan({NodePullRequest.__tablename__} "
+            "github_node_pull_request_author_merge_cover)",
         ],
     )
 
