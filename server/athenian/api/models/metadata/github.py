@@ -390,6 +390,7 @@ class NodePullRequest(
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
     merged_at = Column(TIMESTAMP(timezone=True))
+    merged_by_id = Column(BigInteger, info={"reset_nulls": True})
     merge_commit_id = Column(BigInteger)
     number = Column(BigInteger, nullable=False)
     repository_id = Column(BigInteger, nullable=False)
