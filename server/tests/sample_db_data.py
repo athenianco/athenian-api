@@ -121,12 +121,6 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             for k, p in zip(keys, vals):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
-                # FIXME(vmarkovtsev): remove these when the rest of the code is updated DEV-3537
-                if table == "github.node_reviewrequestedevent":
-                    kwargs["requested_reviewer_id"] = kwargs["requested_reviewer_id"] or 0
-                for key, val in kwargs.items():
-                    if key.endswith("_user_id") or key == "user_node_id":
-                        kwargs[key] = val or 0
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(

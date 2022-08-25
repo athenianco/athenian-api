@@ -68,7 +68,7 @@ class UpdatedMixin:
 
 
 class UserMixin:
-    user_node_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    user_node_id = Column(BigInteger, info={"reset_nulls": True})
     user_login = Column(Text, info={"dtype": "U40"})
 
 
@@ -181,11 +181,11 @@ class PullRequestCommit(
     sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     commit_node_id = Column(BigInteger, nullable=False)
     author_login = Column(Text, info={"dtype": "U40"})
-    author_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    author_user_id = Column(BigInteger, info={"reset_nulls": True})
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committer_login = Column(Text, info={"dtype": "U40"})
-    committer_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    committer_user_id = Column(BigInteger, info={"reset_nulls": True})
     commit_date = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = synonym("committed_date")
@@ -234,8 +234,8 @@ class PullRequestReviewRequest(
     created_at = Column(TIMESTAMP(timezone=True))
     pull_request_id = Column(BigInteger, nullable=False)
     pull_request_node_id = synonym("pull_request_id")
-    # DEV-4315
-    requested_reviewer_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
+    # cannot set nullable=False DEV-4315
+    requested_reviewer_id = Column(BigInteger, info={"erase_nulls": True})
 
 
 class PullRequest(
@@ -302,7 +302,6 @@ class Repository(
 
     archived = Column(Boolean)
     description = Column(Text)
-    disabled = Column(Boolean)
     fork = Column(Boolean)
     full_name = Column(Text, nullable=False)
     html_url = Column(Text, nullable=False)
@@ -551,7 +550,7 @@ class CommonCheckRunMixin(RepositoryMixin):
     acc_id = Column(BigInteger)
     commit_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
-    author_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    author_user_id = Column(BigInteger, info={"reset_nulls": True})
     author_login = Column(Text, info={"dtype": "U40"})
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)

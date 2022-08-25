@@ -261,12 +261,8 @@ async def mine_repositories(
         physical_repos = await mdb.fetch_all(
             select([Repository.full_name])
             .where(
-                and_(
-                    Repository.archived.is_(False),
-                    Repository.disabled.is_(False),
-                    Repository.full_name.in_(repos),
-                    Repository.acc_id.in_(meta_ids),
-                ),
+                Repository.full_name.in_(repos),
+                Repository.acc_id.in_(meta_ids),
             )
             .order_by(Repository.full_name),
         )
