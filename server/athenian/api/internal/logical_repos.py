@@ -1,14 +1,11 @@
 from typing import Iterable
 
+from athenian.api.internal.logical_accelerated import drop_logical_repo
+
 
 def is_logical_repo(repo: str) -> bool:
     """Return the value indicating whether the repository name is logical."""
     return repo.count("/") > 1
-
-
-def drop_logical_repo(repo: str) -> str:
-    """Remove the logical part of the repository name."""
-    return "/".join(repo.split("/", 2)[:2])
 
 
 def drop_prefixed_logical_repo(repo: str) -> str:

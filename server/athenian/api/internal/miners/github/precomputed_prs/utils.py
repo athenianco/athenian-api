@@ -136,6 +136,12 @@ def extract_release_match(
     )
 
 
+# performance optimization
+rejected_name = ReleaseMatch.rejected.name
+force_push_drop_name = ReleaseMatch.force_push_drop.name
+release_match_name_to_enum = {obj.name: obj for obj in ReleaseMatch}
+
+
 def triage_by_release_match(
     repo: str,
     release_match: str,
@@ -146,15 +152,18 @@ def triage_by_release_match(
 ) -> Optional[Any]:
     """Check the release match of the specified `repo` and return `None` if it is not effective \
     according to `release_settings`, or decide between `result` and `ambiguous`."""
-    # DEV-1451: if we don't have this repository in the release settings, then it is deleted
-    assert (
-        repo in release_settings.native
-    ), f"You must take care of deleted repositories separately: {repo}"
-    if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
+    # faster than `release_match in (rejected_name, force_push_drop_name)`
+    if release_match == rejected_name or release_match == force_push_drop_name:
         return result
-    required_release_match = release_settings.native[repo]
+    try:
+        required_release_match = release_settings.native[repo]
+    except KeyError:
+        # DEV-1451: if we don't have this repository in the release settings, then it is deleted
+        raise AssertionError(
+            f"You must take care of deleted repositories separately: {repo}",
+        ) from None
     match_name, match_by = release_match.split("|", 1)
-    match = ReleaseMatch[match_name]
+    match = release_match_name_to_enum[match_name]  # faster than `ReleaseMatch[name]`
     if required_release_match.match != ReleaseMatch.tag_or_branch:
         if match != required_release_match.match:
             return None
