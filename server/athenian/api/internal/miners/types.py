@@ -32,7 +32,7 @@ class PRParticipationKind(IntEnum):
     RELEASER = auto()
 
 
-PRParticipants = Mapping[PRParticipationKind, Set[int]]
+PRParticipants = Mapping[PRParticipationKind, Set[str]]
 
 
 class ReleaseParticipationKind(IntEnum):

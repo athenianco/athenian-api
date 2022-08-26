@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import chain
-from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, TypeVar, cast
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, cast
 
 import aiomcache
 from ariadne import ObjectType
@@ -24,10 +25,8 @@ from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
-    JIRAMetricsLineRequest,
     MetricsLineRequest,
-    PullRequestMetricsLineRequest,
-    ReleaseMetricsLineRequest,
+    TeamSpecificFilters,
     make_calculator,
 )
 from athenian.api.internal.features.github.pull_request_metrics import (
@@ -40,7 +39,6 @@ from athenian.api.internal.features.jira.issue_metrics import (
     metric_calculators as jira_metric_calculators,
 )
 from athenian.api.internal.jira import get_jira_installation_or_none, load_mapped_jira_users
-from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.types import (
@@ -82,7 +80,10 @@ async def resolve_metrics_current_values(
     )
     time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
-    teams = {row[Team.id.name]: teams_flat[row[Team.id.name]] for row in team_rows}
+    teams = {
+        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], None)
+        for row in team_rows
+    }
     team_metrics_all_intervals = await calculate_team_metrics(
         [TeamMetricsRequest(params[MetricParamsFields.metrics], [time_interval], teams)],
         accountId,
@@ -131,13 +132,26 @@ TeamMetricsResult = dict[Interval, dict[str, dict[int, object]]]
 
 
 @dataclass(frozen=True, slots=True)
+class RequestedTeamDetails:
+    """Team members + all team-specific filters."""
+
+    members: list[int]
+    repositories: Optional[tuple[str]]
+    # add more filters here
+
+    def filters(self) -> tuple[Any, ...]:
+        """Return the tuple with contained team-specific filters."""
+        return (self.repositories,)  # add more filters here
+
+
+@dataclass(frozen=True, slots=True)
 class TeamMetricsRequest:
     """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
 
     metrics: Sequence[str]
     time_intervals: Sequence[Interval]
-    teams: Mapping[int, Sequence[int]]
-    """A mapping of team id to team members."""
+    teams: Mapping[int, RequestedTeamDetails]
+    """A mapping of team id to team members and team-specific filters."""
 
 
 @sentry_span
@@ -160,68 +174,104 @@ async def calculate_team_metrics(
     requests = _simplify_requests(requests)
     QUANTILES = (0, 0.95)
     settings = Settings.from_account(account, sdb, mdb, cache, slack)
+    jira_map = asyncio.create_task(
+        load_mapped_jira_users(
+            account,
+            set(
+                chain.from_iterable(
+                    td.members for request in requests for td in request.teams.values()
+                ),
+            ),
+            sdb,
+            mdb,
+            cache,
+        ),
+    )
     prefixer, account_bots, release_settings = await gather(
         Prefixer.load(meta_ids, mdb, cache),
         bots(account, meta_ids, mdb, sdb, cache),
         settings.list_release_matches(),
     )
-    repos = release_settings.native.keys()
-    (branches, default_branches), logical_settings = await gather(
-        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
+    all_repos = release_settings.native.keys()
+    (branches, default_branches), logical_settings, _ = await gather(
+        BranchMiner.extract_branches(all_repos, prefixer, meta_ids, mdb, cache),
         settings.list_logical_repositories(prefixer),
+        jira_map,
     )
+    jira_map = jira_map.result()
 
-    pr_collector = _PRTeamMetricsValueCollector()
-    release_collector = _ReleaseTeamMetricsValueCollector()
-    jira_collector = _JIRATeamMetricsValueCollector()
+    pr_collector = BatchCalcResultCollector()
+    release_collector = BatchCalcResultCollector()
+    jira_collector = BatchCalcResultCollector()
 
     for request in requests:
-        team_members = request.teams.values()
-        team_ids = list(request.teams.keys())
+        team_members = _loginify_teams([td.members for td in request.teams.values()], prefixer)
         pr_metrics, release_metrics, jira_metrics = _triage_metrics(request.metrics)
 
         if pr_metrics:
-            participants = [
-                {PRParticipationKind.AUTHOR: team}
-                for team in _loginify_teams(team_members, prefixer)
-            ]
-            # FIXME: participants here is list[dict[PRParticipationKind, Set[str]]]
-            pr_request = PullRequestMetricsLineRequest(
-                pr_metrics, request.time_intervals, [], [], [repos], participants,
+            pr_collector.requests.append(
+                MetricsLineRequest(
+                    pr_metrics,
+                    request.time_intervals,
+                    [
+                        TeamSpecificFilters(
+                            team_id=team_id,
+                            repositories=td.repositories
+                            if td.repositories is not None
+                            else all_repos,
+                            participants={PRParticipationKind.AUTHOR: members},
+                        )
+                        for (team_id, td), members in zip(request.teams.items(), team_members)
+                    ],
+                ),
             )
-            pr_collector.add_request(pr_request, team_ids)
 
         if release_metrics:
-            release_participants: list[Mapping] = [
-                {
-                    ReleaseParticipationKind.PR_AUTHOR: team,
-                    ReleaseParticipationKind.COMMIT_AUTHOR: team,
-                    ReleaseParticipationKind.RELEASER: team,
-                }
-                for team in team_members
-            ]
-            release_request = ReleaseMetricsLineRequest(
-                release_metrics, request.time_intervals, [repos], release_participants,
+            release_collector.requests.append(
+                MetricsLineRequest(
+                    release_metrics,
+                    request.time_intervals,
+                    [
+                        TeamSpecificFilters(
+                            team_id=team_id,
+                            repositories=td.repositories
+                            if td.repositories is not None
+                            else all_repos,
+                            participants={
+                                ReleaseParticipationKind.PR_AUTHOR: td.members,
+                                ReleaseParticipationKind.COMMIT_AUTHOR: td.members,
+                                ReleaseParticipationKind.RELEASER: td.members,
+                            },
+                        )
+                        for team_id, td in request.teams.items()
+                    ],
+                ),
             )
-            release_collector.add_request(release_request, team_ids)
 
         if jira_metrics:
-            jira_map = await load_mapped_jira_users(
-                account, set(chain.from_iterable(team_members)), sdb, mdb, cache,
+            jira_collector.requests.append(
+                MetricsLineRequest(
+                    jira_metrics,
+                    request.time_intervals,
+                    [
+                        TeamSpecificFilters(
+                            team_id=team_id,
+                            repositories=td.repositories
+                            if td.repositories is not None
+                            else all_repos,
+                            participants=_jirafy_team(td.members, jira_map),
+                        )
+                        for team_id, td in request.teams.items()
+                    ],
+                ),
             )
-            jira_request = JIRAMetricsLineRequest(
-                jira_metrics, request.time_intervals, _jirafy_teams(team_members, jira_map),
-            )
-            jira_collector.add_request(jira_request, team_ids)
 
     calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
     tasks = []
-    if pr_requests := pr_collector.get_requests():
+    if pr_requests := pr_collector.requests:
         pr_task = calculator.batch_calc_pull_request_metrics_line_github(
             requests=pr_requests,
             quantiles=QUANTILES,
-            labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
             exclude_inactive=True,
             bots=account_bots,
             release_settings=release_settings,
@@ -233,12 +283,10 @@ async def calculate_team_metrics(
         )
         tasks.append(pr_task)
 
-    if release_requests := release_collector.get_requests():
+    if release_requests := release_collector.requests:
         release_task = calculator.batch_calc_release_metrics_line_github(
             requests=release_requests,
             quantiles=QUANTILES,
-            labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
             release_settings=release_settings,
             logical_settings=logical_settings,
             prefixer=prefixer,
@@ -247,16 +295,11 @@ async def calculate_team_metrics(
         )
         tasks.append(release_task)
 
-    if jira_requests := jira_collector.get_requests():
+    if jira_requests := jira_collector.requests:
         jira_conf = await get_jira_installation_or_none(account, sdb, mdb, cache)
         jira_task = calculator.batch_calc_jira_metrics_line_github(
             requests=jira_requests,
             quantiles=QUANTILES,
-            label_filter=LabelFilter.empty(),
-            split_by_label=False,
-            priorities=[],
-            types=[],
-            epics=[],
             exclude_inactive=True,
             release_settings=release_settings,
             logical_settings=logical_settings,
@@ -316,67 +359,64 @@ def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> lis
     return result
 
 
-def _jirafy_teams(
-    teams: Iterable[Collection[int]],
-    jira_map: Mapping[int, str],
-) -> list[JIRAParticipants]:
-    result: list[JIRAParticipants] = []
-    for team in teams:
-        result.append({JIRAParticipationKind.ASSIGNEE: (assignees := [])})
-        for dev in team:
-            try:
-                assignees.append(jira_map[dev])
-            except KeyError:
-                continue
+def _jirafy_team(team: Collection[int], jira_map: Mapping[int, str]) -> JIRAParticipants:
+    result: JIRAParticipants = {JIRAParticipationKind.ASSIGNEE: (assignees := [])}
+    for dev in team:
+        try:
+            assignees.append(jira_map[dev])
+        except KeyError:
+            continue
     return result
 
 
 @sentry_span
 def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> Sequence[TeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
-    # intervals => team id => metrics
-    requests_tree: dict[tuple[Interval, ...], dict[int, set[str]]] = {}
+    # intervals => team and other filters => metrics
+    requests_tree: dict[tuple[Interval, ...], dict[tuple, set[str]]] = {}
 
-    # this can be global across requests, team ids are always mapped to same team members
+    # this can be global across requests, team ids are always mapped to the same team members
     teams_members: dict[int, Sequence[int]] = {}
 
     for req in requests:
         req_time_intervals = tuple(req.time_intervals)
         requests_tree.setdefault(req_time_intervals, {})
 
-        for team_id, team_members in req.teams.items():
-            teams_members[team_id] = team_members
-            requests_tree[req_time_intervals].setdefault(team_id, set())
+        for team_id, team_details in req.teams.items():
+            teams_members[team_id] = team_details.members
             for m in req.metrics:
-                requests_tree[req_time_intervals][team_id].add(m)
+                requests_tree[req_time_intervals].setdefault(
+                    (team_id, team_details.filters()), set(),
+                ).add(m)
 
-    # intervals => metrics => team ids
-    simplified_tree: dict[Sequence[Interval], dict[tuple[str, ...], set[int]]] = {}
+    # intervals => metrics => team ids and team-specific filters
+    simplified_tree: dict[Sequence[Interval], dict[tuple[str, ...], set[tuple]]] = {}
     for intervals, intervals_tree in requests_tree.items():
         simplified_tree[intervals] = {}
 
-        for team_id, metrics in intervals_tree.items():
+        for filters, metrics in intervals_tree.items():
             sorted_metrics = tuple(sorted(metrics))
-            simplified_tree[intervals].setdefault(sorted_metrics, set()).add(team_id)
+            simplified_tree[intervals].setdefault(sorted_metrics, set()).add(filters)
 
+    # assemble the final groups
     requests = []
-
     for intervals_, intervals_tree_ in simplified_tree.items():
-        for metrics_, team_ids_ in intervals_tree_.items():
-            teams = {team_id: teams_members[team_id] for team_id in team_ids_}
+        for metrics_, grouped_filters in intervals_tree_.items():
+            teams = {
+                team_id: RequestedTeamDetails(teams_members[team_id], *filters)
+                for team_id, filters in grouped_filters
+            }
             requests.append(TeamMetricsRequest(metrics_, intervals_, teams))
 
     return requests
 
 
-_MetricsLineRequestGenT = TypeVar("_MetricsLineRequestGenT", bound=MetricsLineRequest)
-
-
-class _BatchCalcResultCollector(Generic[_MetricsLineRequestGenT]):
+class BatchCalcResultCollector:
     """Convert the results coming from a MetricEntriesCalculator batch method."""
 
     def __init__(self) -> None:
-        self._requests: list[tuple[_MetricsLineRequestGenT, Sequence[int]]] = []
+        """Initialize a new instance of BatchCalcResultCollector."""
+        self._requests: list[MetricsLineRequest] = []
 
     @sentry_span
     def collect(
@@ -389,39 +429,20 @@ class _BatchCalcResultCollector(Generic[_MetricsLineRequestGenT]):
         `batch_calc_results` must be obtained by calling the batch calc method with
         the requests in `get_requests()`.
         """
-        for (request, team_ids), calc_result in zip(self._requests, batch_calc_results):
+        for request, calc_result in zip(self._requests, batch_calc_results):
             for interval_i, interval in enumerate(request.time_intervals):
                 int_ = cast(Interval, interval)
                 team_metrics_res.setdefault(int_, {})
                 for metric_i, metric in enumerate(request.metrics):
                     team_metrics_res[int_].setdefault(metric, {})
-                    for team_i, team_id in enumerate(team_ids):
-                        val = self.get_val(calc_result, team_i, interval_i, metric_i)
-                        team_metrics_res[int_][metric][team_id] = val
+                    for team_i, team_filters in enumerate(request.teams):
+                        val = calc_result[team_i][interval_i][0][metric_i].value
+                        team_metrics_res[int_][metric][team_filters.team_id] = val
 
-    def add_request(self, request: _MetricsLineRequestGenT, team_ids: Sequence[int]) -> None:
-        self._requests.append((request, team_ids))
-
-    def get_requests(self) -> Sequence[_MetricsLineRequestGenT]:
-        return tuple(req[0] for req in self._requests)
-
-    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
-        raise NotImplementedError()
-
-
-class _PRTeamMetricsValueCollector(_BatchCalcResultCollector[PullRequestMetricsLineRequest]):
-    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
-        return calc_res[0][0][team_i][interval_i][0][metric_i].value
-
-
-class _ReleaseTeamMetricsValueCollector(_BatchCalcResultCollector[ReleaseMetricsLineRequest]):
-    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
-        return calc_res[team_i][0][interval_i][0][metric_i].value
-
-
-class _JIRATeamMetricsValueCollector(_BatchCalcResultCollector[JIRAMetricsLineRequest]):
-    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
-        return calc_res[team_i][0][interval_i][0][metric_i].value
+    @property
+    def requests(self) -> list[MetricsLineRequest]:
+        """Return the registered metric calculation requests."""
+        return self._requests
 
 
 @sentry_span

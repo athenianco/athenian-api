@@ -910,6 +910,21 @@ def group_to_indexes(
     indexes = np.fromfunction(
         np.vectorize(intersect, otypes=[object]), [len(g) for g in groups], dtype=object,
     )
+    return deduplicate_groups(indexes, items, deduplicate_key, deduplicate_mask)
+
+
+def deduplicate_groups(
+    indexes: np.ndarray,
+    items: pd.DataFrame,
+    deduplicate_key: Optional[str],
+    deduplicate_mask: Optional[np.ndarray],
+) -> np.ndarray:
+    """
+    Deduplicate logical items in groups of `items`.
+
+    :param deduplicate_key: Integer column name in `items` to scan for duplicates in each group.
+    :param deduplicate_mask: Additional values to compare beside `deduplicate_key`.
+    """
     if deduplicate_key is None:
         return indexes
     deduped_indexes = np.empty_like(indexes)

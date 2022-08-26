@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Optional, Sequence
 
 import pytest
 
@@ -98,15 +98,21 @@ class BaseGoalsTest(Requester):
         goal_fields=_ALL_GOAL_FIELDS,
         value_fields=_ALL_VALUE_FIELDS,
         team_fields=_ALL_TEAM_FIELDS,
+        repositories: Optional[list[str]] = None,
         depth: int = 6,
         only_with_targets: bool = False,
     ) -> dict:
+        if repositories is None:
+            repositories = {}
+        else:
+            repositories = {"repositories": repositories}
         body = {
             "query": self._query(goal_fields, value_fields, team_fields, depth=depth),
             "variables": {
                 "accountId": account_id,
                 "teamId": team_id,
                 "onlyWithTargets": only_with_targets,
+                **repositories,
             },
         }
         return await align_graphql_request(self.client, headers=self.headers, json=body)
@@ -229,11 +235,11 @@ class TestGoals(BaseGoalsTest):
     async def test_multiple_teams(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(id=1),
-            TeamFactory(id=10, parent_id=1),
-            TeamFactory(id=11, parent_id=10),
-            TeamFactory(id=12, parent_id=10),
-            TeamFactory(id=13, parent_id=11),
+            TeamFactory(id=1, members=[39789]),
+            TeamFactory(id=10, parent_id=1, members=[39789]),
+            TeamFactory(id=11, parent_id=10, members=[39789]),
+            TeamFactory(id=12, parent_id=10, members=[39789]),
+            TeamFactory(id=13, parent_id=11, members=[39789]),
             GoalFactory(id=20),
             TeamGoalFactory(goal_id=20, team_id=1, target=1),
             TeamGoalFactory(goal_id=20, team_id=10, target=10.1),
@@ -265,10 +271,10 @@ class TestGoals(BaseGoalsTest):
     async def test_multiple_goals(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(id=10),
-            TeamFactory(id=11, parent_id=10),
-            TeamFactory(id=12, parent_id=10),
-            TeamFactory(id=13, parent_id=12),
+            TeamFactory(id=10, members=[39789]),
+            TeamFactory(id=11, parent_id=10, members=[39789]),
+            TeamFactory(id=12, parent_id=10, members=[39789]),
+            TeamFactory(id=13, parent_id=12, members=[39789]),
             GoalFactory(
                 id=20,
                 metric=PullRequestMetricID.PR_REVIEW_TIME,
@@ -333,7 +339,7 @@ class TestGoals(BaseGoalsTest):
     async def test_timedelta_metric(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(id=10),
+            TeamFactory(id=10, members=[39789]),
             GoalFactory(
                 id=20,
                 metric=PullRequestMetricID.PR_LEAD_TIME,
@@ -350,15 +356,15 @@ class TestGoals(BaseGoalsTest):
         assert goal["teamGoal"]["team"]["id"] == 10
 
         assert goal["teamGoal"]["value"]["target"]["str"] == "20001s"
-        assert goal["teamGoal"]["value"]["current"]["str"] == "3727969s"
-        assert goal["teamGoal"]["value"]["initial"]["str"] == "2126373s"
+        assert goal["teamGoal"]["value"]["current"]["str"] == "4731059s"
+        assert goal["teamGoal"]["value"]["initial"]["str"] == "689712s"
 
     async def test_only_with_targets_param(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(id=10, parent_id=None),
-            TeamFactory(id=11, parent_id=10),
-            TeamFactory(id=12, parent_id=11),
+            TeamFactory(id=10, parent_id=None, members=[39789]),
+            TeamFactory(id=11, parent_id=10, members=[39789]),
+            TeamFactory(id=12, parent_id=11, members=[39789]),
             GoalFactory(id=20),
             TeamGoalFactory(goal_id=20, team_id=11, target=1.23),
         )
@@ -377,7 +383,7 @@ class TestGoals(BaseGoalsTest):
     async def test_archived_goals_are_excluded(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(id=10),
+            TeamFactory(id=10, members=[39789]),
             GoalFactory(id=20),
             GoalFactory(id=21, archived=True),
             TeamGoalFactory(goal_id=20, team_id=10),

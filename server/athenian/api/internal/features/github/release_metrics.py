@@ -1,6 +1,5 @@
-from collections import defaultdict
 from datetime import timedelta
-from typing import Generic, Iterable, Optional, Sequence, Type, TypeVar
+from typing import Generic, Optional, Sequence, Type, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -28,15 +27,6 @@ from athenian.api.models.web import ReleaseMetricID
 metric_calculators: dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
 T = TypeVar("T")
-
-
-def merge_release_participants(participants: Iterable[ReleaseParticipants]) -> ReleaseParticipants:
-    """Merge several groups of release participants together."""
-    merged: dict[ReleaseParticipationKind, set[int]] = defaultdict(set)
-    for dikt in participants:
-        for k, v in dikt.items():
-            merged[k].update(v)
-    return {k: list(v) for k, v in merged.items()}
 
 
 def group_releases_by_participants(

@@ -7,13 +7,18 @@ from ariadne import ObjectType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
-from athenian.api.align.goals.dbaccess import fetch_team_goals
+from athenian.api.align.goals.dbaccess import fetch_team_goals, resolve_goal_repositories
 from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
-from athenian.api.align.queries.metrics import TeamMetricsRequest, calculate_team_metrics
+from athenian.api.align.queries.metrics import (
+    RequestedTeamDetails,
+    TeamMetricsRequest,
+    calculate_team_metrics,
+)
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.db import Row
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Goal, Team, TeamGoal
@@ -47,7 +52,10 @@ async def resolve_goals(
     team_tree = build_team_tree_from_rows(team_rows, None if teamId == 0 else teamId)
     team_member_map = flatten_teams(team_rows)
     team_ids = [row[Team.id.name] for row in team_rows]
-    team_goal_rows = await fetch_team_goals(accountId, team_ids, info.context.sdb)
+    team_goal_rows, prefixer = await gather(
+        fetch_team_goals(accountId, team_ids, info.context.sdb),
+        Prefixer.load(meta_ids, info.context.mdb, info.context.cache),
+    )
 
     goals_to_serve = []
 
@@ -55,7 +63,9 @@ async def resolve_goals(
     for _, group_team_goal_rows_iter in groupby(team_goal_rows, itemgetter(Goal.id.name)):
         goal_team_goal_rows = list(group_team_goal_rows_iter)
         goals_to_serve.append(
-            _GoalToServe(goal_team_goal_rows, team_tree, team_member_map, onlyWithTargets),
+            _GoalToServe(
+                goal_team_goal_rows, team_tree, team_member_map, prefixer, onlyWithTargets,
+            ),
         )
 
     all_metric_values = await calculate_team_metrics(
@@ -80,11 +90,12 @@ class _GoalToServe:
         team_goal_rows: Sequence[Row],
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
+        prefixer: Prefixer,
         only_with_targets: bool,
     ):
         self._team_goal_rows = team_goal_rows
-        self._request, self._goal_team_tree = self._parse_rows(
-            team_goal_rows, team_tree, team_member_map, only_with_targets,
+        self._request, self._goal_team_tree = self._team_goal_rows_to_request(
+            team_goal_rows, team_tree, team_member_map, prefixer, only_with_targets,
         )
 
     @property
@@ -100,11 +111,12 @@ class _GoalToServe:
         )
 
     @classmethod
-    def _parse_rows(
+    def _team_goal_rows_to_request(
         cls,
         team_goal_rows: Sequence[Row],
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
+        prefixer: Prefixer,
         only_with_targets: bool,
     ) -> tuple[TeamMetricsRequest, TeamTree]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
@@ -114,28 +126,48 @@ class _GoalToServe:
         expires_at = goal_row[Goal.expires_at.name]
         initial_interval = goal_initial_query_interval(valid_from, expires_at)
 
+        teams_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
+
+        # FIXME: why teams_map misses some IDs from team_member_map?
+
         if only_with_targets:
-            # if the flag is true
             # 1 - prune team tree to keep only branches with assigned teams
-            keep_team = _TeamFilterFromTeamGoalRows(team_goal_rows)
-            goal_team_tree = _team_tree_prune_empty_branches(team_tree, keep_team)
+            goal_team_tree = _team_tree_prune_empty_branches(team_tree, lambda id: id in teams_map)
             # assigned_teams is a non empty subset of all the ids in team_tree,
             # so the pruned tree is never empty
             assert goal_team_tree is not None
             # 2 - in the metrics requests only ask for teams present in the pruned tree
             goal_tree_team_ids = goal_team_tree.flatten_team_ids()
-            requested_team_members = {
-                team_id: members
+            requested_teams = {
+                team_id: RequestedTeamDetails(
+                    members,
+                    resolve_goal_repositories(
+                        teams_map[team_id][TeamGoal.repositories.name], prefixer,
+                    ),
+                )
                 for team_id, members in team_member_map.items()
                 if team_id in goal_tree_team_ids
+                and team_id in teams_map  # FIXME: why is this needed??
             }
         else:
             goal_team_tree = team_tree
-            requested_team_members = team_member_map
+            requested_teams = {
+                team_id: RequestedTeamDetails(
+                    members,
+                    resolve_goal_repositories(
+                        teams_map[team_id][TeamGoal.repositories.name], prefixer,
+                    ),
+                )
+                for team_id, members in team_member_map.items()
+                if team_id in teams_map  # FIXME: why is this needed??
+            }
+
         team_metrics_request = TeamMetricsRequest(
-            [metric], (initial_interval, (valid_from, expires_at)), requested_team_members,
+            metrics=[metric],
+            time_intervals=(initial_interval, (valid_from, expires_at)),
+            teams=requested_teams,
         )
-        return (team_metrics_request, goal_team_tree)
+        return team_metrics_request, goal_team_tree
 
 
 @dataclass(slots=True)
@@ -190,14 +222,6 @@ def _team_tree_to_team_goal_tree(
         for child in team_tree.children
     ]
     return TeamGoalTree(team_tree, goal_value, children)
-
-
-class _TeamFilterFromTeamGoalRows:
-    def __init__(self, rows: Iterable[Row]):
-        self._team_ids = {row[TeamGoal.team_id.name] for row in rows}
-
-    def __call__(self, team_id: int):
-        return team_id in self._team_ids
 
 
 @sentry_span

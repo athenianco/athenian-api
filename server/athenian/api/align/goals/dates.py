@@ -28,7 +28,6 @@ def goal_initial_query_interval(
     """Return the time interval to query the initial metric value for the goal.
 
     `valid_from` and `expires_at` parameter are the `datetime`-s stored on DB for the Goal.
-
     """
     # unlike timedelta, dateutil relativedelta understands months, so the interval will
     # be better aligned

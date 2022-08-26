@@ -8,10 +8,9 @@ from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
-    JIRAMetricsLineRequest,
     MetricEntriesCalculator,
-    PullRequestMetricsLineRequest,
-    ReleaseMetricsLineRequest,
+    MetricsLineRequest,
+    TeamSpecificFilters,
     make_calculator,
 )
 from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
@@ -20,6 +19,11 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues
+from athenian.api.internal.miners.types import (
+    JIRAParticipationKind,
+    PRParticipationKind,
+    ReleaseParticipationKind,
+)
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
@@ -110,7 +114,13 @@ class TestCalcPullRequestMetricsLineGithub:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         time_intervals = [[dt(2017, 8, 10), dt(2017, 8, 12)], [dt(2017, 8, 13), dt(2017, 9, 1)]]
-        kwargs = {"time_intervals": time_intervals, **self._default_kwargs, **shared_kwargs}
+        kwargs = {
+            "time_intervals": time_intervals,
+            **self._default_kwargs,
+            **shared_kwargs,
+            "labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
+        }
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
         )
@@ -151,7 +161,13 @@ class TestCalcPullRequestMetricsLineGithub:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         time_intervals = [[dt(2017, 8, 10), dt(2017, 8, 12), dt(2017, 9, 1)]]
-        kwargs = {"time_intervals": time_intervals, **self._default_kwargs, **shared_kwargs}
+        kwargs = {
+            "time_intervals": time_intervals,
+            **self._default_kwargs,
+            **shared_kwargs,
+            "labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
+        }
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
         )
@@ -210,29 +226,32 @@ class TestBatchCalcPullRequestMetrics:
 
         # the requests for the batch call
         requests = [
-            PullRequestMetricsLineRequest(
+            MetricsLineRequest(
                 [PullRequestMetricID.PR_REVIEW_TIME],
                 [[dt(2018, 1, 1), dt(2019, 9, 1)]],
-                [],
-                [],
-                [{"src-d/go-git"}],
-                [{}],
+                [
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                    ),
+                ],
             ),
-            PullRequestMetricsLineRequest(
+            MetricsLineRequest(
                 [PullRequestMetricID.PR_REVIEW_COUNT],
                 [[dt(2017, 1, 1), dt(2017, 10, 1)]],
-                [],
-                [],
-                [{"src-d/go-git"}],
-                [{}],
+                [
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                    ),
+                ],
             ),
-            PullRequestMetricsLineRequest(
+            MetricsLineRequest(
                 [PullRequestMetricID.PR_SIZE],
                 [[dt(2017, 8, 10), dt(2017, 8, 12)]],
-                [],
-                [],
-                [{"src-d/go-git"}],
-                [{}],
+                [
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                    ),
+                ],
             ),
         ]
 
@@ -247,9 +266,11 @@ class TestBatchCalcPullRequestMetrics:
             metrics=all_metrics,
             time_intervals=all_intervals,
             lines=[],
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
             environments=[],
             repositories=[{"src-d/go-git"}],
-            participants=[{}],
+            participants=[{PRParticipationKind.AUTHOR: {"mcuadros"}}],
             **base_kwargs,
         )
 
@@ -257,7 +278,7 @@ class TestBatchCalcPullRequestMetrics:
         batch_calc_res = await calculator.batch_calc_pull_request_metrics_line_github(
             requests, **base_kwargs,
         )
-        batched_res_values = [req_res[0][0][0][0][0][0].value for req_res in batch_calc_res]
+        batched_res_values = [req_res[0][0][0][0].value for req_res in batch_calc_res]
         for i in range(len(requests)):
             # for each batch request the same value in global result must be
             # found in interval index i and metric index i
@@ -265,9 +286,9 @@ class TestBatchCalcPullRequestMetrics:
 
             assert batched_res_values[i] == global_value
 
-        assert batched_res_values[0] == timedelta(days=8, seconds=34252)
-        assert batched_res_values[1] == 174
-        assert batched_res_values[2] == 21
+        assert batched_res_values[0] == timedelta(days=6, seconds=42664)
+        assert batched_res_values[1] == 44
+        assert batched_res_values[2] is None
 
     @with_defer
     async def test_with_cache(
@@ -281,13 +302,14 @@ class TestBatchCalcPullRequestMetrics:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         requests = [
-            PullRequestMetricsLineRequest(
+            MetricsLineRequest(
                 [PullRequestMetricID.PR_ALL_COUNT],
                 [[dt(2019, 8, 25), dt(2019, 9, 1)]],
-                [],
-                [],
-                [{"src-d/go-git"}],
-                [{}],
+                [
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                    ),
+                ],
             ),
         ]
         calculator = MetricEntriesCalculator(
@@ -304,7 +326,7 @@ class TestBatchCalcPullRequestMetrics:
         )
 
         calc_res = await calc()
-        pr_all_count = calc_res[0][0][0][0][0][0][0].value
+        pr_all_count = calc_res[0][0][0][0][0].value
         await wait_deferred()
 
         # the second time the cache is used and the underlying calc function must not be called
@@ -316,7 +338,7 @@ class TestBatchCalcPullRequestMetrics:
             second_calc_res = await calc()
 
         calc_mock.assert_not_called()
-        assert second_calc_res[0][0][0][0][0][0][0].value == pr_all_count
+        assert second_calc_res[0][0][0][0][0].value == pr_all_count
 
 
 class TestCalcReleaseMetricsLineGithub:
@@ -339,6 +361,8 @@ class TestCalcReleaseMetricsLineGithub:
             "repositories": [["src-d/go-git"]],
             "participants": [],
             "quantiles": [0, 1],
+            "labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
             **shared_kwargs,
         }
 
@@ -381,17 +405,23 @@ class TestBatchCalcReleaseMetrics:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
 
         requests = [
-            ReleaseMetricsLineRequest(
+            MetricsLineRequest(
                 metrics=[ReleaseMetricID.RELEASE_PRS, ReleaseMetricID.RELEASE_COUNT],
                 time_intervals=[[dt(2018, 6, 12), dt(2020, 11, 11)]],
-                repositories=[["src-d/go-git"]],
-                participants=[],
+                teams=[
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                    ),
+                ],
             ),
-            ReleaseMetricsLineRequest(
+            MetricsLineRequest(
                 metrics=[ReleaseMetricID.RELEASE_AGE],
                 time_intervals=[[dt(2018, 1, 1), dt(2018, 6, 1)]],
-                repositories=[["src-d/go-git"]],
-                participants=[],
+                teams=[
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                    ),
+                ],
             ),
         ]
 
@@ -405,7 +435,9 @@ class TestBatchCalcReleaseMetrics:
             all_metrics,
             all_intervals,
             repositories=[["src-d/go-git"]],
-            participants=[],
+            participants=[{ReleaseParticipationKind.COMMIT_AUTHOR: [39789]}],
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
             quantiles=[0, 1],
             **shared_kwargs,
         )
@@ -417,15 +449,15 @@ class TestBatchCalcReleaseMetrics:
 
         release_prs = global_calc_res[0][0][0][0][0]
         assert release_prs.value == 131
-        assert batched_calc_res[0][0][0][0][0][0] == release_prs
+        assert batched_calc_res[0][0][0][0][0] == release_prs
 
         release_count = global_calc_res[0][0][0][0][1]
         assert release_count.value == 13
-        assert batched_calc_res[0][0][0][0][0][1] == release_count
+        assert batched_calc_res[0][0][0][0][1] == release_count
 
         release_age = global_calc_res[0][0][1][0][2]
         assert release_age.value == timedelta(days=31, seconds=61494)
-        assert batched_calc_res[1][0][0][0][0][0] == release_age
+        assert batched_calc_res[1][0][0][0][0] == release_age
 
     @with_defer
     async def test_with_cache(
@@ -440,11 +472,14 @@ class TestBatchCalcReleaseMetrics:
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
 
         requests = [
-            ReleaseMetricsLineRequest(
+            MetricsLineRequest(
                 metrics=[ReleaseMetricID.RELEASE_PRS, ReleaseMetricID.RELEASE_COUNT],
                 time_intervals=[[dt(2019, 1, 12), dt(2019, 3, 11)]],
-                repositories=[["src-d/go-git"]],
-                participants=[],
+                teams=[
+                    TeamSpecificFilters(
+                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                    ),
+                ],
             ),
         ]
 
@@ -462,8 +497,8 @@ class TestBatchCalcReleaseMetrics:
             )
 
         mine_mock.assert_not_called()
-        assert second_res[0][0][0][0][0][0].value == first_res[0][0][0][0][0][0].value
-        assert second_res[0][0][0][0][0][1].value == first_res[0][0][0][0][0][1].value
+        assert second_res[0][0][0][0][0].value == first_res[0][0][0][0][0].value
+        assert second_res[0][0][0][0][1].value == first_res[0][0][0][0][1].value
 
 
 class BaseCalcJIRAMetricsTest:
@@ -478,16 +513,11 @@ class BaseCalcJIRAMetricsTest:
         jira_config = JIRAConfig(jira_ids.acc_id, jira_ids.projects, jira_ids.epics)
 
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
-        for f in ("prefixer", "branches", "labels", "jira"):
+        for f in ("prefixer", "branches"):
             shared_kwargs.pop(f)
 
         return {
             "quantiles": [0, 1],
-            "label_filter": LabelFilter.empty(),
-            "split_by_label": False,
-            "priorities": [],
-            "types": [],
-            "epics": [],
             "exclude_inactive": False,
             "jira_ids": jira_config,
             **shared_kwargs,
@@ -512,6 +542,15 @@ class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
         metrics1 = [JIRAMetricID.JIRA_LEAD_TIME, JIRAMetricID.JIRA_OPEN, JIRAMetricID.JIRA_RAISED]
 
         base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
+        base_kwargs.update(
+            {
+                "label_filter": LabelFilter.empty(),
+                "split_by_label": False,
+                "priorities": [],
+                "types": [],
+                "epics": [],
+            },
+        )
         kwargs = {"time_intervals": time_intervals, "participants": [], **base_kwargs}
 
         with mock.patch(
@@ -539,13 +578,27 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         requests = [
-            JIRAMetricsLineRequest(
-                [JIRAMetricID.JIRA_OPEN], [[dt(2019, 1, 1), dt(2020, 1, 1)]], [],
+            MetricsLineRequest(
+                [JIRAMetricID.JIRA_OPEN],
+                [[dt(2019, 1, 1), dt(2020, 1, 1)]],
+                [
+                    TeamSpecificFilters(
+                        1,
+                        ["src-d/go-git"],
+                        {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                    ),
+                ],
             ),
-            JIRAMetricsLineRequest(
+            MetricsLineRequest(
                 [JIRAMetricID.JIRA_RESOLVED, JIRAMetricID.JIRA_LEAD_TIME],
                 [[dt(2019, 1, 1), dt(2020, 1, 1)]],
-                [],
+                [
+                    TeamSpecificFilters(
+                        1,
+                        ["src-d/go-git"],
+                        {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                    ),
+                ],
             ),
         ]
 
@@ -558,7 +611,12 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
         global_calc_res, _ = await calculator.calc_jira_metrics_line_github(
             metrics=all_metrics,
             time_intervals=all_intervals,
-            participants=[],
+            label_filter=LabelFilter.empty(),
+            participants=[{JIRAParticipationKind.REPORTER: ["vadim markovtsev"]}],
+            split_by_label=False,
+            priorities=[],
+            types=[],
+            epics=[],
             **base_kwargs,
         )
         await wait_deferred()
@@ -566,16 +624,16 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
         batch_res = await calculator.batch_calc_jira_metrics_line_github(requests, **base_kwargs)
 
         jira_open = global_calc_res[0][0][0][0][0]
-        assert jira_open.value == 71
-        assert batch_res[0][0][0][0][0][0] == jira_open
+        assert jira_open.value == 7
+        assert batch_res[0][0][0][0][0] == jira_open
 
         jira_resolved = global_calc_res[0][0][1][0][1]
-        assert jira_resolved.value == 27
-        assert batch_res[1][0][0][0][0][0] == jira_resolved
+        assert jira_resolved.value == 2
+        assert batch_res[1][0][0][0][0] == jira_resolved
 
         jira_lead_time = global_calc_res[0][0][1][0][2]
-        assert jira_lead_time.value == timedelta(days=6, seconds=54145)
-        assert batch_res[1][0][0][0][0][1] == jira_lead_time
+        assert jira_lead_time.value == timedelta(days=10, seconds=83141)
+        assert batch_res[1][0][0][0][1] == jira_lead_time
 
     @with_defer
     async def test_with_cache(
@@ -589,8 +647,16 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
         meta_ids = await get_metadata_account_ids(1, sdb, None)
 
         requests = [
-            JIRAMetricsLineRequest(
-                [JIRAMetricID.JIRA_RAISED], [[dt(2019, 9, 1), dt(2020, 1, 1)]], [],
+            MetricsLineRequest(
+                [JIRAMetricID.JIRA_RAISED],
+                [[dt(2019, 9, 1), dt(2020, 1, 1)]],
+                [
+                    TeamSpecificFilters(
+                        1,
+                        ["src-d/go-git"],
+                        {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                    ),
+                ],
             ),
         ]
         base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
@@ -609,7 +675,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
 
         fetch_issues_mock.assert_not_called()
 
-        assert first_res[0][0][0][0][0][0].value == second_res[0][0][0][0][0][0].value
+        assert first_res[0][0][0][0][0].value == second_res[0][0][0][0][0].value
 
 
 async def _calc_shared_kwargs(
@@ -630,6 +696,4 @@ async def _calc_shared_kwargs(
         "prefixer": prefixer,
         "branches": branches,
         "default_branches": default_branches,
-        "labels": LabelFilter.empty(),
-        "jira": JIRAFilter.empty(),
     }

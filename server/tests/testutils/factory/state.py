@@ -135,9 +135,9 @@ class GoalFactory(SQLAlchemyModelFactory):
 
     id = factory.Sequence(lambda n: n + 1)
     account_id = DEFAULT_ACCOUNT_ID
-    template_id = 1
     name = factory.LazyAttribute(lambda goal: f"goal-{goal.id}")
     metric = PullRequestMetricID.PR_CLOSED
+    repositories = None
     # create unique intervals by default to avoid uniqueness constraint
     valid_from = factory.Sequence(
         lambda n: datetime(2022, 1, 1).replace(tzinfo=timezone.utc) + timedelta(hours=n),
@@ -164,6 +164,7 @@ class TeamGoalFactory(SQLAlchemyModelFactory):
         model = TeamGoal
 
     target = 0
+    repositories = None
 
 
 class MappedJIRAIdentityFactory(SQLAlchemyModelFactory):
