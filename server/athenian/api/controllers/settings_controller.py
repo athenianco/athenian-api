@@ -577,7 +577,12 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         account_id=web_model.account,
         name=web_model.name,
         repository_id=repo_id,
-        prs={"title": web_model.prs.title, "labels": web_model.prs.labels_include},
+        prs={
+            "title": web_model.prs.title,
+            "labels": [v.lower() for v in web_model.prs.labels_include]
+            if web_model.prs.labels_include is not None
+            else None,
+        },
     ).create_defaults()
     if (deployments := web_model.deployments) is not None:
         if deployments.title:
