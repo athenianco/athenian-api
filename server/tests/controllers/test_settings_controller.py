@@ -1499,7 +1499,7 @@ async def test_set_logical_repository_smoke(
 
 async def _test_set_logical_repository(client, headers, sdb, n):
     title = "[Ff]ix.*"
-    labels = ["bug", "fix", "plumbing", "enhancement"]
+    labels = ["BUG", "fiX", "Plumbing", "enhancement"]
     body = {
         "account": 1,
         "name": "alpha",
@@ -1529,7 +1529,7 @@ async def _test_set_logical_repository(client, headers, sdb, n):
     assert rows[0][LogicalRepository.name.name] == "alpha"
     assert rows[0][LogicalRepository.prs.name] == {
         "title": title,
-        "labels": labels,
+        "labels": [v.lower() for v in labels],
     }
     row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name][:3] == [
