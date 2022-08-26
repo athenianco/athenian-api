@@ -31,6 +31,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.db import Database, dialect_specific_insert
+from athenian.api.internal.logical_accelerated import mark_logical_repos_in_list
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.github.branches import load_branch_commit_dates
@@ -165,8 +166,22 @@ class DonePRFactsLoader:
             pdb,
         )
         user_node_to_login_get = prefixer.user_node_to_login.get
+        data_name = ghdprf.data.name
+        pr_node_id_name = ghdprf.pr_node_id.name
+        repository_full_name_name = ghdprf.repository_full_name.name
+        author_name = ghdprf.author.name
+        merger_name = ghdprf.merger.name
+        releaser_name = ghdprf.releaser.name
         for key, row in result.items():
-            result[key] = cls._done_pr_facts_from_row(row, user_node_to_login_get)
+            result[key] = PullRequestFacts(
+                data=row[data_name],
+                node_id=row[pr_node_id_name],
+                repository_full_name=row[repository_full_name_name],
+                author=user_node_to_login_get(row[author_name], ""),
+                merger=user_node_to_login_get(row[merger_name], ""),
+                releaser=user_node_to_login_get(row[releaser_name], ""),
+            )
+            # optimization over cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return result, ambiguous
 
     @classmethod
@@ -620,12 +635,15 @@ class DonePRFactsLoader:
             include_multiples = [set(m) for m in include_multiples]
         if len(participants) > 0 and not postgres:
             user_node_to_login_get = prefixer.user_node_to_login.get
-        logical_repos = np.array([row[ghprt.repository_full_name.name] for row in rows], dtype="U")
+        repository_full_name_name = ghprt.repository_full_name.name
+        logical_repos = [row[repository_full_name_name] for row in rows]
         blocked_physical = set()
+        release_match_name = ghprt.release_match.name
+        pr_node_id_name = ghprt.pr_node_id.name
         # make logical repos come before physical
-        for i in np.argsort(logical_repos)[::-1]:
+        for i in np.argpartition(*mark_logical_repos_in_list(logical_repos))[::-1]:
             repo, row = logical_repos[i], rows[i]
-            rm, pr_node_id = row[ghprt.release_match.name], row[ghprt.pr_node_id.name]
+            rm, pr_node_id = row[release_match_name], row[pr_node_id_name]
             if (key := (pr_node_id, repo)) in blocked_physical:
                 continue
             dump = triage_by_release_match(
