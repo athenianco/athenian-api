@@ -47,7 +47,7 @@ from athenian.api.internal.miners.types import (
     PRParticipationKind,
     ReleaseParticipationKind,
 )
-from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
@@ -80,8 +80,11 @@ async def resolve_metrics_current_values(
     )
     time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
+    if (repositories := params.get(MetricParamsFields.repositories)) is not None:
+        repositories = tuple(RepositoryName.from_prefixed(r).unprefixed for r in repositories)
+
     teams = {
-        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], None)
+        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], repositories)
         for row in team_rows
     }
     team_metrics_all_intervals = await calculate_team_metrics(

@@ -68,6 +68,14 @@ class RepositoryName:
         """Return the unprefixed physical name of the repository."""
         return f"{self.owner}/{self.physical}"
 
+    @property
+    def unprefixed(self) -> str:
+        """Return the unprefixed name of the repository."""
+        name = self.unprefixed_physical
+        if self.logical is not None:
+            name = f"{name}/{self.logical}"
+        return name
+
     def __str__(self) -> str:
         """Return the canonical full repository name."""
         return (

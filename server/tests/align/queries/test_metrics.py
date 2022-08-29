@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from freezegun import freeze_time
 from morcilla import Database
@@ -50,12 +50,14 @@ class BaseMetricsTest(Requester):
                    $teamId: Int!,
                    $metrics: [String!]!,
                    $validFrom: Date!,
-                   $expiresAt: Date!) {{
+                   $expiresAt: Date!,
+                   $repositories: [String!]) {{
               metricsCurrentValues(accountId: $accountId, params: {{
                 teamId: $teamId,
                 metrics: $metrics,
                 validFrom: $validFrom,
-                expiresAt: $expiresAt
+                expiresAt: $expiresAt,
+                repositories: $repositories
               }}) {{
                 metric
                 value {{
@@ -70,16 +72,12 @@ class BaseMetricsTest(Requester):
         self,
         account_id: int,
         team_id: int,
-        metrics: List[str],
+        metrics: list[str],
         repositories: Optional[list[str]],
         validFrom: date,
         expiresAt: date,
     ) -> dict:
         assert isinstance(metrics, list)
-        if repositories is None:
-            repositories = {}
-        else:
-            repositories = {MetricParamsFields.repositories: repositories}
         body = {
             "query": self._query(),
             "variables": {
@@ -88,7 +86,7 @@ class BaseMetricsTest(Requester):
                 MetricParamsFields.metrics: metrics,
                 MetricParamsFields.validFrom: str(validFrom),
                 MetricParamsFields.expiresAt: str(expiresAt),
-                **repositories,
+                **{MetricParamsFields.repositories: repositories},
             },
         }
         return await align_graphql_request(self.client, headers=self.headers, json=body)
@@ -146,15 +144,11 @@ class TestMetrics(BaseMetricsTest):
                     {
                         "metric": "pr-lead-time",
                         "value": {
-                            "team": {
-                                "id": 1,
-                            },
+                            "team": {"id": 1},
                             "value": {"str": "2939453s", "int": None, "float": None},
                             "children": [
                                 {
-                                    "team": {
-                                        "id": 2,
-                                    },
+                                    "team": {"id": 2},
                                     "value": {"str": "4337530s", "int": None, "float": None},
                                     "children": [],
                                 },
@@ -164,15 +158,11 @@ class TestMetrics(BaseMetricsTest):
                     {
                         "metric": "release-prs",
                         "value": {
-                            "team": {
-                                "id": 1,
-                            },
+                            "team": {"id": 1},
                             "value": {"str": None, "int": 474, "float": None},
                             "children": [
                                 {
-                                    "team": {
-                                        "id": 2,
-                                    },
+                                    "team": {"id": 2},
                                     "value": {"str": None, "int": 382, "float": None},
                                     "children": [],
                                 },
@@ -188,9 +178,7 @@ class TestMetrics(BaseMetricsTest):
                             "value": {"str": None, "int": 0, "float": None},
                             "children": [
                                 {
-                                    "team": {
-                                        "id": 2,
-                                    },
+                                    "team": {"id": 2},
                                     "value": {"str": None, "int": 0, "float": None},
                                     "children": [],
                                 },
@@ -213,7 +201,7 @@ class TestMetrics(BaseMetricsTest):
         self,
         sample_teams,
         metric: str,
-        value: Dict[str, Any],
+        value: dict[str, Any],
     ) -> None:
         res = await self._request(
             1,
@@ -226,7 +214,7 @@ class TestMetrics(BaseMetricsTest):
         assert len(mv := res["data"]["metricsCurrentValues"]) == 1
         assert mv[0]["metric"] == metric
 
-        def validate_recursively(yours: Dict[str, Any], mine: Dict[str, Any]) -> None:
+        def validate_recursively(yours: dict[str, Any], mine: dict[str, Any]) -> None:
             for key, val in mine.items():
                 if isinstance(val, list):
                     for yours_sub, mine_sub in zip(yours[key], val):
@@ -308,6 +296,26 @@ class TestMetrics(BaseMetricsTest):
         assert (team_2_data := team_1_data["children"][0])["team"]["id"] == 2
         assert team_2_data["value"] == {"float": None, "int": None, "str": None}
 
+    async def test_repositories_param(self, sdb: Database) -> None:
+        await gather(models_insert(sdb, TeamFactory(id=1, members=[40020, 39789])))
+        metrics = [PullRequestMetricID.PR_ALL_COUNT]
+        res = await self._request(1, 1, metrics, None, date(2016, 1, 1), date(2019, 1, 1))
+        value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
+        assert value == 93
+
+        res = await self._request(
+            1, 1, metrics, ["github.com/src-d/go-git"], date(2016, 1, 1), date(2019, 1, 1),
+        )
+        value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
+        # all data in big fixture is about go-git
+        assert value == 93
+
+        res = await self._request(
+            1, 1, metrics, ["github.com/src-d/gitbase"], date(2016, 1, 1), date(2019, 1, 1),
+        )
+        value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
+        assert value == 0
+
 
 class TestMetricsNasty(BaseMetricsTest):
     async def test_fetch_bad_team(self) -> None:
@@ -323,7 +331,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 18, "column": 15}],
+                    "locations": [{"line": 19, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -347,7 +355,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 18, "column": 15}],
+                    "locations": [{"line": 19, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -371,7 +379,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 18, "column": 15}],
+                    "locations": [{"line": 19, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
@@ -395,7 +403,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 18, "column": 15}],
+                    "locations": [{"line": 19, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
