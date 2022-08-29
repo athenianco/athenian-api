@@ -10,7 +10,7 @@ psycopg2-binary==2.9.3
 xxhash==3.0.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
 numpy==1.23.2
-scipy==1.8.1
+scipy==1.9.1
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.9.5
 prometheus_client==0.14.1
