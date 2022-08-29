@@ -321,7 +321,7 @@ class TestSyncTeamsDryRun(BaseTestSyncTeams):
 class TestSyncTeamsForce(BaseTestSyncTeams):
     async def test_delete_unmapped_teams(self, sdb: Database, mdb: Database) -> None:
         root_team_id = await self._mk_root_team(sdb)
-        await models_insert(
+        await models_insert_auto_pk(
             sdb,
             TeamFactory(parent_id=root_team_id, origin_node_id=123),
         )

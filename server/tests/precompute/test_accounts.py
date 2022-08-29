@@ -186,7 +186,7 @@ class TestPrecomputeReposet:
             AccountFactory(id=11),
             AccountGitHubAccount(id=meta_id, account_id=11),
             RepositorySetFactory(owner_id=11, precomputed=True),
-            TeamFactory(owner_id=11, name=Team.BOTS, members=[]),
+            TeamFactory(owner_id=11, name=Team.BOTS, members=[], id=1011),
         )
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
@@ -210,7 +210,7 @@ class TestPrecomputeReposet:
                 reposet, (meta_id,), ctx, ns, dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
             )
 
-        bots_team_row = await assert_existing_row(sdb, Team, owner_id=11, name=Team.BOTS)
+        bots_team_row = await assert_existing_row(sdb, Team, id=1011, owner_id=11, name=Team.BOTS)
         assert bots_team_row[Team.members.name] == [100]
 
     # reset Bots singleton cache
