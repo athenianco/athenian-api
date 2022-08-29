@@ -126,48 +126,35 @@ class _GoalToServe:
         expires_at = goal_row[Goal.expires_at.name]
         initial_interval = goal_initial_query_interval(valid_from, expires_at)
 
-        teams_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
-
-        # FIXME: why teams_map misses some IDs from team_member_map?
-
+        rows_by_team = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
         if only_with_targets:
-            # 1 - prune team tree to keep only branches with assigned teams
-            goal_team_tree = _team_tree_prune_empty_branches(team_tree, lambda id: id in teams_map)
-            # assigned_teams is a non empty subset of all the ids in team_tree,
+            # prune team tree to keep only branches with assigned teams
+            pruned_tree = _team_tree_prune_empty_branches(team_tree, lambda id: id in rows_by_team)
+            # id in rows_by_team is a non empty subset of all the ids in team_tree,
             # so the pruned tree is never empty
-            assert goal_team_tree is not None
-            # 2 - in the metrics requests only ask for teams present in the pruned tree
-            goal_tree_team_ids = goal_team_tree.flatten_team_ids()
-            requested_teams = {
-                team_id: RequestedTeamDetails(
-                    members,
-                    resolve_goal_repositories(
-                        teams_map[team_id][TeamGoal.repositories.name], prefixer,
-                    ),
-                )
-                for team_id, members in team_member_map.items()
-                if team_id in goal_tree_team_ids
-                and team_id in teams_map  # FIXME: why is this needed??
-            }
+            assert pruned_tree is not None
         else:
-            goal_team_tree = team_tree
-            requested_teams = {
-                team_id: RequestedTeamDetails(
-                    members,
-                    resolve_goal_repositories(
-                        teams_map[team_id][TeamGoal.repositories.name], prefixer,
-                    ),
-                )
-                for team_id, members in team_member_map.items()
-                if team_id in teams_map  # FIXME: why is this needed??
-            }
+            pruned_tree = team_tree
+
+        # in the metrics requests only ask for teams present in the pruned tree
+        goal_tree_team_ids = pruned_tree.flatten_team_ids()
+        requested_teams = {}
+        for team_id in goal_tree_team_ids:
+            try:
+                repositories = rows_by_team[team_id][TeamGoal.repositories.name]
+            except KeyError:
+                repositories = goal_row["goal_repositories"]
+            requested_teams[team_id] = RequestedTeamDetails(
+                team_member_map[team_id],
+                resolve_goal_repositories(repositories, prefixer),
+            )
 
         team_metrics_request = TeamMetricsRequest(
             metrics=[metric],
             time_intervals=(initial_interval, (valid_from, expires_at)),
             teams=requested_teams,
         )
-        return team_metrics_request, goal_team_tree
+        return team_metrics_request, pruned_tree
 
 
 @dataclass(slots=True)

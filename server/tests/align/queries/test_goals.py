@@ -232,6 +232,31 @@ class TestGoals(BaseGoalsTest):
         assert team_goal_11["value"]["initial"]["int"] == 3
         assert team_goal_11["value"]["current"]["int"] == 528
 
+    async def test_child_team_with_no_goal(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            TeamFactory(id=10, parent_id=1, members=[39789]),
+            GoalFactory(
+                id=20,
+                metric=PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
+                valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=1, target=1),
+        )
+        res = await self._request(1, 0)
+        goal = res["data"]["goals"][0]
+
+        assert (team_1_goal := goal["teamGoal"])["team"]["id"] == 1
+        assert (team_10_goal := team_1_goal["children"][0])["team"]["id"] == 10
+
+        assert team_1_goal["value"]["initial"]["float"] is not None
+        assert team_1_goal["value"]["current"]["float"] is not None
+        # also metrics for child team with no goal are returned
+        assert team_10_goal["value"]["initial"]["float"] is not None
+        assert team_10_goal["value"]["current"]["float"] is not None
+
     async def test_multiple_teams(self, sdb: Database) -> None:
         await models_insert(
             sdb,
@@ -393,3 +418,29 @@ class TestGoals(BaseGoalsTest):
 
         goals = res["data"]["goals"]
         assert [goal["id"] for goal in goals] == [20]
+
+    async def test_goals_repositories(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            TeamFactory(id=10, parent_id=1, members=[39789]),
+            GoalFactory(
+                id=20,
+                metric=PullRequestMetricID.PR_ALL_COUNT,
+                valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+                repositories=[[39652769, None]],
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, target=1, repositories=[[40550, None]]),
+        )
+        res = await self._request(1, 0)
+        goal = res["data"]["goals"][0]
+
+        assert (team_1_goal := goal["teamGoal"])["team"]["id"] == 1
+        assert (team_10_goal := team_1_goal["children"][0])["team"]["id"] == 10
+
+        # metrics for team 1 have been computed considering default goal repositories filter
+        assert team_1_goal["value"]["initial"]["int"] == 0
+        # metrics for team 10 have been computed considering repositories [[40550, None]] filter
+        assert team_10_goal["value"]["initial"]["int"] == 88
+        # assert team_10_goal["value"]["current"]["float"] is not None

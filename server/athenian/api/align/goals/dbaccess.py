@@ -189,13 +189,21 @@ async def fetch_team_goals(
 
     TeamGoal linked to archived Goal are not included.
     Result is ordered by Goal id.
+    Columns from joined Goal are included, with `goal_` prefix in case of conflict.
     """
+    team_goal_rows = (TeamGoal.team_id, TeamGoal.target, TeamGoal.repositories)
+    goal_rows = (
+        Goal.id,
+        Goal.valid_from,
+        Goal.expires_at,
+        Goal.name,
+        Goal.metric,
+        Goal.repositories.label("goal_repositories"),
+    )
     stmt = (
-        sa.select(TeamGoal.team_id, TeamGoal.target, Goal)
+        sa.select(*team_goal_rows, *goal_rows)
         .join_from(TeamGoal, Goal, TeamGoal.goal_id == Goal.id)
-        .where(
-            sa.and_(TeamGoal.team_id.in_(team_ids), Goal.account_id == account, ~Goal.archived),
-        )
+        .where(TeamGoal.team_id.in_(team_ids), Goal.account_id == account, ~Goal.archived)
         .order_by(Goal.id, TeamGoal.team_id)
     )
     return await sdb.fetch_all(stmt)
