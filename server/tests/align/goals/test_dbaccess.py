@@ -128,6 +128,19 @@ class TestFetchTeamGoals:
         rows = await fetch_team_goals(1, [10], sdb)
         assert [r[Goal.id.name] for r in rows] == [20]
 
+    async def test_repositories_column(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            GoalFactory(id=20, repositories=[[1, None], [2, "logic"]]),
+            TeamGoalFactory(team_id=10, goal_id=20, repositories=None),
+        )
+        rows = await fetch_team_goals(1, [10], sdb)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row[TeamGoal.repositories.name] is None
+        assert row["goal_repositories"] == [[1, None], [2, "logic"]]
+
 
 class TestDeleteEmptyGoals:
     async def test_delete(self, sdb: Database) -> None:
