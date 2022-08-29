@@ -68,8 +68,35 @@ class TestSyncTeams(BaseTestSyncTeams):
 
         assert team_b[Team.parent_id.name] == team_a_id
 
+    async def test_create_name_clash(self, sdb: Database, mdb_rw: Database) -> None:
+        root_team_id = await self._mk_root_team(sdb)
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = (
+                md_factory.TeamFactory(node_id=100, name=Team.ROOT),
+                md_factory.TeamFactory(node_id=101, parent_team_id=100, name=Team.BOTS),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=200),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=201),
+                md_factory.TeamMemberFactory(parent_id=101, child_id=200),
+            )
+            await models_insert(mdb_rw, *models)
+            mdb_cleaner.add_models(*models)
+
+            await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb_rw)
+
+        team_root = await assert_existing_row(sdb, Team, name=Team.ROOT)
+        team_a = await assert_existing_row(sdb, Team, name=Team.ROOT + ".github")
+        team_b = await assert_existing_row(sdb, Team, name=Team.BOTS + ".github")
+        await assert_missing_row(sdb, Team, name=Team.BOTS)
+
+        assert team_root[Team.members.name] == []
+        assert team_a[Team.parent_id.name] == root_team_id
+        assert team_a[Team.members.name] == [200, 201]
+        assert team_b[Team.parent_id.name] == team_a[Team.id.name]
+        assert team_b[Team.members.name] == [200]
+
     @freeze_time("2021-01-01")
-    async def test_update(self, sdb: Database, mdb_rw: Database) -> None:
+    async def test_update_smoke(self, sdb: Database, mdb_rw: Database) -> None:
         root_team_id = await self._mk_root_team(sdb)
         team_a_id, team_b_id = await models_insert_auto_pk(
             sdb,
@@ -112,6 +139,51 @@ class TestSyncTeams(BaseTestSyncTeams):
         assert team_b[Team.members.name] == [200]
         # teamB was not updated
         assert ensure_db_datetime_tz(team_b[Team.updated_at.name], sdb) == dt(2020, 1, 1)
+
+    @pytest.mark.parametrize("name", [Team.ROOT, Team.BOTS])
+    @freeze_time("2021-01-01")
+    async def test_update_name_clash(self, sdb: Database, mdb_rw: Database, name: str) -> None:
+        root_team_id = await self._mk_root_team(sdb)
+        team_a_id, team_b_id = await models_insert_auto_pk(
+            sdb,
+            TeamFactory(
+                name=f"{name}.github",
+                origin_node_id=100,
+                parent_id=root_team_id,
+                members=[],
+                updated_at=dt(2020, 1, 1),
+            ),
+            TeamFactory(
+                name="teamA",
+                origin_node_id=101,
+                parent_id=root_team_id,
+                members=[200],
+                updated_at=dt(2020, 1, 1),
+            ),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = (
+                md_factory.TeamFactory(node_id=100, name=name, parent_team_id=101),
+                md_factory.TeamFactory(node_id=101, name="teamB"),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=200),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=201),
+                md_factory.TeamMemberFactory(parent_id=101, child_id=200),
+            )
+            await models_insert(mdb_rw, *models)
+            mdb_cleaner.add_models(*models)
+            await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb_rw)
+
+        team_a = await assert_existing_row(sdb, Team, name=f"{name}.github")
+        assert team_a[Team.parent_id.name] == team_b_id
+        assert team_a[Team.members.name] == [200, 201]
+        # {name} was updated
+        assert ensure_db_datetime_tz(team_a[Team.updated_at.name], sdb) == dt(2021, 1, 1)
+
+        team_b = await assert_existing_row(sdb, Team, name="teamB")
+        assert team_b[Team.parent_id.name] == root_team_id
+        assert team_b[Team.members.name] == [200]
+        assert ensure_db_datetime_tz(team_b[Team.updated_at.name], sdb) > dt(2020, 1, 1)
 
     async def test_invert_two_team_names(self, sdb: Database, mdb_rw: Database) -> None:
         root_team_id = await self._mk_root_team(sdb)

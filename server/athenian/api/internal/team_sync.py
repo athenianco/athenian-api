@@ -219,6 +219,12 @@ class _StateDBOperatorI(metaclass=abc.ABCMeta):
         ...
 
 
+def _ensure_name_no_clash_with_builtin(name: str) -> str:
+    if name == Team.BOTS or name == Team.ROOT:
+        name += ".github"
+    return name
+
+
 class _StateDBOperator(_StateDBOperatorI):
     def __init__(self, account: int, sdb_conn: Connection):
         self._account = account
@@ -233,7 +239,7 @@ class _StateDBOperator(_StateDBOperatorI):
         for meta_team_row in _new_meta_teams_insertion_order(meta_team_rows):
             origin_node_id = meta_team_row[MetadataTeam.id.name]
             members = sorted(all_members.get(origin_node_id, []))
-            real_name = meta_team_row[MetadataTeam.name.name]
+            real_name = _ensure_name_no_clash_with_builtin(meta_team_row[MetadataTeam.name.name])
             name = _NameMangler.apply(real_name)
 
             # parent team can be either created in a *previous* iteration
@@ -297,7 +303,7 @@ class _DryRunStateDBOperator(_StateDBOperatorI):
     ) -> None:
         for meta_team_row in _new_meta_teams_insertion_order(meta_team_rows):
             origin_node_id = meta_team_row[MetadataTeam.id.name]
-            name = meta_team_row[MetadataTeam.name.name]
+            name = _ensure_name_no_clash_with_builtin(meta_team_row[MetadataTeam.name.name])
             log.info('creating team "%s" with origin_node_id %s', name, origin_node_id)
             state_teams.track_created_team(-1, origin_node_id)
 
@@ -326,7 +332,9 @@ class _DryRunStateDBOperator(_StateDBOperatorI):
 def _get_team_updates(meta_row: Row, members: list[int], state_teams: _StateTeams) -> dict:
     updates: dict[InstrumentedAttribute, Any] = {}
     state_team_row = state_teams.existing_by_origin_node_id[meta_row[MetadataTeam.id.name]]
-    if state_team_row[Team.name.name] != (meta_name := meta_row[MetadataTeam.name.name]):
+    if state_team_row[Team.name.name] != (
+        meta_name := _ensure_name_no_clash_with_builtin(meta_row[MetadataTeam.name.name])
+    ):
         updates[Team.name] = _NameMangler.apply(meta_name)
 
     if state_team_row[Team.members.name] != (sorted_members := sorted(members)):
