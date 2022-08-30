@@ -13,12 +13,13 @@ from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
     GitHubMergedPullRequestFacts,
 )
+from athenian.api.models.state.models import AccountGitHubAccount
 from athenian.api.precompute.context import PrecomputeContext
 
 
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     """Update the labels in the precomputed PRs."""
-    log, mdb, pdb = context.log, context.mdb, context.pdb
+    log, sdb, mdb, pdb = context.log, context.sdb, context.mdb, context.pdb
     all_prs = await read_sql_query(
         select([NodePullRequest.id, NodePullRequest.acc_id]),
         mdb,
@@ -26,14 +27,19 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     )
     log.info("There are %d PRs in mdb", len(all_prs))
     all_node_ids = all_prs[NodePullRequest.id.name].values
-    all_accounts = all_prs[NodePullRequest.acc_id.name].values
+    gh_all_accounts = all_prs[NodePullRequest.acc_id.name].values
     del all_prs
-    max_account = all_accounts.max()
     order = np.argsort(all_node_ids)
     all_node_ids = all_node_ids[order]
-    all_accounts = all_accounts[order]
+    gh_all_accounts = gh_all_accounts[order]
     del order
-    all_pr_times_labels, all_pr_times_empty, all_merged_labels, all_merged_empty = await gather(
+    (
+        all_pr_times_labels,
+        all_pr_times_empty,
+        all_merged_labels,
+        all_merged_empty,
+        acc_map_df,
+    ) = await gather(
         read_sql_query(
             select(
                 [
@@ -98,6 +104,13 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                 GitHubMergedPullRequestFacts.pr_node_id,
             ],
         ),
+        read_sql_query(
+            select(AccountGitHubAccount.id, AccountGitHubAccount.account_id).order_by(
+                AccountGitHubAccount.id,
+            ),
+            sdb,
+            [AccountGitHubAccount.id, AccountGitHubAccount.account_id],
+        ),
     )
 
     log.info(
@@ -126,23 +139,23 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     found_account_indexes = searchsorted_inrange(all_node_ids, unique_prs)
     found_mask = all_node_ids[found_account_indexes] == unique_prs
     unique_prs = unique_prs[found_mask]
-    unique_pr_acc_ids = all_accounts[found_account_indexes[found_mask]]
+    gh_unique_pr_acc_ids = gh_all_accounts[found_account_indexes[found_mask]]
     del found_mask
     del found_account_indexes
     del all_node_ids
-    del all_accounts
+    del gh_all_accounts
     if (prs_count := len(unique_prs)) == 0:
         return
     log.info("Querying labels in %d PRs", prs_count)
-    order = np.argsort(unique_pr_acc_ids)
+    order = np.argsort(gh_unique_pr_acc_ids)
     unique_prs = unique_prs[order]
-    unique_pr_acc_ids = unique_pr_acc_ids[order]
+    gh_unique_pr_acc_ids = gh_unique_pr_acc_ids[order]
     del order
-    unique_acc_ids, acc_id_counts = np.unique(unique_pr_acc_ids, return_counts=True)
-    del unique_pr_acc_ids
-    node_id_by_acc_id = np.split(unique_prs, np.cumsum(acc_id_counts))
+    gh_unique_acc_ids, gh_acc_id_counts = np.unique(gh_unique_pr_acc_ids, return_counts=True)
+    del gh_unique_pr_acc_ids
+    node_id_by_gh_acc_id = np.split(unique_prs, np.cumsum(gh_acc_id_counts))
     del unique_prs
-    del acc_id_counts
+    del gh_acc_id_counts
     tasks = [
         read_sql_query(
             select(
@@ -157,20 +170,20 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             mdb,
             [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
         )
-        for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id)
+        for acc_id, node_ids in zip(gh_unique_acc_ids, node_id_by_gh_acc_id)
     ]
-    del node_id_by_acc_id
-    dfs_acc_counts = [np.zeros(max_account + 1, dtype=int) for _ in range(4)]
-    for i, col in enumerate(
-        (
-            all_pr_times_labels[GitHubDonePullRequestFacts.acc_id.name],
-            all_pr_times_empty[GitHubDonePullRequestFacts.acc_id.name],
-            all_merged_labels[GitHubMergedPullRequestFacts.acc_id.name],
-            all_merged_empty[GitHubMergedPullRequestFacts.acc_id.name],
-        ),
+    del node_id_by_gh_acc_id
+    max_account = acc_map_df[AccountGitHubAccount.account_id.name].values.max()
+    dfs_acc_counts = []
+    for col in (
+        all_pr_times_labels[GitHubDonePullRequestFacts.acc_id.name],
+        all_pr_times_empty[GitHubDonePullRequestFacts.acc_id.name],
+        all_merged_labels[GitHubMergedPullRequestFacts.acc_id.name],
+        all_merged_empty[GitHubMergedPullRequestFacts.acc_id.name],
     ):
         accs, counts = np.unique(col.values, return_counts=True)
-        dfs_acc_counts[i][accs] = counts
+        dfs_acc_counts.append(np.zeros(max_account + 1, dtype=int))
+        dfs_acc_counts[-1][accs] = counts
     batch_size = 20
     update_tasks = []
     for batch in tqdm(
@@ -185,7 +198,10 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             ):
                 actual_labels[pr_node_id][label] = ""
         log.info("Loaded labels for %d PRs", len(actual_labels))
-        acc_ids = unique_acc_ids[batch : batch + batch_size]
+        gh_acc_ids = gh_unique_acc_ids[batch : batch + batch_size]
+        acc_ids = acc_map_df[AccountGitHubAccount.account_id.name].values[
+            np.searchsorted(acc_map_df[AccountGitHubAccount.id.name].values, gh_acc_ids)
+        ]
         for (df, model), df_acc_size in zip(
             (
                 (all_pr_times_labels, GitHubDonePullRequestFacts),
@@ -195,8 +211,11 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             ),
             dfs_acc_counts,
         ):
-            indexes = np.searchsorted(df[model.acc_id.name].values, [acc_ids[0], acc_ids[-1]])
-            indexes = slice(indexes[0], indexes[1] + df_acc_size[acc_ids[-1]])
+            indexes = np.searchsorted(df[model.acc_id.name].values, acc_ids)
+            lengths = df_acc_size[acc_ids]
+            indexes = np.repeat(indexes + lengths - lengths.cumsum(), lengths) + np.arange(
+                lengths.sum(),
+            )
             for pr_node_id, labels in zip(
                 df[model.pr_node_id.name].values[indexes],
                 df[model.labels.name].values[indexes],
