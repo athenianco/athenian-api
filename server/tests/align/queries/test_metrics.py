@@ -441,16 +441,24 @@ class TestMetricsNasty(BaseMetricsTest):
         assert_extension_error(res, "validFrom cannot be in the future")
         assert res.get("data") is None
 
+    async def test_fetch_invalid_metric(self, sample_teams) -> None:
+        res = await self._request(
+            1, 1, ["whatever"], ["github.com/src-d/go-git"], date(2019, 1, 1), date(2022, 1, 1),
+        )
+        assert res["errors"][0]["message"] == "Bad Request"
+        assert_extension_error(res, "The following metrics are not supported: whatever")
+
     async def test_fetch_bad_repository(self, sample_teams) -> None:
         res = await self._request(
             1,
             1,
-            ["whatever"],
-            ["github.com/athenianco/vadim"],
+            [PullRequestMetricID.PR_ALL_COUNT],
+            ["github.com/src-d/not-existing"],
             date(2019, 1, 1),
             date(2022, 1, 1),
         )
-        assert res["errors"][0]["message"] == "Bad Request"
+        assert res["errors"][0]["message"] == "Forbidden"
+        assert_extension_error(res, "Account 1 is access denied to repos src-d/not-existing")
 
 
 class TestSimplifyRequests:
