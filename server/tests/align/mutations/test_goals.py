@@ -917,3 +917,38 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert "errors" not in res
         row = await assert_existing_row(sdb, Goal, id=100)
         assert row[Goal.repositories.name] is None
+
+    async def test_update_repos_and_change_team_goals(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100),
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            TeamGoalFactory(team_id=10, goal_id=100, target=1, repositories=[[40550, "alpha"]]),
+        )
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 2}},
+            {TeamGoalChangeFields.teamId: 11, TeamGoalChangeFields.target: {"int": 3}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.repositories: {
+                    UpdateRepositoriesInputFields.value: ["github.com/src-d/go-git"],
+                },
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        assert res["data"]["updateGoal"]["goal"]["id"] == 100
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, None]]
+
+        team_goal_row_10 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        assert team_goal_row_10[TeamGoal.repositories.name] == [[40550, None]]
+
+        team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
+        assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, None]]
