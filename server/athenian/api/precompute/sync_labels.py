@@ -159,15 +159,17 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id)
     ]
     del node_id_by_acc_id
-    dfs_acc_counts = (
-        np.unique(col.values, return_counts=True)[1]
-        for col in (
+    dfs_acc_counts = [np.zeros(unique_acc_ids[-1] + 1, dtype=int) for _ in range(4)]
+    for i, col in enumerate(
+        (
             all_pr_times_labels[GitHubDonePullRequestFacts.acc_id.name],
             all_pr_times_empty[GitHubDonePullRequestFacts.acc_id.name],
             all_merged_labels[GitHubMergedPullRequestFacts.acc_id.name],
             all_merged_empty[GitHubMergedPullRequestFacts.acc_id.name],
-        )
-    )
+        ),
+    ):
+        accs, counts = np.unique(col.values, return_counts=True)
+        dfs_acc_counts[i][accs] = counts
     batch_size = 20
     update_tasks = []
     for batch in tqdm(
