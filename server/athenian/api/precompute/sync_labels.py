@@ -28,6 +28,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     all_node_ids = all_prs[NodePullRequest.id.name].values
     all_accounts = all_prs[NodePullRequest.acc_id.name].values
     del all_prs
+    max_account = all_accounts.max()
     order = np.argsort(all_node_ids)
     all_node_ids = all_node_ids[order]
     all_accounts = all_accounts[order]
@@ -159,7 +160,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id)
     ]
     del node_id_by_acc_id
-    dfs_acc_counts = [np.zeros(unique_acc_ids[-1] + 1, dtype=int) for _ in range(4)]
+    dfs_acc_counts = [np.zeros(max_account + 1, dtype=int) for _ in range(4)]
     for i, col in enumerate(
         (
             all_pr_times_labels[GitHubDonePullRequestFacts.acc_id.name],
