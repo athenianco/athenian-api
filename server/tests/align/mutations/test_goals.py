@@ -66,11 +66,7 @@ class BaseGoalTest(Requester):
 
 
 class BaseCreateGoalTest(BaseGoalTest):
-    async def _request(
-        self,
-        variables: dict,
-        user_id: Optional[str] = _USER_ID,
-    ) -> dict:
+    async def _request(self, variables: dict, user_id: Optional[str] = _USER_ID) -> dict:
         body = {"query": self._QUERY, "variables": variables}
         return await self._base_request(body, user_id)
 
@@ -268,16 +264,8 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
 
 class TestCreateGoals(BaseCreateGoalTest):
-    @pytest.mark.parametrize("repos", [None, ["github.com/src-d/go-git/alpha"]])
-    async def test_create_single_team_goal(
-        self,
-        sdb: Database,
-        repos: Optional[list[str]],
-    ) -> None:
-        await models_insert(
-            sdb,
-            TeamFactory(owner_id=1, id=10),
-        )
+    async def test_create_single_team_goal(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
 
         team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
 
@@ -285,7 +273,6 @@ class TestCreateGoals(BaseCreateGoalTest):
             "createGoalInput": self._mk_input(
                 name="G0",
                 metric=PullRequestMetricID.PR_COMMENTS_PER,
-                repositories=repos,
                 validFrom="2022-01-01",
                 expiresAt="2022-12-31",
                 teamGoals=team_goals,
@@ -306,6 +293,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             name="G0",
             metric=PullRequestMetricID.PR_COMMENTS_PER,
         )
+        assert goal_row[Goal.repositories.name] is None
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
         )
@@ -315,12 +303,9 @@ class TestCreateGoals(BaseCreateGoalTest):
             2023, 1, 1, tzinfo=timezone.utc,
         )
 
-        if repos is None:
-            assert goal_row[Goal.repositories.name] is None
-        else:
-            assert goal_row[Goal.repositories.name] == [[40550, "alpha"]]
-
-        await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10, target=42)
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_row[TeamGoal.target.name] == 42
+        assert tg_row[TeamGoal.repositories.name] is None
 
     async def test_create_multiple_team_goals(self, sdb: Database) -> None:
         await models_insert(
@@ -458,6 +443,41 @@ class TestCreateGoals(BaseCreateGoalTest):
         await assert_existing_row(
             sdb, Goal, id=new_goal_id, valid_from=dt(2023, 1, 1), expires_at=dt(2024, 1, 1),
         )
+
+    async def test_repositories(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=11, parent_id=10),
+        )
+
+        team_goals = [
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+            {TeamGoalInputFields.teamId: 11, TeamGoalInputFields.target: {"int": 43}},
+        ]
+
+        variables = {
+            "createGoalInput": self._mk_input(
+                repositories=["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+                teamGoals=team_goals,
+            ),
+            "accountId": 1,
+        }
+
+        res = await self._request(variables)
+        assert "errors" not in res
+
+        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        assert goal_row[Goal.repositories.name] == [[40550, "alpha"], [40550, "beta"]]
+
+        # goal repositories are copied to team goals
+        tg_row_10 = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_row_10[TeamGoal.target.name] == 42
+        assert tg_row_10[TeamGoal.repositories.name] == [[40550, "alpha"], [40550, "beta"]]
+
+        tg_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
+        assert tg_row_11[TeamGoal.target.name] == 43
+        assert tg_row_11[TeamGoal.repositories.name] == [[40550, "alpha"], [40550, "beta"]]
 
 
 class BaseRemoveGoalTest(BaseGoalTest):
@@ -897,3 +917,38 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert "errors" not in res
         row = await assert_existing_row(sdb, Goal, id=100)
         assert row[Goal.repositories.name] is None
+
+    async def test_update_repos_and_change_team_goals(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100),
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            TeamGoalFactory(team_id=10, goal_id=100, target=1, repositories=[[40550, "alpha"]]),
+        )
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 2}},
+            {TeamGoalChangeFields.teamId: 11, TeamGoalChangeFields.target: {"int": 3}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.repositories: {
+                    UpdateRepositoriesInputFields.value: ["github.com/src-d/go-git"],
+                },
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        assert res["data"]["updateGoal"]["goal"]["id"] == 100
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, None]]
+
+        team_goal_row_10 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        assert team_goal_row_10[TeamGoal.repositories.name] == [[40550, None]]
+
+        team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
+        assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, None]]

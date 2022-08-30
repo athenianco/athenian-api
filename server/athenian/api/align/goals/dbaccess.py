@@ -174,6 +174,7 @@ async def update_goal(
     }
     # fmt: on
     if dependent_values:
+        dependent_values[TeamGoal.updated_at] = datetime.now(timezone.utc)
         await sdb_conn.execute(
             sa.update(TeamGoal).where(TeamGoal.goal_id == goal_id).values(dependent_values),
         )
