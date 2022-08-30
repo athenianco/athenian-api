@@ -39,6 +39,8 @@ from athenian.api.internal.features.jira.issue_metrics import (
     metric_calculators as jira_metric_calculators,
 )
 from athenian.api.internal.jira import get_jira_installation_or_none, load_mapped_jira_users
+from athenian.api.internal.logical_repos import coerce_logical_repos
+from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.types import (
@@ -47,12 +49,13 @@ from athenian.api.internal.miners.types import (
     PRParticipationKind,
     ReleaseParticipationKind,
 )
-from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import InvalidRequestError
+from athenian.api.models.web import ForbiddenError, InvalidRequestError
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
@@ -80,8 +83,11 @@ async def resolve_metrics_current_values(
     )
     time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
+
+    repos = await _parse_repositories(params, accountId, meta_ids, info.context)
+
     teams = {
-        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], None)
+        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], repos)
         for row in team_rows
     }
     team_metrics_all_intervals = await calculate_team_metrics(
@@ -101,6 +107,27 @@ async def resolve_metrics_current_values(
 
     models = _build_metrics_response(team_tree, params[MetricParamsFields.metrics], team_metrics)
     return [m.to_dict() for m in models]
+
+
+async def _parse_repositories(
+    params: Mapping[str, Any],
+    account_id: int,
+    meta_ids: tuple[int, ...],
+    request: AthenianWebRequest,
+) -> Optional[tuple[str, ...]]:
+    if (repos := params.get(MetricParamsFields.repositories)) is not None:
+        repos = tuple(RepositoryName.from_prefixed(r).unprefixed for r in repos)
+        checker = access_classes["github"](
+            account_id, meta_ids, request.sdb, request.mdb, request.cache,
+        )
+        await checker.load()
+        if denied := await checker.check(coerce_logical_repos(repos).keys()):
+            raise ResponseError(
+                ForbiddenError(
+                    detail=f"Account {account_id} is access denied to repos {'.'.join(denied)}",
+                ),
+            )
+    return repos
 
 
 def _parse_time_interval(params: Mapping[str, Any]) -> Interval:

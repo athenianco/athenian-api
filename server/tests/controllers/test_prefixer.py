@@ -63,6 +63,20 @@ class TestRepositoryName:
         name = RepositoryName.from_prefixed("gitlab.com/org/repo").with_logical("l")
         assert str(name) == "gitlab.com/org/repo/l"
 
+    def test_unprefixed(self) -> None:
+        name = RepositoryName.from_prefixed("gitlab.com/org/repo")
+        assert name.unprefixed == "org/repo"
+
+        name = RepositoryName(None, "org2", "repo2", None)
+        assert name.unprefixed == "org2/repo2"
+
+    def test_unprefixed_logical(self) -> None:
+        name = RepositoryName.from_prefixed("gitlab.com/org/repo/logic")
+        assert name.unprefixed == "org/repo/logic"
+
+        name = RepositoryName(None, "org2", "repo2", "l2")
+        assert name.unprefixed == "org2/repo2/l2"
+
 
 class TestRepoIdentitiesMapper:
     def test_prefixed_names_to_identities(self) -> None:
