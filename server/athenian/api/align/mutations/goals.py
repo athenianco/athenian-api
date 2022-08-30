@@ -132,15 +132,6 @@ async def _parse_create_goal_input(
     """Parse CreateGoalInput into GoalCreationInfo."""
     validate_goal_metric(input[CreateGoalInputFields.metric])
 
-    team_goals = [
-        _parse_team_goal_input(tg_input) for tg_input in input[CreateGoalInputFields.teamGoals]
-    ]
-    if not team_goals:
-        raise GoalMutationError("At least one teamGoals is required")
-
-    if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
-        raise GoalMutationError("More than one team goal with the same teamId")
-
     valid_from, expires_at = goal_dates_to_datetimes(
         input[CreateGoalInputFields.validFrom], input[CreateGoalInputFields.expiresAt],
     )
@@ -150,6 +141,19 @@ async def _parse_create_goal_input(
     repositories = await parse_request_repositories(
         input.get(CreateGoalInputFields.repositories), request, account_id,
     )
+
+    # user cannot directly set team goal repositories, received goal repositories are applied
+    extra_team_goal_info = {TeamGoal.repositories.name: repositories}
+    team_goals = [
+        _parse_team_goal_input(tg_input, **extra_team_goal_info)
+        for tg_input in input[CreateGoalInputFields.teamGoals]
+    ]
+
+    if not team_goals:
+        raise GoalMutationError("At least one teamGoals is required")
+
+    if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
+        raise GoalMutationError("More than one team goal with the same teamId")
 
     goal = Goal(
         account_id=account_id,
@@ -163,15 +167,15 @@ async def _parse_create_goal_input(
 
 
 @sentry_span
-def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
-    """Parse TeamGoalInput into a Team model."""
+def _parse_team_goal_input(team_goal_input: dict, **extra: Any) -> TeamGoal:
+    """Parse TeamGoalInput into a TeamGoal model."""
     team_id = team_goal_input[TeamGoalInputFields.teamId]
     try:
         target = _parse_team_goal_target(team_goal_input[TeamGoalInputFields.target])
     except StopIteration:
         raise GoalMutationError(f"Invalid target for teamId {team_id}")
 
-    return TeamGoal(team_id=team_id, target=target)
+    return TeamGoal(team_id=team_id, target=target, **extra)
 
 
 def _parse_team_goal_target(team_goal_target: dict) -> int | float | str:
