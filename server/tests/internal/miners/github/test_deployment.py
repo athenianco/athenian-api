@@ -5155,8 +5155,14 @@ async def _validate_deployed_prs(pdb: morcilla.Database) -> None:
 def _validate_deployments(deps, count, with_2016):
     assert len(deps) == count * 2
     for env in ("staging", "production"):
-        assert deps.loc[f"{env}_2018_01_11"]["conclusion"] == "SUCCESS"
-        assert deps.loc[f"{env}_2018_01_12"]["conclusion"] == "FAILURE"
+        assert (
+            deps.loc[f"{env}_2018_01_11"]["conclusion"]
+            == DeploymentNotification.CONCLUSION_SUCCESS
+        )
+        assert (
+            deps.loc[f"{env}_2018_01_12"]["conclusion"]
+            == DeploymentNotification.CONCLUSION_FAILURE
+        )
     assert (deps["environment"] == "production").sum() == count
     assert (deps["environment"] == "staging").sum() == count
     components = deps["components"]

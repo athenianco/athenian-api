@@ -74,12 +74,12 @@ class DeploymentNotification(create_time_mixin(created_at=True, updated_at=True)
     """Client's pushed deployment notifications."""
 
     __tablename__ = "deployment_notifications"
-    CONCLUSION_SUCCESS = "SUCCESS"
-    CONCLUSION_FAILURE = "FAILURE"
-    CONCLUSION_CANCELLED = "CANCELLED"
+    CONCLUSION_SUCCESS = b"SUCCESS"
+    CONCLUSION_FAILURE = b"FAILURE"
+    CONCLUSION_CANCELLED = b"CANCELLED"
 
     name = Column(Text(), primary_key=True, nullable=False)
-    conclusion = Column(Text(), nullable=False)  # SUCCESS, FAILURE, CANCELLED
+    conclusion = Column(Text(), nullable=False, info={"dtype": "S9"})  # CONCLUSION_*
     environment = Column(Text(), nullable=False)  # production, staging, etc.; nothing's enforced
     url = Column(Text())
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)

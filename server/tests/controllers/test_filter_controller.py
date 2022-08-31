@@ -3939,9 +3939,24 @@ async def test_filter_environments_smoke(client, headers, repos, sample_deployme
     assert response.status == 200, response_text
     envs = [FilteredEnvironment.from_dict(x) for x in json.loads(response_text)]
     assert envs == [
-        FilteredEnvironment(name="canary", deployments_count=2, last_conclusion="SUCCESS"),
-        FilteredEnvironment(name="production", deployments_count=3, last_conclusion="FAILURE"),
-        FilteredEnvironment(name="staging", deployments_count=3, last_conclusion="FAILURE"),
+        FilteredEnvironment(
+            name="canary",
+            deployments_count=2,
+            last_conclusion="SUCCESS",
+            repositories=["github.com/src-d/go-git"],
+        ),
+        FilteredEnvironment(
+            name="production",
+            deployments_count=3,
+            last_conclusion="FAILURE",
+            repositories=["github.com/src-d/go-git"],
+        ),
+        FilteredEnvironment(
+            name="staging",
+            deployments_count=3,
+            last_conclusion="FAILURE",
+            repositories=["github.com/src-d/go-git"],
+        ),
     ]
 
 

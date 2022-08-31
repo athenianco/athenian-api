@@ -2970,7 +2970,7 @@ class PullRequestFactsMiner:
         )
         deployment_conclusions = np.fromiter(
             (
-                DeploymentConclusion[s]
+                DeploymentConclusion[s.decode()]
                 for s in pr.deployments[DeploymentNotification.conclusion.name].values
             ),
             int,
