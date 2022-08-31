@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from http import HTTPStatus
 import logging
 from typing import Any, Iterable, Optional, Sequence
@@ -18,7 +19,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     integrity_errors,
 )
-from athenian.api.internal.prefixer import Prefixer, RepositoryReference
+from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -180,6 +181,16 @@ async def update_goal(
         )
 
 
+class GoalColumnAlias(Enum):
+    """Aliases for Goal columns returned by fetch_team_goals.
+
+    Aliases are needed since column names are shared between TeamGoal and the joined Goal table.
+
+    """
+
+    REPOSITORIES = "goal_repositories"
+
+
 @sentry_span
 async def fetch_team_goals(
     account: int,
@@ -199,7 +210,7 @@ async def fetch_team_goals(
         Goal.expires_at,
         Goal.name,
         Goal.metric,
-        Goal.repositories.label("goal_repositories"),
+        Goal.repositories.label(GoalColumnAlias.REPOSITORIES.value),
     )
     stmt = (
         sa.select(*team_goal_rows, *goal_rows)
