@@ -144,10 +144,10 @@ class _GoalToServe:
                 repositories = rows_by_team[team_id][TeamGoal.repositories.name]
             except KeyError:
                 repositories = goal_row["goal_repositories"]
-            requested_teams[team_id] = RequestedTeamDetails(
-                team_member_map[team_id],
-                resolve_goal_repositories(repositories, prefixer),
-            )
+            if repositories is not None:
+                repo_names = resolve_goal_repositories(repositories, prefixer)
+                repositories = tuple(name.unprefixed for name in repo_names)
+            requested_teams[team_id] = RequestedTeamDetails(team_member_map[team_id], repositories)
 
         team_metrics_request = TeamMetricsRequest(
             metrics=[metric],

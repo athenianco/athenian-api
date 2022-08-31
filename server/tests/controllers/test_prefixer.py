@@ -80,19 +80,19 @@ class TestRepositoryName:
 
 class TestRepoIdentitiesMapper:
     def test_prefixed_names_to_identities(self) -> None:
-        prefixer = self._mk_prefixer(repo_name_to_node={"org/repo1": 1, "org/repo2": 2})
+        prefixer = mk_prefixer(repo_name_to_node={"org/repo1": 1, "org/repo2": 2})
         idents = prefixer.prefixed_repo_names_to_identities(
             ["github.com/org/repo1", "github.com/org/repo2/log"],
         )
         assert idents == [RepositoryReference(1, None), RepositoryReference(2, "log")]
 
     def test_prefixed_names_to_identities_invalid_repo(self) -> None:
-        prefixer = self._mk_prefixer(repo_name_to_node={"org/repo1": 1})
+        prefixer = mk_prefixer(repo_name_to_node={"org/repo1": 1})
         with pytest.raises(ValueError):
             prefixer.prefixed_repo_names_to_identities(["github.com/org/repo2"])
 
     def test_identities_to_prefixed_names(self) -> None:
-        prefixer = self._mk_prefixer(
+        prefixer = mk_prefixer(
             repo_node_to_prefixed_name={1: "github.com/org/repo1", 2: "github.com/org/repo2"},
         )
         names = prefixer.repo_identities_to_prefixed_names(
@@ -101,7 +101,7 @@ class TestRepoIdentitiesMapper:
         assert names == ["github.com/org/repo1", "github.com/org/repo1/l"]
 
     def test_identities_to_prefixed_names_invalid_identities(self) -> None:
-        prefixer = self._mk_prefixer(repo_node_to_prefixed_name={1: "github.com/org/repo1"})
+        prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/org/repo1"})
         with pytest.raises(ValueError):
             prefixer.repo_identities_to_prefixed_names([RepositoryReference(2, None)])
 
@@ -133,10 +133,11 @@ class TestRepoIdentitiesMapper:
         )
         assert identities == [RepositoryReference(1, "l"), RepositoryReference(2, None)]
 
-    @classmethod
-    def _mk_prefixer(cls, **kwargs: Any) -> Prefixer:
-        for field in dataclasses.fields(Prefixer):
-            if field.name != "do_not_construct_me_directly":
-                kwargs.setdefault(field.name, {})
-        kwargs["do_not_construct_me_directly"] = None
-        return Prefixer(**kwargs)
+
+def mk_prefixer(**kwargs: Any) -> Prefixer:
+    """Construct a Prefixer to be used in tests."""
+    for field in dataclasses.fields(Prefixer):
+        if field.name != "do_not_construct_me_directly":
+            kwargs.setdefault(field.name, {})
+    kwargs["do_not_construct_me_directly"] = None
+    return Prefixer(**kwargs)
