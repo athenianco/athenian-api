@@ -6,6 +6,7 @@ import sqlalchemy as sa
 
 from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoundError
 from athenian.api.align.goals.dbaccess import (
+    GoalColumnAlias,
     create_default_goal_templates,
     delete_empty_goals,
     delete_goal_template_from_db,
@@ -141,7 +142,27 @@ class TestFetchTeamGoals:
         assert len(rows) == 1
         row = rows[0]
         assert row[TeamGoal.repositories.name] is None
-        assert row["goal_repositories"] == [[1, None], [2, "logic"]]
+        assert row[GoalColumnAlias.REPOSITORIES.value] == [[1, None], [2, "logic"]]
+
+    async def test_jira_columns(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            GoalFactory(id=20, jira_projects=["DEV", "DR"], jira_issue_types=["Task"]),
+            TeamGoalFactory(
+                team_id=10, goal_id=20, jira_projects=["DEV"], jira_priorities=["P0", "P1"],
+            ),
+        )
+        rows = await fetch_team_goals(1, [10], sdb)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row[TeamGoal.jira_projects.name] == ["DEV"]
+        assert row[TeamGoal.jira_priorities.name] == ["P0", "P1"]
+        assert row[TeamGoal.jira_issue_types.name] is None
+
+        assert row[GoalColumnAlias.JIRA_PROJECTS.value] == ["DEV", "DR"]
+        assert row[GoalColumnAlias.JIRA_PRIORITIES.value] is None
+        assert row[GoalColumnAlias.JIRA_ISSUE_TYPES.value] == ["Task"]
 
 
 class TestDeleteEmptyGoals:

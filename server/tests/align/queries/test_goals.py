@@ -23,7 +23,17 @@ from tests.testutils.requester import Requester
 
 
 class BaseGoalsTest(Requester):
-    _ALL_GOAL_FIELDS = ("id", "name", "metric", "validFrom", "expiresAt", "repositories")
+    _ALL_GOAL_FIELDS = (
+        "id",
+        "name",
+        "metric",
+        "validFrom",
+        "expiresAt",
+        "repositories",
+        "jiraProjects",
+        "jiraPriorities",
+        "jiraIssueTypes",
+    )
     _ALL_VALUE_FIELDS = ("current", "initial", "target")
     _ALL_TEAM_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount", "membersCount")
 
@@ -472,4 +482,25 @@ class TestGoals(BaseGoalsTest):
         assert team_1_goal["value"]["initial"]["int"] == 0
         # metrics for team 10 have been computed considering repositories [[40550, None]] filter
         assert team_10_goal["value"]["initial"]["int"] == 88
-        # assert team_10_goal["value"]["current"]["float"] is not None
+
+    async def test_jira_fields(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789]),
+            GoalFactory(id=20, jira_projects=["PR0"], jira_issue_types=["task", "bug"]),
+            GoalFactory(id=21, jira_priorities=["low"]),
+            TeamGoalFactory(goal_id=20, team_id=10),
+            TeamGoalFactory(goal_id=21, team_id=10),
+        )
+
+        res = await self._request(1, 10)
+
+        assert len(res["data"]["goals"]) == 2
+        assert res["data"]["goals"][0]["id"] == 20
+        assert res["data"]["goals"][0]["jiraProjects"] == ["PR0"]
+        assert res["data"]["goals"][0]["jiraPriorities"] is None
+        assert res["data"]["goals"][0]["jiraIssueTypes"] == ["task", "bug"]
+        assert res["data"]["goals"][1]["id"] == 21
+        assert res["data"]["goals"][1]["jiraProjects"] is None
+        assert res["data"]["goals"][1]["jiraPriorities"] == ["low"]
+        assert res["data"]["goals"][1]["jiraIssueTypes"] is None
