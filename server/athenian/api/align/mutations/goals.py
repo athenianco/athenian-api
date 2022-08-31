@@ -32,6 +32,7 @@ from athenian.api.align.models import (
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
 from athenian.api.controllers.goal_controller import parse_request_repositories
+from athenian.api.internal.jira import normalize_issue_type, normalize_priority
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from athenian.api.request import AthenianWebRequest
@@ -141,9 +142,17 @@ async def _parse_create_goal_input(
     repositories = await parse_request_repositories(
         input.get(CreateGoalInputFields.repositories), request, account_id,
     )
+    jira_projects = _parse_request_jira_projects(input)
+    jira_priorities = _parse_request_jira_priorities(input)
+    jira_issue_types = _parse_request_jira_issue_types(input)
 
-    # user cannot directly set team goal repositories, received goal repositories are applied
-    extra_team_goal_info = {TeamGoal.repositories.name: repositories}
+    # user cannot directly set TeamGoal filter fields, received goal values are applied
+    extra_team_goal_info = {
+        TeamGoal.repositories.name: repositories,
+        TeamGoal.jira_projects.name: jira_projects,
+        TeamGoal.jira_priorities.name: jira_priorities,
+        TeamGoal.jira_issue_types.name: jira_issue_types,
+    }
     team_goals = [
         _parse_team_goal_input(tg_input, **extra_team_goal_info)
         for tg_input in input[CreateGoalInputFields.teamGoals]
@@ -160,6 +169,9 @@ async def _parse_create_goal_input(
         name=input[CreateGoalInputFields.name],
         metric=input[CreateGoalInputFields.metric],
         repositories=repositories,
+        jira_projects=jira_projects,
+        jira_priorities=jira_priorities,
+        jira_issue_types=jira_issue_types,
         valid_from=valid_from,
         expires_at=expires_at,
     )
@@ -267,3 +279,21 @@ async def _parse_update_goal_input(
         metric=input.get(UpdateGoalInputFields.metric),
         repositories=repositories,
     )
+
+
+def _parse_request_jira_projects(input: dict[str, Any]) -> Optional[list[str]]:
+    return input.get(CreateGoalInputFields.jiraProjects)
+
+
+def _parse_request_jira_priorities(input: dict[str, Any]) -> Optional[list[str]]:
+    if (priorities := input.get(CreateGoalInputFields.jiraPriorities)) is None:
+        return priorities
+    else:
+        return sorted({normalize_priority(p) for p in priorities})
+
+
+def _parse_request_jira_issue_types(input: dict[str, Any]) -> Optional[list[str]]:
+    if (issue_types := input.get(CreateGoalInputFields.jiraIssueTypes)) is None:
+        return None
+    else:
+        return sorted({normalize_issue_type(t) for t in issue_types})

@@ -284,10 +284,13 @@ class CreateGoalInputFields(metaclass=Enum):
 
     name = "name"
     metric = "metric"
-    repositories = "repositories"
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
+    repositories = "repositories"
+    jiraProjects = "jiraProjects"
+    jiraPriorities = "jiraPriorities"
+    jiraIssueTypes = "jiraIssueTypes"
 
 
 class TeamGoalInputFields(metaclass=Enum):
