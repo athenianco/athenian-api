@@ -8,20 +8,14 @@ from typing import (
     Callable,
     Collection,
     Coroutine,
-    Dict,
-    FrozenSet,
     Generator,
     Iterable,
-    List,
     Mapping,
     Optional,
     Sequence,
-    Set,
-    Tuple,
 )
 
 import aiomcache
-import aiosqlite.core
 import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -159,7 +153,7 @@ class ReleaseMatchSetting:
 class ReleaseSettings:
     """Mapping from prefixed repository full names to their release settings."""
 
-    def __init__(self, map_prefixed: Dict[str, ReleaseMatchSetting]):
+    def __init__(self, map_prefixed: dict[str, ReleaseMatchSetting]):
         """Initialize a new instance of ReleaseSettings class."""
         self._map_prefixed = map_prefixed
         self._map_native = {k.split("/", 1)[1]: v for k, v in map_prefixed.items()}
@@ -190,12 +184,12 @@ class ReleaseSettings:
         return ReleaseSettings(self._map_prefixed.copy())
 
     @property
-    def prefixed(self) -> Dict[str, ReleaseMatchSetting]:
+    def prefixed(self) -> dict[str, ReleaseMatchSetting]:
         """View the release settings with repository name prefixes."""
         return self._map_prefixed
 
     @property
-    def native(self) -> Dict[str, ReleaseMatchSetting]:
+    def native(self) -> dict[str, ReleaseMatchSetting]:
         """View the release settings without repository name prefixes."""
         return self._map_native
 
@@ -240,7 +234,7 @@ class CommonLogicalSettingsMixin:
         return self._title_regexps[repo]
 
     @property
-    def logical_repositories(self) -> FrozenSet[str]:
+    def logical_repositories(self) -> frozenset[str]:
         """Return all known logical repositories."""
         return self._repos
 
@@ -258,7 +252,7 @@ class CommonLogicalSettingsMixin:
     def group_by_repo(
         repos: Sequence[str],
         whitelist: Optional[Collection[str]] = None,
-    ) -> Generator[Tuple[str, np.ndarray], None, None]:
+    ) -> Generator[tuple[str, np.ndarray], None, None]:
         """
         Iterate over the indexes of repository groups.
 
@@ -289,7 +283,7 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
 
     __slots__ = ("_repos", "_title_regexps", "_labels", "_origin")
 
-    def __init__(self, prs: Mapping[str, Dict[str, Any]], origin: str):
+    def __init__(self, prs: Mapping[str, dict[str, Any]], origin: str):
         """Initialize a new instance of LogicalPRSettings class."""
         self._origin = origin
         repos = {origin}
@@ -342,7 +336,7 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
         pr_indexes: Sequence[int],
         id_column: str,
         title_column: str,
-    ) -> Dict[str, List[int]]:
+    ) -> dict[str, list[int]]:
         """
         Map PRs to logical repositories.
 
@@ -414,7 +408,7 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
 
     __slots__ = ("_repos", "_title_regexps", "_labels", "_labels_inv", "_origin")
 
-    def __init__(self, deps: Mapping[str, Dict[str, Any]], origin: str):
+    def __init__(self, deps: Mapping[str, dict[str, Any]], origin: str):
         """Initialize a new instance of LogicalDeploymentSettings class."""
         self._origin = origin
         repos = {origin}
@@ -463,15 +457,11 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         """Return the title regexp for the given logical repository."""
         return self._title_regexps[repo]
 
-    def labels(self, repo: str) -> Dict[str, List[str]]:
+    def labels(self, repo: str) -> dict[str, list[str]]:
         """Return the label key values for the given logical repository."""
         return self._labels_inv[repo]
 
-    def match(
-        self,
-        notifications: pd.DataFrame,
-        labels: pd.DataFrame,
-    ) -> Dict[str, Set[str]]:
+    def match(self, notifications: pd.DataFrame, labels: pd.DataFrame) -> dict[str, set[str]]:
         """
         Split deployed components into logical parts.
 
@@ -567,13 +557,13 @@ class LogicalRepositorySettings:
         """Initialize clear settings without logical repositories."""
         return LogicalRepositorySettings({}, {})
 
-    def with_logical_prs(self, repos: Iterable[str]) -> Set[str]:
+    def with_logical_prs(self, repos: Iterable[str]) -> set[str]:
         """Collect all mentioned logical repositories."""
         return set(
             chain.from_iterable(prs.logical_repositories for prs in self._prs.values() if prs),
         ).union(repos)
 
-    def with_logical_deployments(self, repos: Iterable[str]) -> Set[str]:
+    def with_logical_deployments(self, repos: Iterable[str]) -> set[str]:
         """Collect all mentioned logical repositories."""
         return set(
             chain.from_iterable(
@@ -757,16 +747,16 @@ class Settings:
 
     async def set_release_matches(
         self,
-        repos: List[str],
+        repos: list[str],
         branches: str,
         tags: str,
         events: str,
         match: ReleaseMatch,
-        meta_ids: Optional[Tuple[int, ...]] = None,
+        meta_ids: Optional[tuple[int, ...]] = None,
         prefixer: Optional[Prefixer] = None,
         dereference: bool = True,
         pointer_root: str = "",
-    ) -> Set[str]:
+    ) -> set[str]:
         """Set the release matching rule for a list of repositories."""
         for propname, s in (
             ("branches", ReleaseMatch.branch),
@@ -849,11 +839,6 @@ class Settings:
                 .create_defaults()
                 .explode(with_primary_keys=True),
             )
-        if isinstance(self._sdb, Database):
-            sqlite = self._sdb.url.dialect == "sqlite"
-        else:
-            async with self._sdb.raw_connection() as raw_connection:
-                sqlite = isinstance(raw_connection, aiosqlite.core.Connection)
         query = (await dialect_specific_insert(self._sdb))(ReleaseSetting)
         query = query.on_conflict_do_update(
             index_elements=ReleaseSetting.__table__.primary_key.columns,
