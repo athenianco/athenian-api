@@ -994,3 +994,44 @@ class TestUpdateGoal(BaseUpdateGoalTest):
 
         team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
         assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, None]]
+
+    async def test_update_jira_fields(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, jira_priorities=["high"]),
+            TeamFactory(id=10),
+            TeamGoalFactory(
+                team_id=10, goal_id=100, jira_projects=["P2"], jira_priorities=["high"],
+            ),
+        )
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 2}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.jiraProjects: {
+                    UpdateRepositoriesInputFields.value: ["P0", "P1"],
+                },
+                UpdateGoalInputFields.jiraPriorities: {},
+                UpdateGoalInputFields.jiraIssueTypes: {
+                    UpdateRepositoriesInputFields.value: ["Tasks", "bugs"],
+                },
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        assert res["data"]["updateGoal"]["goal"]["id"] == 100
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.jira_projects.name] == ["P0", "P1"]
+        assert row[Goal.jira_priorities.name] is None
+        assert row[Goal.jira_issue_types.name] == ["bug", "task"]
+
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        # team goal jira_projects are overwritten
+        assert tg_row[TeamGoal.jira_projects.name] == ["P0", "P1"]
+        assert tg_row[TeamGoal.jira_priorities.name] is None
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]

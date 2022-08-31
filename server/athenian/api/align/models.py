@@ -279,18 +279,21 @@ class MetricValues(Model):
         return self._value
 
 
-class CreateGoalInputFields(metaclass=Enum):
-    """Fields definitions for GraphQL CreateGoalInput type."""
-
+class _BaseGoalInputFields(metaclass=Enum):
     name = "name"
     metric = "metric"
-    teamGoals = "teamGoals"
-    validFrom = "validFrom"
-    expiresAt = "expiresAt"
     repositories = "repositories"
     jiraProjects = "jiraProjects"
     jiraPriorities = "jiraPriorities"
     jiraIssueTypes = "jiraIssueTypes"
+
+
+class CreateGoalInputFields(_BaseGoalInputFields):
+    """Fields definitions for GraphQL CreateGoalInput type."""
+
+    teamGoals = "teamGoals"
+    validFrom = "validFrom"
+    expiresAt = "expiresAt"
 
 
 class TeamGoalInputFields(metaclass=Enum):
@@ -306,15 +309,12 @@ class UpdateRepositoriesInputFields(metaclass=Enum):
     value = "value"
 
 
-class UpdateGoalInputFields(metaclass=Enum):
+class UpdateGoalInputFields(_BaseGoalInputFields):
     """Fields definitions for GraphQL UpdateGoalInput type."""
 
     goalId = "goalId"
     archived = "archived"
     teamGoalChanges = "teamGoalChanges"
-    repositories = "repositories"
-    name = "name"
-    metric = "metric"
 
 
 class TeamGoalChangeFields(metaclass=Enum):
