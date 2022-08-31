@@ -33,6 +33,7 @@ from athenian.api.internal.jira import (
     get_jira_installation,
     load_mapped_jira_users,
     normalize_issue_type,
+    normalize_priority,
     normalize_user_type,
     resolve_projects,
 )
@@ -136,7 +137,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         commenters = [p.lower() for p in (filt.with_.commenters or [])]
     else:
         reporters = assignees = commenters = []
-    filt.priorities = [p.lower() for p in (filt.priorities or [])]
+    filt.priorities = {normalize_priority(p) for p in (filt.priorities or [])}
     filt.types = {normalize_issue_type(p) for p in (filt.types or [])}
     return_ = set(filt.return_ or JIRAFilterReturn)
     if not filt.return_:
@@ -1266,8 +1267,8 @@ async def _calc_jira_entry(
             [g.as_participants() for g in (with_ or [])],
             label_filter,
             filt.group_by_jira_label,
-            [p.lower() for p in (filt.priorities or [])],
-            {normalize_issue_type(p) for p in (filt.types or [])},
+            {normalize_priority(p) for p in (filt.priorities or [])},
+            {normalize_issue_type(t) for t in (filt.types or [])},
             filt.epics or [],
             filt.exclude_inactive,
             release_settings,
@@ -1293,8 +1294,8 @@ async def _calc_jira_entry(
             filt.quantiles or (0, 1),
             [g.as_participants() for g in (with_ or [])],
             label_filter,
-            [p.lower() for p in (filt.priorities or [])],
-            {normalize_issue_type(p) for p in (filt.types or [])},
+            {normalize_priority(p) for p in (filt.priorities or [])},
+            {normalize_issue_type(t) for t in (filt.types or [])},
             filt.epics or [],
             filt.exclude_inactive,
             release_settings,
