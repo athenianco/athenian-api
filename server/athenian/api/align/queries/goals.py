@@ -7,7 +7,11 @@ from ariadne import ObjectType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
-from athenian.api.align.goals.dbaccess import fetch_team_goals, resolve_goal_repositories
+from athenian.api.align.goals.dbaccess import (
+    GoalColumnAlias,
+    fetch_team_goals,
+    resolve_goal_repositories,
+)
 from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
@@ -94,6 +98,7 @@ class _GoalToServe:
         only_with_targets: bool,
     ):
         self._team_goal_rows = team_goal_rows
+        self._prefixer = prefixer
         self._request, self._goal_team_tree = self._team_goal_rows_to_request(
             team_goal_rows, team_tree, team_member_map, prefixer, only_with_targets,
         )
@@ -107,7 +112,11 @@ class _GoalToServe:
         current_metrics = metric_values[self._request.time_intervals[1]][self._request.metrics[0]]
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
         return _team_tree_to_goal_tree(
-            self._goal_team_tree, self._team_goal_rows[0], self._team_goal_rows, metric_values,
+            self._goal_team_tree,
+            self._team_goal_rows[0],
+            self._team_goal_rows,
+            metric_values,
+            self._prefixer,
         )
 
     @classmethod
@@ -143,11 +152,11 @@ class _GoalToServe:
             try:
                 repositories = rows_by_team[team_id][TeamGoal.repositories.name]
             except KeyError:
-                repositories = goal_row["goal_repositories"]
-            requested_teams[team_id] = RequestedTeamDetails(
-                team_member_map[team_id],
-                resolve_goal_repositories(repositories, prefixer),
-            )
+                repositories = goal_row[GoalColumnAlias.REPOSITORIES.value]
+            if repositories is not None:
+                repo_names = resolve_goal_repositories(repositories, prefixer)
+                repositories = tuple(name.unprefixed for name in repo_names)
+            requested_teams[team_id] = RequestedTeamDetails(team_member_map[team_id], repositories)
 
         team_metrics_request = TeamMetricsRequest(
             metrics=[metric],
@@ -171,11 +180,16 @@ def _team_tree_to_goal_tree(
     goal_row: Row,
     team_goal_rows: Iterable[Row],
     metric_values: GoalMetricValues,
+    prefixer: Prefixer,
 ) -> GoalTree:
     valid_from, expires_at = goal_datetimes_to_dates(
         goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
     )
     team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
+
+    if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
+        repos = [str(repo_name) for repo_name in resolve_goal_repositories(repos, prefixer)]
+
     return GoalTree(
         goal_row[Goal.id.name],
         goal_row[Goal.name.name],
@@ -183,6 +197,7 @@ def _team_tree_to_goal_tree(
         valid_from,
         expires_at,
         _team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
+        repos,
     )
 
 

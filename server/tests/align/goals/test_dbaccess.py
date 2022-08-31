@@ -16,13 +16,15 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_templates_from_db,
     insert_goal_template,
     parse_goal_repositories,
+    resolve_goal_repositories,
     update_goal,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
-from athenian.api.internal.prefixer import RepositoryReference
+from athenian.api.internal.prefixer import RepositoryName, RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
+from tests.controllers.test_prefixer import mk_prefixer
 from tests.testutils.db import (
     assert_existing_row,
     assert_existing_rows,
@@ -266,3 +268,31 @@ class TestDumpGoalRepositories:
     def test_some_identities(self) -> None:
         idents = [RepositoryReference(1, "a"), RepositoryReference(2, None)]
         assert dump_goal_repositories(idents) == [(1, "a"), (2, None)]
+
+
+class TestResolveGoalRepositories:
+    def test_empty(self) -> None:
+        prefixer = mk_prefixer()
+        assert resolve_goal_repositories([], prefixer) == ()
+
+    def test_base(self) -> None:
+        prefixer = mk_prefixer(
+            repo_node_to_prefixed_name={
+                1: "github.com/athenianco/a",
+                2: "github.com/athenianco/b",
+            },
+        )
+
+        res = resolve_goal_repositories([(1, None), (2, None), (2, "logic")], prefixer)
+
+        assert res == (
+            RepositoryName("github.com", "athenianco", "a", None),
+            RepositoryName("github.com", "athenianco", "b", None),
+            RepositoryName("github.com", "athenianco", "b", "logic"),
+        )
+
+    def test_unknown_ids_are_ignored(self) -> None:
+        prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/athenianco/a"})
+        res = resolve_goal_repositories([(1, None), (2, None)], prefixer)
+
+        assert res == (RepositoryName("github.com", "athenianco", "a", None),)

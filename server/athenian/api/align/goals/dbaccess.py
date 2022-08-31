@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from http import HTTPStatus
 import logging
 from typing import Any, Iterable, Optional, Sequence
@@ -18,7 +19,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     integrity_errors,
 )
-from athenian.api.internal.prefixer import Prefixer, RepositoryReference
+from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -180,6 +181,16 @@ async def update_goal(
         )
 
 
+class GoalColumnAlias(Enum):
+    """Aliases for Goal columns returned by fetch_team_goals.
+
+    Aliases are needed since column names are shared between TeamGoal and the joined Goal table.
+
+    """
+
+    REPOSITORIES = "goal_repositories"
+
+
 @sentry_span
 async def fetch_team_goals(
     account: int,
@@ -199,7 +210,7 @@ async def fetch_team_goals(
         Goal.expires_at,
         Goal.name,
         Goal.metric,
-        Goal.repositories.label("goal_repositories"),
+        Goal.repositories.label(GoalColumnAlias.REPOSITORIES.value),
     )
     stmt = (
         sa.select(*team_goal_rows, *goal_rows)
@@ -294,24 +305,21 @@ def dump_goal_repositories(
 
 
 def resolve_goal_repositories(
-    repos: Optional[Iterable[tuple[int, Optional[str]]]],
+    repos: Iterable[tuple[int, Optional[str]]],
     prefixer: Prefixer,
-) -> Optional[tuple[str]]:
-    """Dereference the repository IDs and append logical names."""
-    if repos is None:
-        return None
-    repo_node_to_name = prefixer.repo_node_to_name.__getitem__
+) -> tuple[RepositoryName, ...]:
+    """Dereference the repository IDs into a RepositoryName sequence."""
+    node_to_prefixed = prefixer.repo_node_to_prefixed_name.__getitem__
     repos, to_resolve = [], repos
     for node_id, logical in to_resolve:
         try:
-            physical = repo_node_to_name(node_id)
+            prefixed = node_to_prefixed(node_id)
         except KeyError:
             continue
-        if not logical:
-            repo = physical
-        else:
-            repo = f"{physical}/{logical}"
-        repos.append(repo)
+        name = RepositoryName.from_prefixed(prefixed)
+        if logical:
+            name = name.with_logical(logical)
+        repos.append(name)
     return tuple(repos)
 
 
