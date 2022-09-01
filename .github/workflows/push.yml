@@ -396,9 +396,9 @@ jobs:
         python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
         cpuinfo && \
         resolve-march-native --vertical && \
-        docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t gcr.io/${{ secrets.GOOGLE_PROJECT }}/api .
-        docker run --rm gcr.io/${{ secrets.GOOGLE_PROJECT }}/api --help
-        docker build -t test --build-arg base=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api server/tests
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
+        docker run --rm us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api --help
+        docker build -t test --build-arg base=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api server/tests
         run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
         $run run -a -m athenian.api.models.state postgresql://postgres:postgres@0.0.0.0:5432/state
         $run run -a -m athenian.api.invite_admin postgresql://postgres:postgres@0.0.0.0:5432/state
@@ -415,7 +415,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
   bump_version:
     name: Bump the version
@@ -485,18 +485,18 @@ jobs:
         current_version=$(grep __version__ $version_file | cut -d\" -f2)
         godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT_NAME }} $current_version
         godotenv -s sentry-cli releases set-commits --auto $current_version
-        export IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:$current_version
+        export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:$current_version
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         make gcloud-login
-        docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
         make docker-push
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
         make pubsub-publish
-        docker tag $IMAGE gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
-        IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api make docker-push
+        docker tag $IMAGE us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api
+        IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api make docker-push
         godotenv -s sentry-cli releases finalize $current_version
     - name: clear env
       run: |
@@ -504,5 +504,5 @@ jobs:
         rm .env
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true

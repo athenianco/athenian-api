@@ -1,7 +1,7 @@
 version: "3.7"
 services:
   api:
-    image: ${API_IMAGE:-gcr.io/athenian-1/api:latest}
+    image: ${API_IMAGE:-us-east1-docker.pkg.dev/athenian-1/images/api:latest}
     restart: unless-stopped
     entrypoint: [
       "/bin/sh", "-c",
