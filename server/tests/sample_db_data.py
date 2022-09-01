@@ -139,6 +139,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             repository_id=kwargs["repository_node_id"],
                             created_at=kwargs["created_at"],
                             closed_at=kwargs["closed_at"],
+                            updated_at=kwargs["updated_at"],
                         ),
                     )
                 elif table == "github.api_push_commits":
