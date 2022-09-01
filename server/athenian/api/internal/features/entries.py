@@ -16,7 +16,7 @@ import sentry_sdk
 
 from athenian.api import metadata
 from athenian.api.async_utils import COROUTINE_YIELD_EVERY_ITER, gather
-from athenian.api.cache import CancelCache, cached, cached_methods, short_term_exptime
+from athenian.api.cache import cached, cached_methods, short_term_exptime
 from athenian.api.db import Database, add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.internal.datetime_utils import coarsen_time_interval
@@ -114,22 +114,12 @@ from athenian.api.internal.miners.types import (
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
-from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.pandas_io import deserialize_df, serialize_df
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
 unfresh_prs_threshold = 1000
 unfresh_participants_threshold = 50
-
-
-def _postprocess_cached_facts(
-    result: tuple[dict[str, list[PullRequestFacts]], bool],
-    with_jira_map: bool,
-    **_,
-) -> tuple[dict[str, list[PullRequestFacts]], bool]:
-    if with_jira_map and not result[1]:
-        raise CancelCache()
-    return result
 
 
 T = TypeVar("T")
@@ -1456,6 +1446,26 @@ class MetricEntriesCalculator:
                 flat_group_suite_counts[i] = len(np.unique(suite_node_ids[group]))
         return df_check_runs, groups, group_suite_counts, suite_sizes
 
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=serialize_df,
+        deserialize=deserialize_df,
+        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, with_jira_map, **_: (  # noqa
+            time_from,
+            time_to,
+            ",".join(sorted(repositories)),
+            ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+            labels,
+            jira,
+            with_jira_map,
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+            fresh,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
     async def calc_pull_request_facts_github(
         self,
         time_from: datetime,
@@ -1484,66 +1494,6 @@ class MetricEntriesCalculator:
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
         :return: PullRequestFacts packed in a Pandas DataFrame.
         """
-        df, *_ = await self._calc_pull_request_facts_github(
-            time_from,
-            time_to,
-            repositories,
-            participants,
-            labels,
-            jira,
-            exclude_inactive,
-            bots,
-            release_settings,
-            logical_settings,
-            prefixer,
-            fresh,
-            with_jira_map,
-            branches=branches,
-            default_branches=default_branches,
-        )
-        if df.empty:
-            df = pd.DataFrame(columns=PullRequestFacts.f)
-        return df
-
-    @sentry_span
-    @cached(
-        exptime=short_term_exptime,
-        serialize=serialize_args,
-        deserialize=deserialize_args,
-        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, with_jira_map, **_: (  # noqa
-            time_from,
-            time_to,
-            ",".join(sorted(repositories)),
-            ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-            labels,
-            jira,
-            with_jira_map,
-            exclude_inactive,
-            release_settings,
-            logical_settings,
-            fresh,
-        ),
-        postprocess=_postprocess_cached_facts,
-        cache=lambda self, **_: self._cache,
-    )
-    async def _calc_pull_request_facts_github(
-        self,
-        time_from: datetime,
-        time_to: datetime,
-        repositories: set[str],
-        participants: PRParticipants,
-        labels: LabelFilter,
-        jira: JIRAFilter,
-        exclude_inactive: bool,
-        bots: set[str],
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        prefixer: Prefixer,
-        fresh: bool,
-        with_jira_map: bool,
-        branches: Optional[pd.DataFrame],
-        default_branches: Optional[dict[str, str]],
-    ) -> tuple[pd.DataFrame, bool]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self.branch_miner.extract_branches(
@@ -1618,7 +1568,10 @@ class MetricEntriesCalculator:
                 self._rdb,
                 self._cache,
             )
-            return df_from_structs(facts.values()), with_jira_map
+            df = df_from_structs(facts.values())
+            if df.empty:
+                df = pd.DataFrame(columns=PullRequestFacts.f)
+            return df
 
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
@@ -1797,7 +1750,9 @@ class MetricEntriesCalculator:
         all_facts_df = df_from_structs(
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
         )
-        return all_facts_df, with_jira_map
+        if all_facts_df.empty:
+            return pd.DataFrame(columns=PullRequestFacts.f)
+        return all_facts_df
 
 
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
