@@ -1176,7 +1176,7 @@ async def _build_deployments_response(
                 url=url,
                 date_started=started_at,
                 date_finished=finished_at,
-                conclusion=conclusion,
+                conclusion=conclusion.decode(),
                 components=[
                     WebDeployedComponent(repository=prefix_logical_repo(repo_name), reference=ref)
                     for repo_name, ref in zip(
@@ -1303,7 +1303,7 @@ async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
-    time_from, time_to, repos, _, prefixer, _ = await _common_filter_preprocess(
+    time_from, time_to, repos, _, prefixer, logical_settings = await _common_filter_preprocess(
         filt, filt.repositories, request,
     )
     try:
@@ -1312,6 +1312,7 @@ async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Re
             time_from,
             time_to,
             prefixer,
+            logical_settings,
             filt.account,
             request.rdb,
             request.cache,

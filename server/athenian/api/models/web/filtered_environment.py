@@ -11,12 +11,7 @@ class FilteredEnvironment(Model):
         "name": str,
         "deployments_count": int,
         "last_conclusion": str,
-    }
-
-    attribute_map = {
-        "name": "name",
-        "deployments_count": "deployments_count",
-        "last_conclusion": "last_conclusion",
+        "repositories": list[str],
     }
 
     def __init__(
@@ -24,16 +19,19 @@ class FilteredEnvironment(Model):
         name: Optional[str] = None,
         deployments_count: Optional[int] = None,
         last_conclusion: Optional[str] = None,
+        repositories: Optional[list[str]] = None,
     ):
         """FilteredEnvironment - a model defined in OpenAPI
 
         :param name: The name of this FilteredEnvironment.
         :param deployments_count: The deployments_count of this FilteredEnvironment.
         :param last_conclusion: The last_conclusion of this FilteredEnvironment.
+        :param repositories: The repositories of this FilteredEnvironment.
         """
         self._name = name
         self._deployments_count = deployments_count
         self._last_conclusion = last_conclusion
+        self._repositories = repositories
 
     @property
     def name(self) -> str:
@@ -114,3 +112,26 @@ class FilteredEnvironment(Model):
             )
 
         self._last_conclusion = last_conclusion
+
+    @property
+    def repositories(self) -> list[str]:
+        """Gets the repositories of this FilteredEnvironment.
+
+        Repositories deployed in this environment.
+
+        :return: The repositories of this FilteredEnvironment.
+        """
+        return self._repositories
+
+    @repositories.setter
+    def repositories(self, repositories: list[str]):
+        """Sets the repositories of this FilteredEnvironment.
+
+        Repositories deployed in this environment.
+
+        :param repositories: The repositories of this FilteredEnvironment.
+        """
+        if repositories is None:
+            raise ValueError("Invalid value for `repositories`, must not be `None`")
+
+        self._repositories = repositories

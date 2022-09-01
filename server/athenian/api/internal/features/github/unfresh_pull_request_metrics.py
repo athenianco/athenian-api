@@ -384,6 +384,7 @@ class UnfreshPullRequestFactsFetcher:
             except KeyError:
                 # totally OK, e.g. already filtered away or loaded not mentioned
                 continue
+            conclusion = conclusion.decode()
             if f.deployments is None:
                 f.deployments = [name]
                 f.deployed = [finished]

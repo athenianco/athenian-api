@@ -4,9 +4,11 @@
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize -std=c++17
 import cython
 
+from cpython cimport PyObject
 from libc.stddef cimport wchar_t
 from libc.stdint cimport int32_t, int64_t
 from libc.string cimport memchr, memcpy
+from libcpp.unordered_map cimport pair, unordered_map
 from libcpp.unordered_set cimport unordered_set
 from numpy cimport (
     PyArray_DATA,
@@ -32,6 +34,14 @@ cdef extern from "wchar.h" nogil:
     wchar_t *wmemchr(const wchar_t *, wchar_t, size_t)
 
 
+cdef extern from "Python.h":
+    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
+    void *PyUnicode_DATA(PyObject *) nogil
+    unsigned int PyUnicode_KIND(PyObject *) nogil
+    void Py_INCREF(PyObject *)
+    PyObject *Py_None
+
+
 def unordered_unique(ndarray arr not None) -> np.ndarray:
     cdef:
         np_dtype dtype = <np_dtype>PyArray_DESCR(arr)
@@ -45,8 +55,48 @@ def unordered_unique(ndarray arr not None) -> np.ndarray:
             return _unordered_unique_int[int64_t](arr, dtype, 4)
         else:
             raise AssertionError(f"dtype {dtype} is not supported")
+    elif dtype.kind == b"O":
+        return _unordered_unique_pystr(arr)
     else:
         raise AssertionError(f"dtype {dtype} is not supported")
+
+
+@cython.cdivision(True)
+cdef ndarray _unordered_unique_pystr(ndarray arr):
+    cdef:
+        PyObject **data_in = <PyObject **>PyArray_DATA(arr)
+        PyObject **data_out
+        PyObject *str_obj
+        char *str_data
+        unsigned int str_kind
+        Py_ssize_t str_len
+        int64_t i, \
+            length = PyArray_DIM(arr, 0), \
+            stride = PyArray_STRIDE(arr, 0)
+        unordered_map[string_view, int64_t] hashtable
+        pair[string_view, int64_t] it
+        ndarray result
+
+    with nogil:
+        hashtable.reserve(length // 16)
+        for i in range(length):
+            str_obj = data_in[i * stride]
+            if str_obj == Py_None:
+                continue
+            str_data = <char *> PyUnicode_DATA(str_obj)
+            str_len = PyUnicode_GET_LENGTH(str_obj)
+            str_kind = PyUnicode_KIND(str_obj)
+            hashtable.insert(pair[string_view, int64_t](string_view(str_data, str_len * str_kind), i))
+
+    result = np.empty(hashtable.size(), dtype=object)
+    data_out = <PyObject **>PyArray_DATA(result)
+    i = 0
+    for it in hashtable:
+        str_obj = data_in[it.second]
+        data_out[i] = str_obj
+        Py_INCREF(str_obj)
+        i += 1
+    return result
 
 
 @cython.cdivision(True)

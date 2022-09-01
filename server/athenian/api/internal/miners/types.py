@@ -576,3 +576,4 @@ class Environment:
     name: str
     deployments_count: int
     last_conclusion: str
+    repositories: Sequence[str]

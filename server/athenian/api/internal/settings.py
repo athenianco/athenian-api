@@ -595,6 +595,23 @@ class LogicalRepositorySettings:
                 continue
         return False
 
+    def has_deployments_by_label(self, repos: Optional[Iterable[str]] = None) -> bool:
+        """
+        Return value indicating whether there is at least one logical deployment \
+        identified by a label.
+
+        :param repos: Physical repositories.
+        """
+        if repos is None:
+            repos = self._prs.keys()
+        for repo in repos:
+            try:
+                if self.deployments(repo).has_labels:
+                    return True
+            except KeyError:
+                continue
+        return False
+
     def append_logical_prs(self, items: Collection[str]) -> Collection[str]:
         """
         Extend the physical repositories with their configured logical components.
