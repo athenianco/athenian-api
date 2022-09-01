@@ -28,6 +28,8 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.conftest import build_fake_cache
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.time import dt
 
 
@@ -88,6 +90,71 @@ class TestCalcPullRequestFactsGithub:
             time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
         )
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
+
+    @with_defer
+    async def test_cache_with_jira_map(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+        release_match_setting_tag: ReleaseSettings,
+    ) -> None:
+        meta_ids = (6366825,)
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, build_fake_cache(),
+        )
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb_rw, sdb)
+        base_kw = dict(
+            repositories={"src-d/go-git"},
+            participants={},
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
+            exclude_inactive=False,
+            bots=set(),
+            fresh=False,
+            time_from=dt(2017, 8, 10),
+            time_to=dt(2017, 9, 1),
+            **shared_kwargs,
+        )
+
+        calc = calculator.calc_pull_request_facts_github
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAIssueFactory(id="20", key="1"),
+                md_factory.JIRAIssueFactory(id="21", key="2"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="21"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=163027, jira_id="20"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            # spy called load_precomputed_done_facts_filters() to verify cache hits/misses
+            with mock.patch.object(
+                calculator.done_prs_facts_loader,
+                "load_precomputed_done_facts_filters",
+                wraps=calculator.done_prs_facts_loader.load_precomputed_done_facts_filters,
+            ) as load_pdb_mock:
+                r_jira0 = await calc(**base_kw, with_jira_map=True)
+                await wait_deferred()
+                assert load_pdb_mock.call_count == 1
+
+                assert sorted(r_jira0[r_jira0.node_id == 162990].jira_ids.values[0]) == ["1", "2"]
+                assert r_jira0[r_jira0.node_id == 163027].jira_ids.values[0] == ["1"]
+
+                r_jira1 = await calc(**base_kw, with_jira_map=True)
+                await wait_deferred()
+                assert load_pdb_mock.call_count == 1
+                assert sorted(r_jira1[r_jira1.node_id == 162990].jira_ids.values[0]) == [
+                    "1",
+                    "2",
+                ]
+                assert r_jira1[r_jira1.node_id == 163027].jira_ids.values[0] == ["1"]
+
+                await calc(**base_kw, with_jira_map=False)
+                assert load_pdb_mock.call_count == 1
 
 
 class TestCalcPullRequestMetricsLineGithub:

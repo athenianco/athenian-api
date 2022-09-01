@@ -7,6 +7,7 @@ from athenian.api.models.metadata.github import (
     AccountRepository,
     Bot,
     FetchProgress,
+    NodePullRequestJiraIssues,
     Repository,
     Team,
     TeamMember,
@@ -85,6 +86,16 @@ class BotFactory(SQLAlchemyModelFactory):
     login = factory.LazyAttribute(lambda bot: f"bot-{bot.node_id}")
 
 
+class NodePullRequestJiraIssuesFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = NodePullRequestJiraIssues
+
+    node_id = factory.Sequence(lambda n: n + 1)
+    node_acc = DEFAULT_MD_ACCOUNT_ID
+    jira_id = factory.Sequence(lambda n: str(n + 100))
+    jira_acc = DEFAULT_JIRA_ACCOUNT_ID
+
+
 class TeamFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Team
@@ -120,9 +131,9 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Issue
 
-    acc_id = factory.Sequence(lambda n: n + 1)
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
     id = factory.Sequence(lambda n: str(n + 1))
-    project_id = factory.Sequence(lambda n: n + 1)
+    project_id = factory.Sequence(lambda n: f"proj-{n + 1}")
     key = factory.LazyAttribute(lambda issue: f"ISSUE-{issue.id}")
     title = factory.LazyAttribute(lambda issue: f"Issue n. {issue.id}")
     type = "Task"
