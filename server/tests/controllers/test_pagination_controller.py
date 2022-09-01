@@ -120,7 +120,7 @@ async def test_paginate_prs_jira(client, headers):
         model = PullRequestPaginationPlan.from_dict(obj)
     except Exception as e:
         raise ValueError(text) from e
-    assert model.updated == [date(2018, 4, 3), date(2018, 1, 16)]
+    assert model.updated == [date(2018, 3, 15), date(2018, 1, 15)]
     main_request["jira"]["labels_include"] = ["nope"]
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
@@ -267,3 +267,50 @@ async def test_paginate_prs_same_day(client, headers, sdb):
     except Exception as e:
         raise ValueError(text) from e
     assert model.updated == [date(2015, 10, 23), date(2015, 10, 23)]
+
+
+# TODO: fix response validation against the schema
+@pytest.mark.app_validate_responses(False)
+@pytest.mark.filter_pull_requests
+async def test_paginate_prs_deps(client, headers, precomputed_sample_deployments):
+    print("filter", flush=True)
+    main_request = {
+        "date_from": "2018-01-11",
+        "date_to": "2020-04-01",
+        "account": 1,
+        "in": [],
+        "stages": list(PullRequestStage),
+        "exclude_inactive": True,
+    }
+    # populate pdb
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request,
+    )
+    assert response.status == 200
+    await response.read()
+    print("paginate", flush=True)
+    body = {
+        "request": main_request,
+        "batch": 100,
+    }
+    response = await client.request(
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
+    )
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    obj = json.loads(text)
+    try:
+        model = PullRequestPaginationPlan.from_dict(obj)
+    except Exception as e:
+        raise ValueError(text) from e
+    assert model.to_dict() == {
+        "updated": [
+            date(2020, 3, 10),
+            date(2019, 3, 4),
+            date(2018, 7, 26),
+            date(2017, 11, 20),
+            date(2017, 6, 14),
+            date(2017, 1, 4),
+            date(2016, 8, 29),
+        ],
+    }

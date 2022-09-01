@@ -115,7 +115,10 @@ _original_notin_ = ColumnOperators.notin_
 def _in_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override IN (...) PostgreSQL operator."""
     if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
-        other = [other]  # performance hack to avoid conversion to list
+        if len(other):
+            other = [other]  # performance hack to avoid conversion to list
+        else:
+            return _original_in_(self, [])
     expr = _original_in_(self, other)
     expr.any_values = any_
     return expr
@@ -124,7 +127,10 @@ def _in_(self: ColumnOperators, other: Iterable, any_: bool = False):
 def _notin_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override NOT IN (...) PostgreSQL operator."""
     if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
-        other = [other]  # performance hack to avoid conversion to list
+        if len(other):
+            other = [other]  # performance hack to avoid conversion to list
+        else:
+            return _original_notin_(self, [])
     expr = _original_notin_(self, other)
     expr.any_values = any_
     return expr

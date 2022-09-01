@@ -396,6 +396,7 @@ class NodePullRequest(
     repository_id = Column(BigInteger, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     closed_at = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class NodePullRequestCommit(
