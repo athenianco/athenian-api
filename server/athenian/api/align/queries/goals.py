@@ -198,6 +198,9 @@ def _team_tree_to_goal_tree(
         expires_at,
         _team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
         repos,
+        goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
+        goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
+        goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
     )
 
 

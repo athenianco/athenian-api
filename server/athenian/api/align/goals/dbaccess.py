@@ -189,6 +189,9 @@ class GoalColumnAlias(Enum):
     """
 
     REPOSITORIES = "goal_repositories"
+    JIRA_PROJECTS = "goal_jira_projects"
+    JIRA_PRIORITIES = "goal_jira_priorities"
+    JIRA_ISSUE_TYPES = "goal_issue_types"
 
 
 @sentry_span
@@ -203,7 +206,6 @@ async def fetch_team_goals(
     Result is ordered by Goal id.
     Columns from joined Goal are included, with `goal_` prefix in case of conflict.
     """
-    team_goal_rows = (TeamGoal.team_id, TeamGoal.target, TeamGoal.repositories)
     goal_rows = (
         Goal.id,
         Goal.valid_from,
@@ -211,9 +213,12 @@ async def fetch_team_goals(
         Goal.name,
         Goal.metric,
         Goal.repositories.label(GoalColumnAlias.REPOSITORIES.value),
+        Goal.jira_projects.label(GoalColumnAlias.JIRA_PROJECTS.value),
+        Goal.jira_priorities.label(GoalColumnAlias.JIRA_PRIORITIES.value),
+        Goal.jira_issue_types.label(GoalColumnAlias.JIRA_ISSUE_TYPES.value),
     )
     stmt = (
-        sa.select(*team_goal_rows, *goal_rows)
+        sa.select(TeamGoal, *goal_rows)
         .join_from(TeamGoal, Goal, TeamGoal.goal_id == Goal.id)
         .where(TeamGoal.team_id.in_(team_ids), Goal.account_id == account, ~Goal.archived)
         .order_by(Goal.id, TeamGoal.team_id)

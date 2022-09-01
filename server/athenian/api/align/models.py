@@ -408,12 +408,18 @@ class GoalTree(Model):
         "expires_at": date,
         "team_goal": TeamGoalTree,
         "repositories": Optional[list[str]],
+        "jira_projects": Optional[list[str]],
+        "jira_priorities": Optional[list[str]],
+        "jira_issue_types": Optional[list[str]],
     }
 
     attribute_map = {
         "valid_from": "validFrom",
         "expires_at": "expiresAt",
         "team_goal": "teamGoal",
+        "jira_projects": "jiraProjects",
+        "jira_priorities": "jiraPriorities",
+        "jira_issue_types": "jiraIssueTypes",
     }
 
     def __init__(
@@ -425,6 +431,9 @@ class GoalTree(Model):
         expires_at: date,
         team_goal: TeamGoalTree,
         repositories: Optional[list[str]],
+        jira_projects: Optional[list[str]],
+        jira_priorities: Optional[list[str]],
+        jira_issue_types: Optional[list[str]],
     ):
         """Init the GoalTree."""
         self._id = id
@@ -434,6 +443,9 @@ class GoalTree(Model):
         self._expires_at = expires_at
         self._team_goal = team_goal
         self._repositories = repositories
+        self._jira_projects = jira_projects
+        self._jira_priorities = jira_priorities
+        self._jira_issue_types = jira_issue_types
 
     @property
     def id(self) -> int:
@@ -469,6 +481,21 @@ class GoalTree(Model):
     def repositories(self) -> Optional[list[str]]:
         """Get the repositories defining the goal scope."""
         return self._repositories
+
+    @property
+    def jira_projects(self) -> Optional[list[str]]:
+        """Get the JIRA projects defining the goal scope."""
+        return self._jira_projects
+
+    @property
+    def jira_priorities(self) -> Optional[list[str]]:
+        """Get the JIRA priorities defining the goal scope."""
+        return self._jira_priorities
+
+    @property
+    def jira_issue_types(self) -> Optional[list[str]]:
+        """Get the JIRA issue types defining the goal scope."""
+        return self._jira_issue_types
 
 
 class Member(Contributor):
