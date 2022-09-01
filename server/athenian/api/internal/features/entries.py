@@ -1510,14 +1510,13 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=serialize_args,
         deserialize=deserialize_args,
-        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, with_jira_map, **_: (  # noqa
+        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, **_: (  # noqa
             time_from,
             time_to,
             ",".join(sorted(repositories)),
             ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
             labels,
             jira,
-            with_jira_map,
             exclude_inactive,
             release_settings,
             logical_settings,
