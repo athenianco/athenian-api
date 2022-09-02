@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import pickle
 from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple
@@ -154,14 +153,16 @@ repository_environment_threshold = timedelta(days=60)
     exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, time_from=None, time_to=None, **_: (
+    key=lambda repos, environments, time_from=None, time_to=None, **_: (
         ",".join(sorted(repos)),
+        ",".join(sorted(environments if environments is not None else [])),
         time_from.timestamp() if time_from is not None else "",
         time_to.timestamp() if time_to is not None else "",
     ),
 )
 async def fetch_repository_environments(
     repos: Collection[str],
+    environments: Optional[Collection[str]],
     prefixer: Prefixer,
     account: int,
     rdb: Database,
@@ -169,12 +170,24 @@ async def fetch_repository_environments(
     time_from: Optional[datetime] = None,
     time_to: Optional[datetime] = None,
 ) -> Dict[str, List[str]]:
-    """Map environments to repositories that have deployed there."""
+    """Map environments to physical repositories that deployed there."""
     repo_name_to_node_get = prefixer.repo_name_to_node.get
-    repo_ids = {repo_name_to_node_get(r) for r in repos} - {None}
+    repo_ids = {repo_name_to_node_get(drop_logical_repo(r)) for r in repos} - {None}
     assert (time_from is None) == (time_to is None)
     if time_from is None:
         time_from = datetime.now(timezone.utc)
+    filters = [
+        DeployedComponent.account_id == account,
+        DeployedComponent.repository_node_id.in_(repo_ids),
+        DeploymentNotification.finished_at > time_from - repository_environment_threshold
+        if time_to is None
+        else DeploymentNotification.finished_at.between(
+            time_from - repository_environment_threshold,
+            time_to + repository_environment_threshold,
+        ),
+    ]
+    if environments is not None:
+        filters.append(DeploymentNotification.environment.in_(environments))
     rows = await rdb.fetch_all(
         select([DeployedComponent.repository_node_id, DeploymentNotification.environment])
         .select_from(
@@ -187,27 +200,19 @@ async def fetch_repository_environments(
                 ),
             ),
         )
-        .where(
-            and_(
-                DeployedComponent.account_id == account,
-                DeployedComponent.repository_node_id.in_(repo_ids),
-                DeploymentNotification.finished_at > time_from - repository_environment_threshold
-                if time_to is None
-                else DeploymentNotification.finished_at.between(
-                    time_from - repository_environment_threshold,
-                    time_to + repository_environment_threshold,
-                ),
-            ),
-        )
+        .where(*filters)
         .group_by(DeployedComponent.repository_node_id, DeploymentNotification.environment)
         .distinct(),
     )
-    result = defaultdict(list)
+    result = {}
     repo_node_to_name = prefixer.repo_node_to_name.__getitem__
     for row in rows:
         repo_id = row[DeployedComponent.repository_node_id.name]
         env = row[DeploymentNotification.environment.name]
-        result[env].append(repo_node_to_name(repo_id))
+        result.setdefault(env, []).append(repo_node_to_name(repo_id))
+    if environments is not None:
+        for env in environments:
+            result.setdefault(env, [])
     return result
 
 

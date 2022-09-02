@@ -10,29 +10,29 @@ class GetPullRequestsRequest(Model):
     attribute_types = {
         "account": int,
         "prs": List[PullRequestNumbers],
-        "environment": Optional[str],
+        "environments": Optional[list[str]],
     }
     attribute_map = {
         "account": "account",
         "prs": "prs",
-        "environment": "environment",
+        "environments": "environments",
     }
 
     def __init__(
         self,
         account: Optional[int] = None,
         prs: Optional[List[PullRequestNumbers]] = None,
-        environment: Optional[str] = None,
+        environments: Optional[str] = None,
     ):
         """GetPullRequestsRequest - a model defined in OpenAPI
 
         :param account: The account of this GetPullRequestsRequest.
         :param prs: The prs of this GetPullRequestsRequest.
-        :param environment: The environment of this GetPullRequestsRequest.
+        :param environments: The environments of this GetPullRequestsRequest.
         """
         self._account = account
         self._prs = prs
-        self._environment = environment
+        self._environments = environments
 
     @property
     def account(self) -> int:
@@ -81,21 +81,21 @@ class GetPullRequestsRequest(Model):
         self._prs = prs
 
     @property
-    def environment(self) -> Optional[str]:
-        """Gets the environment of this GetPullRequestsRequest.
+    def environments(self) -> Optional[list[str]]:
+        """Gets the environments of this GetPullRequestsRequest.
 
-        Deployment environment to apply.
+        Deployment environments to apply.
 
-        :return: The environment of this GetPullRequestsRequest.
+        :return: The environments of this GetPullRequestsRequest.
         """
-        return self._environment
+        return self._environments
 
-    @environment.setter
-    def environment(self, environment: Optional[str]):
-        """Sets the environment of this GetPullRequestsRequest.
+    @environments.setter
+    def environments(self, environments: Optional[list[str]]):
+        """Sets the environments of this GetPullRequestsRequest.
 
-        Deployment environment to apply.
+        Deployment environments to apply.
 
-        :param environment: The environment of this GetPullRequestsRequest.
+        :param environments: The environments of this GetPullRequestsRequest.
         """
-        self._environment = environment
+        self._environments = environments

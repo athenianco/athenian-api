@@ -592,7 +592,7 @@ async def test_filter_prs_stage_deployed(
         "in": [],
         "stages": [PullRequestStage.DEPLOYED],
         "exclude_inactive": True,
-        "environment": "production",
+        "environments": ["production"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
@@ -654,7 +654,7 @@ async def test_filter_prs_event_deployed(
         "in": [],
         "events": [PullRequestEvent.DEPLOYED],
         "exclude_inactive": False,
-        "environment": "production",
+        "environments": ["production"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
@@ -894,12 +894,14 @@ async def test_filter_prs_deployments_missing_env(
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
     assert len(prs.data) == 37
+    counts = [0, 0, 0, 0]
     for pr in prs.data:
         assert pr.stage_timings.deploy["production"] > timedelta(0)
-        assert "deployed" not in pr.events_now
-        assert "deployed" not in pr.events_time_machine
-        assert "deployed" not in pr.stages_now
-        assert "deployed" not in pr.stages_time_machine
+        counts[0] += "deployed" in pr.events_now
+        counts[1] += "deployed" in pr.events_time_machine
+        counts[2] += "deployed" in pr.stages_now
+        counts[3] += "deployed" in pr.stages_time_machine
+    assert counts == [37, 0, 37, 0]
 
 
 # TODO: fix response validation against the schema
@@ -917,7 +919,7 @@ async def test_filter_prs_deployments_with_env(
         "in": [],
         "events": [PullRequestEvent.MERGED],
         "exclude_inactive": True,
-        "environment": "production",
+        "environments": ["production"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
@@ -2682,7 +2684,7 @@ async def test_get_prs_deployments(
                 "numbers": [1160, 1179, 1168],
             },
         ],
-        "environment": "production",
+        "environments": ["production"],
     }
     response = await client.request(
         method="POST", path="/v1/get/pull_requests", headers=headers, json=body,

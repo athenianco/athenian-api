@@ -33,6 +33,7 @@ from athenian.api.internal.features.metric_calculator import (
     group_by_lines,
     make_register_metric,
 )
+from athenian.api.internal.logical_accelerated import drop_logical_in_array
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
@@ -1469,7 +1470,8 @@ class DeploymentPendingMarker(DeploymentMetricBase):
 
     is_pure_dependency = True
     metric = MetricInt
-    repositories: List[List[str]] = []
+    repositories: List[Sequence[str]] = []
+    drop_logical: bool = False
 
     def _analyze(
         self,
@@ -1479,10 +1481,10 @@ class DeploymentPendingMarker(DeploymentMetricBase):
         **kwargs,
     ) -> np.ndarray:
         finished = self.calc_deployed(facts)
-        repo_mask = np.in1d(
-            facts[PullRequestFacts.f.repository_full_name].values,
-            self.repositories[self.environment],
-        )
+        repo_names = facts[PullRequestFacts.f.repository_full_name].values
+        if self.drop_logical:
+            repo_names = drop_logical_in_array(repo_names)
+        repo_mask = np.in1d(repo_names, self.repositories[self.environment])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         finished_in_range = finished < max_times[:, None]
         result[:, repo_mask] = 1
