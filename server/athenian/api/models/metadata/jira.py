@@ -52,8 +52,8 @@ class Issue(Base):
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
     )
     comments_count = Column(Integer, nullable=False)
-    priority_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
-    priority_name = Column(Text, nullable=False)
+    priority_id = Column(Text, nullable=True, info={"dtype": "S8"})
+    priority_name = Column(Text, nullable=True)
     url = Column(Text, nullable=False)
     is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
 
