@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
@@ -36,48 +36,18 @@ class PullRequest(Model):
         "review_comments": int,
         "reviews": int,
         "merged": datetime,
-        "merged_with_failed_check_runs": Optional[List[str]],
+        "merged_with_failed_check_runs": Optional[list[str]],
         "released": Optional[datetime],
         "release_url": Optional[str],
         "stage_timings": StageTimings,
-        "events_time_machine": Optional[List[str]],
-        "stages_time_machine": Optional[List[str]],
-        "events_now": List[str],
-        "stages_now": List[str],
-        "participants": List[PullRequestParticipant],
-        "labels": Optional[List[PullRequestLabel]],
-        "jira": Optional[List[LinkedJIRAIssue]],
-    }
-
-    attribute_map = {
-        "repository": "repository",
-        "number": "number",
-        "title": "title",
-        "size_added": "size_added",
-        "size_removed": "size_removed",
-        "files_changed": "files_changed",
-        "created": "created",
-        "updated": "updated",
-        "closed": "closed",
-        "comments": "comments",
-        "commits": "commits",
-        "review_requested": "review_requested",
-        "first_review": "first_review",
-        "approved": "approved",
-        "review_comments": "review_comments",
-        "reviews": "reviews",
-        "merged": "merged",
-        "merged_with_failed_check_runs": "merged_with_failed_check_runs",
-        "released": "released",
-        "release_url": "release_url",
-        "stage_timings": "stage_timings",
-        "events_time_machine": "events_time_machine",
-        "stages_time_machine": "stages_time_machine",
-        "events_now": "events_now",
-        "stages_now": "stages_now",
-        "participants": "participants",
-        "labels": "labels",
-        "jira": "jira",
+        "events_time_machine": Optional[list[str]],
+        "stages_time_machine": Optional[list[str]],
+        "events_now": list[str],
+        "stages_now": list[str],
+        "participants": list[PullRequestParticipant],
+        "labels": Optional[list[PullRequestLabel]],
+        "jira": Optional[list[LinkedJIRAIssue]],
+        "deployments": Optional[list[str]],
     }
 
     def __init__(
@@ -99,17 +69,18 @@ class PullRequest(Model):
         review_comments: Optional[int] = None,
         reviews: Optional[int] = None,
         merged: Optional[datetime] = None,
-        merged_with_failed_check_runs: Optional[List[str]] = None,
+        merged_with_failed_check_runs: Optional[list[str]] = None,
         released: Optional[datetime] = None,
         release_url: Optional[str] = None,
         stage_timings: Optional[StageTimings] = None,
-        events_time_machine: Optional[List[str]] = None,
-        stages_time_machine: Optional[List[str]] = None,
-        events_now: Optional[List[str]] = None,
-        stages_now: Optional[List[str]] = None,
-        participants: Optional[List[PullRequestParticipant]] = None,
-        labels: Optional[List[PullRequestLabel]] = None,
-        jira: Optional[List[LinkedJIRAIssue]] = None,
+        events_time_machine: Optional[list[str]] = None,
+        stages_time_machine: Optional[list[str]] = None,
+        events_now: Optional[list[str]] = None,
+        stages_now: Optional[list[str]] = None,
+        participants: Optional[list[PullRequestParticipant]] = None,
+        labels: Optional[list[PullRequestLabel]] = None,
+        jira: Optional[list[LinkedJIRAIssue]] = None,
+        deployments: Optional[list[str]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -139,6 +110,7 @@ class PullRequest(Model):
         :param participants: The participants of this PullRequest.
         :param labels: The labels of this PullRequest.
         :param jira: The jira of this PullRequest.
+        :param deployments: The deployments of this PullRequest.
         """
         self._repository = repository
         self._number = number
@@ -168,6 +140,7 @@ class PullRequest(Model):
         self._participants = participants
         self._labels = labels
         self._jira = jira
+        self._deployments = deployments
 
     def __lt__(self, other: "PullRequest") -> bool:
         """Compute self < other."""
@@ -551,7 +524,7 @@ class PullRequest(Model):
         self._merged = merged
 
     @property
-    def merged_with_failed_check_runs(self) -> Optional[List[str]]:
+    def merged_with_failed_check_runs(self) -> Optional[list[str]]:
         """Gets the merged_with_failed_check_runs of this PullRequest.
 
         PR was merged with these failed check runs.
@@ -561,7 +534,7 @@ class PullRequest(Model):
         return self._merged_with_failed_check_runs
 
     @merged_with_failed_check_runs.setter
-    def merged_with_failed_check_runs(self, merged_with_failed_check_runs: Optional[List[str]]):
+    def merged_with_failed_check_runs(self, merged_with_failed_check_runs: Optional[list[str]]):
         """Sets the merged_with_failed_check_runs of this PullRequest.
 
         PR was merged with these failed check runs.
@@ -633,22 +606,22 @@ class PullRequest(Model):
         self._stage_timings = stage_timings
 
     @property
-    def events_time_machine(self) -> Optional[List[str]]:
+    def events_time_machine(self) -> Optional[list[str]]:
         """
         Gets events_time_machine of this PullRequest.
 
-        List of PR events which happened until `date_to`. `date_from` does not matter.
+        list of PR events which happened until `date_to`. `date_from` does not matter.
 
         :return: The events_time_machine of this PullRequest.
         """
         return self._events_time_machine
 
     @events_time_machine.setter
-    def events_time_machine(self, events_time_machine: Optional[List[str]]):
+    def events_time_machine(self, events_time_machine: Optional[list[str]]):
         """
         Sets events_time_machine of this PullRequest.
 
-        List of PR events which happened until `date_to`. `date_from` does not matter.
+        list of PR events which happened until `date_to`. `date_from` does not matter.
 
         :param events_time_machine: The events_time_machine of this PullRequest.
         """
@@ -659,7 +632,7 @@ class PullRequest(Model):
         self._events_time_machine = events_time_machine
 
     @property
-    def stages_time_machine(self) -> Optional[List[str]]:
+    def stages_time_machine(self) -> Optional[list[str]]:
         """Gets the stages_time_machine of this PullRequest.
 
         :return: The stages_time_machine of this PullRequest.
@@ -667,7 +640,7 @@ class PullRequest(Model):
         return self._stages_time_machine
 
     @stages_time_machine.setter
-    def stages_time_machine(self, stages_time_machine: Optional[List[str]]):
+    def stages_time_machine(self, stages_time_machine: Optional[list[str]]):
         """Sets the stages_time_machine of this PullRequest.
 
         :param stages_time_machine: The stages_time_machine of this PullRequest.
@@ -679,22 +652,22 @@ class PullRequest(Model):
         self._stages_time_machine = stages_time_machine
 
     @property
-    def events_now(self) -> List[str]:
+    def events_now(self) -> list[str]:
         """
         Gets events_now of this PullRequest.
 
-        List of PR events that ever happened.
+        list of PR events that ever happened.
 
         :return: The events_now of this PullRequest.
         """
         return self._events_now
 
     @events_now.setter
-    def events_now(self, events_now: List[str]):
+    def events_now(self, events_now: list[str]):
         """
         Sets events_now of this PullRequest.
 
-        List of PR events that ever happened.
+        list of PR events that ever happened.
 
         :param events_now: The events_now of this PullRequest.
         """
@@ -707,7 +680,7 @@ class PullRequest(Model):
         self._events_now = events_now
 
     @property
-    def stages_now(self) -> List[str]:
+    def stages_now(self) -> list[str]:
         """Gets the stages_now of this PullRequest.
 
         :return: The stages_now of this PullRequest.
@@ -715,7 +688,7 @@ class PullRequest(Model):
         return self._stages_now
 
     @stages_now.setter
-    def stages_now(self, stages_now: List[str]):
+    def stages_now(self, stages_now: list[str]):
         """Sets the stages_now of this PullRequest.
 
         :param stages_now: The stages_now of this PullRequest.
@@ -729,20 +702,20 @@ class PullRequest(Model):
         self._stages_now = stages_now
 
     @property
-    def participants(self) -> List[PullRequestParticipant]:
+    def participants(self) -> list[PullRequestParticipant]:
         """Gets the participants of this PullRequest.
 
-        List of developers related to this PR.
+        list of developers related to this PR.
 
         :return: The participants of this PullRequest.
         """
         return self._participants
 
     @participants.setter
-    def participants(self, participants: List[PullRequestParticipant]):
+    def participants(self, participants: list[PullRequestParticipant]):
         """Sets the participants of this PullRequest.
 
-        List of developers related to this PR.
+        list of developers related to this PR.
 
         :param participants: The participants of this PullRequest.
         """
@@ -752,41 +725,61 @@ class PullRequest(Model):
         self._participants = participants
 
     @property
-    def labels(self) -> Optional[List[PullRequestLabel]]:
+    def labels(self) -> Optional[list[PullRequestLabel]]:
         """Gets the labels of this PullRequest.
 
-        List of developers related to this PR.
+        list of developers related to this PR.
 
         :return: The labels of this PullRequest.
         """
         return self._labels
 
     @labels.setter
-    def labels(self, labels: Optional[List[PullRequestLabel]]):
+    def labels(self, labels: Optional[list[PullRequestLabel]]):
         """Sets the labels of this PullRequest.
 
-        List of developers related to this PR.
+        list of developers related to this PR.
 
         :param labels: The labels of this PullRequest.
         """
         self._labels = labels
 
     @property
-    def jira(self) -> Optional[List[LinkedJIRAIssue]]:
+    def jira(self) -> Optional[list[LinkedJIRAIssue]]:
         """Gets the jira of this PullRequest.
 
-        List of JIRA issues linked to this PR.
+        list of JIRA issues linked to this PR.
 
         :return: The jira of this PullRequest.
         """
         return self._jira
 
     @jira.setter
-    def jira(self, jira: Optional[List[LinkedJIRAIssue]]):
+    def jira(self, jira: Optional[list[LinkedJIRAIssue]]):
         """Sets the jira of this PullRequest.
 
-        List of JIRA issues linked to this PR.
+        list of JIRA issues linked to this PR.
 
         :param jira: The jira of this PullRequest.
         """
         self._jira = jira
+
+    @property
+    def deployments(self) -> Optional[list[str]]:
+        """Gets the deployments of this PullRequest.
+
+        List of deployments that contain this PR.
+
+        :return: The deployments of this PullRequest.
+        """
+        return self._deployments
+
+    @deployments.setter
+    def deployments(self, deployments: Optional[list[str]]):
+        """Sets the deployments of this PullRequest.
+
+        List of deployments that contain this PR.
+
+        :param deployments: The deployments of this PullRequest.
+        """
+        self._deployments = deployments

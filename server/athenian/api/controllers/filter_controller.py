@@ -451,7 +451,6 @@ def web_pr_from_struct(
     for pr in prs:
         props = dict(dataclass_asdict(pr))
         del props["node_id"]
-        del props["deployments"]
         repo = props["repository"]
         physical_repo = drop_logical_repo(repo)
         if physical_repo != repo:

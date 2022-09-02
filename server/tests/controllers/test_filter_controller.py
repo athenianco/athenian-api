@@ -901,6 +901,7 @@ async def test_filter_prs_deployments_missing_env(
         counts[1] += "deployed" in pr.events_time_machine
         counts[2] += "deployed" in pr.stages_now
         counts[3] += "deployed" in pr.stages_time_machine
+        assert "deployed" in pr.events_now and pr.deployments
     assert counts == [37, 0, 37, 0]
 
 
@@ -936,7 +937,9 @@ async def test_filter_prs_deployments_with_env(
             deps += 1
             assert PullRequestStage.DEPLOYED in pr.stages_now
             assert pr.stage_timings.deploy["production"] < deployed_margin
+            assert pr.deployments
         else:
+            assert not pr.deployments
             assert pr.stage_timings.deploy["production"] > undeployed_margin
         assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
         assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
@@ -2698,10 +2701,12 @@ async def test_get_prs_deployments(
             assert pr.stage_timings.deploy["production"] > timedelta(0)
             assert PullRequestEvent.DEPLOYED in pr.events_now
             assert PullRequestStage.DEPLOYED in pr.stages_now
+            assert pr.deployments == ["Dummy deployment"]
         if pr.number == 1168:
             assert not pr.stage_timings.deploy
             assert PullRequestEvent.DEPLOYED not in pr.events_now
             assert PullRequestStage.DEPLOYED not in pr.stages_now
+            assert not pr.deployments
     assert prs.include.deployments == {
         "Dummy deployment": DeploymentNotification(
             components=[
