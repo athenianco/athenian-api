@@ -700,7 +700,7 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
 
     @classmethod
     @sentry_span
-    async def load_pr_jira_mapping(
+    async def load_ids(
         cls,
         prs: Collection[int],
         meta_ids: Tuple[int, ...],

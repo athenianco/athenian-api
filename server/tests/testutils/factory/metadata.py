@@ -119,7 +119,7 @@ class JIRAProjectFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Project
 
-    acc_id = factory.Sequence(lambda n: n + 1)
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
     id = factory.Sequence(lambda n: str(n + 1))
     key = factory.Sequence(lambda n: f"PRJ-{n + 1:03d}")
     name = factory.Sequence(lambda n: f"Project {n + 1:03d}")

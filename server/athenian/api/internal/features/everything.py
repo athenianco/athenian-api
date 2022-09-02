@@ -111,7 +111,7 @@ async def mine_all_prs(
         ),
         fetch_repository_environments(repos, None, prefixer, account, rdb, cache),
         PullRequestMiner.fetch_pr_deployments(node_ids, account, pdb, rdb),
-        PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
+        PullRequestJiraMapper.append_ids(facts, meta_ids, mdb),
     ]
     df_prs, envs, deps, *_ = await gather(*tasks, op="fetch raw data")
     UnfreshPullRequestFactsFetcher.append_deployments(

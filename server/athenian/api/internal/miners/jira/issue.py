@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from collections import defaultdict
+import dataclasses
 from datetime import datetime, timezone
 from itertools import chain
 import logging
@@ -9,6 +12,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import func, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -17,7 +21,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Database, DatabaseLike, Row
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
@@ -812,11 +816,48 @@ def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
     return df
 
 
+class _PRJIRAMappingBuilder:
+    def __init__(self) -> None:
+        self._ids: list[str] = []
+        self._projects: list[str] = []
+        self._priorities: list[str] = []
+        self._types: list[str] = []
+
+    def finalize(self) -> PRJIRAMapping:
+        return PRJIRAMapping(
+            sorted(set(self._ids)),
+            sorted(set(self._projects)),
+            sorted(set(self._priorities)),
+            sorted(set(self._types)),
+        )
+
+    def import_db_row(self, row: Row) -> None:
+        self._ids.append(row[Issue.key.name])
+        self._projects.append(row[Issue.project_id.name])
+        if priority := row[Issue.priority_name.name]:
+            self._priorities.append(priority)
+        self._types.append(row[Issue.type.name])
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PRJIRAMapping:
+    """Mapped JIRA information for a pull request."""
+
+    ids: list[str]
+    """JIRA issue identifiers mapped the PR."""
+    projects: list[str]
+    """JIRA issue projects mapped to the PR."""
+    priorities: list[str]
+    """JIRA issue priorities mapped to the PR."""
+    types: list[str]
+    """JIRA issue priorities types to the PR."""
+
+
 class PullRequestJiraMapper:
     """Mapper of pull requests to JIRA tickets."""
 
     @classmethod
-    async def append_pr_jira_mapping(
+    async def append_ids(
         cls,
         prs: PullRequestFactsMap,
         meta_ids: tuple[int, ...],
@@ -826,52 +867,58 @@ class PullRequestJiraMapper:
         pr_node_ids = defaultdict(list)
         for node_id, repo in prs:
             pr_node_ids[node_id].append(repo)
-        jira_map = await cls.load_pr_jira_mapping(pr_node_ids, meta_ids, mdb)
-        for pr_node_id, jira in jira_map.items():
+        jira_map = await cls.load(pr_node_ids, meta_ids, mdb)
+        for pr_node_id, mapping in jira_map.items():
             for repo in pr_node_ids[pr_node_id]:
                 try:
-                    prs[(pr_node_id, repo)].jira_ids = jira
+                    prs[(pr_node_id, repo)].jira_ids = mapping.ids
                 except KeyError:
                     # we removed this PR in JIRA filter
                     continue
 
     @classmethod
     @sentry_span
-    async def load_pr_jira_mapping(
+    async def load(
+        cls,
+        prs: Collection[int],
+        meta_ids: tuple[int, ...],
+        mdb: DatabaseLike,
+    ) -> dict[int, PRJIRAMapping]:
+        """Load the JIRA mapping for each PR in `prs`."""
+        nprji = NodePullRequestJiraIssues
+
+        if len(prs) >= 100:
+            node_id_cond = nprji.node_id.in_any_values(prs)
+        else:
+            node_id_cond = nprji.node_id.in_(prs)
+        cols = [nprji.node_id, Issue.key, Issue.priority_name, Issue.type, Issue.project_id]
+        from_clause = sa.outerjoin(
+            nprji, Issue, sa.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
+        )
+
+        rows = await mdb.fetch_all(
+            sa.select(cols)
+            .select_from(from_clause)
+            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
+        )
+
+        mapping_builders: dict[int, _PRJIRAMappingBuilder] = defaultdict(_PRJIRAMappingBuilder)
+        for r in rows:
+            pr_id = r[nprji.node_id.name]
+            mapping_builders[pr_id].import_db_row(r)
+
+        return {pr_id: builder.finalize() for pr_id, builder in mapping_builders.items()}
+
+    @classmethod
+    async def load_ids(
         cls,
         prs: Collection[int],
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> dict[int, list[str]]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
-        nprji = NodePullRequestJiraIssues
-        if len(prs) >= 100:
-            node_id_cond = nprji.node_id.in_any_values(prs)
-        else:
-            node_id_cond = nprji.node_id.in_(prs)
-        rows = await mdb.fetch_all(
-            sql.select([nprji.node_id, Issue.key])
-            .select_from(
-                sql.outerjoin(
-                    nprji,
-                    Issue,
-                    sql.and_(
-                        nprji.jira_acc == Issue.acc_id,
-                        nprji.jira_id == Issue.id,
-                    ),
-                ),
-            )
-            .where(
-                sql.and_(
-                    node_id_cond,
-                    nprji.node_acc.in_(meta_ids),
-                ),
-            ),
-        )
-        result = defaultdict(list)
-        for r in rows:
-            result[r[0]].append(r[1])
-        return result
+        prs_mapping = await cls.load(prs, meta_ids, mdb)
+        return {pr_id: mapping.ids for pr_id, mapping in prs_mapping.items()}
 
 
 def resolve_work_began_and_resolved(

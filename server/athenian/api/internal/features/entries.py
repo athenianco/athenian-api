@@ -234,6 +234,8 @@ class MetricEntriesCalculator:
         """
         Create a `MetricEntriesCalculator`.
 
+        :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the
+                         repos.
         :param quantile_stride: The cell size of the quantile grid in days.
         """
         self._account = account
@@ -1483,8 +1485,6 @@ class MetricEntriesCalculator:
         """
         Calculate facts about pull request on GitHub.
 
-        :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the
-                         repos.
         :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
         :param fresh: If the number of done PRs for the time period and filters exceeds \
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
@@ -1628,9 +1628,7 @@ class MetricEntriesCalculator:
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
             done_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.load_pr_jira_mapping(
-                    precomputed_node_ids, self._meta_ids, self._mdb,
-                ),
+                self.pr_jira_mapper.load_ids(precomputed_node_ids, self._meta_ids, self._mdb),
                 name="load_pr_jira_mapping/done",
             )
         done_deployments_task = asyncio.create_task(
