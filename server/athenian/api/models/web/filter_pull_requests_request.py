@@ -21,7 +21,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         "updated_from": Optional[date],
         "updated_to": Optional[date],
         "limit": int,
-        "environment": Optional[str],
+        "environments": Optional[list[str]],
     }
 
     attribute_map = {
@@ -33,7 +33,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         "updated_from": "updated_from",
         "updated_to": "updated_to",
         "limit": "limit",
-        "environment": "environment",
+        "environments": "environments",
     }
 
     def __init__(
@@ -46,7 +46,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         updated_from: Optional[date] = None,
         updated_to: Optional[date] = None,
         limit: Optional[int] = None,
-        environment: Optional[str] = None,
+        environments: Optional[list[str]] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
@@ -58,7 +58,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         :param updated_from: The updated_from of this FilterPullRequestsRequest.
         :param updated_to: The updated_to of this FilterPullRequestsRequest.
         :param limit: The limit of this FilterPullRequestsRequest.
-        :param environment: The environment of this FilterPullRequestsRequest.
+        :param environments: The environments of this FilterPullRequestsRequest.
         """
         self._in_ = in_
         self._events = events
@@ -68,7 +68,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         self._updated_from = updated_from
         self._updated_to = updated_to
         self._limit = limit
-        self._environment = environment
+        self._environments = environments
 
     @property
     def in_(self) -> List[str]:
@@ -230,24 +230,24 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         self._limit = limit
 
     @property
-    def environment(self) -> Optional[str]:
-        """Gets the environment of this FilterPullRequestsRequest.
+    def environments(self) -> Optional[list[str]]:
+        """Gets the environments of this FilterPullRequestsRequest.
 
-        Target environment for the deployment events, impacts `events` and `stages`.
+        Target environments for the deployment events, impacts `events` and `stages`.
 
-        :return: The environment of this FilterPullRequestsRequest.
+        :return: The environments of this FilterPullRequestsRequest.
         """
-        return self._environment
+        return self._environments
 
-    @environment.setter
-    def environment(self, environment: Optional[str]):
-        """Sets the environment of this FilterPullRequestsRequest.
+    @environments.setter
+    def environments(self, environments: Optional[list[str]]):
+        """Sets the environments of this FilterPullRequestsRequest.
 
-        Target environment for the deployment events, impacts `events` and `stages`.
+        Target environments for the deployment events, impacts `events` and `stages`.
 
-        :param environment: The environment of this FilterPullRequestsRequest.
+        :param environments: The environments of this FilterPullRequestsRequest.
         """
-        self._environment = environment
+        self._environments = environments
 
 
 FilterPullRequestsRequest = AllOf(

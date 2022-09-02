@@ -62,7 +62,6 @@ from athenian.api.internal.miners.github.commit import (
     fetch_precomputed_commit_history_dags,
     fetch_repository_commits_no_branch_dates,
 )
-from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.internal.miners.github.deployment_light import (
     fetch_repository_environments,
     load_included_deployments,
@@ -148,8 +147,7 @@ class PullRequestListMiner:
         time_from: datetime,
         time_to: datetime,
         with_time_machine: bool,
-        events_environment: Optional[str],
-        environments: Dict[str, List[str]],
+        environments: Dict[str, list[str]],
     ):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs = prs
@@ -159,9 +157,8 @@ class PullRequestListMiner:
         assert isinstance(stages, set)
         self._events = events
         self._stages = stages
-        self._environment = events_environment
-        self._environments, environments_order = np.unique(list(environments), return_inverse=True)
-        self._calcs, self._counter_deps = self.create_stage_calcs(environments, environments_order)
+        self._environments = environments
+        self._calcs, self._counter_deps = self.create_stage_calcs(environments)
         assert isinstance(time_from, datetime)
         assert time_from.tzinfo == timezone.utc
         assert isinstance(time_to, datetime)
@@ -174,19 +171,15 @@ class PullRequestListMiner:
     def create_stage_calcs(
         cls,
         environments: Dict[str, List[str]],
-        environments_order: Optional[Sequence[int]] = None,
     ) -> Tuple[Dict[str, Dict[str, List[MetricCalculator[int]]]], Iterable[MetricCalculator]]:
         """Intialize PR metric calculators needed to calculate the stage timings."""
         quantiles = dict(quantiles=(0, 1))
         ordered_envs = np.empty(len(environments), dtype=object)
         repos_in_env = np.empty(len(environments), dtype=object)
-        if environments_order is None:
-            environments_order = range(len(environments))
-        for env_index, (env, repos) in zip(environments_order, environments.items()):
+        for env_index, (env, repos) in enumerate(environments.items()):
             repos_in_env[env_index] = repos
             ordered_envs[env_index] = env
         del environments
-        del environments_order
         if len(ordered_envs) == 0:
             ordered_envs = [None]
         all_counter = cls.DummyAllCounter(**quantiles)
@@ -213,8 +206,14 @@ class PullRequestListMiner:
                 "time": DeploymentTimeCalculator(
                     env_marker, **quantiles, environments=ordered_envs,
                 ).split(),
+                # yes, we will return redundant environments for logical repositories
+                # this is an acceptable shortcut
                 "pending": DeploymentPendingMarker(
-                    env_marker, **quantiles, environments=ordered_envs, repositories=repos_in_env,
+                    env_marker,
+                    **quantiles,
+                    environments=ordered_envs,
+                    repositories=repos_in_env,
+                    drop_logical=True,
                 ).split(),
                 "deps": [env_marker],
             },
@@ -524,23 +523,18 @@ class PullRequestListMiner:
             ] = set()
             return events_time_machine, events_now
 
-        if self._environment is None:
-            dep_index = 0  # whatever in range
-        else:
-            dep_index = searchsorted_inrange(self._environments, [self._environment])[0]
-        if self._environments[dep_index] == self._environment:
-            prs = dfs.prs.index.values
-            deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed(
-                columns=(dfs.prs[PullRequest.merged_at.name].values, prs),
-            )
-            events_time_machine[PullRequestEvent.DEPLOYED] = set(
-                prs[deployed < np.array(self._time_to, dtype=deployed.dtype)],
-            )
-            events_now[PullRequestEvent.DEPLOYED] = set(prs[deployed == deployed])
-        else:
-            events_time_machine[PullRequestEvent.DEPLOYED] = events_now[
-                PullRequestEvent.DEPLOYED
-            ] = set()
+        events_time_machine[PullRequestEvent.DEPLOYED] = set()
+        events_now[PullRequestEvent.DEPLOYED] = set()
+        if self._environments:
+            for dep_index in range(len(self._environments)):
+                prs = dfs.prs.index.values
+                deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed(
+                    columns=(dfs.prs[PullRequest.merged_at.name].values, prs),
+                )
+                events_time_machine[PullRequestEvent.DEPLOYED] |= set(
+                    prs[deployed < np.array(self._time_to, dtype=deployed.dtype)],
+                )
+                events_now[PullRequestEvent.DEPLOYED] |= set(prs[deployed == deployed])
 
         return events_time_machine, events_now
 
@@ -561,7 +555,7 @@ async def filter_pull_requests(
     participants: PRParticipants,
     labels: LabelFilter,
     jira: JIRAFilter,
-    environment: Optional[str],
+    environments: Optional[Sequence[str]],
     exclude_inactive: bool,
     bots: Set[str],
     release_settings: ReleaseSettings,
@@ -595,7 +589,7 @@ async def filter_pull_requests(
         participants,
         labels,
         jira,
-        environment,
+        environments,
         exclude_inactive,
         bots,
         release_settings,
@@ -724,14 +718,14 @@ def _filter_by_jira_issue_types(
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, events, stages, participants, environment, exclude_inactive, release_settings, logical_settings, updated_min, updated_max, **_: (  # noqa
+    key=lambda time_from, time_to, repos, events, stages, participants, environments, exclude_inactive, release_settings, logical_settings, updated_min, updated_max, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(events)),
         ",".join(s.name.lower() for s in sorted(stages)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
-        environment,
+        ",".join(sorted(environments or [])),
         exclude_inactive,
         updated_min.timestamp() if updated_min is not None else None,
         updated_max.timestamp() if updated_max is not None else None,
@@ -749,7 +743,7 @@ async def _filter_pull_requests(
     participants: PRParticipants,
     labels: LabelFilter,
     jira: JIRAFilter,
-    environment: Optional[str],
+    environments: Optional[Sequence[str]],
     exclude_inactive: bool,
     bots: Set[str],
     release_settings: ReleaseSettings,
@@ -777,7 +771,14 @@ async def _filter_pull_requests(
         assert updated_max is None
     environments_task = asyncio.create_task(
         fetch_repository_environments(
-            repos, prefixer, account, rdb, cache, time_from=time_from, time_to=time_to,
+            repos,
+            environments,
+            prefixer,
+            account,
+            rdb,
+            cache,
+            time_from=time_from,
+            time_to=time_to,
         ),
     )
     branches, default_branches = await BranchMiner.extract_branches(
@@ -970,7 +971,6 @@ async def _filter_pull_requests(
             time_from,
             time_to,
             True,
-            environment,
             environments_task.result(),
         ),
         "PullRequestListMiner.__iter__",
@@ -1012,14 +1012,14 @@ async def _load_deployments(
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda prs, release_settings, logical_settings, environment, **_: (
+    key=lambda prs, release_settings, logical_settings, environments, **_: (
         ";".join(
             "%s:%s" % (repo, ",".join(map(str, sorted(numbers))))
             for repo, numbers in sorted(prs.items())
         ),
         release_settings,
         logical_settings,
-        environment,
+        ",".join(sorted(environments if environments is not None else [])),
     ),
 )
 async def fetch_pull_requests(
@@ -1027,7 +1027,7 @@ async def fetch_pull_requests(
     bots: Set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
-    environment: Optional[str],
+    environments: Optional[Sequence[str]],
     prefixer: Prefixer,
     account: int,
     meta_ids: Tuple[int, ...],
@@ -1058,6 +1058,7 @@ async def fetch_pull_requests(
         return [], {}
     repo_envs = await fetch_repository_environments(
         prs,
+        environments,
         prefixer,
         account,
         rdb,
@@ -1074,7 +1075,6 @@ async def fetch_pull_requests(
         datetime(1970, 1, 1, tzinfo=timezone.utc),
         datetime.now(timezone.utc),
         False,
-        environment,
         repo_envs,
     )
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")

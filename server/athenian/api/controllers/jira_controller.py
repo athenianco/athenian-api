@@ -849,6 +849,7 @@ async def _issue_flow(
             ),
             fetch_repository_environments(
                 prs_df[PullRequest.repository_full_name.name].unique(),
+                None,
                 prefixer,
                 account,
                 rdb,
@@ -865,7 +866,6 @@ async def _issue_flow(
             datetime(1970, 1, 1, tzinfo=timezone.utc),
             datetime.now(timezone.utc),
             False,
-            None,
             repo_envs,
         )
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")

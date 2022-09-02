@@ -6,8 +6,8 @@
 
 from cpython cimport PyObject
 from libc.stddef cimport wchar_t
-from libc.string cimport memchr
-from numpy cimport PyArray_DATA, ndarray
+from libc.string cimport memchr, memset
+from numpy cimport PyArray_DATA, PyArray_DIM, PyArray_ISOBJECT, PyArray_ISSTRING, ndarray
 
 import numpy as np
 
@@ -24,9 +24,15 @@ cdef extern from "Python.h":
     Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
 
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
+    PyObject *Py_None
 
 
+# performance: do not check that repo is a str, downstream functions will do that anyway
 def drop_logical_repo(repo) -> str:
+    return _drop_logical_repo(<PyObject *> repo)
+
+
+cdef inline str _drop_logical_repo(PyObject *repo):
     cdef:
         char *data
         char *head
@@ -36,9 +42,9 @@ def drop_logical_repo(repo) -> str:
         unsigned int kind
         int i = 0, matches = 0
     # note: the function is too small to release the GIL
-    data = <char *> PyUnicode_DATA(<PyObject *> repo)
-    length = PyUnicode_GET_LENGTH(<PyObject *> repo)
-    kind = PyUnicode_KIND(<PyObject *> repo)
+    data = <char *> PyUnicode_DATA(repo)
+    length = PyUnicode_GET_LENGTH(repo)
+    kind = PyUnicode_KIND(repo)
     if kind == PyUnicode_1BYTE_KIND:
         head = <char *> memchr(data, b"/", length)
         if head != NULL:
@@ -121,3 +127,38 @@ def mark_logical_repos_in_list(list repos) -> tuple[ndarray, int]:
     if last_physical < 0:
         last_physical = 0
     return result, last_physical
+
+
+def drop_logical_in_array(ndarray names) -> ndarray:
+    cdef:
+        long str_len = names.dtype.itemsize, pos = 0, count = 0, i
+        ndarray slashes, result
+        char *str_data
+        PyObject **obj_data
+        PyObject *str_obj
+        long *slash_data
+
+    if PyArray_ISSTRING(names):
+        slashes = np.flatnonzero(names.view(np.uint8) == ord(b"/"))
+        slash_data = <long *> PyArray_DATA(slashes)
+        result = names.copy()
+        str_data = <char *> PyArray_DATA(result)
+        for i in range(PyArray_DIM(slashes, 0)):
+            i = slash_data[i]
+            while i >= (pos + str_len):
+                pos += str_len
+                count = 0
+            count += 1
+            if count == 2:
+                memset(str_data + i, 0, pos + str_len - i)
+    else:
+        assert PyArray_ISOBJECT(names)
+        result = np.empty_like(names)
+        obj_data = <PyObject **> PyArray_DATA(names)
+        for i in range(PyArray_DIM(names, 0)):
+            str_obj = obj_data[i]
+            if str_obj == Py_None:
+                result[i] = None
+            else:
+                result[i] = _drop_logical_repo(str_obj)
+    return result

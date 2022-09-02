@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import textwrap
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Iterable, Optional, Sequence, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -69,7 +69,7 @@ class IntBlock(Block):
         inplace: bool = False,
         axis: int = 0,
         transpose: bool = False,
-    ) -> List["Block"]:
+    ) -> list["Block"]:
         """Specialize DataFrame.where()."""
         mask = _extract_bool_array(mask)
         new_values = self.values if inplace else self.values.copy()
@@ -221,7 +221,7 @@ async def _read_sql_query_numpy(
 
 def _build_dtype(
     columns: Sequence[InstrumentedAttribute],
-) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str], Set[str]]]:
+) -> tuple[np.dtype, tuple[set[str], set[str], set[str], set[str]]]:
     body = []
     int_erase_nulls = set()
     int_reset_nulls = set()
@@ -318,7 +318,7 @@ async def _read_sql_query_records(
 async def _fetch_query(
     sql: GenerativeSelect,
     con: DatabaseLike,
-) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
+) -> Union[list[Sequence[Any]], tuple[np.ndarray, list[int]]]:
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
@@ -338,8 +338,8 @@ async def _fetch_query(
 def _create_block_manager_from_arrays(
     arrays_typed: Sequence[np.ndarray],
     arrays_obj: np.ndarray,
-    names_typed: List[str],
-    names_obj: List[str],
+    names_typed: list[str],
+    names_obj: list[str],
     size: int,
 ) -> BlockManager:
     assert len(arrays_typed) == len(names_typed)
@@ -354,7 +354,7 @@ def _create_block_manager_from_arrays(
 
 
 def _wrap_sql_query(
-    data: List[Sequence[Any]],
+    data: list[Sequence[Any]],
     columns: Union[Sequence[str], Sequence[InstrumentedAttribute], MetadataBase, StateBase],
     index: Optional[Union[str, Sequence[str]]] = None,
 ) -> pd.DataFrame:
@@ -436,7 +436,7 @@ def _wrap_sql_query(
     return frame
 
 
-def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
+def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
     return {
         c.name
         for c in columns
@@ -448,7 +448,7 @@ def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Set[str]
     }
 
 
-def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
+def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
     return {
         c.name
         for c in columns
@@ -462,7 +462,7 @@ def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
 
 def _extract_integer_columns(
     columns: Iterable[Union[Column, str]],
-) -> Dict[str, Tuple[bool, bool]]:
+) -> dict[str, tuple[bool, bool]]:
     return {
         c.name: (info.get("erase_nulls", False), info.get("reset_nulls", False))
         for c in columns
@@ -488,7 +488,7 @@ def _extract_integer_columns(
 
 def _extract_fixed_string_columns(
     columns: Iterable[Union[Column, str]],
-) -> Dict[str, Tuple[str, bool]]:
+) -> dict[str, tuple[str, bool]]:
     return {
         c.name: info["dtype"]
         for c in columns
@@ -564,7 +564,7 @@ def _convert_integer(
     erase_null: bool,
     reset_null: bool,
     log: logging.Logger,
-) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+) -> tuple[np.ndarray, Optional[np.ndarray]]:
     nulls = None
     while True:
         try:
@@ -578,26 +578,33 @@ def _convert_integer(
 
 
 async def gather(
-    *coros_or_futures,
+    *coros_or_futures: Optional[Awaitable],
     op: Optional[str] = None,
     description: Optional[str] = None,
     catch: Type[BaseException] = Exception,
-) -> Tuple[Any, ...]:
+) -> tuple[Any, ...]:
     """Return a future aggregating results/exceptions from the given coroutines/futures.
 
     This is equivalent to `asyncio.gather(*coros_or_futures, return_exceptions=True)` with
-    subsequent exception forwarding.
+    subsequent exception forwarding and skipping None-s.
 
     :param op: Wrap the execution in a Sentry span with this `op`.
     :param description: Sentry span description.
     :param catch: Forward exceptions of this type.
+    :return: tuple with awaited results. If some awaitable was None, the corresponding result \
+             is None, too.
     """
     __tracebackhide__ = True  # noqa: F841
 
+    async def dummy() -> None:
+        return None
+
     async def body():
         __tracebackhide__ = True  # noqa: F841
+        nonlocal coros_or_futures
         if len(coros_or_futures) == 0:
             return tuple()
+        coros_or_futures = [(cf if cf is not None else dummy()) for cf in coros_or_futures]
         if len(coros_or_futures) == 1:
             return (await coros_or_futures[0],)
         results = await asyncio.gather(*coros_or_futures, return_exceptions=True)
@@ -627,7 +634,7 @@ async def read_sql_query_with_join_collapse(
     soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
-    query = query.with_statement_hint("Set(join_collapse_limit 1)")
+    query = query.with_statement_hint("set(join_collapse_limit 1)")
     return await read_sql_query(query, db, columns=columns, index=index, soft_limit=soft_limit)
 
 
@@ -635,7 +642,7 @@ async def read_sql_query_with_join_collapse(
 COROUTINE_YIELD_EVERY_ITER = 250
 
 
-async def list_with_yield(iterable: Iterable[Any], sentry_op: str) -> List[Any]:
+async def list_with_yield(iterable: Iterable[Any], sentry_op: str) -> list[Any]:
     """Drain an iterable to a list, tracing the loop in Sentry and respecting other coroutines."""
     with sentry_sdk.start_span(op=sentry_op) as span:
         things = []

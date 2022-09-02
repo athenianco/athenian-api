@@ -109,7 +109,7 @@ async def mine_all_prs(
             PullRequest,
             index=PullRequest.node_id.name,
         ),
-        fetch_repository_environments(repos, prefixer, account, rdb, cache),
+        fetch_repository_environments(repos, None, prefixer, account, rdb, cache),
         PullRequestMiner.fetch_pr_deployments(node_ids, account, pdb, rdb),
         PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
