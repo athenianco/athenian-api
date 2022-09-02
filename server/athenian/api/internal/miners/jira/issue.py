@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Collection, Iterable, Mapping, Optional
 
 import aiomcache
 import numpy as np
@@ -38,9 +38,9 @@ from athenian.api.tracing import sentry_span
 
 
 async def generate_jira_prs_query(
-    filters: List[ClauseElement],
+    filters: list[ClauseElement],
     jira: JIRAFilter,
-    meta_ids: Optional[Tuple[int, ...]],
+    meta_ids: Optional[tuple[int, ...]],
     mdb: Database,
     cache: Optional[aiomcache.Client],
     columns=PullRequest,
@@ -161,7 +161,7 @@ async def _load_components(
     account: int,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, str]:
+) -> dict[str, str]:
     all_labels = set()
     for label in chain(labels.include, labels.exclude):
         for part in label.split(","):
@@ -179,9 +179,9 @@ async def _load_components(
 
 def _append_label_filters(
     labels: LabelFilter,
-    components: Dict[str, str],
+    components: dict[str, str],
     postgres: bool,
-    filters: List[ClauseElement],
+    filters: list[ClauseElement],
     model=Issue,
 ):
     if postgres:
@@ -294,16 +294,16 @@ async def fetch_jira_issues(
     labels: LabelFilter,
     priorities: Collection[str],
     types: Collection[str],
-    epics: Union[Collection[str], bool],
+    epics: Collection[str] | bool,
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
     nested_assignees: bool,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
@@ -506,11 +506,11 @@ async def fetch_jira_issues(
 @sentry_span
 async def _fetch_released_prs(
     pr_node_ids: Iterable[int],
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: Database,
-) -> Dict[Tuple[int, str], Mapping[str, Any]]:
+) -> dict[tuple[int, str], Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
     released_rows = await pdb.fetch_all(
         sql.select(
@@ -568,7 +568,7 @@ async def _fetch_issues(
     labels: LabelFilter,
     priorities: Collection[str],
     types: Collection[str],
-    epics: Union[Collection[str], bool],
+    epics: Collection[str] | bool,
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
@@ -819,7 +819,7 @@ class PullRequestJiraMapper:
     async def append_pr_jira_mapping(
         cls,
         prs: PullRequestFactsMap,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> None:
         """Load and insert "jira_id" to the PR facts."""
@@ -840,9 +840,9 @@ class PullRequestJiraMapper:
     async def load_pr_jira_mapping(
         cls,
         prs: Collection[int],
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> Dict[int, List[str]]:
+    ) -> dict[int, list[str]]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 100:
@@ -879,7 +879,7 @@ def resolve_work_began_and_resolved(
     prs_began: Optional[np.datetime64],
     issue_resolved: Optional[np.datetime64],
     prs_released: Optional[np.datetime64],
-) -> Tuple[Optional[np.datetime64], Optional[np.datetime64]]:
+) -> tuple[Optional[np.datetime64], Optional[np.datetime64]]:
     """Compute the final timestamps of when the work started on the issue, and when the issue \
     became fully resolved."""
     if issue_work_began != issue_work_began or issue_work_began is None:
@@ -901,10 +901,10 @@ def resolve_work_began_and_resolved(
 
 async def fetch_jira_issues_for_prs(
     pr_nodes: Collection[int],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     jira_ids: JIRAConfig,
     mdb: DatabaseLike,
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """Load brief information about JIRA issues mapped to the given PRs."""
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Issue, name="epic")
