@@ -9,26 +9,46 @@ from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 
 
 class TestPullRequestJiraMapper:
-    async def test_append_ids(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_append(self, mdb_rw: Database, sdb: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=10, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=10, jira_id="21"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="20"),
-                md_factory.JIRAIssueFactory(id="20", key="I20"),
-                md_factory.JIRAIssueFactory(id="21", key="I21"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="21"),
+                md_factory.JIRAIssueFactory(
+                    id="20", project_id="P0", key="I20", priority_name="PR", type="T",
+                ),
+                md_factory.JIRAIssueFactory(
+                    id="21", project_id="P0", key="I21", priority_name="PR", type="T",
+                ),
             ]
+
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
             prs = {
                 (10, "repo0"): PullRequestFacts(b""),
-                (11, "repo0"): PullRequestFacts(b""),
+                (10, "repo1"): PullRequestFacts(b""),
+                (11, "repo1"): PullRequestFacts(b""),
             }
-            await PullRequestJiraMapper.append_ids(prs, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw)
+            await PullRequestJiraMapper.append(prs, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw)
 
-            assert sorted(prs[(10, "repo0")].jira_ids) == ["I20", "I21"]
-            assert prs[(11, "repo0")].jira_ids == ["I20"]
+        assert sorted(prs) == [(10, "repo0"), (10, "repo1"), (11, "repo1")]
+
+        assert prs[(10, "repo0")].jira_ids == ["I20"]
+        assert prs[(10, "repo0")].jira_projects == ["P0"]
+        assert prs[(10, "repo0")].jira_priorities == ["PR"]
+        assert prs[(10, "repo0")].jira_types == ["T"]
+
+        assert prs[(10, "repo1")].jira_ids == ["I20"]
+        assert prs[(10, "repo1")].jira_projects == ["P0"]
+        assert prs[(10, "repo1")].jira_priorities == ["PR"]
+        assert prs[(10, "repo1")].jira_types == ["T"]
+
+        assert sorted(prs[(11, "repo1")].jira_ids) == ["I20", "I21"]
+        assert prs[(11, "repo1")].jira_projects == ["P0"]
+        assert prs[(11, "repo1")].jira_priorities == ["PR"]
+        assert prs[(11, "repo1")].jira_types == ["T"]
 
     async def test_load(self, mdb_rw: Database, sdb: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:

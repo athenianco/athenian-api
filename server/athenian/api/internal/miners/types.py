@@ -276,7 +276,10 @@ class PullRequestFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
-        jira_ids: List[str]
+        jira_ids: list[str]
+        jira_projects: list[str]
+        jira_priorities: list[str]
+        jira_types: list[str]
         repository_full_name: str
         author: str
         merger: str

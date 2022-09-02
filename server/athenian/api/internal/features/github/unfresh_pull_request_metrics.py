@@ -82,7 +82,7 @@ class UnfreshPullRequestFactsFetcher:
         add_pdb_hits(pdb, "fresh", 1)
         if pr_jira_mapper is not None:
             done_jira_map_task = asyncio.create_task(
-                pr_jira_mapper.append_ids(done_facts, meta_ids, mdb),
+                pr_jira_mapper.append(done_facts, meta_ids, mdb),
                 name="append_pr_jira_mapping/done",
             )
         done_node_ids = {node_id for node_id, _ in done_facts}
