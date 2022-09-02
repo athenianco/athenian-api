@@ -434,6 +434,11 @@ def normalize_issue_type(name: str) -> str:
     return pluralizer.singular(nonalphanum_re.sub("", unidecode(name.lower())))
 
 
+def normalize_priority(name: str) -> str:
+    """Normalize the JIRA priority name."""
+    return name.lower()
+
+
 def normalize_user_type(type_: str) -> str:
     """Normalize the JIRA user type name."""
     if type_ == "on-prem":

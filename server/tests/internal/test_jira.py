@@ -13,6 +13,7 @@ from athenian.api.internal.jira import (
     load_mapped_jira_users,
     match_jira_identities,
     normalize_issue_type,
+    normalize_priority,
 )
 from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import (
@@ -182,6 +183,13 @@ async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
 )
 def test_normalize_issue_type(orig, norm):
     assert normalize_issue_type(orig) == norm
+
+
+class TestNormalizeIssuePriority:
+    def test_base(self) -> None:
+        assert normalize_priority("High") == "high"
+        assert normalize_priority("low") == "low"
+        assert normalize_priority("") == ""
 
 
 class TestDisableEmptyProjects:

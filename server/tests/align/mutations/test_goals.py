@@ -280,10 +280,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             "accountId": 1,
         }
 
-        res = await self._request(variables)
-        assert "errors" not in res
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables)
 
         goal_row = await assert_existing_row(
             sdb,
@@ -322,10 +319,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             "createGoalInput": self._mk_input(teamGoals=team_goals, name="G1"),
             "accountId": 1,
         }
-        res = await self._request(variables)
-        assert "errors" not in res
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables)
 
         await assert_existing_row(
             sdb, Goal, id=new_goal_id, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME,
@@ -353,10 +347,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
-        res = await self._request(variables)
-        assert "errors" not in res
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
-
+        new_goal_id = await self._create(variables)
         goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id)
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 5, 4, tzinfo=timezone.utc,
@@ -388,8 +379,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
-        res = await self._request(variables)
-        assert "errors" not in res
+        await self._create(variables)
 
         # same name, different interval
         variables["createGoalInput"][CreateGoalInputFields.name] = TEMPLATES_COLLECTION[1][
@@ -400,8 +390,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         ]
         variables["createGoalInput"][CreateGoalInputFields.expiresAt] = "2022-06-30"
 
-        res = await self._request(variables)
-        assert "errors" not in res
+        await self._create(variables)
 
         # same interval but different account
         await models_insert(
@@ -416,10 +405,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         variables["createGoalInput"][CreateGoalInputFields.teamGoals] = [
             {TeamGoalInputFields.teamId: 200, TeamGoalInputFields.target: {"int": 1}},
         ]
-        res = await self._request(variables, user_id="gh|XXX")
-        assert "errors" not in res
-
-        assert (await count(sdb, Goal)) == 4
+        await self._create(variables, user_id="gh|XXX")
 
     @freeze_time("2022-03-01")
     async def test_future_dates_are_accepted(self, sdb: Database) -> None:
@@ -436,10 +422,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
-        res = await self._request(variables)
-        assert "errors" not in res
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables)
         await assert_existing_row(
             sdb, Goal, id=new_goal_id, valid_from=dt(2023, 1, 1), expires_at=dt(2024, 1, 1),
         )
@@ -462,10 +445,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             "accountId": 1,
         }
 
-        res = await self._request(variables)
-        assert "errors" not in res
-
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        new_goal_id = await self._create(variables)
 
         goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
         assert goal_row[Goal.repositories.name] == [[40550, "alpha"], [40550, "beta"]]
@@ -478,6 +458,68 @@ class TestCreateGoals(BaseCreateGoalTest):
         tg_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
         assert tg_row_11[TeamGoal.target.name] == 43
         assert tg_row_11[TeamGoal.repositories.name] == [[40550, "alpha"], [40550, "beta"]]
+
+    async def test_jira_fields(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+
+        team_goals = [
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+        ]
+
+        variables = {
+            "createGoalInput": self._mk_input(
+                jiraProjects=["P0"],
+                jiraIssueTypes=["Bugs", "tasks", "Story", "Task"],
+                teamGoals=team_goals,
+            ),
+            "accountId": 1,
+        }
+        new_goal_id = await self._create(variables)
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+
+        assert goal_row[Goal.repositories.name] is None
+        assert goal_row[Goal.jira_projects.name] == ["P0"]
+        assert goal_row[Goal.jira_priorities.name] is None
+        assert goal_row[Goal.jira_issue_types.name] == ["bug", "story", "task"]
+
+        # fields are also copied to the TeamGoal row
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_row[TeamGoal.repositories.name] is None
+        assert tg_row[TeamGoal.jira_projects.name] == ["P0"]
+        assert tg_row[TeamGoal.jira_priorities.name] is None
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "story", "task"]
+
+    async def test_jira_priorities(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+
+        team_goals = [
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
+        ]
+
+        variables = {
+            "createGoalInput": self._mk_input(
+                jiraPriorities=["High", "low", "high"], teamGoals=team_goals,
+            ),
+            "accountId": 1,
+        }
+        new_goal_id = await self._create(variables)
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+
+        for col in (Goal.repositories, Goal.jira_projects, Goal.jira_issue_types):
+            assert goal_row[col.name] is None
+
+        assert goal_row[Goal.jira_priorities.name] == ["high", "low"]
+
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        for col in (TeamGoal.repositories, TeamGoal.jira_projects, TeamGoal.jira_issue_types):
+            assert tg_row[col.name] is None
+        assert tg_row[TeamGoal.jira_priorities.name] == ["high", "low"]
+
+    async def _create(self, *args: Any, **kwargs: Any) -> int:
+        res = await self._request(*args, **kwargs)
+        assert "errors" not in res
+        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        return new_goal_id
 
 
 class BaseRemoveGoalTest(BaseGoalTest):
@@ -952,3 +994,44 @@ class TestUpdateGoal(BaseUpdateGoalTest):
 
         team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
         assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, None]]
+
+    async def test_update_jira_fields(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, jira_priorities=["high"]),
+            TeamFactory(id=10),
+            TeamGoalFactory(
+                team_id=10, goal_id=100, jira_projects=["P2"], jira_priorities=["high"],
+            ),
+        )
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.target: {"int": 2}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.jiraProjects: {
+                    UpdateRepositoriesInputFields.value: ["P0", "P1"],
+                },
+                UpdateGoalInputFields.jiraPriorities: {},
+                UpdateGoalInputFields.jiraIssueTypes: {
+                    UpdateRepositoriesInputFields.value: ["Tasks", "bugs"],
+                },
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        assert res["data"]["updateGoal"]["goal"]["id"] == 100
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.jira_projects.name] == ["P0", "P1"]
+        assert row[Goal.jira_priorities.name] is None
+        assert row[Goal.jira_issue_types.name] == ["bug", "task"]
+
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        # team goal jira_projects are overwritten
+        assert tg_row[TeamGoal.jira_projects.name] == ["P0", "P1"]
+        assert tg_row[TeamGoal.jira_priorities.name] is None
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]

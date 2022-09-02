@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
@@ -32,6 +32,7 @@ from athenian.api.align.models import (
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
 from athenian.api.controllers.goal_controller import parse_request_repositories
+from athenian.api.internal.jira import normalize_issue_type, normalize_priority
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from athenian.api.request import AthenianWebRequest
@@ -103,10 +104,16 @@ async def resolve_update_goal(
             if assignments := update.team_goal_assignments:
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
             kw = {}
-            if update.repositories is not None:
-                kw[Goal.repositories.name] = (
-                    None if update.repositories.remove else update.repositories.value
-                )
+
+            for update_info, col in (
+                (update.repositories, Goal.repositories),
+                (update.jira_projects, Goal.jira_projects),
+                (update.jira_priorities, Goal.jira_priorities),
+                (update.jira_issue_types, Goal.jira_issue_types),
+            ):
+                if update_info is not None:
+                    kw[col.name] = None if update_info.remove else update_info.value
+
             if update.archived is not None:
                 kw[Goal.archived.name] = update.archived
             if update.name is not None:
@@ -141,9 +148,17 @@ async def _parse_create_goal_input(
     repositories = await parse_request_repositories(
         input.get(CreateGoalInputFields.repositories), request, account_id,
     )
+    jira_projects = _parse_request_jira_projects(input)
+    jira_priorities = _parse_request_jira_priorities(input)
+    jira_issue_types = _parse_request_jira_issue_types(input)
 
-    # user cannot directly set team goal repositories, received goal repositories are applied
-    extra_team_goal_info = {TeamGoal.repositories.name: repositories}
+    # user cannot directly set TeamGoal filter fields, received goal values are applied
+    extra_team_goal_info = {
+        TeamGoal.repositories.name: repositories,
+        TeamGoal.jira_projects.name: jira_projects,
+        TeamGoal.jira_priorities.name: jira_priorities,
+        TeamGoal.jira_issue_types.name: jira_issue_types,
+    }
     team_goals = [
         _parse_team_goal_input(tg_input, **extra_team_goal_info)
         for tg_input in input[CreateGoalInputFields.teamGoals]
@@ -160,6 +175,9 @@ async def _parse_create_goal_input(
         name=input[CreateGoalInputFields.name],
         metric=input[CreateGoalInputFields.metric],
         repositories=repositories,
+        jira_projects=jira_projects,
+        jira_priorities=jira_priorities,
+        jira_issue_types=jira_issue_types,
         valid_from=valid_from,
         expires_at=expires_at,
     )
@@ -192,6 +210,14 @@ class RepositoriesUpdateInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class StringsListUpdateInfo:
+    """The information to update a list of strings field in a goal."""
+
+    value: list[str]
+    remove: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GoalUpdateInfo:
     """The information to update an existing Goal."""
 
@@ -201,6 +227,9 @@ class GoalUpdateInfo:
     name: Optional[str]
     metric: Optional[str]
     repositories: Optional[RepositoriesUpdateInfo]
+    jira_projects: Optional[StringsListUpdateInfo]
+    jira_priorities: Optional[StringsListUpdateInfo]
+    jira_issue_types: Optional[StringsListUpdateInfo]
 
 
 @sentry_span
@@ -259,6 +288,15 @@ async def _parse_update_goal_input(
                 await parse_request_repositories(value, request, account_id), False,
             )
 
+    strings_field_parser = _StringsListUpdateInfoParser(input)
+    jira_projects = strings_field_parser(UpdateGoalInputFields.jiraProjects, lambda v: v)
+    jira_priorities = strings_field_parser(
+        UpdateGoalInputFields.jiraPriorities, _parse_request_jira_priorities_value,
+    )
+    jira_issue_types = strings_field_parser(
+        UpdateGoalInputFields.jiraIssueTypes, _parse_request_jira_issue_types_value,
+    )
+
     return GoalUpdateInfo(
         team_goal_deletions=deletions,
         team_goal_assignments=assignments,
@@ -266,4 +304,49 @@ async def _parse_update_goal_input(
         name=input.get(UpdateGoalInputFields.name),
         metric=input.get(UpdateGoalInputFields.metric),
         repositories=repositories,
+        jira_projects=jira_projects,
+        jira_priorities=jira_priorities,
+        jira_issue_types=jira_issue_types,
     )
+
+
+class _StringsListUpdateInfoParser:
+    def __init__(self, input: dict[str, Any]):
+        self._input = input
+
+    def __call__(
+        self,
+        field_name: str,
+        _parse_value: Callable[[list[str]], list[str]],
+    ) -> Optional[StringsListUpdateInfo]:
+        if (field := self._input.get(field_name)) is None:
+            return None
+        if (value := field.get(UpdateRepositoriesInputFields.value)) is None:
+            return StringsListUpdateInfo([], True)
+        return StringsListUpdateInfo(_parse_value(value), False)
+
+
+def _parse_request_jira_projects(input: dict[str, Any]) -> Optional[list[str]]:
+    return input.get(CreateGoalInputFields.jiraProjects)
+
+
+def _parse_request_jira_priorities(input: dict[str, Any]) -> Optional[list[str]]:
+    if (priorities := input.get(CreateGoalInputFields.jiraPriorities)) is None:
+        return priorities
+    else:
+        return _parse_request_jira_priorities_value(priorities)
+
+
+def _parse_request_jira_priorities_value(value: list[str]) -> list[str]:
+    return sorted({normalize_priority(p) for p in value})
+
+
+def _parse_request_jira_issue_types(input: dict[str, Any]) -> Optional[list[str]]:
+    if (issue_types := input.get(CreateGoalInputFields.jiraIssueTypes)) is None:
+        return None
+    else:
+        return _parse_request_jira_issue_types_value(issue_types)
+
+
+def _parse_request_jira_issue_types_value(value: list[str]) -> list[str]:
+    return sorted({normalize_issue_type(t) for t in value})
