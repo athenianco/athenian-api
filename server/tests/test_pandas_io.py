@@ -82,3 +82,13 @@ async def test_smoke():
     )
     new_df = deserialize_df(serialize_df(df))
     assert_frame_equal(df, new_df)
+
+
+async def test_all_null_rows(mdb):
+    df = pd.DataFrame({"a": [None, None]})
+    assert_frame_equal(df, deserialize_df(serialize_df(df)))
+
+
+async def test_all_empty_list_rows(mdb):
+    df = pd.DataFrame({"a": [[], []]})
+    assert_frame_equal(df, deserialize_df(serialize_df(df)))

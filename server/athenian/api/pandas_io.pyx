@@ -58,6 +58,7 @@ cdef extern from "Python.h":
     Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
     bint PyUnicode_Check(PyObject *) nogil
+    bint PyBytes_Check(PyObject *) nogil
     bint PyList_CheckExact(PyObject *) nogil
     Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
     void *PyUnicode_DATA(PyObject *) nogil
@@ -191,7 +192,7 @@ def serialize_df(df not None) -> bytes:
             object_block_size = _measure_object_block(arr_obj, &measurements[i])
             if object_block_size <= 0:
                 if isinstance(loc, slice):
-                    loc = list(range(*loc.indices(len(mgr.blocks))))
+                    loc = list(range(*loc.indices(sum(b.shape[0] for b in mgr.blocks))))
                 bad_loc = loc[-object_block_size]
                 raise AssertionError(
                     f'Unsupported object column "{df.columns[bad_loc]}": '
@@ -249,6 +250,7 @@ cdef enum ObjectDType:
     ODT_INT = 5
     ODT_STR = 6
     ODT_JSON = 7
+    ODT_LIST_BYTES = 8
 
 
 cdef struct ColumnMeasurement:
@@ -270,6 +272,7 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
         char *descr = NULL
         str str_dtype
         int int_dtype
+        bint is_list
         ColumnMeasurement *measurement
 
     with nogil:
@@ -284,6 +287,7 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
             size += 1 + 4 + 16
             nulls = int_dtype = 0
             dtype = ODT_INVALID
+            is_list = False
             for x in range(rows):
                 item = data[x]
                 if item == Py_None:
@@ -314,7 +318,17 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                         else:
                             dtype = ODT_NDARRAY_STR
                     elif PyList_CheckExact(item):
-                        dtype = ODT_LIST_STR
+                        is_list = True
+                        if PyList_GET_SIZE(item) == 0:
+                            size += 4
+                            continue
+                        subitem = PyList_GET_ITEM(item, 0)
+                        if PyUnicode_Check(subitem):
+                            dtype = ODT_LIST_STR
+                        elif PyBytes_Check(subitem):
+                            dtype = ODT_LIST_BYTES
+                        else:
+                            return -y
                     elif PyUnicode_Check(item):
                         dtype = ODT_STR
                     elif PyLong_CheckExact(item):
@@ -322,6 +336,8 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                     elif PyDict_CheckExact(item):
                         dtype = ODT_JSON
                     else:
+                        return -y
+                    if is_list and dtype != ODT_LIST_BYTES and dtype != ODT_LIST_STR:
                         return -y
                     measurement[y].dtype = dtype
                 if dtype == ODT_NDARRAY_STR or dtype == ODT_NDARRAY_FIXED or dtype == ODT_NDARRAY_RAGGED:
@@ -367,6 +383,15 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                         if subitem_size >= (1 << (32 - 2)):  # we pack kind in the first two bits
                             return -y
                         size += PyUnicode_GET_LENGTH(subitem) * PyUnicode_KIND(subitem) + 4
+                elif dtype == ODT_LIST_BYTES:
+                    if not PyList_CheckExact(item):
+                        return -y
+                    size += 4
+                    for i in range(PyList_GET_SIZE(item)):
+                        subitem = PyList_GET_ITEM(item, i)
+                        if not PyBytes_Check(subitem):
+                            return -y
+                        size += PyBytes_GET_SIZE(subitem) + 4
                 elif dtype == ODT_STR:
                     if not PyUnicode_Check(item):
                         return -y
@@ -383,6 +408,9 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                     if item_size <= 0:
                         return -y
                     size += item_size + 4
+            if dtype == ODT_INVALID:
+                # all were None or empty lists, doesn´t matter
+                measurement[y].dtype = dtype = ODT_LIST_STR
             measurement[y].nulls = nulls
             data += rows
     return size
@@ -466,6 +494,7 @@ cdef void _serialize_object_block(
         PyObject **data = <PyObject **> PyArray_BYTES(block)
         PyObject *item
         PyObject **subitems
+        PyObject *subitem
         ObjectDType dtype
         Py_ssize_t item_size, subitem_size
         uint32_t *bookmark
@@ -515,6 +544,17 @@ cdef void _serialize_object_block(
                 output += 4
                 for i in range(item_size):
                     _write_str(PyList_GET_ITEM(item, i), &output)
+            elif dtype == ODT_LIST_BYTES:
+                item_size = PyList_GET_SIZE(item)
+                (<uint32_t *> output)[0] = item_size
+                output += 4
+                for i in range(item_size):
+                    subitem = PyList_GET_ITEM(item, i)
+                    subitem_size = PyBytes_GET_SIZE(subitem)
+                    (<uint32_t *> output)[0] = subitem_size
+                    output += 4
+                    memcpy(output, PyBytes_AS_STRING(subitem), subitem_size)
+                    output += subitem_size
             elif dtype == ODT_STR:
                 _write_str(item, &output)
             elif dtype == ODT_INT:
@@ -723,7 +763,8 @@ def deserialize_df(bytes buffer) -> DataFrame:
         char *arr_data
         long arr_size
         ObjectDType obj_dtype
-        str subdtype_name, listval
+        str subdtype_name, listvalstr
+        bytes listvalbytes
         npdtype subdtype
         ndarray subarr
         list sublist
@@ -850,9 +891,29 @@ def deserialize_df(bytes buffer) -> DataFrame:
                         input_size -= 4
                         sublist = PyList_New(aux)
                         for i in range(aux):
-                            listval = _read_str(&input, &input_size)
-                            Py_INCREF(listval)
-                            PyList_SET_ITEM(sublist, i, listval)
+                            listvalstr = _read_str(&input, &input_size)
+                            Py_INCREF(listvalstr)
+                            PyList_SET_ITEM(sublist, i, listvalstr)
+                        arr[y, x] = sublist
+                    elif obj_dtype == ODT_LIST_BYTES:
+                        if input_size < 4:
+                            raise CorruptedBuffer()
+                        aux = (<uint32_t *> input)[0]
+                        input += 4
+                        input_size -= 4
+                        sublist = PyList_New(aux)
+                        for i in range(aux):
+                            if input_size < 4:
+                                raise CorruptedBuffer()
+                            aux = (<uint32_t *> input)[0]
+                            input_size -= 4
+                            if input_size < aux:
+                                raise CorruptedBuffer()
+                            listvalbytes = PyBytes_FromStringAndSize(input, aux)
+                            input += aux
+                            input_size -= aux
+                            Py_INCREF(listvalbytes)
+                            PyList_SET_ITEM(sublist, i, listvalbytes)
                         arr[y, x] = sublist
                     elif obj_dtype == ODT_STR:
                         try:
@@ -882,7 +943,7 @@ def deserialize_df(bytes buffer) -> DataFrame:
         else:
             block = block_type(arr, loc)
         mgr_blocks.append(block)
-    assert input_size == 0
+    assert input_size == 0, f"{input_size} bytes left in the input"
     assert (input - origin) == origin_size
     mgr = BlockManager(mgr_blocks, axes, do_integrity_check=False)
     df = DataFrame(mgr)

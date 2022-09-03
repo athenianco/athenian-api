@@ -1242,11 +1242,13 @@ def test_mark_dag_access_empty():
     assert len(marks) == 0
 
 
-async def test_partition_dag(dag):
+async def test_partition_dag_smoke(dag):
     hashes, vertexes, edges = dag["src-d/go-git"][1]
-    p = partition_dag(hashes, vertexes, edges, [b"ad9456267524e08efcf4486cadfb6cef8d182677"])
+    heads = np.array([b"ad9456267524e08efcf4486cadfb6cef8d182677"], dtype="S40")
+    p = partition_dag(hashes, vertexes, edges, heads)
     assert p.tolist() == [b"ad9456267524e08efcf4486cadfb6cef8d182677"]
-    p = partition_dag(hashes, vertexes, edges, [b"7cd021554eb318165dd28988fe1675a5e5c32601"])
+    heads = np.array([b"7cd021554eb318165dd28988fe1675a5e5c32601"], dtype="S40")
+    p = partition_dag(hashes, vertexes, edges, heads)
     assert p.tolist() == [
         b"7cd021554eb318165dd28988fe1675a5e5c32601",
         b"ced875aec7bef9113e1c37b1b811a59e17dbd138",
@@ -1257,7 +1259,8 @@ def test_partition_dag_empty():
     hashes = np.array([], dtype="S40")
     vertexes = np.array([0], dtype=np.uint32)
     edges = np.array([], dtype=np.uint32)
-    p = partition_dag(hashes, vertexes, edges, ["ad9456267524e08efcf4486cadfb6cef8d182677"])
+    heads = np.array([b"ad9456267524e08efcf4486cadfb6cef8d182677"], dtype="S40")
+    p = partition_dag(hashes, vertexes, edges, heads)
     assert len(p) == 0
 
 

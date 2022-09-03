@@ -11,6 +11,7 @@ class _FilterCommitsProperty(Enum):
 
     NO_PR_MERGES = "no_pr_merges"
     BYPASSING_PRS = "bypassing_prs"
+    EVERYTHING = "everything"
 
 
 class _FilterCommitsRequest(Model, sealed=False):
@@ -18,10 +19,6 @@ class _FilterCommitsRequest(Model, sealed=False):
 
     attribute_types = {
         "property": str,
-    }
-
-    attribute_map = {
-        "property": "property",
     }
 
     def __init__(

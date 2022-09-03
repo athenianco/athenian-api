@@ -10,6 +10,7 @@ import aiomcache
 from dateutil.parser import parse as parse_datetime
 import numpy as np
 import pandas as pd
+import sentry_sdk
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -85,6 +86,7 @@ from athenian.api.models.web import (
     Commit,
     CommitSignature,
     CommitsList,
+    CommitsListInclude,
     CommonFilterProperties,
     DeployedComponent as WebDeployedComponent,
     DeploymentAnalysisCode,
@@ -107,7 +109,6 @@ from athenian.api.models.web import (
     GetPullRequestsRequest,
     GetReleasesRequest,
     IncludedNativeUser,
-    IncludedNativeUsers,
     InvalidRequestError,
     LinkedJIRAIssue,
     NoSourceDataError,
@@ -517,8 +518,8 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     with_committer = compile_developers(
         filt.with_committer, teams_map, None, False, prefixer, ".with_committer",
     )
-    log = logging.getLogger("filter_commits")
-    commits = await extract_commits(
+    log = logging.getLogger(f"{metadata.__package__}.filter_commits")
+    commits, deployments = await extract_commits(
         FilterCommitsProperty(filt.property),
         time_from,
         time_to,
@@ -532,89 +533,107 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         meta_ids,
         request.mdb,
         request.pdb,
+        request.rdb,
         request.cache,
     )
-    model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
+    prefix_logical_repo = prefixer.prefix_logical_repo
+    model = CommitsList(
+        data=[],
+        include=CommitsListInclude(
+            users={},
+            deployments={
+                key: webify_deployment(val, prefix_logical_repo)
+                for key, val in sorted(deployments.items())
+            },
+        ),
+    )
     users = model.include.users
     utc = timezone.utc
     repo_name_map, user_login_map = (
         prefixer.repo_name_to_prefixed_name,
         prefixer.user_login_to_prefixed_login,
     )
-    for (
-        author_login,
-        committer_login,
-        repository_full_name,
-        sha,
-        message,
-        additions,
-        deletions,
-        changed_files,
-        author_name,
-        author_email,
-        authored_date,
-        committer_name,
-        committer_email,
-        committed_date,
-        author_date,
-        commit_date,
-        author_avatar_url,
-        committer_avatar_url,
-    ) in zip(
-        commits[PushCommit.author_login.name].values,
-        commits[PushCommit.committer_login.name].values,
-        commits[PushCommit.repository_full_name.name].values,
-        commits[PushCommit.sha.name].values,
-        commits[PushCommit.message.name].values,
-        commits[PushCommit.additions.name].values,
-        commits[PushCommit.deletions.name].values,
-        commits[PushCommit.changed_files.name].values,
-        commits[PushCommit.author_name.name].values,
-        commits[PushCommit.author_email.name].values,
-        commits[PushCommit.authored_date.name],
-        commits[PushCommit.committer_name.name].values,
-        commits[PushCommit.committer_email.name].values,
-        commits[PushCommit.committed_date.name],
-        commits[PushCommit.author_date.name],
-        commits[PushCommit.commit_date.name],
-        commits[PushCommit.author_avatar_url.name],
-        commits[PushCommit.committer_avatar_url.name],
-    ):
-        obj = Commit(
-            repository=repo_name_map[repository_full_name],
-            hash=sha.decode(),
-            message=message,
-            size_added=_nan_to_none(additions),
-            size_removed=_nan_to_none(deletions),
-            files_changed=_nan_to_none(changed_files),
-            author=CommitSignature(
-                login=(user_login_map[author_login]) if author_login else None,
-                name=author_name,
-                email=author_email,
-                timestamp=authored_date.replace(tzinfo=utc),
-            ),
-            committer=CommitSignature(
-                login=(user_login_map[committer_login]) if committer_login else None,
-                name=committer_name,
-                email=committer_email,
-                timestamp=committed_date.replace(tzinfo=utc),
-            ),
-        )
-        try:
-            dt = parse_datetime(author_date)
-            obj.author.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
-        except ValueError:
-            log.warning("Failed to parse the author timestamp of %s", obj.hash)
-        try:
-            dt = parse_datetime(commit_date)
-            obj.committer.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
-        except ValueError:
-            log.warning("Failed to parse the committer timestamp of %s", obj.hash)
-        if obj.author.login and obj.author.login not in users:
-            users[obj.author.login] = IncludedNativeUser(avatar=author_avatar_url)
-        if obj.committer.login and obj.committer.login not in users:
-            users[obj.committer.login] = IncludedNativeUser(committer_avatar_url)
-        model.data.append(obj)
+    with sentry_sdk.start_span(op="filter_commits/generate response"):
+        for (
+            author_login,
+            committer_login,
+            repository_full_name,
+            sha,
+            children,
+            deployments,
+            message,
+            additions,
+            deletions,
+            changed_files,
+            author_name,
+            author_email,
+            authored_date,
+            committer_name,
+            committer_email,
+            committed_date,
+            author_date,
+            commit_date,
+            author_avatar_url,
+            committer_avatar_url,
+        ) in zip(
+            commits[PushCommit.author_login.name].values,
+            commits[PushCommit.committer_login.name].values,
+            commits[PushCommit.repository_full_name.name].values,
+            commits[PushCommit.sha.name].values,
+            commits["children"].values,
+            commits["deployments"].values,
+            commits[PushCommit.message.name].values,
+            commits[PushCommit.additions.name].values,
+            commits[PushCommit.deletions.name].values,
+            commits[PushCommit.changed_files.name].values,
+            commits[PushCommit.author_name.name].values,
+            commits[PushCommit.author_email.name].values,
+            commits[PushCommit.authored_date.name],
+            commits[PushCommit.committer_name.name].values,
+            commits[PushCommit.committer_email.name].values,
+            commits[PushCommit.committed_date.name],
+            commits[PushCommit.author_date.name],
+            commits[PushCommit.commit_date.name],
+            commits[PushCommit.author_avatar_url.name],
+            commits[PushCommit.committer_avatar_url.name],
+        ):
+            obj = Commit(
+                repository=repo_name_map[repository_full_name],
+                hash=sha,
+                children=children,
+                deployments=deployments,
+                message=message,
+                size_added=_nan_to_none(additions),
+                size_removed=_nan_to_none(deletions),
+                files_changed=_nan_to_none(changed_files),
+                author=CommitSignature(
+                    login=(user_login_map[author_login]) if author_login else None,
+                    name=author_name,
+                    email=author_email,
+                    timestamp=authored_date.replace(tzinfo=utc),
+                ),
+                committer=CommitSignature(
+                    login=(user_login_map[committer_login]) if committer_login else None,
+                    name=committer_name,
+                    email=committer_email,
+                    timestamp=committed_date.replace(tzinfo=utc),
+                ),
+            )
+            try:
+                dt = parse_datetime(author_date)
+                obj.author.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
+            except ValueError:
+                log.warning("Failed to parse the author timestamp of %s", obj.hash)
+            try:
+                dt = parse_datetime(commit_date)
+                obj.committer.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
+            except ValueError:
+                log.warning("Failed to parse the committer timestamp of %s", obj.hash)
+            if obj.author.login and obj.author.login not in users:
+                users[obj.author.login] = IncludedNativeUser(avatar=author_avatar_url)
+            if obj.committer.login and obj.committer.login not in users:
+                users[obj.committer.login] = IncludedNativeUser(committer_avatar_url)
+            model.data.append(obj)
     return model_response(model)
 
 
@@ -1175,7 +1194,7 @@ async def _build_deployments_response(
                 url=url,
                 date_started=started_at,
                 date_finished=finished_at,
-                conclusion=conclusion.decode(),
+                conclusion=conclusion,
                 components=[
                     WebDeployedComponent(repository=prefix_logical_repo(repo_name), reference=ref)
                     for repo_name, ref in zip(
