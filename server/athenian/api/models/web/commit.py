@@ -10,6 +10,8 @@ class Commit(Model):
     attribute_types = {
         "repository": str,
         "hash": str,
+        "children": Optional[list[str]],
+        "deployments": Optional[list[str]],
         "author": CommitSignature,
         "committer": CommitSignature,
         "message": str,
@@ -18,21 +20,12 @@ class Commit(Model):
         "files_changed": int,
     }
 
-    attribute_map = {
-        "repository": "repository",
-        "hash": "hash",
-        "author": "author",
-        "committer": "committer",
-        "message": "message",
-        "size_added": "size_added",
-        "size_removed": "size_removed",
-        "files_changed": "files_changed",
-    }
-
     def __init__(
         self,
         repository: Optional[str] = None,
         hash: Optional[str] = None,
+        children: Optional[list[str]] = None,
+        deployments: Optional[list[str]] = None,
         author: Optional[CommitSignature] = None,
         committer: Optional[CommitSignature] = None,
         message: Optional[str] = None,
@@ -44,6 +37,8 @@ class Commit(Model):
 
         :param repository: The repository of this Commit.
         :param hash: The hash of this Commit.
+        :param children: The children of this Commit.
+        :param deployments: The deployments of this Commit.
         :param author: The author of this Commit.
         :param committer: The committer of this Commit.
         :param message: The message of this Commit.
@@ -53,6 +48,8 @@ class Commit(Model):
         """
         self._repository = repository
         self._hash = hash
+        self._children = children
+        self._deployments = deployments
         self._author = author
         self._committer = committer
         self._message = message
@@ -111,6 +108,46 @@ class Commit(Model):
             raise ValueError("Invalid value for `hash`, must not be `None`")
 
         self._hash = hash
+
+    @property
+    def children(self) -> Optional[list[str]]:
+        """Gets the children of this Commit.
+
+        Commit children.
+
+        :return: The children of this Commit.
+        """
+        return self._children
+
+    @children.setter
+    def children(self, children: Optional[list[str]]):
+        """Sets the children of this Commit.
+
+        Commit children.
+
+        :param children: The children of this Commit.
+        """
+        self._children = children
+
+    @property
+    def deployments(self) -> Optional[list[str]]:
+        """Gets the deployments of this Commit.
+
+        Commit deployments.
+
+        :return: The deployments of this Commit.
+        """
+        return self._deployments
+
+    @deployments.setter
+    def deployments(self, deployments: Optional[list[str]]):
+        """Sets the deployments of this Commit.
+
+        Commit deployments.
+
+        :param deployments: The deployments of this Commit.
+        """
+        self._deployments = deployments
 
     @property
     def author(self) -> CommitSignature:

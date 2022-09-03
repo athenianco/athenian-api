@@ -2142,6 +2142,35 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
 
 
 @pytest.mark.filter_commits
+async def test_filter_commits_everything_mcuadros(client, headers, precomputed_deployments):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "timezone": 60,
+        "in": ["{1}"],
+        "property": "everything",
+        "with_author": ["github.com/mcuadros"],
+        "with_committer": ["github.com/mcuadros"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body,
+    )
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 5
+    assert len(commits.include.users) == 1
+    assert len(commits.include.deployments) == 1
+    for c in commits.data:
+        assert c.children
+        for sha in c.children:
+            assert len(sha) == 40
+        assert c.deployments == ["Dummy deployment"]
+        assert c.author.login == "github.com/mcuadros"
+        assert c.committer.login == "github.com/mcuadros"
+
+
+@pytest.mark.filter_commits
 @_test_cached_mdb_pdb
 async def test_filter_commits_bypassing_prs_team(client, headers, app, client_cache, sample_team):
     team_str = "{%d}" % sample_team

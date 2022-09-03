@@ -1,8 +1,13 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.commit import Commit
-from athenian.api.models.web.included_native_users import IncludedNativeUsers
+from athenian.api.models.web.included_deployments import _IncludedDeployments
+from athenian.api.models.web.included_native_users import _IncludedNativeUsers
+
+CommitsListInclude = AllOf(
+    _IncludedNativeUsers, _IncludedDeployments, name="CommitsListInclude", module=__name__,
+)
 
 
 class CommitsList(Model):
@@ -10,7 +15,7 @@ class CommitsList(Model):
 
     attribute_types = {
         "data": List[Commit],
-        "include": IncludedNativeUsers,
+        "include": CommitsListInclude,
     }
 
     attribute_map = {"data": "data", "include": "include"}
@@ -18,7 +23,7 @@ class CommitsList(Model):
     def __init__(
         self,
         data: Optional[List[Commit]] = None,
-        include: Optional[IncludedNativeUsers] = None,
+        include: Optional[CommitsListInclude] = None,
     ):
         """CommitsList - a model defined in OpenAPI
 
@@ -48,7 +53,7 @@ class CommitsList(Model):
         self._data = data
 
     @property
-    def include(self) -> IncludedNativeUsers:
+    def include(self) -> CommitsListInclude:
         """Gets the include of this CommitsList.
 
         :return: The include of this CommitsList.
@@ -56,7 +61,7 @@ class CommitsList(Model):
         return self._include
 
     @include.setter
-    def include(self, include: IncludedNativeUsers):
+    def include(self, include: CommitsListInclude):
         """Sets the include of this CommitsList.
 
         :param include: The include of this CommitsList.

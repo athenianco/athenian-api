@@ -15,7 +15,7 @@ from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 from libcpp.utility cimport pair
 from libcpp.vector cimport vector
-from numpy cimport PyArray_BYTES
+from numpy cimport PyArray_BYTES, ndarray
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -38,6 +38,9 @@ cdef extern from "Python.h":
     # nogil!
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *PyList_New(Py_ssize_t len)
+    void PyList_SET_ITEM(PyObject *list, Py_ssize_t i, PyObject *o)
+    PyObject *PyBytes_FromStringAndSize(char *v, Py_ssize_t len)
     PyObject *Py_None
 
 
@@ -56,16 +59,16 @@ ApgRecord_New = <_ApgRecord_New>dlsym(_self, "ApgRecord_New")
 dlclose(_self)
 
 
-def searchsorted_inrange(a: np.ndarray, v: Any, side="left", sorter=None):
+def searchsorted_inrange(ndarray a, v: Any, side="left", sorter=None):
     r = np.searchsorted(a, np.atleast_1d(v), side=side, sorter=sorter)
     r[r == len(a)] = 0  # whatever index is fine
     return r
 
 
-def extract_subdag(hashes: np.ndarray,
-                   vertexes: np.ndarray,
-                   edges: np.ndarray,
-                   heads: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def extract_subdag(ndarray hashes,
+                   ndarray vertexes,
+                   ndarray edges,
+                   ndarray heads) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     assert len(vertexes) == len(hashes) + 1
     assert heads.dtype.char == "S"
     if len(hashes) == 0:
@@ -159,9 +162,9 @@ cdef struct Edge:
     uint32_t position
 
 
-def join_dags(hashes: np.ndarray,
-              vertexes: np.ndarray,
-              edges: np.ndarray,
+def join_dags(ndarray hashes,
+              ndarray vertexes,
+              ndarray edges,
               new_edges: List[Tuple[str, Optional[str], int]],
               ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     cdef:
@@ -353,7 +356,7 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
 
 @cython.boundscheck(False)
 def append_missing_heads(edges: List[Tuple[str, str, int]],
-                         hashes: np.ndarray) -> None:
+                         ndarray hashes) -> None:
     cdef:
         unordered_set[string_view] hashes_set
         unordered_set[string_view].const_iterator it
@@ -559,7 +562,7 @@ cdef inline bool _compare_shas(const char *first, const char *second) nogil:
 
 @cython.boundscheck(False)
 def find_orphans(edges: List[Tuple[str, str, int]],
-                 attach_to: np.ndarray) -> Dict[str, List[int]]:
+                 ndarray attach_to) -> Dict[str, List[int]]:
     cdef:
         Py_ssize_t size = len(edges)
         const char *child_oid
@@ -634,10 +637,10 @@ def find_orphans(edges: List[Tuple[str, str, int]],
     return result
 
 
-def mark_dag_access(hashes: np.ndarray,
-                    vertexes: np.ndarray,
-                    edges: np.ndarray,
-                    heads: np.ndarray,
+def mark_dag_access(ndarray hashes,
+                    ndarray vertexes,
+                    ndarray edges,
+                    ndarray heads,
                     heads_order_is_significant: bool) -> np.ndarray:
     """
     Find the earliest parent from `heads` for each commit in `hashes`.
@@ -765,12 +768,12 @@ cdef void _mark_dag_access(const uint32_t[:] vertexes,
                     boilerplate.push_back(edge)
 
 
-def mark_dag_parents(hashes: np.ndarray,
-                     vertexes: np.ndarray,
-                     edges: np.ndarray,
-                     heads: np.ndarray,
-                     timestamps: np.ndarray,
-                     ownership: np.ndarray,
+def mark_dag_parents(ndarray hashes,
+                     ndarray vertexes,
+                     ndarray edges,
+                     ndarray heads,
+                     ndarray timestamps,
+                     ndarray ownership,
                      slay_hydra: bool = True) -> np.ndarray:
     """
     :param slay_hydra: When there is a head that reaches several roots and not all of them have \
@@ -889,10 +892,10 @@ cdef int64_t _mark_dag_parents(const uint32_t[:] vertexes,
     return sum_len
 
 
-def extract_first_parents(hashes: np.ndarray,
-                          vertexes: np.ndarray,
-                          edges: np.ndarray,
-                          heads: np.ndarray,
+def extract_first_parents(ndarray hashes,
+                          ndarray vertexes,
+                          ndarray edges,
+                          ndarray heads,
                           max_depth: long = 0) -> np.ndarray:
     assert heads.dtype.char == "S"
     heads = np.sort(heads)
@@ -938,10 +941,10 @@ cdef void _extract_first_parents(const uint32_t[:] vertexes,
                 break
 
 
-def partition_dag(hashes: np.ndarray,
-                  vertexes: np.ndarray,
-                  edges: np.ndarray,
-                  seeds: np.ndarray) -> np.ndarray:
+def partition_dag(ndarray hashes,
+                  ndarray vertexes,
+                  ndarray edges,
+                  ndarray seeds) -> np.ndarray:
     seeds = np.sort(seeds)
     if len(hashes):
         found_seeds = searchsorted_inrange(hashes, seeds)
@@ -995,10 +998,10 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
                     borders[edge] = 1
 
 
-def extract_pr_commits(hashes: np.ndarray,
-                       vertexes: np.ndarray,
-                       edges: np.ndarray,
-                       pr_merges: np.ndarray) -> Sequence[np.ndarray]:
+def extract_pr_commits(ndarray hashes,
+                       ndarray vertexes,
+                       ndarray edges,
+                       ndarray pr_merges) -> Sequence[np.ndarray]:
     if len(hashes) == 0:
         return [np.array([], dtype="S40") for _ in pr_merges]
     order = np.argsort(pr_merges)
@@ -1077,11 +1080,11 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
                     boilerplate.push_back(edge)
 
 
-def extract_independent_ownership(hashes: np.ndarray,
-                                  vertexes: np.ndarray,
-                                  edges: np.ndarray,
-                                  heads: np.ndarray,
-                                  stops: np.ndarray) -> np.ndarray:
+def extract_independent_ownership(ndarray hashes,
+                                  ndarray vertexes,
+                                  ndarray edges,
+                                  ndarray heads,
+                                  ndarray stops) -> np.ndarray:
     if len(hashes) == 0 or len(heads) == 0:
         result = np.empty(len(heads), dtype=object)
         result.fill(np.array([], dtype="S40"))
@@ -1179,3 +1182,36 @@ cdef void _extract_independent_ownership(const uint32_t[:] vertexes,
                 edge = edges[j]
                 if not left_vertexes_map[edge]:
                     boilerplate.push_back(edge)
+
+
+def lookup_children(ndarray hashes,
+                    ndarray vertexes,
+                    ndarray edges,
+                    ndarray parents,
+                    ndarray output,
+                    ndarray output_indexes) -> None:
+    cdef:
+        long[:] parent_vertexes
+        uint32_t[:] vertexes_arr = vertexes
+        uint32_t[:] edges_arr = edges
+        long[:] output_indexes_arr = output_indexes
+        long i
+        uint32_t vertex, edge_begin, edge_end, edge
+        char *hashes_data = PyArray_BYTES(hashes)
+        PyObject *children
+        PyObject **output_data = <PyObject **> PyArray_BYTES(output)
+    parent_vertexes = np.searchsorted(hashes, parents)
+    for i in range(len(parents)):
+        vertex = parent_vertexes[i]
+        edge_begin = vertexes_arr[vertex]
+        edge_end = vertexes_arr[vertex + 1]
+        if edge_begin == edge_end:
+            continue
+        children = PyList_New(edge_end - edge_begin)
+        for edge in range(edge_begin, edge_end):
+            PyList_SET_ITEM(
+                children,
+                edge - edge_begin,
+                PyBytes_FromStringAndSize(hashes_data + edges_arr[edge] * 40, 40),
+            )
+        output_data[output_indexes_arr[i]] = children

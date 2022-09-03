@@ -248,6 +248,8 @@ class FriendlyJson:
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        if isinstance(obj, (bytes, bytearray)):
+            return obj.decode()
         try:
             assert obj == obj, "%s: %s" % (type(obj), obj)
         except ValueError as e:

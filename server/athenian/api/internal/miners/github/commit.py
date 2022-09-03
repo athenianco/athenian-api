@@ -24,7 +24,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
+from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import (
     Database,
     DatabaseLike,
@@ -42,23 +42,27 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     extract_subdag,
     find_orphans,
     join_dags,
+    lookup_children,
     partition_dag,
     searchsorted_inrange,
     verify_edges_integrity,
 )
-from athenian.api.internal.miners.types import DAG as DAGStruct
+from athenian.api.internal.miners.github.deployment_light import load_included_deployments
+from athenian.api.internal.miners.types import DAG as DAGStruct, Deployment
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import (
     Branch,
     NodeCommit,
     NodePullRequestCommit,
     PushCommit,
     Release,
-    User,
 )
 from athenian.api.models.precomputed.models import GitHubCommitHistory
+from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
+from athenian.precomputer.db.models import GitHubCommitDeployment
 
 
 class FilterCommitsProperty(Enum):
@@ -66,17 +70,29 @@ class FilterCommitsProperty(Enum):
 
     NO_PR_MERGES = "no_pr_merges"
     BYPASSING_PRS = "bypassing_prs"
+    EVERYTHING = "everything"
 
 
 # hashes, vertex offsets in edges, edge indexes
 DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
+def _postprocess_extract_commits(result, with_deployments=True, **_):
+    if isinstance(result, tuple):
+        if with_deployments:
+            return result
+        return result[0]
+    if not with_deployments:
+        return result
+    raise CancelCache()
+
+
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_args,
+    deserialize=deserialize_args,
+    postprocess=_postprocess_extract_commits,
     key=lambda prop, date_from, date_to, repos, with_author, with_committer, only_default_branch, **kwargs: (  # noqa
         prop.value,
         date_from.timestamp(),
@@ -104,9 +120,11 @@ async def extract_commits(
     meta_ids: Tuple[int, ...],
     mdb: DatabaseLike,
     pdb: DatabaseLike,
+    rdb: Optional[DatabaseLike],
     cache: Optional[aiomcache.Client],
     columns: Optional[List[InstrumentedAttribute]] = None,
-) -> pd.DataFrame:
+    with_deployments: bool = True,
+) -> tuple[pd.DataFrame, Dict[str, Deployment]] | pd.DataFrame:
     """Fetch commits that satisfy the given filters."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
@@ -115,29 +133,13 @@ async def extract_commits(
         PushCommit.acc_id.in_(meta_ids),
         PushCommit.committed_date.between(date_from, date_to),
         PushCommit.repository_full_name.in_(repos),
-        PushCommit.committer_email != "noreply@github.com",
     ]
-    user_logins = set()
-    if with_author is not None and len(with_author):
-        user_logins.update(with_author)
-    if with_committer is not None and len(with_committer):
-        user_logins.update(with_committer)
-    if user_logins:
-        user_ids = dict(
-            await mdb.fetch_all(
-                select([User.login, User.node_id]).where(
-                    and_(User.login.in_(user_logins), User.acc_id.in_(meta_ids)),
-                ),
-            ),
-        )
-        del user_logins
-    else:
-        user_ids = {}
+    user_ids = prefixer.user_login_to_node.__getitem__
     if with_author is not None and len(with_author):
         author_ids = []
         for u in with_author:
             try:
-                author_ids.append(user_ids[u])
+                author_ids.extend(user_ids(u))
             except KeyError:
                 continue
         sql_filters.append(PushCommit.author_user_id.in_(author_ids))
@@ -145,7 +147,7 @@ async def extract_commits(
         committer_ids = []
         for u in with_committer:
             try:
-                committer_ids.append(user_ids[u])
+                committer_ids.extend(user_ids(u))
             except KeyError:
                 continue
         sql_filters.append(PushCommit.committer_user_id.in_(committer_ids))
@@ -156,27 +158,32 @@ async def extract_commits(
             if col not in columns:
                 columns.append(col)
         cols_query = cols_df = columns
-    if prop == FilterCommitsProperty.NO_PR_MERGES:
-        commits_task = read_sql_query(select(cols_query).where(and_(*sql_filters)), mdb, cols_df)
-    elif prop == FilterCommitsProperty.BYPASSING_PRS:
-        commits_task = read_sql_query(
-            select(cols_query)
-            .select_from(
-                outerjoin(
-                    PushCommit,
-                    NodePullRequestCommit,
-                    and_(
-                        PushCommit.node_id == NodePullRequestCommit.commit_id,
-                        PushCommit.acc_id == NodePullRequestCommit.acc_id,
+    match prop:
+        case FilterCommitsProperty.NO_PR_MERGES:
+            sql_filters.append(PushCommit.committer_email != "noreply@github.com")
+            commits_task = read_sql_query(select(cols_query).where(*sql_filters), mdb, cols_df)
+        case FilterCommitsProperty.BYPASSING_PRS:
+            sql_filters.append(PushCommit.committer_email != "noreply@github.com")
+            commits_task = read_sql_query(
+                select(cols_query)
+                .select_from(
+                    outerjoin(
+                        PushCommit,
+                        NodePullRequestCommit,
+                        and_(
+                            PushCommit.node_id == NodePullRequestCommit.commit_id,
+                            PushCommit.acc_id == NodePullRequestCommit.acc_id,
+                        ),
                     ),
-                ),
+                )
+                .where(NodePullRequestCommit.commit_id.is_(None), *sql_filters),
+                mdb,
+                cols_df,
             )
-            .where(and_(NodePullRequestCommit.commit_id.is_(None), *sql_filters)),
-            mdb,
-            cols_df,
-        )
-    else:
-        raise AssertionError('Unsupported primary commit filter "%s"' % prop)
+        case FilterCommitsProperty.EVERYTHING:
+            commits_task = read_sql_query(select(cols_query).where(*sql_filters), mdb, cols_df)
+        case _:
+            raise AssertionError('Unsupported primary commit filter "%s"' % prop)
     tasks = [
         commits_task,
         fetch_repository_commits_from_scratch(
@@ -200,14 +207,69 @@ async def extract_commits(
     else:
         commits = _remove_force_push_dropped(commits, dags)
         log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
+    if prop == FilterCommitsProperty.EVERYTHING:
+        commit_shas = commits[PushCommit.sha.name].values
+        commit_repos = commits[PushCommit.repository_full_name.name].values
+        order = np.argsort(commit_repos)
+        unique_repos, group_counts = np.unique(commit_repos[order], return_counts=True)
+        children = np.empty(len(commits), dtype=object)
+        pos = 0
+        for repo, group_count in zip(unique_repos, group_counts):
+            indexes = order[pos : pos + group_count]
+            lookup_children(*dags[repo][1], commit_shas[indexes], children, indexes)
+            pos += group_count
+        commits["children"] = children
+    else:
+        commits["children"] = [None] * len(commits)
+    if with_deployments:
+        commit_deployments = await read_sql_query(
+            select(GitHubCommitDeployment.commit_id, GitHubCommitDeployment.deployment_name).where(
+                GitHubCommitDeployment.acc_id == account,
+                GitHubCommitDeployment.commit_id.in_(commits[PushCommit.node_id.name].values),
+            ),
+            pdb,
+            [GitHubCommitDeployment.commit_id, GitHubCommitDeployment.deployment_name],
+        )
+        deployments = commit_deployments[GitHubCommitDeployment.deployment_name.name].unique()
+        if len(deployments):
+            # we must ignore the logical settings here
+            deployments = await load_included_deployments(
+                deployments,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                rdb,
+                cache,
+            )
+            fill_col = np.empty(len(commits), dtype=object)
+            dep_id_col = commit_deployments[GitHubCommitDeployment.commit_id.name].values
+            order = np.argsort(dep_id_col)
+            dep_id_col = dep_id_col[order]
+            _, splits = np.unique(dep_id_col, return_index=True)
+            split_deps = np.split(
+                commit_deployments[GitHubCommitDeployment.deployment_name.name].values[order],
+                splits[1:],
+            )
+            full_ids = commits[PushCommit.node_id.name].values
+            order = np.argsort(full_ids)
+            fill_col[order[np.in1d(full_ids[order], dep_id_col, assume_unique=True)]] = split_deps
+            commits["deployments"] = fill_col
+        else:
+            deployments = {}
+            commits["deployments"] = [None] * len(commits)
+
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
         try:
             number_col = commits[number_prop.name]
         except KeyError:
             continue
-        nans = commits[PushCommit.node_id.name].take(np.where(number_col.isna())[0])
+        nans = commits[PushCommit.node_id.name].take(np.flatnonzero(number_col.isna()))
         if not nans.empty:
             log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.name, ", ".join(nans))
+    if with_deployments:
+        return commits, deployments
     return commits
 
 
@@ -522,11 +584,9 @@ async def fetch_precomputed_commit_history_dags(
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
             select([ghrc.repository_full_name, ghrc.dag]).where(
-                and_(
-                    ghrc.format_version == format_version,
-                    ghrc.repository_full_name.in_(repos),
-                    ghrc.acc_id == account,
-                ),
+                ghrc.format_version == format_version,
+                ghrc.repository_full_name.in_(repos),
+                ghrc.acc_id == account,
             ),
         )
     dags = {
@@ -575,11 +635,9 @@ async def _fetch_commit_history_dag(
             rows = await mdb.fetch_all(
                 select([NodeCommit.oid])
                 .where(
-                    and_(
-                        NodeCommit.oid.in_(stop_heads),
-                        NodeCommit.committed_date > min_commit_time,
-                        NodeCommit.acc_id.in_(meta_ids),
-                    ),
+                    NodeCommit.oid.in_(stop_heads),
+                    NodeCommit.committed_date > min_commit_time,
+                    NodeCommit.acc_id.in_(meta_ids),
                 )
                 .order_by(desc(NodeCommit.committed_date))
                 .limit(max_stop_heads),
@@ -619,7 +677,7 @@ async def _fetch_commit_history_dag(
             committed_dates = dict(
                 await mdb.fetch_all(
                     select(NodeCommit.oid, NodeCommit.committed_date).where(
-                        and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.oid.in_(orphans)),
+                        NodeCommit.acc_id.in_(meta_ids), NodeCommit.oid.in_(orphans),
                     ),
                 ),
             )
@@ -769,11 +827,9 @@ async def _fetch_commits_for_dags(
         return pd.DataFrame()
     queries = [
         select(COMMIT_FETCH_COMMITS_COLUMNS).where(
-            and_(
-                PushCommit.repository_full_name == repo,
-                PushCommit.acc_id.in_(meta_ids),
-                PushCommit.node_id.in_any_values(nodes),
-            ),
+            PushCommit.repository_full_name == repo,
+            PushCommit.acc_id.in_(meta_ids),
+            PushCommit.node_id.in_any_values(nodes),
         )
         for repo, nodes in commits.items()
     ]
