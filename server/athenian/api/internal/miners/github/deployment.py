@@ -575,11 +575,9 @@ async def _finalize_release_settings(
 ) -> tuple[set[str], ReleaseSettings]:
     assert not notifications.empty
     rows = await rdb.fetch_all(
-        select([distinct(DeployedComponent.repository_node_id)]).where(
-            and_(
-                DeployedComponent.account_id == account,
-                DeployedComponent.deployment_name.in_any_values(notifications.index.values),
-            ),
+        select(distinct(DeployedComponent.repository_node_id)).where(
+            DeployedComponent.account_id == account,
+            DeployedComponent.deployment_name.in_any_values(notifications.index.values),
         ),
     )
     repos = logical_settings.with_logical_deployments(
@@ -650,7 +648,7 @@ async def _fetch_precomputed_deployed_releases(
         ghrd = aliased(GitHubReleaseDeployment, name=f"ghrd{i}")
         prel = aliased(PrecomputedRelease, name=f"prel{i}")
         queries.append(
-            select([ghrd.deployment_name, prel])
+            select(ghrd.deployment_name, prel)
             .select_from(
                 join(
                     ghrd,
@@ -664,12 +662,10 @@ async def _fetch_precomputed_deployed_releases(
                 ),
             )
             .where(
-                and_(
-                    ghrd.acc_id == account,
-                    ghrd.repository_full_name.in_(repos),
-                    prel.release_match == compose_release_match(m, v),
-                    ghrd.deployment_name.in_(notifications.index.values),
-                ),
+                ghrd.acc_id == account,
+                ghrd.repository_full_name.in_(repos),
+                prel.release_match == compose_release_match(m, v),
+                ghrd.deployment_name.in_(notifications.index.values),
             ),
         )
         if len(queries) == batch_size:
@@ -856,12 +852,8 @@ async def _filter_by_prs(
             tasks.append(
                 read_sql_query(
                     select(label_columns).where(
-                        and_(
-                            PullRequestLabel.acc_id.in_(meta_ids),
-                            PullRequestLabel.pull_request_node_id.in_any_values(
-                                unique_pr_node_ids,
-                            ),
-                        ),
+                        PullRequestLabel.acc_id.in_(meta_ids),
+                        PullRequestLabel.pull_request_node_id.in_any_values(unique_pr_node_ids),
                     ),
                     mdb,
                     label_columns,
@@ -871,22 +863,18 @@ async def _filter_by_prs(
         if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
             filters.append(
                 exists().where(
-                    and_(
-                        PullRequestLabel.acc_id == PullRequest.acc_id,
-                        PullRequestLabel.pull_request_node_id == PullRequest.node_id,
-                        func.lower(PullRequestLabel.name).in_(all_in_labels),
-                    ),
+                    PullRequestLabel.acc_id == PullRequest.acc_id,
+                    PullRequestLabel.pull_request_node_id == PullRequest.node_id,
+                    func.lower(PullRequestLabel.name).in_(all_in_labels),
                 ),
             )
         if labels.exclude:
             filters.append(
                 not_(
                     exists().where(
-                        and_(
-                            PullRequestLabel.acc_id == PullRequest.acc_id,
-                            PullRequestLabel.pull_request_node_id == PullRequest.node_id,
-                            func.lower(PullRequestLabel.name).in_(labels.exclude),
-                        ),
+                        PullRequestLabel.acc_id == PullRequest.acc_id,
+                        PullRequestLabel.pull_request_node_id == PullRequest.node_id,
+                        func.lower(PullRequestLabel.name).in_(labels.exclude),
                     ),
                 ),
             )
@@ -895,7 +883,7 @@ async def _filter_by_prs(
             filters, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id],
         )
     else:
-        query = select([PullRequest.node_id]).where(and_(*filters))
+        query = select(PullRequest.node_id).where(*filters)
     query = query.with_statement_hint(f"Rows(pr repo #{len(unique_pr_node_ids)})")
     tasks.insert(0, read_sql_query(query, mdb, [PullRequest.node_id]))
     prs_df, *label_df = await gather(*tasks, op="_filter_by_prs/sql")
@@ -1163,10 +1151,10 @@ async def _generate_deployment_facts(
             )
             release_pos += group_size
     facts_per_repo_per_deployment = defaultdict(dict)
-    unique_repos, repo_order, repo_commit_counts = np.unique(
-        commit_stats.pr_repository_full_names, return_counts=True, return_inverse=True,
+    repo_order = np.argsort(commit_stats.pr_repository_full_names)
+    unique_repos, repo_commit_counts = np.unique(
+        commit_stats.pr_repository_full_names[repo_order], return_counts=True,
     )
-    repo_order = np.argsort(repo_order)
     repo_order_offsets = np.cumsum(repo_commit_counts)
     for env, repos in deployed_commits_per_repo_per_env.items():
         repo_indexes = np.searchsorted(unique_repos, list(repos))
@@ -1374,14 +1362,12 @@ async def _map_releases_to_deployments(
         read_sql_query(
             union_all(
                 *(
-                    select([PrecomputedRelease]).where(
-                        and_(
-                            PrecomputedRelease.acc_id == account,
-                            PrecomputedRelease.release_match
-                            == compose_release_match(match_id, match_value),
-                            PrecomputedRelease.published_at < max_release_time_to,
-                            PrecomputedRelease.sha.in_any_values(commit_shas),
-                        ),
+                    select(PrecomputedRelease).where(
+                        PrecomputedRelease.acc_id == account,
+                        PrecomputedRelease.release_match
+                        == compose_release_match(match_id, match_value),
+                        PrecomputedRelease.published_at < max_release_time_to,
+                        PrecomputedRelease.sha.in_any_values(commit_shas),
                     )
                     for (match_id, match_value), commit_shas in commits_by_reverse_key.items()
                 ),
@@ -1392,12 +1378,10 @@ async def _map_releases_to_deployments(
         if commits_by_reverse_key
         else dummy(),
         read_sql_query(
-            select([ReleaseNotification]).where(
-                and_(
-                    ReleaseNotification.account_id == account,
-                    ReleaseNotification.published_at < max_release_time_to,
-                    ReleaseNotification.resolved_commit_hash.in_any_values(event_hashes),
-                ),
+            select(ReleaseNotification).where(
+                ReleaseNotification.account_id == account,
+                ReleaseNotification.published_at < max_release_time_to,
+                ReleaseNotification.resolved_commit_hash.in_any_values(event_hashes),
             ),
             rdb,
             ReleaseNotification,
@@ -1435,11 +1419,9 @@ async def _map_releases_to_deployments(
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
         time_from = await mdb.fetch_val(
-            select([func.min(NodeCommit.committed_date)]).where(
-                and_(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.sha.in_any_values(all_mentioned_hashes),
-                ),
+            select(func.min(NodeCommit.committed_date)).where(
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.sha.in_any_values(all_mentioned_hashes),
             ),
         )
         if time_from is None:
@@ -1527,25 +1509,26 @@ async def _submit_deployed_commits(
         for details in repos.values():
             all_shas.extend(details.shas)
     all_shas = unordered_unique(np.concatenate(all_shas))
-    rows = await mdb.fetch_all(
-        select([NodeCommit.graph_id, NodeCommit.sha]).where(
-            and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas)),
-        ),
+    sha_id_df = await read_sql_query(
+        select(NodeCommit.graph_id, NodeCommit.sha)
+        .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas))
+        .order_by(NodeCommit.sha),
+        mdb,
+        [NodeCommit.graph_id, NodeCommit.sha],
     )
-    sha_to_id = {row[1].encode(): row[0] for row in rows}
-    del rows
+    sha_map_shas = sha_id_df[NodeCommit.sha.name].values
+    sha_map_ids = sha_id_df[NodeCommit.id.name].values
     values = [
         GitHubCommitDeployment(
             acc_id=account,
             deployment_name=deployment_name,
-            commit_id=sha_to_id[sha],
+            commit_id=commit_id,
             repository_full_name=repo,
         ).explode(with_primary_keys=True)
         for repos in deployed_commits_per_repo_per_env.values()
         for repo, details in repos.items()
         for deployment_name, shas in zip(details.deployments, details.shas)
-        for sha in shas
-        if sha in sha_to_id
+        for sha, commit_id in zip(shas, sha_map_ids[np.searchsorted(sha_map_shas, shas)])
     ]
     await insert_or_ignore(GitHubCommitDeployment, values, "_submit_deployed_commits", pdb)
 
@@ -1644,10 +1627,8 @@ async def _fetch_commit_stats(
                 ),
             )
             .where(
-                and_(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.sha.in_any_values(all_mentioned_hashes),
-                ),
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.sha.in_any_values(all_mentioned_hashes),
             )
             .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
         ),
@@ -1835,10 +1816,8 @@ async def _fetch_commit_stats(
         rebased_pr_rows, already_deployed_rebased = await gather(
             mdb.fetch_all(
                 select(selected).where(
-                    and_(
-                        NodePullRequest.acc_id.in_(meta_ids),
-                        NodePullRequest.node_id.in_(rebased_map),
-                    ),
+                    NodePullRequest.acc_id.in_(meta_ids),
+                    NodePullRequest.node_id.in_(rebased_map),
                 ),
             ),
             fetch_successfully_deployed_rebased_prs(),
@@ -2343,8 +2322,8 @@ async def _fetch_latest_deployed_components(
         all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
         all_shas = unordered_unique(np.concatenate(all_shas))
         sha_df = await read_sql_query(
-            select([NodeCommit.id, NodeCommit.sha]).where(
-                and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas)),
+            select(NodeCommit.id, NodeCommit.sha).where(
+                NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas),
             ),
             mdb,
             [NodeCommit.id, NodeCommit.sha],
@@ -2393,14 +2372,12 @@ def _compose_logical_filters_of_deployments(
     else:
         logical_filters.append(
             exists().where(
-                and_(
-                    DeploymentNotification.acc_id == DeployedLabel.acc_id,
-                    DeploymentNotification.name == DeployedLabel.deployment_name,
-                    or_(
-                        *(
-                            and_(DeployedLabel.key == key, DeployedLabel.value.in_(vals))
-                            for key, vals in labels.items()
-                        ),
+                DeploymentNotification.acc_id == DeployedLabel.acc_id,
+                DeploymentNotification.name == DeployedLabel.deployment_name,
+                or_(
+                    *(
+                        and_(DeployedLabel.key == key, DeployedLabel.value.in_(vals))
+                        for key, vals in labels.items()
                     ),
                 ),
             ),
@@ -2438,7 +2415,7 @@ def _compose_latest_deployed_components_logical(
                         )
                     ]
                 queries.append(
-                    select(["*"]).select_from(  # use LIMIT inside UNION hack
+                    select("*").select_from(  # use LIMIT inside UNION hack
                         select(
                             [
                                 DeploymentNotification.environment,
@@ -2462,23 +2439,21 @@ def _compose_latest_deployed_components_logical(
                             ),
                         )
                         .where(
-                            and_(
-                                DeploymentNotification.account_id == account,
-                                DeploymentNotification.environment == env,
-                                DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
-                                DeploymentNotification.finished_at < until,
-                                DeployedComponent.repository_node_id == repo_node_id,
-                                *(
-                                    (
-                                        DeployedComponent.resolved_commit_node_id.in_(
-                                            suspects_per_repo_env[env][repo],
-                                        ),
-                                    )
-                                    if suspects_per_repo_env is not None
-                                    else ()
-                                ),
-                                *logical_filters,
+                            DeploymentNotification.account_id == account,
+                            DeploymentNotification.environment == env,
+                            DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
+                            DeploymentNotification.finished_at < until,
+                            DeployedComponent.repository_node_id == repo_node_id,
+                            *(
+                                (
+                                    DeployedComponent.resolved_commit_node_id.in_(
+                                        suspects_per_repo_env[env][repo],
+                                    ),
+                                )
+                                if suspects_per_repo_env is not None
+                                else ()
                             ),
+                            *logical_filters,
                         )
                         .order_by(desc(DeploymentNotification.finished_at))
                         .limit(batch if suspects_per_repo_env is None else None)
@@ -2499,7 +2474,7 @@ def _compose_latest_deployed_components_physical(
     repo_name_to_node = prefixer.repo_name_to_node
     CONCLUSION_SUCCESS = DeploymentNotification.CONCLUSION_SUCCESS.decode()
     queries = [
-        select(["*"]).select_from(  # use LIMIT inside UNION hack
+        select("*").select_from(  # use LIMIT inside UNION hack
             select(
                 [
                     DeploymentNotification.environment,
@@ -2519,21 +2494,19 @@ def _compose_latest_deployed_components_physical(
                 ),
             )
             .where(
-                and_(
-                    DeploymentNotification.account_id == account,
-                    DeploymentNotification.environment == env,
-                    DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
-                    DeploymentNotification.finished_at < until,
-                    DeployedComponent.repository_node_id == repo_name_to_node[repo],
-                    *(
-                        (
-                            DeployedComponent.resolved_commit_node_id.in_(
-                                suspects_per_repo_env[env][repo],
-                            ),
-                        )
-                        if suspects_per_repo_env is not None
-                        else ()
-                    ),
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.environment == env,
+                DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
+                DeploymentNotification.finished_at < until,
+                DeployedComponent.repository_node_id == repo_name_to_node[repo],
+                *(
+                    (
+                        DeployedComponent.resolved_commit_node_id.in_(
+                            suspects_per_repo_env[env][repo],
+                        ),
+                    )
+                    if suspects_per_repo_env is not None
+                    else ()
                 ),
             )
             .order_by(desc(DeploymentNotification.finished_at))
@@ -2556,33 +2529,46 @@ async def _fetch_latest_deployed_components_queries(
     if not queries:
         return {}
     query = union_all(*queries) if len(queries) > 1 else queries[0]
-    rows = await rdb.fetch_all(query)
-    if not rows:
+    latest_df = await read_sql_query(
+        query,
+        rdb,
+        [
+            DeploymentNotification.environment,
+            DeployedComponent.repository_full_name,
+            DeploymentNotification.finished_at,
+            DeployedComponent.resolved_commit_node_id,
+        ],
+    )
+    if latest_df.empty:
         result = {}
     else:
         result_cids = defaultdict(lambda: defaultdict(list))
         result_shas = defaultdict(lambda: defaultdict(list))
         result_finisheds = defaultdict(lambda: defaultdict(list))
-        commit_ids = {row[DeployedComponent.resolved_commit_node_id.name] for row in rows} - {None}
-        sha_rows = await mdb.fetch_all(
-            select([NodeCommit.id, NodeCommit.sha]).where(
-                and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.id.in_any_values(commit_ids)),
-            ),
+        commit_ids = latest_df[DeployedComponent.resolved_commit_node_id.name].unique()
+        sha_id_df = await read_sql_query(
+            select(NodeCommit.id, NodeCommit.sha)
+            .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.id.in_any_values(commit_ids))
+            .order_by(NodeCommit.id),
+            mdb,
+            [NodeCommit.id, NodeCommit.sha],
         )
-        commit_data_map = {r[0]: r[1].encode() for r in sha_rows}
         result = defaultdict(dict)
-        for row in rows:
-            env = row[DeploymentNotification.environment.name]
-            repo = row[DeployedComponent.repository_full_name]
-            cid = row[DeployedComponent.resolved_commit_node_id.name]
-            try:
-                result_shas[env][repo].append(commit_data_map[cid])
-            except KeyError:
-                result[env][repo] = (None,) * 3
-                continue
-            else:
-                result_cids[env][repo].append(cid)
-                result_finisheds[env][repo].append(row[DeploymentNotification.finished_at.name])
+        for env, repo, cid, sha, finished_at in zip(
+            latest_df[DeploymentNotification.environment.name].values,
+            latest_df[DeployedComponent.repository_full_name].values,
+            latest_df[DeployedComponent.resolved_commit_node_id.name].values,
+            sha_id_df[NodeCommit.sha.name].values[
+                np.searchsorted(
+                    sha_id_df[NodeCommit.id.name].values,
+                    latest_df[DeployedComponent.resolved_commit_node_id.name].values,
+                ),
+            ],
+            latest_df[DeploymentNotification.finished_at.name].values,
+        ):
+            result_shas[env][repo].append(sha)
+            result_cids[env][repo].append(cid)
+            result_finisheds[env][repo].append(pd.Timestamp(finished_at, tzinfo=timezone.utc))
         for env, repos_cids in result_cids.items():
             for repo, cids in repos_cids.items():
                 result[env][repo] = (cids, result_shas[env][repo], result_finisheds[env][repo])
@@ -2602,17 +2588,13 @@ async def _fetch_precomputed_deployment_facts(
     ].default.arg
     dep_rows = await pdb.fetch_all(
         select(
-            [
-                GitHubDeploymentFacts.deployment_name,
-                GitHubDeploymentFacts.release_matches,
-                GitHubDeploymentFacts.data,
-            ],
+            GitHubDeploymentFacts.deployment_name,
+            GitHubDeploymentFacts.release_matches,
+            GitHubDeploymentFacts.data,
         ).where(
-            and_(
-                GitHubDeploymentFacts.acc_id == account,
-                GitHubDeploymentFacts.format_version == format_version,
-                GitHubDeploymentFacts.deployment_name.in_any_values(names),
-            ),
+            GitHubDeploymentFacts.acc_id == account,
+            GitHubDeploymentFacts.format_version == format_version,
+            GitHubDeploymentFacts.deployment_name.in_any_values(names),
         ),
     )
     if not dep_rows:
@@ -2781,12 +2763,13 @@ async def hide_outlier_first_deployments(
     stmts: list[Executable] = []
     for Table, (deploy_name, repositories) in product(tables, grouped_deploys):
         log.info("hiding outlier first deployment %s for repos %s", deploy_name, repositories)
-        where_clause = sa.and_(
-            Table.acc_id == account,
-            Table.deployment_name == deploy_name,
-            Table.repository_full_name.in_(repositories),
+        stmts.append(
+            sa.delete(Table).where(
+                Table.acc_id == account,
+                Table.deployment_name == deploy_name,
+                Table.repository_full_name.in_(repositories),
+            ),
         )
-        stmts.append(sa.delete(Table).where(where_clause))
 
     # clear GitHubDeploymentFacts by removing prs, releases, and commits from facts data
     FactsT = GitHubDeploymentFacts
@@ -2807,7 +2790,7 @@ async def hide_outlier_first_deployments(
         )
         update_stmt = (
             sa.update(FactsT)
-            .where(sa.and_(*(col == row[col.name] for col in match_cols)))
+            .where(*(col == row[col.name] for col in match_cols))
             .values({FactsT.data: new_facts.data})
         )
         stmts.append(update_stmt)
