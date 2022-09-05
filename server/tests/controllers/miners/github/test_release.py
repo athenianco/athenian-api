@@ -1613,7 +1613,7 @@ class TestMineReleases:
         time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
         jira_filter = JIRAFilter(
             1,
-            ["10003", "10009"],
+            ("10003", "10009"),
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
@@ -1653,7 +1653,7 @@ class TestMineReleases:
 
         jira_filter = JIRAFilter(
             1,
-            ["10003", "10009"],
+            ("10003", "10009"),
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
@@ -1690,7 +1690,7 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         jira_filter = JIRAFilter(
-            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), set(), False, True,
+            1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
         )
         kwargs = self._kwargs(
             time_from=time_from,
@@ -1723,7 +1723,7 @@ class TestMineReleases:
         repo = "src-d/go-git/alpha"
         jira_filter = JIRAFilter(
             1,
-            ["10003", "10009"],
+            ("10003", "10009"),
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
@@ -1762,7 +1762,7 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         kwargs["jira"] = JIRAFilter(
-            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), set(), False, True,
+            1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 12

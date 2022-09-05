@@ -1413,11 +1413,11 @@ async def test_calc_pull_request_facts_github_jira(
     assert facts[PullRequestFacts.f.released].notnull().sum() == 235
     args[5] = JIRAFilter(
         1,
-        ["10003", "10009"],
+        frozenset(("10003", "10009")),
         LabelFilter({"performance", "task"}, set()),
-        set(),
-        set(),
-        set(),
+        frozenset(),
+        frozenset(),
+        frozenset(),
         False,
         0,
     )

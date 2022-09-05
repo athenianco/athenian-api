@@ -11,8 +11,8 @@ from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 class LabelFilter:
     """Pull Request labels: must/must not contain."""
 
-    include: set[str]
-    exclude: set[str]
+    include: frozenset[str]
+    exclude: frozenset[str]
 
     @classmethod
     def from_iterables(
@@ -22,14 +22,14 @@ class LabelFilter:
     ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
         return cls(
-            include={s.lower().strip(" \t,") for s in (include or [])},
-            exclude={s.lower() for s in (exclude or [])},
+            include=frozenset(s.lower().strip(" \t,") for s in (include or [])),
+            exclude=frozenset(s.lower() for s in (exclude or [])),
         )
 
     @classmethod
     def empty(cls) -> LabelFilter:
         """Initialize an empty LabelFilter."""
-        return cls(set(), set())
+        return cls(frozenset(), frozenset())
 
     def __bool__(self) -> bool:
         """Return value indicating whether there is at least one included or excluded label."""
@@ -39,7 +39,9 @@ class LabelFilter:
         """Return a new LabelFilter which is logical union of this filter with another."""
         return LabelFilter(
             _join_filter_sets(self.include, other.include),
-            set() if (not self.exclude or not other.exclude) else self.exclude & other.exclude,
+            frozenset()
+            if (not self.exclude or not other.exclude)
+            else self.exclude & other.exclude,
         )
 
     def __str__(self) -> str:
@@ -93,11 +95,11 @@ class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
-    projects: list[str]
+    projects: frozenset[str]
     labels: LabelFilter
-    epics: set[str] | bool
-    issue_types: set[str]
-    priorities: set[str]
+    epics: frozenset[str] | bool
+    issue_types: frozenset[str]
+    priorities: frozenset[str]
     custom_projects: bool  # PRs must be mapped to any issue in `projects`
     unmapped: bool  # select everything but the mapped PRs
 
@@ -108,7 +110,8 @@ class JIRAFilter:
     @classmethod
     def empty(cls) -> JIRAFilter:
         """Initialize an empty JIRAFilter."""
-        return cls(0, [], LabelFilter.empty(), set(), set(), set(), False, False)
+        emptyset: frozenset[str] = frozenset()
+        return cls(0, emptyset, LabelFilter.empty(), emptyset, emptyset, emptyset, False, False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
@@ -136,11 +139,12 @@ class JIRAFilter:
             return self.empty()
 
         if isinstance(self.epics, bool):
-            epics: bool | set[str] = False
+            epics: bool | frozenset[str] = False
         else:
+            assert not isinstance(other.epics, bool)
             epics = _join_filter_sets(self.epics, other.epics)
 
-        projects = list(_join_filter_sets(set(self.projects), set(other.projects)))
+        projects = _join_filter_sets(self.projects, other.projects)
 
         return JIRAFilter(
             self.account,
@@ -215,17 +219,17 @@ class JIRAFilter:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
         if not (custom_projects := bool(model.projects)):
-            projects = sorted(ids.projects)
+            projects = frozenset(ids.projects)
         else:
             reverse_map = {v: k for k, v in ids[1].items()}
-            projects = sorted(reverse_map[k] for k in model.projects if k in reverse_map)
+            projects = frozenset(reverse_map[k] for k in model.projects if k in reverse_map)
         return JIRAFilter(
             account=ids.acc_id,
             projects=projects,
             labels=labels,
-            epics={s.upper() for s in (model.epics or [])},
-            issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
-            priorities=set(),  # not present in web model
+            epics=frozenset([s.upper() for s in (model.epics or [])]),
+            issue_types=frozenset([normalize_issue_type(s) for s in (model.issue_types or [])]),
+            priorities=frozenset(),  # not present in web model
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
@@ -244,7 +248,7 @@ class JIRAFilter:
         return dataclasses.replace(self, **kwargs)
 
 
-def _join_filter_sets(set_a: set, set_b) -> set:
+def _join_filter_sets(set_a: frozenset, set_b: frozenset) -> frozenset:
     if (not set_a) or (not set_b):
-        return set()
+        return frozenset()
     return set_a | set_b
