@@ -736,20 +736,20 @@ class ReleaseLoader:
         if updated:
 
             async def update_pushed_release_commits():
+                now = datetime.now(timezone.utc)
                 for repo, prefix, node_id, full_hash in updated:
                     await rdb.execute(
                         update(ReleaseNotification)
                         .where(
-                            and_(
-                                ReleaseNotification.account_id == account,
-                                ReleaseNotification.repository_node_id == repo,
-                                ReleaseNotification.commit_hash_prefix == prefix,
-                            ),
+                            ReleaseNotification.account_id == account,
+                            ReleaseNotification.repository_node_id == repo,
+                            ReleaseNotification.commit_hash_prefix == prefix,
                         )
                         .values(
                             {
                                 ReleaseNotification.updated_at: datetime.now(timezone.utc),
                                 ReleaseNotification.resolved_commit_node_id: node_id,
+                                ReleaseNotification.resolved_at: now,
                                 ReleaseNotification.resolved_commit_hash: full_hash,
                             },
                         ),

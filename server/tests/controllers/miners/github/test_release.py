@@ -742,6 +742,8 @@ async def test_load_releases_events_settings(
     )
     del values[ReleaseNotification.updated_at.name]
     del values[ReleaseNotification.created_at.name]
+    assert values[ReleaseNotification.resolved_at.name]
+    del values[ReleaseNotification.resolved_at.name]
     if rdb.url.dialect == "sqlite":
         tzinfo = None
     else:

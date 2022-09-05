@@ -70,6 +70,8 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     published_at = datetime(2021, 1, 12, 0, 0)
     if rdb.url.dialect != "sqlite":
         published_at = published_at.replace(tzinfo=timezone.utc)
+    assert columns[ReleaseNotification.resolved_at.name]
+    del columns[ReleaseNotification.resolved_at.name]
     assert columns == {
         ReleaseNotification.account_id.name: 1,
         ReleaseNotification.repository_node_id.name: 40550,
@@ -428,26 +430,28 @@ class TestNotifyDeployments(Requester):
         else:
             commit = 2755428
         name = f"prod-2021-01-12-{vhash}"
+        assert row[DeployedComponent.resolved_at.name] or ref == "xxx"
+        del row[DeployedComponent.resolved_at.name]
         assert row == {
-            "account_id": 1,
-            "deployment_name": name,
-            "repository_node_id": 40550,
-            "reference": ref,
-            "resolved_commit_node_id": commit,
+            DeployedComponent.account_id.name: 1,
+            DeployedComponent.deployment_name.name: name,
+            DeployedComponent.repository_node_id.name: 40550,
+            DeployedComponent.reference.name: ref,
+            DeployedComponent.resolved_commit_node_id.name: commit,
         }
         rows = await rdb.fetch_all(select([DeployedLabel]))
         assert len(rows) == 2
         assert dict(rows[0]) == {
-            "account_id": 1,
-            "deployment_name": name,
-            "key": "one",
-            "value": 1,
+            DeployedLabel.account_id.name: 1,
+            DeployedLabel.deployment_name.name: name,
+            DeployedLabel.key.name: "one",
+            DeployedLabel.value.name: 1,
         }
         assert dict(rows[1]) == {
-            "account_id": 1,
-            "deployment_name": name,
-            "key": "2",
-            "value": "two",
+            DeployedLabel.account_id.name: 1,
+            DeployedLabel.deployment_name.name: name,
+            DeployedLabel.key.name: "2",
+            DeployedLabel.value.name: "two",
         }
         rows = await rdb.fetch_all(select([DeploymentNotification]))
         assert len(rows) == 1
@@ -460,13 +464,13 @@ class TestNotifyDeployments(Requester):
         del row[DeploymentNotification.updated_at.name]
         tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
         assert row == {
-            "account_id": 1,
-            "name": name,
-            "conclusion": "SUCCESS",
-            "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
-            "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo),
-            "url": None,
-            "environment": "production",
+            DeploymentNotification.account_id.name: 1,
+            DeploymentNotification.name.name: name,
+            DeploymentNotification.conclusion.name: "SUCCESS",
+            DeploymentNotification.started_at.name: datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
+            DeploymentNotification.finished_at.name: datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo),
+            DeploymentNotification.url.name: None,
+            DeploymentNotification.environment.name: "production",
         }
 
     async def test_duplicate(self, token, disable_default_user):
