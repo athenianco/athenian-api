@@ -9,7 +9,7 @@ pytest-xdist==2.5.0
 pytest-timeout==2.1.0
 pytest-sentry==0.1.9
 filelock==3.8.0
-faker==14.1.0
+faker==14.2.0
 freezegun==1.2.2
 nest_asyncio==1.5.5
 codecov==2.1.12
