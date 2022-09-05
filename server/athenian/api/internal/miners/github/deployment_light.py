@@ -27,7 +27,6 @@ from athenian.api.models.persistentdata.models import (
     DeploymentNotification,
 )
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
@@ -257,7 +256,7 @@ async def fetch_components_and_prune_unresolved(
     del components[DeployedComponent.created_at.name]
     unresolved_names = unordered_unique(
         components[DeployedComponent.deployment_name.name]
-        .values[is_null(components[DeployedComponent.resolved_commit_node_id.name].values)]
+        .values[components[DeployedComponent.resolved_commit_node_id.name].values == 0]
         .astype("U"),
     )
     # we drop not yet resolved notifications and rely on
@@ -283,9 +282,6 @@ async def fetch_components_and_prune_unresolved(
             ),
         ),
     )
-    components[DeployedComponent.resolved_commit_node_id.name] = components[
-        DeployedComponent.resolved_commit_node_id.name
-    ].astype(int)
     components.set_index(DeployedComponent.deployment_name.name, drop=True, inplace=True)
     repo_node_to_name = prefixer.repo_node_to_name.get
     components[DeployedComponent.repository_full_name] = [
