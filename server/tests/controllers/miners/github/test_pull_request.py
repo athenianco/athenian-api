@@ -1745,16 +1745,19 @@ async def test_pr_miner_jira_fetch(
     labels = set()
     epics = set()
     types = set()
+    priorities = set()
     for pr in miner:
         jira = pr.jiras
+        assert is_datetime64_any_dtype(jira[Issue.created.name])
+        assert is_datetime64_any_dtype(jira[Issue.updated.name])
         if not (pr_labels := jira[Issue.labels.name]).empty:
             labels.update(pr_labels.iloc[0])
-            assert is_datetime64_any_dtype(jira[Issue.created.name])
-            assert is_datetime64_any_dtype(jira[Issue.updated.name])
         if not (pr_epic := jira["epic"]).empty:
             epics.add(pr_epic.iloc[0])
         if not (pr_type := jira[Issue.type.name]).empty:
             types.add(pr_type.iloc[0])
+        if not (priority := jira[Issue.priority_name.name]).empty:
+            priorities.add(priority.iloc[0])
     assert labels == {
         "enhancement",
         "new-charts",
@@ -1776,6 +1779,13 @@ async def test_pr_miner_jira_fetch(
     }
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140", "DEV-818", None}
     assert types == {"task", "story", "epic", "bug"}
+    assert priorities == {"High", "Medium", "Low", "Highest", "None", "Lowest"}
+
+    pr_data = miner.dfs.jiras.loc[163205]
+    assert pr_data.index.values == ["DEV-681"]
+    assert pr_data.project_id.values == ["10009"]
+    assert pr_data.priority_name.values == ["Medium"]
+    assert pr_data.type.values == ["bug"]
     # !!!!!!!!!!!!!!
 
 

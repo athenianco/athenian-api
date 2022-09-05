@@ -1121,6 +1121,7 @@ class PullRequestMiner:
                 _issue.acc_id,
                 _issue_epic.key.label("epic"),
                 _issue.project_id,
+                _issue.priority_name,
             ]
             if not with_jira:
                 df = pd.DataFrame(
