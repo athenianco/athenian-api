@@ -27,7 +27,7 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.internal.miners.types import PullRequestFacts, PullRequestFactsMap
+from athenian.api.internal.miners.types import PullRequestFactsMap
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -831,12 +831,12 @@ class _PRJIRAMappingBuilder:
             sorted(set(self._types)),
         )
 
-    def import_db_row(self, row: Row) -> None:
-        self._ids.append(row[Issue.key.name])
-        self._projects.append(row[Issue.project_id.name])
-        if priority := row[Issue.priority_name.name]:
+    def import_values(self, id_: str, project: str, priority: str, type_: str) -> None:
+        self._ids.append(id_)
+        self._projects.append(project)
+        if priority:
             self._priorities.append(priority)
-        self._types.append(row[Issue.type.name])
+        self._types.append(type_)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -852,37 +852,18 @@ class PRJIRAMapping:
     types: list[str]
     """JIRA issue priorities types to the PR."""
 
+    def merge(self, other_mapping: PRJIRAMapping) -> PRJIRAMapping:
+        """Return a new mapping with merged also the info from another mapping."""
+        return self.__class__(
+            sorted(set(self.ids).union(other_mapping.ids)),
+            sorted(set(self.projects).union(other_mapping.projects)),
+            sorted(set(self.priorities).union(other_mapping.priorities)),
+            sorted(set(self.types).union(other_mapping.types)),
+        )
+
 
 class PullRequestJiraMapper:
     """Mapper of pull requests to JIRA tickets."""
-
-    @classmethod
-    async def append(
-        cls,
-        prs: PullRequestFactsMap,
-        meta_ids: tuple[int, ...],
-        mdb: DatabaseLike,
-    ) -> None:
-        """Load and insert some jira mapped info to the PR facts."""
-        pr_node_ids = defaultdict(list)
-        for node_id, repo in prs:
-            pr_node_ids[node_id].append(repo)
-        jira_map = await cls.load(pr_node_ids, meta_ids, mdb)
-        for pr_node_id, mapping in jira_map.items():
-            for repo in pr_node_ids[pr_node_id]:
-                try:
-                    pr_facts = prs[(pr_node_id, repo)]
-                except KeyError:
-                    # we removed this PR in JIRA filter
-                    continue
-
-                for fact_field_name, mapped_value in (
-                    (PullRequestFacts.f.jira_ids, mapping.ids),
-                    (PullRequestFacts.f.jira_projects, mapping.projects),
-                    (PullRequestFacts.f.jira_priorities, mapping.priorities),
-                    (PullRequestFacts.f.jira_types, mapping.types),
-                ):
-                    setattr(pr_facts, fact_field_name, mapped_value)
 
     @classmethod
     @sentry_span
@@ -903,30 +884,74 @@ class PullRequestJiraMapper:
         from_clause = sa.outerjoin(
             nprji, Issue, sa.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
         )
-
-        rows = await mdb.fetch_all(
+        stmt = (
             sa.select(cols)
             .select_from(from_clause)
-            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
+            .where(node_id_cond, nprji.node_acc.in_(meta_ids))
         )
 
-        mapping_builders: dict[int, _PRJIRAMappingBuilder] = defaultdict(_PRJIRAMappingBuilder)
-        for r in rows:
-            pr_id = r[nprji.node_id.name]
-            mapping_builders[pr_id].import_db_row(r)
+        rows = await mdb.fetch_all(stmt)
+        return cls._load_from_db_rows(rows)
 
+    @classmethod
+    def load_from_df(self, df: pd.Dataframe) -> dict[int, PRJIRAMapping]:
+        """Load JIRA mappings from a Dataframe as found in PRDataFrames.jiras."""
+        mapping_builders: dict[int, _PRJIRAMappingBuilder] = defaultdict(_PRJIRAMappingBuilder)
+        for r in df.itertuples():
+            pr_id, issue_key = r[0]  # df index is (pr_id, issue_key)
+            mapping_builders[pr_id].import_values(issue_key, r.project_id, r.priority_name, r.type)
         return {pr_id: builder.finalize() for pr_id, builder in mapping_builders.items()}
 
     @classmethod
-    async def load_ids(
+    def apply_to_pr_facts(
+        self,
+        facts: PullRequestFactsMap,
+        mapping: dict[int, PRJIRAMapping],
+    ) -> None:
+        """Apply the jira mappings to the facts in PullRequestFactsMap, in place."""
+        for (pr_id, _), pr_facts in facts.items():
+            try:
+                pr_map = mapping[pr_id]
+            except KeyError:
+                continue
+            pr_facts.jira_ids = pr_map.ids
+            pr_facts.jira_projects = pr_map.projects
+            pr_facts.jira_priorities = pr_map.priorities
+            pr_facts.jira_types = pr_map.types
+
+    @classmethod
+    def apply_empty_to_pr_facts(self, facts: PullRequestFactsMap) -> None:
+        """Apply an empty jira mappings to the facts in PullRequestFactsMap, in place."""
+        empty_list: list[str] = []
+        for f in facts.values():
+            f.jira_ids = f.jira_projects = f.jira_priorities = f.jira_types = empty_list
+
+    @classmethod
+    async def load_and_apply_to_pr_facts(
         cls,
-        prs: Collection[int],
+        facts: PullRequestFactsMap,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> dict[int, list[str]]:
-        """Fetch the mapping from PR node IDs to JIRA issue IDs."""
-        prs_mapping = await cls.load(prs, meta_ids, mdb)
-        return {pr_id: mapping.ids for pr_id, mapping in prs_mapping.items()}
+    ) -> None:
+        """Load and insert some jira mapped info to the PR facts."""
+        pr_node_ids = defaultdict(list)
+        for node_id, repo in facts:
+            pr_node_ids[node_id].append(repo)
+        jira_map = await cls.load(pr_node_ids, meta_ids, mdb)
+        cls.apply_to_pr_facts(facts, jira_map)
+
+    @classmethod
+    def _load_from_db_rows(self, rows: Iterable[Row]) -> dict[int, PRJIRAMapping]:
+        mapping_builders: dict[int, _PRJIRAMappingBuilder] = defaultdict(_PRJIRAMappingBuilder)
+        for r in rows:
+            pr_id = r[NodePullRequestJiraIssues.node_id.name]
+            mapping_builders[pr_id].import_values(
+                r[Issue.key.name],
+                r[Issue.project_id.name],
+                r[Issue.priority_name.name],
+                r[Issue.type.name],
+            )
+        return {pr_id: builder.finalize() for pr_id, builder in mapping_builders.items()}
 
 
 def resolve_work_began_and_resolved(

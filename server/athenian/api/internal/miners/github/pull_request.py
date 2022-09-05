@@ -2982,7 +2982,7 @@ class PullRequestFactsMiner:
         )
         check_run_names = pr.check_run[PullRequestCheckRun.f.name]
         if check_run_names is None or len(check_run_names) == 0 or not merged:
-            merged_with_failed_check_runs = []
+            merged_with_failed_check_runs: list[str] = []
         else:
             failed_mask = calculate_check_run_outcome_masks(
                 pr.check_run[PullRequestCheckRun.f.status],
@@ -3027,6 +3027,9 @@ class PullRequestFactsMiner:
             regular_comments=human_regular_comments,
             participants=participants,
             jira_ids=pr.jiras.index.values.tolist(),
+            jira_projects=sorted(set(pr.jiras.project_id.values)),
+            jira_priorities=sorted(filter(None, set(pr.jiras.priority_name.values))),
+            jira_types=sorted(set(pr.jiras.type.values)),
             deployments=pr.deployments.index.get_level_values(1).values,
             environments=environments,
             deployment_conclusions=deployment_conclusions,

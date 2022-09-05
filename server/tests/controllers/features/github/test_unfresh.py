@@ -226,6 +226,12 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     finally:
         entries.unfresh_prs_threshold = orig_threshold
 
+    pr_facts = facts_unfresh[facts_unfresh.node_id == 163168]
+    assert pr_facts.jira_ids.iloc[0] == ["DEV-261"]
+    assert pr_facts.jira_projects.iloc[0] == ["10009"]
+    assert pr_facts.jira_types.iloc[0] == ["task"]
+    assert pr_facts.jira_priorities.iloc[0] == ["Low"]
+
 
 @pytest.mark.parametrize(
     "repos, count",

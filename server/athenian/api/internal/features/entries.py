@@ -1628,7 +1628,7 @@ class MetricEntriesCalculator:
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
             done_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.load_ids(precomputed_node_ids, self._meta_ids, self._mdb),
+                self.pr_jira_mapper.load(precomputed_node_ids, self._meta_ids, self._mdb),
                 name="load_pr_jira_mapping/done",
             )
         done_deployments_task = asyncio.create_task(
@@ -1688,7 +1688,6 @@ class MetricEntriesCalculator:
         else:
             miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
         new_deps = miner.dfs.deployments.copy()
-        new_jira = miner.dfs.jiras.index.copy()
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
@@ -1770,20 +1769,16 @@ class MetricEntriesCalculator:
             tasks.append(done_jira_map_task)
         done_deps, *done_jira_map = await gather(*tasks)
         if with_jira_map:
-            jira_map = done_jira_map[0]
-            for pr, jira_key in zip(
-                new_jira.get_level_values(0).values, new_jira.get_level_values(1).values,
-            ):
-                jira_map.setdefault(pr, []).append(jira_key)
-            for (node_id, _), f in precomputed_facts.items():
-                try:
-                    f.jira_ids = jira_map[node_id]
-                except KeyError:
-                    continue
+            jira_mappings = done_jira_map[0]
+            mined_jira_mappings = PullRequestJiraMapper.load_from_df(miner.dfs.jiras)
+            for pr_id, mined_jira_mapping in mined_jira_mappings.items():
+                if pr_id not in jira_mappings:
+                    jira_mappings[pr_id] = mined_jira_mapping
+                else:
+                    jira_mappings[pr_id] = jira_mappings[pr_id].merge(mined_jira_mapping)
+            PullRequestJiraMapper.apply_to_pr_facts(precomputed_facts, jira_mappings)
         else:
-            empty_list = []
-            for f in precomputed_facts.values():
-                f.jira_ids = empty_list
+            PullRequestJiraMapper.apply_empty_to_pr_facts(precomputed_facts)
 
         # TODO: miner returns in dfs.deployments some PRs included in blacklist,
         # so some PRs can be both in done_deps and new_deps, find out why

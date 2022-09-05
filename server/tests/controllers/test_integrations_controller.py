@@ -75,14 +75,7 @@ async def test_get_everything_smoke(
 ):
     # preheat
     body = {
-        "for": [
-            {
-                "with": {},
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
-            },
-        ],
+        "for": [{"with": {}, "repositories": ["github.com/src-d/go-git"]}],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -186,6 +179,9 @@ async def test_get_everything_smoke(
         "merge_commit_id",
         "head_ref",
         "jira_ids",
+        "jira_projects",
+        "jira_priorities",
+        "jira_types",
         "merger",
         "done",
         "size",
