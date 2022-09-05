@@ -243,7 +243,7 @@ async def fetch_components_and_prune_unresolved(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Remove deployment notifications with unresolved components. Fetch the components."""
     components = await read_sql_query(
-        select([DeployedComponent]).where(
+        select(DeployedComponent).where(
             and_(
                 DeployedComponent.account_id == account,
                 DeployedComponent.deployment_name.in_any_values(notifications.index.values),
@@ -252,8 +252,12 @@ async def fetch_components_and_prune_unresolved(
         rdb,
         DeployedComponent,
     )
-    del components[DeployedComponent.account_id.name]
-    del components[DeployedComponent.created_at.name]
+    for col in (
+        DeployedComponent.account_id,
+        DeployedComponent.created_at,
+        DeployedComponent.resolved_at,
+    ):
+        del components[col.name]
     unresolved_names = unordered_unique(
         components[DeployedComponent.deployment_name.name]
         .values[components[DeployedComponent.resolved_commit_node_id.name].values == 0]

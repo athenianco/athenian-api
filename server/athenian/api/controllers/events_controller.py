@@ -201,6 +201,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         )
     inserted = []
     repos = set()
+    now = datetime.now(timezone.utc)
     for i, (n, author, status) in enumerate(zip(notifications, authors, statuses)):
         if status == ReleaseNotificationStatus.IGNORED_DUPLICATE:
             continue
@@ -219,7 +220,8 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 repository_node_id=installed_repos[repo],
                 commit_hash_prefix=resolved_commits[PushCommit.sha.name] or n.commit,
                 resolved_commit_hash=resolved_commits[PushCommit.sha.name],
-                resolved_commit_node_id=resolved_commits[PushCommit.node_id.name],
+                resolved_commit_node_id=(cid := resolved_commits[PushCommit.node_id.name]),
+                resolved_at=now if cid is not None else None,
                 name=n.name,
                 author_node_id=resolved_users.get(author),
                 url=n.url,
@@ -672,13 +674,16 @@ async def _notify_deployment(
                     .explode(with_primary_keys=True),
                 ),
             )
+            now = datetime.now(timezone.utc)
+            ed = {}  # empty dict
             cvalues = [
                 DeployedComponent(
                     account_id=account,
                     deployment_name=notification.name,
                     repository_node_id=repo_nodes[(repo := c.repository.split("/", 1)[1])],
                     reference=c.reference,
-                    resolved_commit_node_id=resolved_refs.get(repo, {}).get(c.reference),
+                    resolved_commit_node_id=(cid := resolved_refs.get(repo, ed).get(c.reference)),
+                    resolved_at=now if cid is not None else None,
                 )
                 .create_defaults()
                 .explode(with_primary_keys=True)
@@ -811,19 +816,19 @@ async def _resolve_deployed_component_references(
             except KeyError:
                 continue
             updated.add((repo, ref, rr))
+        now = datetime.now(timezone.utc)
         tasks = [
             rdb.execute(
                 update(DeployedComponent)
                 .where(
-                    and_(
-                        DeployedComponent.account_id == account,
-                        DeployedComponent.repository_node_id == u[0],
-                        DeployedComponent.reference == u[1],
-                    ),
+                    DeployedComponent.account_id == account,
+                    DeployedComponent.repository_node_id == u[0],
+                    DeployedComponent.reference == u[1],
                 )
                 .values(
                     {
                         DeployedComponent.resolved_commit_node_id: u[2],
+                        DeployedComponent.resolved_at: now,
                     },
                 ),
             )

@@ -127,6 +127,7 @@ def main():
         )
         inserted = []
         log.info("Pushing %d releases", len(releases))
+        now = datetime.now(timezone.utc)
         for name, sha, commit_id, published_at, url, author, repo_id in zip(
             releases[Release.name.name].values,
             releases[Release.sha.name].values,
@@ -143,6 +144,7 @@ def main():
                     commit_hash_prefix=sha,
                     resolved_commit_hash=sha,
                     resolved_commit_node_id=commit_id,
+                    resolved_at=now,
                     name=name,
                     author=author,
                     url=url,
