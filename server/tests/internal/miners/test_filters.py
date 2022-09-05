@@ -1,3 +1,5 @@
+import pytest
+
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 
 
@@ -35,3 +37,32 @@ class TestJIRAFilter:
         f0 = JIRAFilter(1, [], LabelFilter.empty(), {"a"}, set(), set(), False, True)
         f1 = JIRAFilter(1, [], LabelFilter.empty(), {"b"}, set(), set(), False, True)
         assert str(f0) == str(f1)
+
+
+class TestJIRAFilterUnion:
+    def test_different_account(self) -> None:
+        f0 = JIRAFilter(1, [], LabelFilter.empty(), set(), set(), set(), False, False)
+        f1 = JIRAFilter(2, [], LabelFilter.empty(), set(), set(), set(), False, False)
+        with pytest.raises(ValueError):
+            f0 | f1
+
+    def test_base(self) -> None:
+        f0 = JIRAFilter(
+            1, ["proj0"], LabelFilter.empty(), {"epic0"}, set(), {"high", "medium"}, False, False,
+        )
+        f1 = JIRAFilter(
+            1, [], LabelFilter.empty(), set(), {"bug"}, {"low", "medium"}, False, False,
+        )
+
+        expected = JIRAFilter(
+            1, [], LabelFilter.empty(), set(), set(), {"low", "high", "medium"}, False, False,
+        )
+        assert f0 | f1 == expected
+
+    def test_zero_account(self) -> None:
+        f0 = JIRAFilter(1, ["pr0"], LabelFilter.empty(), set(), set(), set(), True, False)
+        f1 = JIRAFilter(0, [], LabelFilter.empty(), set(), set(), set(), False, False)
+
+        expected = JIRAFilter(0, [], LabelFilter.empty(), set(), set(), set(), False, False)
+
+        assert f0 | f1 == expected

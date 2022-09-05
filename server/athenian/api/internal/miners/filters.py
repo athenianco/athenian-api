@@ -35,6 +35,13 @@ class LabelFilter:
         """Return value indicating whether there is at least one included or excluded label."""
         return bool(self.include) or bool(self.exclude)
 
+    def __or__(self, other: LabelFilter) -> LabelFilter:
+        """Return a new LabelFilter which is logical union of this filter with another."""
+        return LabelFilter(
+            _join_filter_sets(self.include, other.include),
+            set() if (not self.exclude or not other.exclude) else self.exclude & other.exclude,
+        )
+
     def __str__(self) -> str:
         """Implement str()."""
         return "[%s, %s]" % (sorted(self.include), sorted(self.exclude))
@@ -114,6 +121,36 @@ class JIRAFilter:
                 self.unmapped,
                 self.custom_projects,
             ],
+        )
+
+    def __or__(self, other: JIRAFilter) -> JIRAFilter:
+        """Return a new JIRAFilter which is logical union of this filter with another."""
+        if (
+            ((self.account != other.account) and self.account and other.account)
+            or self.unmapped != other.unmapped
+            or isinstance(self.epics, bool) != isinstance(other.epics, bool)
+        ):
+            raise ValueError("Cannot union JIRAFilter with different accounts, unmapped or epics")
+
+        if not self.account or not other.account:
+            return self.empty()
+
+        if isinstance(self.epics, bool):
+            epics: bool | set[str] = False
+        else:
+            epics = _join_filter_sets(self.epics, other.epics)
+
+        projects = list(_join_filter_sets(set(self.projects), set(other.projects)))
+
+        return JIRAFilter(
+            self.account,
+            projects,
+            self.labels | other.labels,
+            epics,
+            _join_filter_sets(self.issue_types, other.issue_types),
+            _join_filter_sets(self.priorities, other.priorities),
+            bool(projects),
+            self.unmapped,
         )
 
     def __str__(self) -> str:
@@ -205,3 +242,9 @@ class JIRAFilter:
     def replace(self, **kwargs: Any) -> JIRAFilter:
         """Return a new  JIRAFilter with some fields replaced."""
         return dataclasses.replace(self, **kwargs)
+
+
+def _join_filter_sets(set_a: set, set_b) -> set:
+    if (not set_a) or (not set_b):
+        return set()
+    return set_a | set_b
