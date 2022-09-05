@@ -49,7 +49,6 @@ from athenian.api.internal.miners.github.release_load import (
     set_matched_by_from_release_match,
 )
 from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
-from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.internal.miners.types import (
     PRParticipants,
     PRParticipationKind,
@@ -62,7 +61,6 @@ from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     Base as MetadataGitHubBase,
     Branch,
-    NodePullRequestJiraIssues,
     PullRequest,
     Release,
 )
@@ -695,33 +693,12 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         return prs
 
 
-class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
-    """Mapper of pull requests to JIRA tickets."""
-
-    @classmethod
-    @sentry_span
-    async def load_ids(
-        cls,
-        prs: Collection[int],
-        meta_ids: Tuple[int, ...],
-        mdb: morcilla.Database,
-    ) -> Dict[int, str]:
-        """Fetch the mapping from PR node IDs to JIRA issue IDs."""
-        model = NodePullRequestJiraIssues
-        cached_df = mdb.cache.dfs[MCID.jira_mapping]
-        df = cached_df.get_dfs(meta_ids)
-        mask = df[model.node_id.name].isin(prs) & df[model.node_acc.name].isin(meta_ids)
-        mapping = cached_df.filter(meta_ids, mask)
-        return dict(zip(mapping[model.node_id.name].values, mapping[model.jira_id.name].values))
-
-
 class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
     pr_miner = PreloadedPullRequestMiner
     branch_miner = PreloadedBranchMiner
     unfresh_pr_facts_fetcher = PreloadedUnfreshPullRequestFactsFetcher
-    pr_jira_mapper = PreloadedPullRequestJiraMapper
     done_prs_facts_loader = PreloadedDonePRFactsLoader
     load_delta = 10
 
