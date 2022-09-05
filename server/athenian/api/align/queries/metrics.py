@@ -162,7 +162,7 @@ TeamMetricsResult = dict[Interval, dict[str, dict[int, object]]]
 class RequestedTeamDetails:
     """Team members + all team-specific filters."""
 
-    members: list[int]
+    members: Sequence[int]
     repositories: Optional[tuple[str, ...]]
     # add more filters here
 
@@ -201,7 +201,7 @@ async def calculate_team_metrics(
     requests = _simplify_requests(requests)
     QUANTILES = (0, 0.95)
     settings = Settings.from_account(account, sdb, mdb, cache, slack)
-    jira_map = asyncio.create_task(
+    jira_map_task = asyncio.create_task(
         load_mapped_jira_users(
             account,
             set(
@@ -223,9 +223,9 @@ async def calculate_team_metrics(
     (branches, default_branches), logical_settings, _ = await gather(
         BranchMiner.extract_branches(all_repos, prefixer, meta_ids, mdb, cache),
         settings.list_logical_repositories(prefixer),
-        jira_map,
+        jira_map_task,
     )
-    jira_map = jira_map.result()
+    jira_map = jira_map_task.result()
 
     pr_collector = BatchCalcResultCollector()
     release_collector = BatchCalcResultCollector()
