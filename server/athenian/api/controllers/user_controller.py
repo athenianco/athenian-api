@@ -97,13 +97,14 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
     for user in users:
         role = admins if user[UserAccount.is_admin.name] else regulars
         role.append(user[UserAccount.user_id.name])
-    tasks = [
-        request.app["auth"].get_users(regulars + admins),
-        get_account_organizations(id, request.sdb, request.mdb, request.cache),
-        _get_account_jira(id, request.sdb, request.mdb, request.cache),
-    ]
     with sentry_sdk.start_span(op="fetch"):
-        users, orgs, jira = await asyncio.gather(*tasks, return_exceptions=True)
+        # do not change to athenian gather(), we require return_exceptions=True
+        users, orgs, jira = await asyncio.gather(
+            request.app["auth"].get_users(regulars + admins),
+            get_account_organizations(id, request.sdb, request.mdb, request.cache),
+            _get_account_jira(id, request.sdb, request.mdb, request.cache),
+            return_exceptions=True,
+        )
     # not orgs! The account is probably being installed.
     # not jira! It raises ResponseError if no JIRA installation exists.
     if isinstance(users, Exception):

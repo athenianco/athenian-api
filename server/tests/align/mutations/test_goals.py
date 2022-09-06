@@ -25,7 +25,6 @@ from tests.testutils.auth import mock_auth0
 from tests.testutils.db import (
     assert_existing_row,
     assert_missing_row,
-    count,
     model_insert_stmt,
     models_insert,
 )
@@ -215,34 +214,6 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
         assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
         await assert_missing_row(sdb, Goal, account_id=1)
-
-    async def test_duplicated_dates(self, sdb: Database) -> None:
-        await models_insert(
-            sdb,
-            GoalFactory(
-                name="Goal0",
-                valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
-                expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
-            ),
-            TeamFactory(id=100),
-        )
-        variables = {
-            "createGoalInput": self._mk_input(
-                name="Goal0",
-                validFrom="2021-01-01",
-                expiresAt="2021-03-31",
-                teamGoals=[
-                    {TeamGoalInputFields.teamId: 100, TeamGoalInputFields.target: {"int": 0}},
-                ],
-            ),
-            "accountId": 1,
-        }
-        res = await self._request(variables)
-        assert_extension_error(
-            res, "There is an existing goal with the same name for the same time interval",
-        )
-
-        assert (await count(sdb, Goal, Goal.account_id == 1)) == 1
 
     async def test_bad_repositories(self, sdb: Database) -> None:
         await models_insert(
