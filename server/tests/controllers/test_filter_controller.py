@@ -379,47 +379,49 @@ async def test_filter_contributors_no_repos(client, headers, in_):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_contributors
-async def test_filter_contributors(client, headers):
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "timezone": 60,
-        "account": 1,
-        "in": ["github.com/src-d/go-git"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/contributors", headers=headers, json=body,
-    )
-    assert response.status == 200
-    contribs = await response.json()
-    assert len(contribs) == 199
-    assert len(set(c["login"] for c in contribs)) == len(contribs)
-    assert all(c["login"].startswith("github.com/") for c in contribs)
-    contribs = {c["login"]: c for c in contribs}
-    assert "github.com/mcuadros" in contribs
-    assert "github.com/author_login" not in contribs
-    assert "github.com/committer_login" not in contribs
-    assert contribs["github.com/mcuadros"]["avatar"]
-    assert contribs["github.com/mcuadros"]["name"] == "Máximo Cuadros"
-    topics = set()
-    for c in contribs.values():
-        for v in c["updates"]:
-            topics.add(v)
-    assert topics == {
-        "prs",
-        "commenter",
-        "commit_author",
-        "commit_committer",
-        "reviewer",
-        "releaser",
-    }
-    body["in"] = ["github.com/src-d/gitbase"]
-    response = await client.request(
-        method="POST", path="/v1/filter/contributors", headers=headers, json=body,
-    )
-    assert response.status == 200
-    contribs = await response.json()
-    assert contribs == []
+async def test_filter_contributors_smoke(client, headers, client_cache):
+    for _ in range(2):
+        body = {
+            "date_from": "2015-10-13",
+            "date_to": "2020-01-23",
+            "timezone": 60,
+            "account": 1,
+            "in": ["github.com/src-d/go-git"],
+        }
+        response = await client.request(
+            method="POST", path="/v1/filter/contributors", headers=headers, json=body,
+        )
+        assert response.status == 200
+        contribs = await response.json()
+        assert len(contribs) == 199
+        assert len(set(c["login"] for c in contribs)) == len(contribs)
+        assert all(c["login"].startswith("github.com/") for c in contribs)
+        contribs = {c["login"]: c for c in contribs}
+        assert "github.com/mcuadros" in contribs
+        assert contribs["github.com/mcuadros"]["updates"]["releaser"] == 45
+        assert "github.com/author_login" not in contribs
+        assert "github.com/committer_login" not in contribs
+        assert contribs["github.com/mcuadros"]["avatar"]
+        assert contribs["github.com/mcuadros"]["name"] == "Máximo Cuadros"
+        topics = set()
+        for c in contribs.values():
+            for v in c["updates"]:
+                topics.add(v)
+        assert topics == {
+            "prs",
+            "commenter",
+            "commit_author",
+            "commit_committer",
+            "reviewer",
+            "releaser",
+        }
+        body["in"] = ["github.com/src-d/gitbase"]
+        response = await client.request(
+            method="POST", path="/v1/filter/contributors", headers=headers, json=body,
+        )
+        assert response.status == 200
+        contribs = await response.json()
+        assert contribs == []
 
 
 # TODO: fix response validation against the schema
