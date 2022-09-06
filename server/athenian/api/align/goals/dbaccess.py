@@ -17,7 +17,6 @@ from athenian.api.db import (
     Row,
     conn_in_transaction,
     dialect_specific_insert,
-    integrity_errors,
 )
 from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
@@ -61,12 +60,7 @@ async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -
     await _validate_goal_creation_info(creation_info, sdb_conn)
 
     goal_value = creation_info.goal.create_defaults().explode()
-    try:
-        new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
-    except integrity_errors:  # uc_goal_name constraint can fail here
-        raise GoalMutationError(
-            "There is an existing goal with the same name for the same time interval",
-        )
+    new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
 
     team_goals_values = [
         {

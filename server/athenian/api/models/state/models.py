@@ -409,9 +409,6 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     """Goal - A metric target for a team."""
 
     __tablename__ = "goals"
-    __table_args__ = (
-        UniqueConstraint("account_id", "name", "valid_from", "expires_at", name="uc_goal_name"),
-    )
 
     id = Column(Integer(), primary_key=True)
     account_id = Column(
