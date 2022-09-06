@@ -103,7 +103,8 @@ class JIRAFilter:
     custom_projects: bool  # PRs must be mapped to any issue in `projects`
     unmapped: bool  # select everything but the mapped PRs
 
-    def __post_init(self) -> None:
+    def __post_init__(self) -> None:
+        """Apply post init validation."""
         if self.epics is True:
             raise ValueError("epics must be a set of strings or `False`")
 
@@ -144,7 +145,7 @@ class JIRAFilter:
             assert not isinstance(other.epics, bool)
             epics = _join_filter_sets(self.epics, other.epics)
 
-        projects = _join_filter_sets(self.projects, other.projects)
+        projects = self.projects | other.projects  # guaranteed to be filled in both
 
         return JIRAFilter(
             self.account,
@@ -153,7 +154,7 @@ class JIRAFilter:
             epics,
             _join_filter_sets(self.issue_types, other.issue_types),
             _join_filter_sets(self.priorities, other.priorities),
-            bool(projects),
+            True,
             self.unmapped,
         )
 
@@ -240,6 +241,8 @@ class JIRAFilter:
         return cls.empty().replace(
             account=jira_config.acc_id,
             projects=list(jira_config.projects),
+            # TODO: sometimes JIRAFilter is built from a JIRAConfig after projects have been
+            # manually restricted there, so setting False here is not possible
             custom_projects=True,
         )
 
