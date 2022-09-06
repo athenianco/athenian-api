@@ -5,6 +5,7 @@ from typing import Any, Mapping, Optional, Sequence, Type, Union
 
 import numpy as np
 import pandas as pd
+from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -14,6 +15,7 @@ from athenian.api.models.metadata.github import (
     PullRequestReview,
     Release,
 )
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.typing_utils import numpy_struct
 
 
@@ -73,6 +75,20 @@ class JIRAEntityToFetch(IntEnum):
         for v in cls:
             mask |= v
         return mask
+
+    @classmethod
+    def to_columns(cls, value: int) -> list[InstrumentedAttribute]:
+        """Return the `model`'s columns corresponding to the `value`."""
+        result = []
+        if value & cls.ISSUES:
+            result.append(Issue.key)
+        if value & cls.PROJECTS:
+            result.append(Issue.project_id)
+        if value & cls.PRIORITIES:
+            result.append(Issue.priority_id)
+        if value & cls.TYPES:
+            result.append(Issue.type_id)
+        return result
 
 
 class Property(IntEnum):
@@ -256,6 +272,23 @@ s = None
 
 
 @numpy_struct
+class PullRequestJIRADetails:
+    """Extra JIRA information loaded for pull requests."""
+
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        ids: ["S24"]  # noqa: F821
+        projects: ["S8"]  # noqa: F821
+        priorities: ["S8"]  # noqa: F821
+        types: ["S8"]  # noqa: F821
+
+
+@numpy_struct
 class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
@@ -294,10 +327,7 @@ class PullRequestFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
-        jira_ids: list[str]
-        jira_priorities: [ascii]
-        jira_projects: [ascii]
-        jira_types: [ascii]
+        jira: PullRequestJIRADetails
         repository_full_name: str
         author: str
         merger: str
@@ -451,7 +481,7 @@ class DAG:
         We generate `dtype` from this spec.
         """
 
-        hashes: ["S40"]  # noqa
+        hashes: ["S40"]  # noqa: F821
         vertexes: [np.uint32]
         edges: [np.uint32]
 

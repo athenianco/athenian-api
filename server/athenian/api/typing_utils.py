@@ -2,7 +2,18 @@ import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
 import types
-from typing import Any, Callable, Iterable, Iterator, Mapping, NamedTuple, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Iterable,
+    Iterator,
+    Mapping,
+    NamedTuple,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import pandas as pd
@@ -116,8 +127,7 @@ class NumpyStruct(Mapping[str, Any]):
 
     @classmethod
     def from_fields(cls: NST, **kwargs: Any) -> NST:
-        """Initialize a new instance of NumpyStruct from the mapping of immutable field \
-        values."""
+        """Initialize a new instance of NumpyStruct from the dict of [im]mutable field values."""
         arr = np.zeros(1, cls.dtype)
         extra_bytes = []
         offset = cls.dtype.itemsize
@@ -126,9 +136,10 @@ class NumpyStruct(Mapping[str, Any]):
             try:
                 nested_dtype = cls.nested_dtypes[field_name]
             except KeyError:
-                if value is None and field_dtype.char in ("S", "U"):
+                dtype_char = field_dtype.char
+                if value is None and (dtype_char == "S" or dtype_char == "U"):
                     value = ""
-                if field_dtype.char == "M" and isinstance(value, datetime):
+                if dtype_char == "M" and isinstance(value, datetime):
                     value = value.replace(tzinfo=None)
                 arr[field_name] = np.asarray(value, field_dtype)
             else:
@@ -160,9 +171,10 @@ class NumpyStruct(Mapping[str, Any]):
                     )
                 arr[field_name] = pointer
                 offset += len(data)
+        main_view = arr.view(np.byte).data
         if not extra_bytes:
-            return cls(arr.view(np.byte).data)
-        return cls(b"".join(chain([arr.view(np.byte).data], extra_bytes)), **kwargs)
+            return cls(main_view)
+        return cls(b"".join((main_view, *extra_bytes)), **kwargs)
 
     @property
     def data(self) -> bytes:
@@ -353,7 +365,6 @@ def df_from_structs(
                    for better performance.
     :return: Pandas DataFrame with columns set to struct fields.
     """
-    columns = {}
     try:
         if length is None:
             length = len(items)
@@ -365,16 +376,24 @@ def df_from_structs(
         except StopIteration:
             return pd.DataFrame()
         assert isinstance(first_item, NumpyStruct)
-        dtype = first_item.dtype
-        nested_fields = first_item.nested_dtypes
-        coerced_datas = [first_item.coerced_data]
-        for k, v in first_item.items():
-            if k not in dtype.names or k in nested_fields:
-                columns[k] = [v]
+        (
+            dtype,
+            coerced_datas,
+            columns,
+            direct_columns,
+            indirect_columns,
+            nested_fields,
+        ) = _discover_dtype_and_columns(first_item, None)
         for item in items_iter:
             coerced_datas.append(item.coerced_data)
-            for k in columns:
+            for k in direct_columns:
                 columns[k].append(getattr(item, k))
+            for k, sibling_keys in indirect_columns.items():
+                sibling_ns = getattr(item, k)
+                coerced_datas.append(sibling_ns.coerced_data)
+                for sibling_k, full_k in sibling_keys:
+                    columns[full_k].append(getattr(sibling_ns, sibling_k))
+
         table_array = np.frombuffer(b"".join(coerced_datas), dtype=dtype)
         del coerced_datas
     else:
@@ -384,19 +403,26 @@ def df_from_structs(
         except StopIteration:
             return pd.DataFrame()
         assert isinstance(first_item, NumpyStruct)
-        dtype = first_item.dtype
-        nested_fields = first_item.nested_dtypes
-        itemsize = dtype.itemsize
-        coerced_datas = bytearray(itemsize * length)
-        coerced_datas[:itemsize] = first_item.coerced_data
-        for k, v in first_item.items():
-            if k not in dtype.names or k in nested_fields:
-                columns[k] = column = [None] * length
-                column[0] = v
+        (
+            dtype,
+            coerced_datas,
+            columns,
+            direct_columns,
+            indirect_columns,
+            nested_fields,
+        ) = _discover_dtype_and_columns(first_item, length)
+        coerced_pos = dtype.itemsize
         for i, item in enumerate(items_iter, 1):
-            coerced_datas[i * itemsize : (i + 1) * itemsize] = item.coerced_data
-            for k in columns:
+            coerced_data = item.coerced_data
+            coerced_datas[coerced_pos : coerced_pos + len(coerced_data)] = coerced_data
+            for k in direct_columns:
                 columns[k][i] = item[k]
+            for k, sibling_keys in indirect_columns.items():
+                sibling_ns = getattr(item, k)
+                coerced_data = sibling_ns.coerced_data
+                coerced_datas[coerced_pos : coerced_pos + len(coerced_data)] = coerced_data
+                for sibling_k, full_k in sibling_keys:
+                    columns[full_k][i] = getattr(sibling_ns, sibling_k)
         table_array = np.frombuffer(coerced_datas, dtype=dtype)
         del coerced_datas
     for field_name in dtype.names:
@@ -424,6 +450,57 @@ def df_from_structs(
     df = pd.DataFrame.from_dict(columns)
     sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
+
+
+def _discover_dtype_and_columns(
+    first_item: NumpyStruct,
+    length: Optional[int],
+) -> tuple[
+    np.dtype,
+    list[memoryview] | bytearray,
+    dict[str, list[Any]],
+    list[str],
+    dict[str, list[tuple[str, str]]],
+    Collection[str],
+]:
+    columns = {}
+    direct_columns = []
+    dtype = list(first_item.dtype.fields.items())
+    direct_nested_fields = first_item.nested_dtypes
+    nested_fields = direct_nested_fields.keys()
+    coerced_datas = [first_item.coerced_data]
+    indirect_columns = {}
+    for k, v in first_item.items():
+        if k not in dtype.names or k in direct_nested_fields:
+            if isinstance(v, NumpyStruct):
+                for sibling_k, sibling_v in v.dtype.fields.items():
+                    dtype.append((f"{k}_{sibling_k}", sibling_v))
+                coerced_datas.append(v.coerced_data)
+                indirect_columns[k] = cc = []
+                nested_fields |= {f"{k}_{sibling_k}" for sibling_k in v.nested_dtypes}
+                for sibling_k, sibling_v in v.items():
+                    if sibling_k not in v.dtype.names or sibling_k in v.nested_dtypes:
+                        full_k = f"{k}_{sibling_k}"
+                        columns[full_k] = column = [None] * length
+                        column[0] = sibling_v
+                        cc.append((sibling_k, full_k))
+            else:
+                if length is None:
+                    columns[k] = [v]
+                else:
+                    columns[k] = column = [None] * length
+                    column[0] = v
+                direct_columns.append(k)
+    dtype = np.dtype(dtype)
+    if length is not None:
+        itemsize = dtype.itemsize
+        if indirect_columns:
+            first_coerced_data = b"".join(coerced_datas)
+        else:
+            first_coerced_data = coerced_datas[0]
+        coerced_datas = bytearray(itemsize * length)
+        coerced_datas[:itemsize] = first_coerced_data
+    return dtype, coerced_datas, columns, direct_columns, indirect_columns, nested_fields
 
 
 def dataclass_asdict(dataclass_obj: Any) -> Mapping[str, Any]:

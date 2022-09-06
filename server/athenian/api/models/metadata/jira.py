@@ -25,11 +25,12 @@ class Epic(Base):
 class Issue(Base):
     __tablename__ = "issue"
 
-    # TODO(vmarkovtsev): add info={"dtype": "S12", "erase_nulls": True} to PK
-    id = Column(Text, primary_key=True)
+    # Important: if you change the dtypes, must update PullRequestJIRADetails
+    id = Column(Text, primary_key=True, info={"dtype": "S12"})
     project_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     parent_id = Column(Text)
-    key = Column(Text, nullable=False)
+    # there is no max length for the key, our current value is 16 => add some safety bytes
+    key = Column(Text, nullable=False, info={"dtype": "S24", "reset_nulls": True})
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
     type_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})

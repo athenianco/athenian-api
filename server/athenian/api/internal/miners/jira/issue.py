@@ -23,7 +23,11 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFactsMap
+from athenian.api.internal.miners.types import (
+    JIRAEntityToFetch,
+    PullRequestFactsMap,
+    PullRequestJIRADetails,
+)
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -832,7 +836,7 @@ class PullRequestJiraMapper:
         for pr_node_id, jira in jira_map.items():
             for repo in pr_node_ids[pr_node_id]:
                 try:
-                    prs[(pr_node_id, repo)].jira_ids = jira
+                    prs[(pr_node_id, repo)].jira = jira
                 except KeyError:
                     # we removed this PR in JIRA filter
                     continue
@@ -845,15 +849,16 @@ class PullRequestJiraMapper:
         entities: JIRAEntityToFetch | int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> dict[int, list[str]]:
+    ) -> dict[int, PullRequestJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 100:
             node_id_cond = nprji.node_id.in_any_values(prs)
         else:
             node_id_cond = nprji.node_id.in_(prs)
-        rows = await mdb.fetch_all(
-            sql.select([nprji.node_id, Issue.key])
+        columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
+        df = await read_sql_query(
+            sql.select(*columns)
             .select_from(
                 sql.outerjoin(
                     nprji,
@@ -864,17 +869,47 @@ class PullRequestJiraMapper:
                     ),
                 ),
             )
-            .where(
-                sql.and_(
-                    node_id_cond,
-                    nprji.node_acc.in_(meta_ids),
-                ),
-            ),
+            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
+            mdb,
+            columns,
+            index=nprji.node_id.name,
         )
-        result = defaultdict(list)
-        for r in rows:
-            result[r[0]].append(r[1])
-        return result
+        return cls.append_from_df({}, df)
+
+    @classmethod
+    @sentry_span
+    def append_from_df(
+        cls,
+        existing: dict[int, PullRequestJIRADetails],
+        df: pd.DataFrame,
+    ) -> dict[int, PullRequestJIRADetails]:
+        """Add the JIRA details in `df` to `existing` mapping from PR node IDs to JIRA."""
+        pr_node_ids = df.index.get_level_values(0).values
+        order = np.argsort(pr_node_ids)
+        unique_pr_ids, group_counts = np.unique(pr_node_ids[order], return_counts=True)
+        column_map = {
+            PullRequestJIRADetails.f.ids: Issue.key.name,
+            PullRequestJIRADetails.f.projects: Issue.project_id.name,
+            PullRequestJIRADetails.f.priorities: Issue.priority_id.name,
+            PullRequestJIRADetails.f.types: Issue.type_id.name,
+        }
+        empty_cols = {}
+        payload_columns = []
+        for col in JIRAEntityToFetch.to_columns(JIRAEntityToFetch.EVERYTHING()):
+            if col.name not in df:
+                empty_cols[column_map[col.name]] = np.array([], dtype="S")
+            else:
+                payload_columns.append(col.name)
+        pos = 0
+        for pr_id, group_count in zip(unique_pr_ids, group_counts):
+            indexes = order[pos : pos + group_count]
+            pos += group_count
+            # we can deduplicate. shall we? must benchmark the profit.
+            existing[pr_id] = PullRequestJIRADetails.from_fields(
+                **{column_map[c]: df[c].values[indexes] for c in payload_columns},
+                **empty_cols,
+            )
+        return existing
 
 
 def resolve_work_began_and_resolved(

@@ -108,6 +108,7 @@ from athenian.api.internal.miners.types import (
     PRParticipants,
     PRParticipationKind,
     PullRequestFacts,
+    PullRequestJIRADetails,
     ReleaseFacts,
     ReleaseParticipants,
     ReleaseParticipationKind,
@@ -1693,7 +1694,11 @@ class MetricEntriesCalculator:
         else:
             miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
         new_deps = miner.dfs.deployments.copy()
-        new_jira = miner.dfs.jiras.index.copy()
+        new_jira = miner.dfs.jiras[
+            # these columns are copied
+            [c.name for c in JIRAEntityToFetch.to_columns(with_jira & ~JIRAEntityToFetch.ISSUES)]
+        ]
+        new_jira.index = new_jira.index.copy()  # can mutate in the future, must copy the index
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
@@ -1774,21 +1779,21 @@ class MetricEntriesCalculator:
         if with_jira:
             tasks.append(done_jira_map_task)
         done_deps, *done_jira_map = await gather(*tasks)
+        empty_jira = PullRequestJIRADetails.from_fields(
+            **{c: np.array([], dtype="S") for c in PullRequestJIRADetails.f},
+        )
         if with_jira:
             jira_map = done_jira_map[0]
-            for pr, jira_key in zip(
-                new_jira.get_level_values(0).values, new_jira.get_level_values(1).values,
-            ):
-                jira_map.setdefault(pr, []).append(jira_key)
+            if with_jira & JIRAEntityToFetch.ISSUES:
+                new_jira[
+                    JIRAEntityToFetch.to_columns(JIRAEntityToFetch.ISSUES)[0]
+                ] = new_jira.get_level_values(1).values
+            self.pr_jira_mapper.append_from_df(jira_map, new_jira)
             for (node_id, _), f in precomputed_facts.items():
-                try:
-                    f.jira_ids = jira_map[node_id]
-                except KeyError:
-                    continue
+                f.jira = jira_map.get(node_id, empty_jira)
         else:
-            empty_list = []
             for f in precomputed_facts.values():
-                f.jira_ids = empty_list
+                f.jira = empty_jira
 
         # TODO: miner returns in dfs.deployments some PRs included in blacklist,
         # so some PRs can be both in done_deps and new_deps, find out why
