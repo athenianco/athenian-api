@@ -1,9 +1,10 @@
 from collections import Counter, defaultdict
 from datetime import datetime
 from functools import reduce
+from itertools import chain
 import logging
-import marshal
 import operator
+import pickle
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import aiomcache
@@ -12,7 +13,7 @@ import sentry_sdk
 from sqlalchemy import and_, false, func, not_, or_, select, union, union_all
 from sqlalchemy.sql.functions import coalesce
 
-from athenian.api.async_utils import gather
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -43,8 +44,8 @@ from athenian.api.tracing import sentry_span
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
     key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, logical_settings, **_: (  # noqa
         ",".join(sorted(repos)),
         time_from.timestamp() if time_from is not None else "null",
@@ -88,16 +89,16 @@ async def mine_contributors(
     ]
     tasks = [
         BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
-        mdb.fetch_all(
-            select([NodeRepository.node_id]).where(
-                and_(
-                    NodeRepository.name_with_owner.in_(repos), NodeRepository.acc_id.in_(meta_ids),
-                ),
+        read_sql_query(
+            select(NodeRepository.node_id).where(
+                NodeRepository.name_with_owner.in_(repos), NodeRepository.acc_id.in_(meta_ids),
             ),
+            mdb,
+            [NodeRepository.node_id],
         ),
     ]
-    (branches, default_branches), repo_rows = await gather(*tasks)
-    repo_nodes = [r[0] for r in repo_rows]
+    (branches, default_branches), repo_id_df = await gather(*tasks)
+    repo_nodes = repo_id_df[NodeRepository.node_id.name].values
 
     @sentry_span
     async def fetch_author():
@@ -125,21 +126,19 @@ async def mine_contributors(
             prs_opts = [(True, "")]
         released, *main = await gather(
             pdb.fetch_all(
-                select([ghdprf.author, func.count(ghdprf.pr_node_id)])
+                select(ghdprf.author, func.count(ghdprf.pr_node_id))
                 .where(
-                    and_(
-                        ghdprf.format_version == format_version,
-                        ghdprf.repository_full_name.in_(repos),
-                        ghdprf.acc_id == account,
-                        ghdprf.pr_done_at.between(time_from, time_to) if has_times else True,
-                    ),
+                    ghdprf.format_version == format_version,
+                    ghdprf.repository_full_name.in_(repos),
+                    ghdprf.acc_id == account,
+                    ghdprf.pr_done_at.between(time_from, time_to) if has_times else True,
                 )
                 .group_by(ghdprf.author),
             ),
             *(
                 mdb.fetch_all(
-                    select([PullRequest.user_login, func.count(PullRequest.node_id)])
-                    .where(and_(*common_prs_where(), prs_opt))
+                    select(PullRequest.user_login, func.count(PullRequest.node_id))
+                    .where(*common_prs_where(), prs_opt)
                     .group_by(PullRequest.user_login)
                     .with_statement_hint("Rows(repo pr *100)")
                     .with_statement_hint(hint_opt),
@@ -161,15 +160,13 @@ async def mine_contributors(
     async def fetch_reviewer():
         return {
             "reviewer": await mdb.fetch_all(
-                select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
+                select(PullRequestReview.user_login, func.count(PullRequestReview.user_login))
                 .where(
-                    and_(
-                        PullRequestReview.repository_full_name.in_(repos),
-                        PullRequestReview.acc_id.in_(meta_ids),
-                        PullRequestReview.submitted_at.between(time_from, time_to)
-                        if has_times
-                        else True,
-                    ),
+                    PullRequestReview.repository_full_name.in_(repos),
+                    PullRequestReview.acc_id.in_(meta_ids),
+                    PullRequestReview.submitted_at.between(time_from, time_to)
+                    if has_times
+                    else True,
                 )
                 .group_by(PullRequestReview.user_login)
                 .with_statement_hint("Rows(repo prr *100)"),
@@ -180,30 +177,22 @@ async def mine_contributors(
     async def fetch_commit_user():
         tasks = [
             mdb.fetch_all(
-                select([NodeCommit.author_user_id, func.count(NodeCommit.author_user_id)])
+                select(NodeCommit.author_user_id, func.count(NodeCommit.author_user_id))
                 .where(
-                    and_(
-                        NodeCommit.repository_id.in_(repo_nodes),
-                        NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.committed_date.between(time_from, time_to)
-                        if has_times
-                        else True,
-                        NodeCommit.author_user_id.isnot(None),
-                    ),
+                    NodeCommit.repository_id.in_(repo_nodes),
+                    NodeCommit.acc_id.in_(meta_ids),
+                    NodeCommit.committed_date.between(time_from, time_to) if has_times else True,
+                    NodeCommit.author_user_id.isnot(None),
                 )
                 .group_by(NodeCommit.author_user_id),
             ),
             mdb.fetch_all(
-                select([NodeCommit.committer_user_id, func.count(NodeCommit.committer_user_id)])
+                select(NodeCommit.committer_user_id, func.count(NodeCommit.committer_user_id))
                 .where(
-                    and_(
-                        NodeCommit.repository_id.in_(repo_nodes),
-                        NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.committed_date.between(time_from, time_to)
-                        if has_times
-                        else True,
-                        NodeCommit.committer_user_id.isnot(None),
-                    ),
+                    NodeCommit.repository_id.in_(repo_nodes),
+                    NodeCommit.acc_id.in_(meta_ids),
+                    NodeCommit.committed_date.between(time_from, time_to) if has_times else True,
+                    NodeCommit.committer_user_id.isnot(None),
                 )
                 .group_by(NodeCommit.committer_user_id),
             ),
@@ -219,15 +208,13 @@ async def mine_contributors(
     async def fetch_commenter():
         return {
             "commenter": await mdb.fetch_all(
-                select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
+                select(PullRequestComment.user_login, func.count(PullRequestComment.user_login))
                 .where(
-                    and_(
-                        PullRequestComment.repository_full_name.in_(repos),
-                        PullRequestComment.acc_id.in_(meta_ids),
-                        PullRequestComment.created_at.between(time_from, time_to)
-                        if has_times
-                        else True,
-                    ),
+                    PullRequestComment.repository_full_name.in_(repos),
+                    PullRequestComment.acc_id.in_(meta_ids),
+                    PullRequestComment.created_at.between(time_from, time_to)
+                    if has_times
+                    else True,
                 )
                 .group_by(PullRequestComment.user_login)
                 .with_statement_hint("Rows(repo ic *200)"),
@@ -238,15 +225,13 @@ async def mine_contributors(
     async def fetch_merger():
         return {
             "merger": await mdb.fetch_all(
-                select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
+                select(PullRequest.merged_by_login, func.count(PullRequest.merged_by_login))
                 .where(
-                    and_(
-                        *common_prs_where(),
-                        PullRequest.closed,
-                        PullRequest.merged_at.between(time_from, time_to)
-                        if has_times
-                        else PullRequest.merged,
-                    ),
+                    *common_prs_where(),
+                    PullRequest.closed,
+                    PullRequest.merged_at.between(time_from, time_to)
+                    if has_times
+                    else PullRequest.merged,
                 )
                 .group_by(PullRequest.merged_by_login)
                 .with_statement_hint("Rows(repo pr *100)"),
@@ -275,7 +260,7 @@ async def mine_contributors(
                 force_fresh=force_fresh_releases,
             )
             counts = releases[Release.author.name].value_counts()
-            counts = zip(counts.index.values, counts.values)
+            counts = list(zip(counts.index.values, counts.values))
         else:
             # we may load 200,000 releases here, must optimize and sacrifice precision
             prel = PrecomputedRelease
@@ -284,20 +269,27 @@ async def mine_contributors(
             )
             if pdb.url.dialect == "sqlite":
                 query = (
-                    select([prel.author_node_id, func.count(prel.node_id)])
-                    .where(and_(or_(*or_items) if or_items else false(), prel.acc_id == account))
+                    select(prel.author_node_id, func.count(prel.node_id))
+                    .where(or_(*or_items) if or_items else false(), prel.acc_id == account)
                     .group_by(prel.author_node_id)
                 )
+                rows = await pdb.fetch_all(query)
             else:
-                query = union_all(
-                    *(
-                        select([prel.author_node_id, func.count(prel.node_id)])
-                        .where(and_(item, prel.acc_id == account))
-                        .group_by(prel.author_node_id)
-                        for item in or_items
+                queries = [
+                    select(prel.author_node_id, func.count(prel.node_id))
+                    .where(and_(item, prel.acc_id == account))
+                    .group_by(prel.author_node_id)
+                    for item in or_items
+                ]
+                batch_size = 10
+                rows = chain.from_iterable(
+                    await gather(
+                        *(
+                            pdb.fetch_all(union_all(*queries[batch : batch + batch_size]))
+                            for batch in range(0, len(queries), batch_size)
+                        ),
                     ),
                 )
-            rows = await pdb.fetch_all(query)
             user_node_to_login = prefixer.user_node_to_login.get
             counts = [(user_node_to_login(r[0]), r[1]) for r in rows]
         return {
@@ -308,14 +300,15 @@ async def mine_contributors(
     async def fetch_organization_member():
         if time_from is None:
             # only load org members if we request the entire lifetime
-            user_node_ids = [
-                r[0]
-                for r in await mdb.fetch_all(
-                    select([OrganizationMember.child_id]).where(
+            user_node_ids = (
+                await read_sql_query(
+                    select(OrganizationMember.child_id).where(
                         OrganizationMember.acc_id.in_(meta_ids),
                     ),
+                    mdb,
+                    [OrganizationMember.child_id],
                 )
-            ]
+            )[OrganizationMember.child_id.name].values
         else:
             user_node_ids = []
         user_node_to_login = prefixer.user_node_to_login.get
@@ -348,7 +341,7 @@ async def mine_contributors(
     cols = [User.login, User.email, User.avatar_url, User.name, User.node_id]
     with sentry_sdk.start_span(op="SELECT FROM github.api_users"):
         user_details = await mdb.fetch_all(
-            select(cols).where(and_(User.login.in_(stats.keys()), User.acc_id.in_(meta_ids))),
+            select(cols).where(User.login.in_(stats.keys()), User.acc_id.in_(meta_ids)),
         )
 
     contribs = []
@@ -390,17 +383,18 @@ async def load_organization_members(
              2. Map from user node IDs to emails. \
              3. Map from user node IDs to prefixed logins.
     """
-    user_ids = [
-        r[0]
-        for r in await mdb.fetch_all(
-            select([OrganizationMember.child_id]).where(OrganizationMember.acc_id.in_(meta_ids)),
+    user_ids = (
+        await read_sql_query(
+            select(OrganizationMember.child_id).where(OrganizationMember.acc_id.in_(meta_ids)),
+            mdb,
+            [OrganizationMember.child_id],
         )
-    ]
+    )[OrganizationMember.child_id.name].values
     log.info("Discovered %d organization members", len(user_ids))
     user_rows, bots = await gather(
         mdb.fetch_all(
-            select([User.node_id, User.name, User.login, User.html_url, User.email]).where(
-                and_(User.acc_id.in_(meta_ids), User.node_id.in_(user_ids)),
+            select(User.node_id, User.name, User.login, User.html_url, User.email).where(
+                User.acc_id.in_(meta_ids), User.node_id.in_(user_ids),
             ),
         ),
         fetch_bots(account, meta_ids, mdb, sdb, cache),
@@ -422,15 +416,13 @@ async def load_organization_members(
     # the used indexes are rare and have to be read from disk
     signature_rows = await mdb.fetch_all(
         union(
-            select([NodeCommit.author_user_id, NodeCommit.author_name, NodeCommit.author_email])
-            .where(and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.author_user_id.in_(user_ids)))
+            select(NodeCommit.author_user_id, NodeCommit.author_name, NodeCommit.author_email)
+            .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.author_user_id.in_(user_ids))
             .distinct(),
             select(
-                [NodeCommit.committer_user_id, NodeCommit.committer_name, NodeCommit.author_email],
+                NodeCommit.committer_user_id, NodeCommit.committer_name, NodeCommit.author_email,
             )
-            .where(
-                and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.committer_user_id.in_(user_ids)),
-            )
+            .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.committer_user_id.in_(user_ids))
             .distinct(),
         ),
     )
