@@ -1423,7 +1423,7 @@ class TestSetLogicalRepository(Requester):
                 LogicalRepositorySettings.empty(),
                 prefixer,
                 False,
-                False,
+                0,
             )
             await wait_deferred()
         await self._test_set_logical_repository(sdb, 1)
@@ -1441,7 +1441,7 @@ class TestSetLogicalRepository(Requester):
             await settings.list_logical_repositories(prefixer),
             prefixer,
             False,
-            False,
+            0,
         )
         assert (
             df_post[PullRequest.repository_full_name.name].values == "src-d/go-git/alpha"

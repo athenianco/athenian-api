@@ -756,7 +756,7 @@ async def test_load_precomputed_done_times_deployments(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     time_from = datetime(2019, 10, 1, tzinfo=timezone.utc)
@@ -1698,7 +1698,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
@@ -1828,7 +1828,7 @@ async def test_discover_old_merged_unreleased_prs_labels(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)

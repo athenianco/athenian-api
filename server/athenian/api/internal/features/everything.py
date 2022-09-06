@@ -35,6 +35,7 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     participant_columns,
 )
+from athenian.api.internal.miners.types import JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
@@ -111,7 +112,7 @@ async def mine_all_prs(
         ),
         fetch_repository_environments(repos, None, prefixer, account, rdb, cache),
         PullRequestMiner.fetch_pr_deployments(node_ids, account, pdb, rdb),
-        PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
+        PullRequestJiraMapper.append(facts, JIRAEntityToFetch.EVERYTHING(), meta_ids, mdb),
     ]
     df_prs, envs, deps, *_ = await gather(*tasks, op="fetch raw data")
     UnfreshPullRequestFactsFetcher.append_deployments(

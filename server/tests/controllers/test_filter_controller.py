@@ -122,7 +122,7 @@ async def test_filter_repositories_smoke(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -172,7 +172,7 @@ async def test_filter_repositories_exclude_inactive_precomputed(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -322,7 +322,7 @@ async def test_filter_repositories_logical(
         logical_settings,
         prefixer,
         False,
-        False,
+        0,
     )
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -1992,7 +1992,7 @@ async def test_filter_prs_release_ignored(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)

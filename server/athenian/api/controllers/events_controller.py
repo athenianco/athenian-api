@@ -424,7 +424,7 @@ async def _drop_precomputed_event_releases(
         logical_settings,
         prefixer,
         True,
-        False,
+        0,
     )
 
 

@@ -50,7 +50,7 @@ from athenian.api.internal.features.metric_calculator import (
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
-from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from athenian.api.internal.settings import (
     LogicalDeploymentSettings,
     LogicalRepositorySettings,
@@ -1323,7 +1323,7 @@ async def test_calc_pull_request_facts_github_open_precomputed(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -1361,7 +1361,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -1405,7 +1405,7 @@ async def test_calc_pull_request_facts_github_jira(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -1417,13 +1417,13 @@ async def test_calc_pull_request_facts_github_jira(
         set(),
         set(),
         False,
-        False,
+        0,
     )
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 16
 
     args[5] = JIRAFilter.empty()
-    args[-1] = True
+    args[-1] = JIRAEntityToFetch.ISSUES
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
     await wait_deferred()
@@ -1473,7 +1473,7 @@ async def test_calc_pull_request_facts_github_event_releases(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -1509,7 +1509,7 @@ async def test_calc_pull_request_facts_empty(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts.empty
@@ -1617,7 +1617,7 @@ async def real_pr_samples(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     samples = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     return time_from, time_to, samples

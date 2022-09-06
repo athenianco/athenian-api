@@ -791,7 +791,7 @@ async def test_pr_list_miner_filter_labels_pdb(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     prs, _ = await filter_pull_requests(
@@ -883,7 +883,7 @@ async def test_pr_list_miner_deployments_production(
             LogicalRepositorySettings.empty(),
             prefixer,
             False,
-            False,
+            0,
         )
         await wait_deferred()
     prs, _ = await filter_pull_requests(
@@ -1168,7 +1168,7 @@ async def test_fetch_pull_requests_smoke(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     prs1, deps = await filter_pull_requests(

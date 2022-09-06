@@ -1,6 +1,6 @@
 from athenian.api.db import Database
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
-from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
@@ -23,8 +23,8 @@ class TestPullRequestJiraMapper:
                 (10, "repo0"): PullRequestFacts(b""),
                 (11, "repo0"): PullRequestFacts(b""),
             }
-            await PullRequestJiraMapper.append_pr_jira_mapping(
-                prs, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+            await PullRequestJiraMapper.append(
+                prs, JIRAEntityToFetch.ISSUES, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
             )
 
             assert sorted(prs[(10, "repo0")].jira_ids) == ["I20", "I21"]
@@ -45,8 +45,8 @@ class TestPullRequestJiraMapper:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            mapping = await PullRequestJiraMapper.load_pr_jira_mapping(
-                [10, 11, 12, 14], (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+            mapping = await PullRequestJiraMapper.load(
+                [10, 11, 12, 14], JIRAEntityToFetch.ISSUES, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
             )
 
             assert sorted(mapping) == [10, 11, 12]

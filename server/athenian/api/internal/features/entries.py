@@ -102,6 +102,7 @@ from athenian.api.internal.miners.jira.issue import (
     participant_columns,
 )
 from athenian.api.internal.miners.types import (
+    JIRAEntityToFetch,
     JIRAParticipants,
     JIRAParticipationKind,
     PRParticipants,
@@ -123,11 +124,11 @@ unfresh_participants_threshold = 50
 
 
 def _postprocess_cached_facts(
-    result: tuple[dict[str, list[PullRequestFacts]], bool],
-    with_jira_map: bool,
+    result: tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch | int],
+    with_jira: JIRAEntityToFetch | int,
     **_,
-) -> tuple[dict[str, list[PullRequestFacts]], bool]:
-    if with_jira_map and not result[1]:
+) -> tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch]:
+    if (with_jira & result[1]) != with_jira:
         raise CancelCache()
     return result
 
@@ -357,7 +358,7 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            pr_metrics_need_jira_mapping(metrics),
+            JIRAEntityToFetch(pr_metrics_need_jira_mapping(metrics)),
             branches,
             default_branches,
         )
@@ -445,7 +446,8 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            pr_metrics_need_jira_mapping(all_metrics),
+            # FIXME(vmarkovtsev): check JIRA filters
+            JIRAEntityToFetch(pr_metrics_need_jira_mapping(all_metrics)),
             branches,
             default_branches,
         )
@@ -557,7 +559,7 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            False,
+            JIRAEntityToFetch.NOTHING,
             branches,
             default_branches,
         )
@@ -1476,18 +1478,17 @@ class MetricEntriesCalculator:
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         fresh: bool,
-        with_jira_map: bool,
+        with_jira: JIRAEntityToFetch | int,
         branches: Optional[pd.DataFrame] = None,
         default_branches: Optional[dict[str, str]] = None,
     ) -> pd.DataFrame:
         """
         Calculate facts about pull request on GitHub.
 
-        :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the
-                         repos.
         :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
         :param fresh: If the number of done PRs for the time period and filters exceeds \
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
+        :param with_jira: JIRA information to load for each PR.
         :return: PullRequestFacts packed in a Pandas DataFrame.
         """
         df, *_ = await self._calc_pull_request_facts_github(
@@ -1503,7 +1504,7 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            with_jira_map,
+            with_jira,
             branches=branches,
             default_branches=default_branches,
         )
@@ -1530,6 +1531,7 @@ class MetricEntriesCalculator:
         ),
         postprocess=_postprocess_cached_facts,
         cache=lambda self, **_: self._cache,
+        version=2,
     )
     async def _calc_pull_request_facts_github(
         self,
@@ -1545,10 +1547,10 @@ class MetricEntriesCalculator:
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         fresh: bool,
-        with_jira_map: bool,
+        with_jira: JIRAEntityToFetch | int,
         branches: Optional[pd.DataFrame],
         default_branches: Optional[dict[str, str]],
-    ) -> tuple[pd.DataFrame, bool]:
+    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self.branch_miner.extract_branches(
@@ -1609,7 +1611,8 @@ class MetricEntriesCalculator:
                 participants,
                 labels,
                 jira,
-                self.pr_jira_mapper if with_jira_map else None,
+                self.pr_jira_mapper if with_jira else None,
+                with_jira,
                 exclude_inactive,
                 branches,
                 default_branches,
@@ -1623,13 +1626,13 @@ class MetricEntriesCalculator:
                 self._rdb,
                 self._cache,
             )
-            return df_from_structs(facts.values()), with_jira_map
+            return df_from_structs(facts.values()), with_jira
 
-        if with_jira_map:
+        if with_jira:
             # schedule loading the PR->JIRA mapping
             done_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.load_pr_jira_mapping(
-                    precomputed_node_ids, self._meta_ids, self._mdb,
+                self.pr_jira_mapper.load(
+                    precomputed_node_ids, with_jira, self._meta_ids, self._mdb,
                 ),
                 name="load_pr_jira_mapping/done",
             )
@@ -1653,7 +1656,7 @@ class MetricEntriesCalculator:
                 participants,
                 labels,
                 jira,
-                with_jira_map,
+                with_jira,
                 branches,
                 default_branches,
                 exclude_inactive,
@@ -1768,10 +1771,10 @@ class MetricEntriesCalculator:
                 "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts),
             )
         tasks = [done_deployments_task]
-        if with_jira_map:
+        if with_jira:
             tasks.append(done_jira_map_task)
         done_deps, *done_jira_map = await gather(*tasks)
-        if with_jira_map:
+        if with_jira:
             jira_map = done_jira_map[0]
             for pr, jira_key in zip(
                 new_jira.get_level_values(0).values, new_jira.get_level_values(1).values,
@@ -1802,7 +1805,7 @@ class MetricEntriesCalculator:
         all_facts_df = df_from_structs(
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
         )
-        return all_facts_df, with_jira_map
+        return all_facts_df, with_jira
 
 
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
