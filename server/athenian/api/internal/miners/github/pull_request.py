@@ -6,20 +6,7 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
-from typing import (
-    Collection,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    KeysView,
-    List,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Collection, Generator, Iterable, Iterator, KeysView, Mapping, Optional, Union
 
 import aiomcache
 import numpy as np
@@ -88,6 +75,7 @@ from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
+    JIRAEntityToFetch,
     MinedPullRequest,
     PRParticipants,
     PRParticipationKind,
@@ -343,14 +331,14 @@ class PullRequestMiner:
 
     def _deserialize_mine_cache(
         buffer: bytes,
-    ) -> Tuple[
+    ) -> tuple[
         PRDataFrames,
         PullRequestFactsMap,
-        Set[str],
+        set[str],
         PRParticipants,
         LabelFilter,
         JIRAFilter,
-        Dict[str, ReleaseMatch],
+        dict[str, ReleaseMatch],
         asyncio.Event,
     ]:
         stuff = pickle.loads(buffer)
@@ -360,35 +348,35 @@ class PullRequestMiner:
 
     @sentry_span
     def _postprocess_cached_prs(
-        result: Tuple[
+        result: tuple[
             PRDataFrames,
             PullRequestFactsMap,
-            Set[str],
+            set[str],
             PRParticipants,
             LabelFilter,
             JIRAFilter,
-            bool,
-            Dict[str, ReleaseMatch],
+            JIRAEntityToFetch | int,
+            dict[str, ReleaseMatch],
             asyncio.Event,
         ],
         date_to: date,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
-        with_jira_map: bool,
-        pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
+        with_jira: JIRAEntityToFetch | int,
+        pr_blacklist: Optional[tuple[Collection[int], dict[str, list[int]]]],
         truncate: bool,
         **_,
-    ) -> Tuple[
+    ) -> tuple[
         PRDataFrames,
         PullRequestFactsMap,
-        Set[str],
+        set[str],
         PRParticipants,
         LabelFilter,
         JIRAFilter,
-        bool,
-        Dict[str, ReleaseMatch],
+        JIRAEntityToFetch | int,
+        dict[str, ReleaseMatch],
         asyncio.Event,
     ]:
         (
@@ -398,11 +386,11 @@ class PullRequestMiner:
             cached_participants,
             cached_labels,
             cached_jira,
-            cached_with_jira_map,
+            cached_with_jira,
             _,
             _,
         ) = result
-        if with_jira_map and not cached_with_jira_map:
+        if (with_jira & cached_with_jira) != with_jira:
             raise CancelCache()
         cls = PullRequestMiner
         if (
@@ -466,36 +454,36 @@ class PullRequestMiner:
         cls,
         date_from: date,
         date_to: date,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
-        with_jira_map: bool,
+        with_jira: JIRAEntityToFetch | int,
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         updated_min: Optional[datetime],
         updated_max: Optional[datetime],
-        pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
+        pr_blacklist: Optional[tuple[Collection[int], dict[str, list[int]]]],
         truncate: bool,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> Tuple[
+    ) -> tuple[
         PRDataFrames,
         PullRequestFactsMap,
-        Set[str],
+        set[str],
         PRParticipants,
         LabelFilter,
         JIRAFilter,
-        bool,
-        Dict[str, ReleaseMatch],
+        JIRAEntityToFetch | int,
+        dict[str, ReleaseMatch],
         asyncio.Event,
     ]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
@@ -764,7 +752,7 @@ class PullRequestMiner:
                 rdb,
                 cache,
                 truncate=truncate,
-                with_jira=with_jira_map,
+                with_jira=with_jira,
                 extra_releases_task=deployed_releases_task,
                 physical_repositories=physical_repos,
             ),
@@ -793,7 +781,7 @@ class PullRequestMiner:
             participants,
             labels,
             jira,
-            with_jira_map,
+            with_jira,
             matched_bys,
             unreleased_prs_event,
         )
@@ -803,7 +791,7 @@ class PullRequestMiner:
 
     def _deserialize_mine_by_ids_cache(
         buffer: bytes,
-    ) -> Tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
+    ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         dfs, facts = pickle.loads(buffer)
         event = asyncio.Event()
         event.set()
@@ -828,26 +816,26 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         unreleased: Collection[PullRequestID],
-        logical_repositories: Union[Set[str], KeysView[str]],
+        logical_repositories: Union[set[str], KeysView[str]],
         time_to: datetime,
         releases: pd.DataFrame,
-        matched_bys: Dict[str, ReleaseMatch],
+        matched_bys: dict[str, ReleaseMatch],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
-        dags: Dict[str, Tuple[bool, DAG]],
+        default_branches: dict[str, str],
+        dags: dict[str, tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
         truncate: bool = True,
         with_jira: bool = True,
-        physical_repositories: Optional[Union[Set[str], KeysView[str]]] = None,
-    ) -> Tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
+        physical_repositories: Optional[Union[set[str], KeysView[str]]] = None,
+    ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         """
         Fetch PR metadata for certain PRs.
 
@@ -891,27 +879,27 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         unreleased: Collection[PullRequestID],
-        logical_repositories: Union[Set[str], KeysView[str]],
+        logical_repositories: Union[set[str], KeysView[str]],
         time_to: datetime,
         releases: pd.DataFrame,
-        matched_bys: Dict[str, ReleaseMatch],
+        matched_bys: dict[str, ReleaseMatch],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
-        dags: Dict[str, Tuple[bool, DAG]],
+        default_branches: dict[str, str],
+        dags: dict[str, tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
         truncate: bool = True,
-        with_jira: bool = True,
+        with_jira: JIRAEntityToFetch | int = JIRAEntityToFetch.ISSUES,
         extra_releases_task: Optional[asyncio.Task] = None,
-        physical_repositories: Optional[Union[Set[str], KeysView[str]]] = None,
-    ) -> Tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
+        physical_repositories: Optional[Union[set[str], KeysView[str]]] = None,
+    ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         assert prs.index.nlevels == 1
         node_ids = prs.index if len(prs) > 0 else pd.Series([], dtype=int)
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
@@ -1274,28 +1262,28 @@ class PullRequestMiner:
         date_to: date,
         time_from: datetime,
         time_to: datetime,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
-        with_jira_map: bool,
+        with_jira: JIRAEntityToFetch | int,
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
         updated_min: Optional[datetime] = None,
         updated_max: Optional[datetime] = None,
-        pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]] = None,
+        pr_blacklist: Optional[tuple[Collection[int], dict[str, list[int]]]] = None,
         truncate: bool = True,
-    ) -> Tuple["PullRequestMiner", PullRequestFactsMap, Dict[str, ReleaseMatch], asyncio.Event]:
+    ) -> tuple["PullRequestMiner", PullRequestFactsMap, dict[str, ReleaseMatch], asyncio.Event]:
         """
         Mine metadata about pull requests according to the numerous filters.
 
@@ -1310,8 +1298,9 @@ class PullRequestMiner:
                              (OR aggregation). An empty dict means everybody.
         :param labels: PRs must be labeled according to this filter's include & exclude sets.
         :param jira: JIRA filters for those PRs that are matched with JIRA issues.
-        :param with_jira_map: Value indicating whether we must load JIRA issues mapped to PRs. \
-                              This is independent from filtering PRs by `jira`.
+        :param with_jira: Value indicating whether we must load JIRA issues mapped to PRs \
+                          together with related extra information like priorities. \
+                          This is independent of filtering PRs by `jira`.
         :param branches: Preloaded DataFrame with branches in the specified repositories.
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
@@ -1345,7 +1334,7 @@ class PullRequestMiner:
             participants,
             labels,
             jira,
-            with_jira_map,
+            with_jira,
             branches,
             default_branches,
             exclude_inactive,
@@ -1372,7 +1361,7 @@ class PullRequestMiner:
         cls,
         time_from: Optional[datetime],
         time_to: datetime,
-        repositories: Union[Set[str], KeysView[str]],
+        repositories: Union[set[str], KeysView[str]],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
@@ -1380,9 +1369,9 @@ class PullRequestMiner:
         pr_blacklist: Optional[BinaryExpression],
         pr_whitelist: Optional[BinaryExpression],
         branches: pd.DataFrame,
-        dags: Optional[Dict[str, Tuple[bool, DAG]]],
+        dags: Optional[dict[str, tuple[bool, DAG]]],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
@@ -1391,7 +1380,7 @@ class PullRequestMiner:
         updated_max: Optional[datetime] = None,
         fetch_branch_dags_task: Optional[asyncio.Task] = None,
         with_labels: bool = False,
-    ) -> Tuple[pd.DataFrame, Dict[str, Tuple[bool, DAG]], Optional[pd.DataFrame]]:
+    ) -> tuple[pd.DataFrame, dict[str, tuple[bool, DAG]], Optional[pd.DataFrame]]:
         """
         Query pull requests from mdb that satisfy the given filters.
 
@@ -1468,9 +1457,9 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         branches: pd.DataFrame,
-        dags: Dict[str, Tuple[bool, DAG]],
+        dags: dict[str, tuple[bool, DAG]],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         columns=PullRequest,
@@ -1752,14 +1741,14 @@ class PullRequestMiner:
     async def _fetch_branch_dags(
         cls,
         repositories: Iterable[str],
-        dags: Optional[Dict[str, Tuple[bool, DAG]]],
+        dags: Optional[dict[str, tuple[bool, DAG]]],
         branches: pd.DataFrame,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> Dict[str, Tuple[bool, DAG]]:
+    ) -> dict[str, tuple[bool, DAG]]:
         if dags is None:
             dags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
         return await fetch_repository_commits_no_branch_dates(
@@ -1772,20 +1761,20 @@ class PullRequestMiner:
         cls,
         time_from: Optional[datetime],
         time_to: datetime,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
         exclude_inactive: bool,
         pr_blacklist: Optional[BinaryExpression],
         pr_whitelist: Optional[BinaryExpression],
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         cache: Optional[aiomcache.Client],
         columns=PullRequest,
         updated_min: Optional[datetime] = None,
         updated_max: Optional[datetime] = None,
-    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    ) -> tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         assert (updated_min is None) == (updated_max is None)
         filters = [
             (
@@ -1905,16 +1894,16 @@ class PullRequestMiner:
         cls,
         time_from: datetime,
         time_to: datetime,
-        repos: Union[Set[str], KeysView[str]],
+        repos: Union[set[str], KeysView[str]],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         has_logical_repos: bool,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
@@ -1981,7 +1970,7 @@ class PullRequestMiner:
         cls,
         pr_node_ids: Collection[int],
         jira: JIRAFilter,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         cache: Optional[aiomcache.Client],
         columns=PullRequest,
@@ -2059,7 +2048,7 @@ class PullRequestMiner:
         merged_pr_node_ids: Iterable[int],
         open_pr_node_ids: Iterable[int],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
@@ -2234,7 +2223,7 @@ class PullRequestMiner:
         return check_runs
 
     @classmethod
-    async def _upsert_pr_check_runs(cls, values: List[dict], pdb: Database):
+    async def _upsert_pr_check_runs(cls, values: list[dict], pdb: Database):
         expr = (await dialect_specific_insert(pdb))(GitHubPullRequestCheckRuns)
         expr = expr.on_conflict_do_update(
             index_elements=GitHubPullRequestCheckRuns.__table__.primary_key.columns,
@@ -2509,9 +2498,9 @@ class PullRequestMiner:
         model_cls: Base,
         node_ids: Collection[int],
         time_to: datetime,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-        columns: Optional[List[InstrumentedAttribute]] = None,
+        columns: Optional[list[InstrumentedAttribute]] = None,
         created_at=True,
     ) -> pd.DataFrame:
         if columns is not None:
@@ -2572,11 +2561,11 @@ class PullRequestMiner:
     @classmethod
     def _extract_missed_prs(
         cls,
-        ambiguous: Optional[Dict[str, Collection[int]]],
+        ambiguous: Optional[dict[str, Collection[int]]],
         pr_blacklist: Optional[Collection[int]],
         deployed_prs: pd.DataFrame,
-        matched_bys: Dict[str, ReleaseMatch],
-    ) -> Dict[str, np.ndarray]:
+        matched_bys: dict[str, ReleaseMatch],
+    ) -> dict[str, np.ndarray]:
         missed_prs = {}
         if ambiguous is not None and pr_blacklist is not None:
             if isinstance(pr_blacklist, (dict, set)):
@@ -2601,7 +2590,7 @@ class PullRequestMiner:
     @sentry_span
     async def map_deployments_to_prs(
         cls,
-        repositories: Union[Set[str], KeysView[str]],
+        repositories: Union[set[str], KeysView[str]],
         time_from: datetime,
         time_to: datetime,
         participants: PRParticipants,
@@ -2610,13 +2599,13 @@ class PullRequestMiner:
         updated_min: Optional[datetime],
         updated_max: Optional[datetime],
         branches: pd.DataFrame,
-        dags: Optional[Dict[str, Tuple[bool, DAG]]],
+        dags: Optional[dict[str, tuple[bool, DAG]]],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-        pr_blacklist: Optional[List[int]] = None,
+        pr_blacklist: Optional[list[int]] = None,
         fetch_branch_dags_task: Optional[asyncio.Task] = None,
     ) -> pd.DataFrame:
         """Load PRs which were deployed between `time_from` and `time_to` and merged before \
@@ -2693,7 +2682,7 @@ class PullRequestFactsMiner:
     empty_u_array = np.array([], dtype="U")
     empty_bool_array = np.array([], dtype=bool)
 
-    def __init__(self, bots: Set[str]):
+    def __init__(self, bots: set[str]):
         """Require the set of bots to be preloaded."""
         self._bots = np.sort(list(bots)).astype("S")
 

@@ -310,7 +310,7 @@ async def precompute_reposet(
                 logical_settings,
                 prefixer,
                 True,
-                False,
+                0,
                 branches=branches,
                 default_branches=default_branches,
             )

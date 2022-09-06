@@ -1767,7 +1767,7 @@ async def test_jira_metrics_bug_times(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()

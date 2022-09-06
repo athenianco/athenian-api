@@ -9,7 +9,7 @@ from sqlalchemy import delete, select, update
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features import entries
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
@@ -44,7 +44,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
@@ -72,7 +72,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
             LogicalRepositorySettings.empty(),
             prefixer,
             False,
-            False,
+            JIRAEntityToFetch.NOTHING,
         )
         assert len(facts_unfresh) == 222
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -108,7 +108,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
@@ -129,7 +129,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
             LogicalRepositorySettings.empty(),
             prefixer,
             False,
-            False,
+            JIRAEntityToFetch.NOTHING,
         )
         assert len(facts_unfresh) == 6
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -167,7 +167,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        True,
+        JIRAEntityToFetch.ISSUES,
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
@@ -216,7 +216,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             LogicalRepositorySettings.empty(),
             prefixer,
             False,
-            True,
+            JIRAEntityToFetch.ISSUES,
         )
         assert len(facts_unfresh) == 35
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -267,7 +267,7 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
         logical_settings,
         prefixer,
         False,
-        False,
+        JIRAEntityToFetch.NOTHING,
     )
     facts_fresh.sort_values(
         [PullRequestFacts.f.created, PullRequestFacts.f.repository_full_name],
@@ -299,7 +299,7 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
             logical_settings,
             prefixer,
             False,
-            False,
+            JIRAEntityToFetch.NOTHING,
         )
         assert len(facts_unfresh) == count
         facts_unfresh.sort_values(

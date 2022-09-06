@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum, auto
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
+from typing import Any, Mapping, Optional, Sequence, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -32,7 +32,7 @@ class PRParticipationKind(IntEnum):
     RELEASER = auto()
 
 
-PRParticipants = Mapping[PRParticipationKind, Set[str]]
+PRParticipants = Mapping[PRParticipationKind, set[str]]
 
 
 class ReleaseParticipationKind(IntEnum):
@@ -55,6 +55,24 @@ class JIRAParticipationKind(IntEnum):
 
 
 JIRAParticipants = Mapping[JIRAParticipationKind, Sequence[str]]
+
+
+class JIRAEntityToFetch(IntEnum):
+    """JIRA details to load for each PR."""
+
+    NOTHING = 0
+    ISSUES = 1
+    PROJECTS = 1 << 1
+    PRIORITIES = 1 << 2
+    TYPES = 1 << 3
+
+    @classmethod
+    def EVERYTHING(cls) -> int:
+        """Return all the supported JIRA entities."""
+        mask = 0
+        for v in cls:
+            mask |= v
+        return mask
 
 
 class Property(IntEnum):
@@ -124,7 +142,7 @@ class PullRequestJIRAIssueItem:
 
     id: str
     title: str
-    labels: Optional[Set[str]]
+    labels: Optional[set[str]]
     epic: Optional[str]
     type: str
 
@@ -157,15 +175,15 @@ class PullRequestListItem:
     merged: Optional[datetime]
     released: Optional[datetime]
     release_url: str
-    stage_timings: Dict[str, Union[timedelta, Dict[str, timedelta]]]
-    events_time_machine: Optional[Set[PullRequestEvent]]
-    stages_time_machine: Optional[Set[PullRequestStage]]
-    events_now: Set[PullRequestEvent]
-    stages_now: Set[PullRequestStage]
+    stage_timings: dict[str, Union[timedelta, dict[str, timedelta]]]
+    events_time_machine: Optional[set[PullRequestEvent]]
+    stages_time_machine: Optional[set[PullRequestStage]]
+    events_now: set[PullRequestEvent]
+    stages_now: set[PullRequestStage]
     participants: PRParticipants
-    labels: List[Label]
-    jira: Optional[List[PullRequestJIRAIssueItem]]
-    merged_with_failed_check_runs: Optional[List[str]]
+    labels: list[Label]
+    jira: Optional[list[PullRequestJIRAIssueItem]]
+    merged_with_failed_check_runs: Optional[list[str]]
     deployments: Optional[np.ndarray]
 
 
@@ -179,17 +197,17 @@ class MinedPullRequest:
     The artificial first index layer makes it is faster to select data belonging to a certain PR.
     """
 
-    pr: Dict[str, Any]
+    pr: dict[str, Any]
     commits: pd.DataFrame
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
     review_requests: pd.DataFrame
     comments: pd.DataFrame
-    release: Dict[str, Any]
+    release: dict[str, Any]
     labels: pd.DataFrame
     jiras: pd.DataFrame
     deployments: pd.DataFrame
-    check_run: Dict[str, Any]
+    check_run: dict[str, Any]
 
     def participant_nodes(self) -> PRParticipants:
         """Collect unique developer node IDs that are mentioned in this pull request."""
@@ -219,7 +237,7 @@ class MinedPullRequest:
         return participants
 
     @staticmethod
-    def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
+    def _extract_people(df: pd.DataFrame, col: str) -> set[str]:
         values = df[col].values
         return set(np.unique(values[np.flatnonzero(values)]).tolist())
 
@@ -233,7 +251,7 @@ class DeploymentConclusion(IntEnum):
 
 
 # avoid F821 in the annotations
-datetime64 = timedelta64 = List
+datetime64 = timedelta64 = list
 s = None
 
 
@@ -276,7 +294,10 @@ class PullRequestFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
-        jira_ids: List[str]
+        jira_ids: list[str]
+        jira_priorities: [ascii]
+        jira_projects: [ascii]
+        jira_types: [ascii]
         repository_full_name: str
         author: str
         merger: str
@@ -349,8 +370,8 @@ class PullRequestFacts:
 
 
 # a PullRequest is identified by the couple (pull_request_node_id, repository_full_name)
-PullRequestID = Tuple[int, str]
-PullRequestFactsMap = Dict[PullRequestID, PullRequestFacts]
+PullRequestID = tuple[int, str]
+PullRequestFactsMap = dict[PullRequestID, PullRequestFacts]
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
@@ -410,7 +431,7 @@ class ReleaseFacts:
 
         node_id: int
         repository_full_name: str
-        prs_title: List[str]
+        prs_title: list[str]
         prs_jira: np.ndarray
         deployments: Optional[np.ndarray]
 
@@ -448,10 +469,10 @@ class CodeCheckRunListStats:
     mean_execution_time: Optional[timedelta]
     stddev_execution_time: Optional[timedelta]
     median_execution_time: Optional[timedelta]
-    count_timeline: List[int]
-    successes_timeline: List[int]
-    mean_execution_time_timeline: List[Optional[timedelta]]
-    median_execution_time_timeline: List[Optional[timedelta]]
+    count_timeline: list[int]
+    successes_timeline: list[int]
+    mean_execution_time_timeline: list[Optional[timedelta]]
+    median_execution_time_timeline: list[Optional[timedelta]]
 
 
 @dataclass(slots=True, frozen=True)
@@ -463,7 +484,7 @@ class CodeCheckRunListItem:
     repository: str
     last_execution_time: datetime
     last_execution_url: str
-    size_groups: List[int]
+    size_groups: list[int]
     total_stats: CodeCheckRunListStats
     prs_stats: CodeCheckRunListStats
 
@@ -487,8 +508,8 @@ class Deployment:
     url: Optional[str]
     started_at: datetime
     finished_at: datetime
-    components: List[DeployedComponent]
-    labels: Optional[Dict[str, Any]]
+    components: list[DeployedComponent]
+    labels: Optional[dict[str, Any]]
 
 
 @numpy_struct

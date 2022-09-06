@@ -2220,7 +2220,7 @@ async def test_override_first_releases_smoke(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)

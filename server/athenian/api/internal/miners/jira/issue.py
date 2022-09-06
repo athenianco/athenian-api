@@ -23,7 +23,7 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.internal.miners.types import PullRequestFactsMap
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFactsMap
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -816,9 +816,11 @@ class PullRequestJiraMapper:
     """Mapper of pull requests to JIRA tickets."""
 
     @classmethod
-    async def append_pr_jira_mapping(
+    @sentry_span
+    async def append(
         cls,
         prs: PullRequestFactsMap,
+        entities: JIRAEntityToFetch | int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> None:
@@ -826,7 +828,7 @@ class PullRequestJiraMapper:
         pr_node_ids = defaultdict(list)
         for node_id, repo in prs:
             pr_node_ids[node_id].append(repo)
-        jira_map = await cls.load_pr_jira_mapping(pr_node_ids, meta_ids, mdb)
+        jira_map = await cls.load(pr_node_ids, entities, meta_ids, mdb)
         for pr_node_id, jira in jira_map.items():
             for repo in pr_node_ids[pr_node_id]:
                 try:
@@ -837,9 +839,10 @@ class PullRequestJiraMapper:
 
     @classmethod
     @sentry_span
-    async def load_pr_jira_mapping(
+    async def load(
         cls,
         prs: Collection[int],
+        entities: JIRAEntityToFetch | int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> dict[int, list[str]]:

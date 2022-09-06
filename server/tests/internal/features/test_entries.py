@@ -20,6 +20,7 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues
 from athenian.api.internal.miners.types import (
+    JIRAEntityToFetch,
     JIRAParticipationKind,
     PRParticipationKind,
     ReleaseParticipationKind,
@@ -69,7 +70,7 @@ class TestCalcPullRequestFactsGithub:
             logical_settings=LogicalRepositorySettings.empty(),
             prefixer=prefixer,
             fresh=False,
-            with_jira_map=False,
+            with_jira=JIRAEntityToFetch.NOTHING,
             branches=branches,
             default_branches=default_branches,
         )
@@ -92,7 +93,7 @@ class TestCalcPullRequestFactsGithub:
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
     @with_defer
-    async def test_cache_with_jira_map(
+    async def test_cache_with_jira_issues(
         self,
         mdb_rw: Database,
         pdb: Database,
@@ -137,14 +138,14 @@ class TestCalcPullRequestFactsGithub:
                 "load_precomputed_done_facts_filters",
                 wraps=calculator.done_prs_facts_loader.load_precomputed_done_facts_filters,
             ) as load_pdb_mock:
-                r_jira0 = await calc(**base_kw, with_jira_map=True)
+                r_jira0 = await calc(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
 
                 assert sorted(r_jira0[r_jira0.node_id == 162990].jira_ids.values[0]) == ["1", "2"]
                 assert r_jira0[r_jira0.node_id == 163027].jira_ids.values[0] == ["1"]
 
-                r_jira1 = await calc(**base_kw, with_jira_map=True)
+                r_jira1 = await calc(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
                 assert sorted(r_jira1[r_jira1.node_id == 162990].jira_ids.values[0]) == [
@@ -153,7 +154,7 @@ class TestCalcPullRequestFactsGithub:
                 ]
                 assert r_jira1[r_jira1.node_id == 163027].jira_ids.values[0] == ["1"]
 
-                await calc(**base_kw, with_jira_map=False)
+                await calc(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
                 assert load_pdb_mock.call_count == 1
 
 

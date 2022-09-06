@@ -1970,7 +1970,7 @@ async def test_mine_pull_requests_event_releases(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     calc = metrics_calculator_factory(1, (6366825,))
     facts1 = await calc.calc_pull_request_facts_github(*args)

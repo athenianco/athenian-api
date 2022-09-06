@@ -57,7 +57,7 @@ async def test_fetch_jira_issues_releases(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        False,
+        0,
     )
     await wait_deferred()
     args = [
