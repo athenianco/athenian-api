@@ -821,12 +821,21 @@ complete_progress = {
         {"fetched": 32, "name": "UnlabeledEvent", "total": 32},
         {"fetched": 1, "name": "UnsubscribedEvent", "total": 1},
         {"fetched": 910, "name": "User", "total": 910},
-        {"fetched": 1, "name": "precomputed", "total": 1},
+        {"fetched": 3572, "name": "precomputed", "total": 3572},
     ],
 }
 
 
-async def test_progress_200(client, headers, app, client_cache):
+async def test_progress_200(client, headers, app, client_cache, sdb):
+    await sdb.execute(
+        update(RepositorySet).values(
+            {
+                RepositorySet.created_at: datetime(2020, 3, 10, 14, tzinfo=timezone.utc),
+                RepositorySet.updated_at: RepositorySet.created_at,
+                RepositorySet.updates_count: RepositorySet.updates_count + 1,
+            },
+        ),
+    )
     for _ in range(2):
         response = await client.request(
             method="GET", path="/v1/invite/progress/1", headers=headers, json={},
@@ -844,9 +853,18 @@ async def test_progress_errors(client, headers, account, code):
     assert response.status == code
 
 
-async def test_progress_idle(client, headers, mdb_rw):
+async def test_progress_idle(client, headers, mdb_rw, sdb):
     await mdb_rw.execute(
         update(FetchProgress).values({FetchProgress.nodes_total: FetchProgress.nodes_total * 2}),
+    )
+    await sdb.execute(
+        update(RepositorySet).values(
+            {
+                RepositorySet.created_at: datetime(2020, 3, 10, 14, tzinfo=timezone.utc),
+                RepositorySet.updated_at: RepositorySet.created_at,
+                RepositorySet.updates_count: RepositorySet.updates_count + 1,
+            },
+        ),
     )
     try:
         response = await client.request(
@@ -855,7 +873,11 @@ async def test_progress_idle(client, headers, mdb_rw):
         assert response.status == 200
         body = json.loads((await response.read()).decode("utf-8"))
         idle_complete_progress = complete_progress.copy()
-        idle_complete_progress["finished_date"] = "2020-03-10T17:46:29Z"
+        idle_complete_progress["finished_date"] = "2020-03-10T17:16:29Z"
+        # fmt: off
+        idle_complete_progress["tables"][-1]["fetched"] = \
+            idle_complete_progress["tables"][-1]["total"] = 3991
+        # fmt: on
         assert body == idle_complete_progress
     finally:
         await mdb_rw.execute(
@@ -865,6 +887,7 @@ async def test_progress_idle(client, headers, mdb_rw):
         )
 
 
+@freeze_time("2020-03-10 18:00:00+00")
 async def test_progress_no_precomputed(client, headers, sdb):
     await sdb.execute(
         update(RepositorySet)
@@ -885,7 +908,9 @@ async def test_progress_no_precomputed(client, headers, sdb):
     body = json.loads((await response.read()).decode("utf-8"))
     progress = complete_progress.copy()
     progress["finished_date"] = None
-    progress["tables"][-1]["fetched"] = 0
+    precomputed_table = [t for t in progress["tables"] if t["name"] == "precomputed"][0]
+    precomputed_table["fetched"] = 3571
+    precomputed_table["total"] = 3572
     assert body == progress
 
 

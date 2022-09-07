@@ -408,7 +408,7 @@ async def precompute_reposet(
                 .values(
                     {
                         RepositorySet.precomputed: True,
-                        RepositorySet.updates_count: RepositorySet.updates_count,
+                        RepositorySet.updates_count: RepositorySet.updates_count + 1,
                         RepositorySet.updated_at: datetime.now(timezone.utc),
                     },
                 ),

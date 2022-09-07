@@ -611,44 +611,71 @@ async def _append_precomputed_progress(
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
 ) -> None:
-    assert model.finished_date is not None
-    try:
-        reposets = await load_account_reposets(
-            account,
-            login,
-            [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
-            sdb,
-            mdb,
-            cache,
-            slack,
-            check_progress=False,
-        )
-    except ResponseError:
-        # not ready yet
-        model.finished_date = None
-        return
     precomputed = False
-    created = None
-    for reposet in reposets:
-        if reposet[RepositorySet.name.name] == RepositorySet.ALL:
-            precomputed = reposet[RepositorySet.precomputed.name]
-            created = reposet[RepositorySet.created_at.name].replace(tzinfo=timezone.utc)
-            break
-    if (
-        slack is not None
-        and cache is not None
-        and not precomputed
-        and model.finished_date is not None
-        and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2)
-        and datetime.now(timezone.utc) - created > timedelta(hours=2)
-    ):
-        expires = await sdb.fetch_val(select([Account.expires_at]).where(Account.id == account))
-        await _notify_precomputed_failure(slack, uid, account, model, created, expires, cache)
+    created = model.finished_date
+    fetch_workload = sum(t.fetched for t in model.tables)
+    now = datetime.now(timezone.utc)
+    if model.finished_date is not None:
+        try:
+            reposets = await load_account_reposets(
+                account,
+                login,
+                [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
+                sdb,
+                mdb,
+                cache,
+                slack,
+                check_progress=False,
+            )
+        except ResponseError:
+            # not ready yet
+            model.finished_date = None
+        else:
+            for reposet in reposets:
+                if reposet[RepositorySet.name.name] == RepositorySet.ALL:
+                    precomputed = reposet[RepositorySet.precomputed.name]
+                    created = reposet[RepositorySet.created_at.name].replace(tzinfo=timezone.utc)
+                    break
+    # do not merge with the previous block, we may set model.finished_date = None inside
+    if model.finished_date is not None:
+        estimated_precompute_time = max(
+            model.finished_date.replace(hour=model.finished_date.hour + 1, minute=30, second=0),
+            created.replace(hour=created.hour + 1, minute=30, second=0),
+        )
+        fetch_time = model.finished_date - model.started_date
+        precompute_workload = max(
+            int(fetch_workload * ((estimated_precompute_time - model.finished_date) / fetch_time)),
+            1,
+        )
+        if precomputed:
+            fetched_precomputed = precompute_workload
+        else:
+            if now > estimated_precompute_time:
+                if slack is not None and cache is not None:
+                    expires = await sdb.fetch_val(
+                        select([Account.expires_at]).where(Account.id == account),
+                    )
+                    await _notify_precomputed_failure(
+                        slack, uid, account, model, created, expires, cache,
+                    )
+                fetched_precomputed = precompute_workload - 1
+            else:
+                fetched_precomputed = max(
+                    int(fetch_workload * ((now - model.finished_date) / fetch_time)), 0,
+                )
+            model.finished_date = None
+    else:
+        fetch_time = (now - model.started_date) + timedelta(hours=2, minutes=30)
+        precompute_workload = max(
+            int(fetch_workload * (timedelta(hours=1) / fetch_time)),
+            1,
+        )
+        fetched_precomputed = 0
     model.tables.append(
-        TableFetchingProgress(name="precomputed", fetched=int(precomputed), total=1),
+        TableFetchingProgress(
+            name="precomputed", fetched=fetched_precomputed, total=precompute_workload,
+        ),
     )
-    if not precomputed:
-        model.finished_date = None
 
 
 @cached(
@@ -686,17 +713,16 @@ async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Re
     async def login_loader() -> str:
         return (await request.user()).login
 
-    if model.finished_date is not None:
-        await _append_precomputed_progress(
-            model,
-            id,
-            request.uid,
-            login_loader,
-            request.sdb,
-            request.mdb,
-            request.cache,
-            request.app["slack"],
-        )
+    await _append_precomputed_progress(
+        model,
+        id,
+        request.uid,
+        login_loader,
+        request.sdb,
+        request.mdb,
+        request.cache,
+        request.app["slack"],
+    )
     return model_response(model)
 
 
