@@ -2404,6 +2404,7 @@ async def test_filter_releases_by_tag(client, headers):
         assert release.commits > 0, str(release)
         assert release.url.startswith("http"), str(release)
         assert release.name, str(release)
+        assert len(release.sha or "") == 40, str(release)
         assert release.added_lines > 0, str(release)
         assert release.deleted_lines > 0, str(release)
         assert release.age > timedelta(0), str(release)
@@ -2935,6 +2936,7 @@ async def test_get_releases_smoke(client, headers):
         "data": [
             {
                 "name": "v4.4.0",
+                "sha": "57570e84f8c5739f0f4a59387493e590e709dde9",
                 "repository": "github.com/src-d/go-git",
                 "url": "https://github.com/src-d/go-git/releases/tag/v4.4.0",
                 "published": "2018-05-16T10:34:04Z",
@@ -2977,6 +2979,7 @@ async def test_get_releases_smoke(client, headers):
             },
             {
                 "name": "v4.0.0",
+                "sha": "bf3b1f1fb9e0a04d0f87511a7ded2562b48a19d8",
                 "repository": "github.com/src-d/go-git",
                 "url": "https://github.com/src-d/go-git/releases/tag/v4.0.0",
                 "published": "2018-01-08T13:07:18Z",

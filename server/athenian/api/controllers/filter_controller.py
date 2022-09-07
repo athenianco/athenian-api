@@ -768,6 +768,7 @@ def _filtered_release_from_tuple(
     user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
     return FilteredRelease(
         name=details[Release.name.name],
+        sha=details[Release.sha.name],
         repository=details[Release.repository_full_name.name],
         url=details[Release.url.name],
         publisher=user_node_to_prefixed_login.get(facts.publisher),
@@ -1231,6 +1232,7 @@ async def _build_deployments_response(
                 releases=[
                     FilteredRelease(
                         name=rel_name,
+                        sha=rel_sha,
                         repository=rel_repo,
                         url=rel_url,
                         publisher=rel_author,
@@ -1265,8 +1267,9 @@ async def _build_deployments_response(
                             )
                         ],
                     )
-                    for rel_name, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions, rel_deletions, rel_commits_count, rel_commit_authors, pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids, pr_jiras in zip(  # noqa: E501
+                    for rel_name, rel_sha, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions, rel_deletions, rel_commits_count, rel_commit_authors, pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids, pr_jiras in zip(  # noqa: E501
                         releases_df[Release.name.name].values,
+                        releases_df[Release.sha.name].values,
                         releases_df.index.get_level_values(1).values,
                         releases_df[Release.url.name].values,
                         releases_df[Release.author.name].values,
