@@ -10,6 +10,7 @@ class FilteredRelease(Model):
 
     attribute_types = {
         "name": str,
+        "sha": str,
         "repository": str,
         "url": str,
         "published": datetime,
@@ -23,24 +24,10 @@ class FilteredRelease(Model):
         "deployments": Optional[List[str]],
     }
 
-    attribute_map = {
-        "name": "name",
-        "repository": "repository",
-        "url": "url",
-        "published": "published",
-        "age": "age",
-        "added_lines": "added_lines",
-        "deleted_lines": "deleted_lines",
-        "commits": "commits",
-        "publisher": "publisher",
-        "commit_authors": "commit_authors",
-        "prs": "prs",
-        "deployments": "deployments",
-    }
-
     def __init__(
         self,
         name: Optional[str] = None,
+        sha: Optional[str] = None,
         repository: Optional[str] = None,
         url: Optional[str] = None,
         published: Optional[datetime] = None,
@@ -56,6 +43,7 @@ class FilteredRelease(Model):
         """FilteredRelease - a model defined in OpenAPI
 
         :param name: The name of this FilteredRelease.
+        :param sha: The sha of this FilteredRelease.
         :param repository: The repository of this FilteredRelease.
         :param url: The url of this FilteredRelease.
         :param published: The published of this FilteredRelease.
@@ -68,6 +56,7 @@ class FilteredRelease(Model):
         :param deployments: The deployments of this FilteredRelease.
         """
         self._name = name
+        self._sha = sha
         self._repository = repository
         self._url = url
         self._published = published
@@ -102,6 +91,29 @@ class FilteredRelease(Model):
             raise ValueError("Invalid value for `name`, must not be `None`")
 
         self._name = name
+
+    @property
+    def sha(self) -> str:
+        """Gets the sha of this FilteredRelease.
+
+        Release commit hash.
+
+        :return: The sha of this FilteredRelease.
+        """
+        return self._sha
+
+    @sha.setter
+    def sha(self, sha: str):
+        """Sets the sha of this FilteredRelease.
+
+        Release commit hash.
+
+        :param sha: The sha of this FilteredRelease.
+        """
+        if sha is None:
+            raise ValueError("Invalid value for `sha`, must not be `None`")
+
+        self._sha = sha
 
     @property
     def repository(self) -> str:
