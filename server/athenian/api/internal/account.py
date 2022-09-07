@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from graphlib import CycleError
 from itertools import chain
@@ -609,24 +610,26 @@ async def _fetch_github_installation_progress_db(
     assert isinstance(mdb_conn, Connection)
     async with mdb_conn.raw_connection() as raw_connection:
         mdb_sqlite = isinstance(raw_connection, aiosqlite.Connection)
-    idle_threshold = timedelta(hours=3)
+    idle_threshold = timedelta(hours=2, minutes=30)
     calm_threshold = timedelta(hours=1, minutes=30)
     event_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
+    fetch_repositories = asyncio.create_task(
+        mdb_conn.fetch_val(
+            select(func.count(AccountRepository.repo_graph_id)).where(
+                AccountRepository.acc_id.in_({meta_id for meta_id, _ in event_ids}),
+            ),
+        ),
+        name="_fetch_github_installation_progress_db/fetch_repositories",
+    )
     owner = await get_installation_owner(event_ids[0][0], mdb_conn, cache)
+
     # we don't cache this because the number of repos can dynamically change
     models = []
     for metadata_account_id, event_id in event_ids:
-        repositories = await mdb_conn.fetch_val(
-            select([func.count(AccountRepository.repo_graph_id)]).where(
-                AccountRepository.acc_id == metadata_account_id,
-            ),
-        )
         rows = await mdb_conn.fetch_all(
-            select([FetchProgress]).where(
-                and_(
-                    FetchProgress.event_id == event_id,
-                    FetchProgress.acc_id == metadata_account_id,
-                ),
+            select(FetchProgress).where(
+                FetchProgress.event_id == event_id,
+                FetchProgress.acc_id == metadata_account_id,
             ),
         )
         if not rows:
@@ -674,10 +677,10 @@ async def _fetch_github_installation_progress_db(
             started_date=started_date,
             finished_date=finished_date,
             owner=owner,
-            repositories=repositories,
             tables=tables,
         )
         models.append(model)
+    await fetch_repositories
     if not models:
         raise ResponseError(
             NoSourceDataError(detail="No installation progress exists for account %d." % account),
@@ -699,7 +702,7 @@ async def _fetch_github_installation_progress_db(
         started_date=min(m.started_date for m in models),
         finished_date=finished_date,
         owner=owner,
-        repositories=sum(m.repositories for m in models),
+        repositories=fetch_repositories.result(),
         tables=sorted(tables.values()),
     )
     return model
