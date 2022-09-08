@@ -1,7 +1,10 @@
+import dataclasses
 from dataclasses import dataclass
 from typing import Union
 
-from athenian.api.typing_utils import dataclass_asdict, is_union
+import numpy as np
+
+from athenian.api.typing_utils import dataclass_asdict, df_from_structs, is_union, numpy_struct
 
 
 class TestIsUnion:
@@ -12,7 +15,7 @@ class TestIsUnion:
         assert is_union(int | str)
 
     def test_negative(self) -> None:
-        for obj in (1, None, int, type("A", (), {})):
+        for obj in (1, None, int, type("_SimpleStruct", (), {})):
             assert not is_union(obj)
 
 
@@ -44,3 +47,76 @@ class TestDataclassAsDict:
         b_dct = dataclass_asdict(b)
         assert b_dct == {"a": b.a}
         assert b_dct["a"] is b.a
+
+
+@numpy_struct
+class _SimpleStruct:
+    class Immutable:
+        i: np.uint32
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _NestedDC:
+    f: int
+
+
+@numpy_struct
+class _WithNestedDC:
+    class Immutable:
+        i: np.uint32
+
+    class Optional:
+        n: _NestedDC
+
+
+@numpy_struct
+class _NestedStruct:
+    class Immutable:
+        f: np.uint32
+        f2: np.bool_
+
+
+@numpy_struct
+class _WithNestedStruct:
+    class Immutable:
+        i: np.uint32
+
+    class Optional:
+        n: _NestedStruct
+
+
+class TestDFFromStructs:
+    def test_base(self) -> None:
+        a = _SimpleStruct.from_fields(i=3)
+        df = df_from_structs([a])
+
+        assert list(df.columns) == ["i"]
+        assert list(df.i.values) == [3]
+
+    def test_base_from_iterable(self) -> None:
+        a = _SimpleStruct.from_fields(i=3)
+        b = _SimpleStruct.from_fields(i=5)
+        df = df_from_structs(iter([a, b]))
+
+        assert list(df.columns) == ["i"]
+        assert list(df.i.values) == [3, 5]
+
+    def test_nested_dataclass(self) -> None:
+        a = _WithNestedDC.from_fields(i=1)
+        a.n = _NestedDC(2)
+        a1 = _WithNestedDC.from_fields(i=10)
+        a1.n = _NestedDC(20)
+        df = df_from_structs([a, a1])
+
+        assert list(df.i.values) == [1, 10]
+        assert list(df.n_f.values) == [2, 20]
+
+    def test_nested_dataclass_from_iterable(self) -> None:
+        a = _WithNestedDC.from_fields(i=1)
+        a.n = _NestedDC(2)
+        a1 = _WithNestedDC.from_fields(i=10)
+        a1.n = _NestedDC(20)
+        df = df_from_structs(iter([a, a1]))
+        assert sorted(df.columns) == ["i", "n_f"]
+        assert list(df.i.values) == [1, 10]
+        assert list(df.n_f.values) == [2, 20]
