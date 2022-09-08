@@ -279,7 +279,7 @@ class MetricValues(Model):
         return self._value
 
 
-class _BaseGoalInputFields(metaclass=Enum):
+class _BaseGoalInputFields(metaclass=Enum):  # noqa: PIE795
     name = "name"
     metric = "metric"
     repositories = "repositories"

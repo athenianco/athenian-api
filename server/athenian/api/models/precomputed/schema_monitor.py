@@ -44,5 +44,5 @@ def schedule_pdb_schema_check(
         task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
 
     task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
-    log.info("Scheduled regular pdb schema version checks once per %ds" % interval)
+    log.info("Scheduled regular pdb schema version checks once per %ds", interval)
     return task_box

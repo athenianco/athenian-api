@@ -51,7 +51,7 @@ def launch_defer(delay: float, name: str, detached: bool = False) -> None:
         deferred_count_ptr = _defer_counter.get()
         explicit_launch = _defer_explicit.get()
     except LookupError:
-        log.exception(f"{name}\nPossible reason: called wait_deferred() in an endpoint.")
+        log.exception("%s\nPossible reason: called wait_deferred() in an endpoint.", name)
         return
     if detached:
         explicit_launch = False

@@ -89,5 +89,3 @@ class SQLAlchemyModelFactory(BaseFactory, metaclass=SQLAlchemyModelFactoryMetaCl
     Factory `Model` should derive from sqlalchemy `DeclarativeMeta`.
 
     """
-
-    pass

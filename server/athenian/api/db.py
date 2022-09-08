@@ -235,7 +235,7 @@ def measure_db_overhead_and_retry(
                                 e, (asyncpg.PostgresConnectionError, asyncio.TimeoutError),
                             ):
                                 try:
-                                    connection.raw_connection is not None  # noqa: B015
+                                    connection.raw_connection is not None  # noqa: B015, PIE791
                                 except AssertionError:
                                     # already disconnected
                                     pass

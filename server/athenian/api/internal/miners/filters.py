@@ -61,9 +61,7 @@ class LabelFilter:
                         break
                 else:
                     return False
-        if self.exclude and self.exclude.intersection(labels):
-            return False
-        return True
+        return not (self.exclude and self.exclude.intersection(labels))
 
     @classmethod
     def split(cls, labels: Set[str]) -> Tuple[List[str], List[List[str]]]:
@@ -143,7 +141,7 @@ class JIRAFilter:
             return False
         if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
             return False
-        if self.issue_types and (
+        if self.issue_types and (  # noqa: PIE801
             not other.issue_types or not self.issue_types.issuperset(other.issue_types)
         ):
             return False

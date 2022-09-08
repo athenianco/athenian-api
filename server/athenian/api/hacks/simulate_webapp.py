@@ -431,8 +431,9 @@ async def main(
     start = datetime.utcnow()
     async with aiohttp.ClientSession() as client:
         data = []
+
         user, datapoint = await get_user(client, headers)
-        data.append(datapoint)
+        data.append(datapoint)  # noqa: PIE799
 
         account_id = extract_account_id(user)
 

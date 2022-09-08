@@ -953,7 +953,7 @@ async def dag(mdb):
     if _dag is not None:
         return _dag
     _dag = await fetch_dag(mdb)
-    return _dag
+    return _dag  # _dag is global # noqa: PIE781
 
 
 @pytest.fixture(scope="function")

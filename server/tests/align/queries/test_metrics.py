@@ -86,7 +86,7 @@ class BaseMetricsTest(Requester):
                 MetricParamsFields.metrics: metrics,
                 MetricParamsFields.validFrom: str(validFrom),
                 MetricParamsFields.expiresAt: str(expiresAt),
-                **{MetricParamsFields.repositories: repositories},
+                **{MetricParamsFields.repositories: repositories},  # noqa: PIE800
             },
         }
         return await align_graphql_request(self.client, headers=self.headers, json=body)

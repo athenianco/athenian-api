@@ -971,7 +971,7 @@ async def _issue_flow(
                 try:
                     label = components[component]  # type: JIRALabel
                 except KeyError:
-                    log.error("Missing JIRA component: %s" % component)
+                    log.error("Missing JIRA component: %s", component)
                     continue
                 if label.last_used is None or label.last_used < updated:
                     label.last_used = updated
