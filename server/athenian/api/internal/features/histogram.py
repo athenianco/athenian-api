@@ -72,14 +72,14 @@ def calculate_histogram(
     else:
         is_timedelta = True
         # saturate <1min >30days
-        min = timedelta(minutes=1)
+        min_ = timedelta(minutes=1)
         month = timedelta(days=30)
-        samples[samples < min] = min
+        samples[samples < min_] = min_
         samples[samples > month] = month
         samples = samples.astype(int)
         if ticks is not None:
             ticks = np.asarray(ticks, dtype="timedelta64[s]")
-            ticks[ticks < min] = min
+            ticks[ticks < min_] = min_
             ticks[ticks > month] = month
             ticks = ticks.astype(int)
     iq = np.quantile(samples, [0.25, 0.75])

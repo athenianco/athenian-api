@@ -25,18 +25,6 @@ class User(Model):
         "impersonated_by": Optional[str],
     }
 
-    attribute_map = {
-        "id": "id",
-        "native_id": "native_id",
-        "login": "login",
-        "name": "name",
-        "email": "email",
-        "picture": "picture",
-        "updated": "updated",
-        "accounts": "accounts",
-        "impersonated_by": "impersonated_by",
-    }
-
     def __init__(
         self,
         id: Optional[str] = None,
@@ -90,17 +78,17 @@ class User(Model):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')
-        id = sub or user_id
+        id_ = sub or user_id
         if identities:
             native_id = identities[0]["user_id"]
         else:
-            native_id = id.rsplit("|", 1)[1]
+            native_id = id_.rsplit("|", 1)[1]
         if user_metadata is not None:
             email = user_metadata.get("email", email)
         if email is None:
             email = ""
         user = cls(
-            id=id,
+            id=id_,
             native_id=native_id,
             login=nickname,
             email=email,
