@@ -25,10 +25,9 @@ class Epic(Base):
 class Issue(Base):
     __tablename__ = "issue"
 
-    # TODO(vmarkovtsev): add info={"dtype": "S12", "erase_nulls": True} to PK
-    id = Column(Text, primary_key=True)
+    id = Column(Text, primary_key=True, info={"dtype": "S12"})
     project_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
-    parent_id = Column(Text)
+    parent_id = Column(Text, info={"dtype": "S12", "reset_nulls": True})
     key = Column(Text, nullable=False)
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
@@ -39,7 +38,7 @@ class Issue(Base):
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name), nullable=False,
     )
     components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
-    epic_id = Column("athenian_epic_id", Text)
+    epic_id = Column("athenian_epic_id", Text, info={"dtype": "S12", "reset_nulls": True})
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
     resolved = Column(TIMESTAMP(timezone=True))

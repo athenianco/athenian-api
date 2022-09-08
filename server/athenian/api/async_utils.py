@@ -107,6 +107,31 @@ pd.core.internals.managers.get_block_type = get_block_type
 pd.core.internals.managers.make_block = make_block
 
 
+original_index_new = pd.Index.__new__
+
+
+def _string_friendly_index_new(
+    cls: pd.Index,
+    data=None,
+    dtype=None,
+    copy=False,
+    name=None,
+    tupleize_cols=True,
+    **kwargs,
+) -> pd.Index:
+    if dtype is None and isinstance(data, np.ndarray) and data.dtype.kind in ("S", "U"):
+        # otherwise, pandas will coerce to object dtype; we know better
+        if copy:
+            data = data.copy()
+        return cls._simple_new(data, name)
+    return original_index_new(
+        cls, data=data, dtype=dtype, copy=copy, name=name, tupleize_cols=tupleize_cols, **kwargs,
+    )
+
+
+pd.Index.__new__ = _string_friendly_index_new
+
+
 async def read_sql_query(
     sql: GenerativeSelect,
     con: DatabaseLike,

@@ -483,7 +483,7 @@ class NodePullRequestJiraIssues(
     node_id = Column(BigInteger, primary_key=True)
     node_acc = Column(BigInteger, primary_key=True)
     jira_acc = Column(BigInteger, primary_key=True)
-    jira_id = Column(Text, primary_key=True)
+    jira_id = Column(Text, primary_key=True, info={"dtype": "S12"})
 
 
 class NodeUser(

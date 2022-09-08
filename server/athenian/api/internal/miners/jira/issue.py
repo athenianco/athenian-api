@@ -353,11 +353,11 @@ async def fetch_jira_issues(
         if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
             log.error(
                 "JIRA issues are missing in jira.athenian_issue: %s",
-                ", ".join(issues[Issue.key.name].take(np.nonzero(missing_updated)[0])),
+                ", ".join(issues[Issue.key.name].values[missing_updated]),
             )
             issues = issues.take(np.flatnonzero(~missing_updated))
-    if len(issues.index) >= 20:
-        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
+    if len(issues) >= 20:
+        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
     else:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index.values)
     nullable_repository_id = NodePullRequest.repository_id
@@ -792,19 +792,19 @@ def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
         log.error(
             "account %d has issues in progress but their `work_began` is null: %s",
             acc_id,
-            issue_ids[in_progress_no_work_began].tolist(),
+            [iid.decode() for iid in issue_ids[in_progress_no_work_began]],
         )
     if done_no_work_began.any():
         log.error(
             "account %d has issues done but their `work_began` is null: %s",
             acc_id,
-            issue_ids[done_no_work_began].tolist(),
+            [iid.decode() for iid in issue_ids[done_no_work_began]],
         )
     if done_no_resolved.any():
         log.error(
             "account %d has issues done but their `resolved` is null: %s",
             acc_id,
-            issue_ids[done_no_resolved].tolist(),
+            [iid.decode() for iid in issue_ids[done_no_resolved]],
         )
     old_len = len(df)
     df = df.take(np.flatnonzero(~invalid))

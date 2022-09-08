@@ -12,7 +12,6 @@ from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.jira import Issue
-from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
@@ -36,7 +35,7 @@ async def filter_epics(
     pdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
     extra_columns: Collection[InstrumentedAttribute] = (),
-) -> Tuple[pd.DataFrame, pd.DataFrame, Iterable[Tuple[str, int]], Dict[str, Sequence[int]]]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, Iterable[Tuple[str, int]], Dict[bytes, Sequence[int]]]:
     """
     Fetch JIRA epics and their children issues according to the given filters.
 
@@ -125,7 +124,7 @@ async def filter_epics(
         extra_columns=extra_columns,
     )
     children_parent_ids = children[Issue.parent_id.name].values
-    nnz_parent_mask = is_not_null(children_parent_ids)
+    nnz_parent_mask = children_parent_ids != b""
     subtask_mask = (children[Issue.epic_id.name].values != children_parent_ids) & nnz_parent_mask
     unique_parent_ids, subtask_counts = np.unique(
         children_parent_ids[subtask_mask], return_counts=True,
