@@ -468,18 +468,10 @@ async def fetch_jira_issues(
         node_id, repo = key
         if pr_created_at is not None:
             work_began[i] = np.nanmin(
-                np.array(
-                    [work_began[i], pr_created_at],
-                    dtype=np.datetime64,
-                ),
+                np.array([work_began[i], pr_created_at], dtype=np.datetime64),
             )
-        if (row := released_prs.get(key)) is not None:
-            released[i] = np.nanmax(
-                np.array(
-                    [released[i], row[GitHubDonePullRequestFacts.pr_done_at.name]],
-                    dtype=np.datetime64,
-                ),
-            )
+        if (pr_done_at := released_prs.get(key)) is not None:
+            released[i] = np.nanmax(np.array([released[i], pr_done_at], dtype=np.datetime64))
             continue
         if repo not in release_settings.native:
             # deleted repository, consider the PR as force push dropped
@@ -510,52 +502,59 @@ async def _fetch_released_prs(
     release_settings: ReleaseSettings,
     account: int,
     pdb: Database,
-) -> dict[tuple[int, str], Mapping[str, Any]]:
+) -> dict[tuple[int, str], np.datetime64]:
     ghdprf = GitHubDonePullRequestFacts
-    released_rows = await pdb.fetch_all(
-        sql.select(
-            [
-                ghdprf.pr_node_id,
-                ghdprf.pr_created_at,
-                ghdprf.pr_done_at,
-                ghdprf.repository_full_name,
-                ghdprf.release_match,
-            ],
-        ).where(
+    selected = [
+        ghdprf.pr_node_id,
+        ghdprf.pr_done_at,
+        ghdprf.repository_full_name,
+        ghdprf.release_match,
+    ]
+    released_df = await read_sql_query(
+        sql.select(selected).where(
             sql.and_(
                 ghdprf.pr_node_id.in_(pr_node_ids),
                 ghdprf.acc_id == account,
             ),
         ),
+        pdb,
+        selected,
     )
-    released_by_repo = defaultdict(lambda: defaultdict(dict))
-    for r in released_rows:
-        released_by_repo[r[ghdprf.repository_full_name.name]][r[ghdprf.release_match.name]][
-            r[ghdprf.pr_node_id.name]
-        ] = r
+    pr_node_ids_col = released_df[ghdprf.pr_node_id.name].values
+    pr_done_at_col = released_df[ghdprf.pr_done_at.name].values
+    repos_col = released_df[ghdprf.repository_full_name.name].values
+    match_col = released_df[ghdprf.release_match.name].values
+    order_col = np.char.add(repos_col.astype("U"), match_col.astype("U"))
+    order = np.argsort(order_col)
+    _, group_counts = np.unique(order_col[order], return_counts=True)
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-    for repo, matches in released_by_repo.items():
-        for match, prs in matches.items():
-            if repo not in release_settings.native:
-                for node_id, row in prs.items():
-                    key = (node_id, repo)
-                    try:
-                        if released_prs[key][ghdprf.pr_done_at] < row[ghdprf.pr_done_at]:
-                            released_prs[key] = row
-                    except KeyError:
-                        released_prs[key] = row
-                continue
-            dump = triage_by_release_match(
-                repo, match, release_settings, default_branches, released_prs, ambiguous,
-            )
-            if dump is None:
-                continue
-            for node_id, row in prs.items():
-                dump[(node_id, repo)] = row
+    pos = 0
+    pr_done_at_name = ghdprf.pr_done_at.name
+    for group_count in group_counts:
+        indexes = order[pos : pos + group_count]
+        pos += group_count
+        repo = repos_col[indexes[0]]
+        match = match_col[indexes[0]]
+        if repo not in release_settings.native:
+            for node_id, pr_done_at in zip(pr_node_ids_col[indexes], pr_done_at_col[indexes]):
+                key = (node_id, repo)
+                try:
+                    if released_prs[key][pr_done_at_name] < pr_done_at:
+                        released_prs[key] = pr_done_at
+                except KeyError:
+                    released_prs[key] = pr_done_at
+            continue
+        dump = triage_by_release_match(
+            repo, match, release_settings, default_branches, released_prs, ambiguous,
+        )
+        if dump is None:
+            continue
+        for node_id, pr_done_at in zip(pr_node_ids_col[indexes], pr_done_at_col[indexes]):
+            dump[(node_id, repo)] = pr_done_at
     released_prs.update(ambiguous[ReleaseMatch.tag.name])
-    for key, row in ambiguous[ReleaseMatch.branch.name].items():
-        released_prs.setdefault(key, row)
+    for key, pr_done_at in ambiguous[ReleaseMatch.branch.name].items():
+        released_prs.setdefault(key, pr_done_at)
     return released_prs
 
 
