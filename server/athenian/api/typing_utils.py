@@ -7,6 +7,7 @@ from typing import (
     Callable,
     Iterable,
     Iterator,
+    KeysView,
     Mapping,
     NamedTuple,
     Optional,
@@ -384,8 +385,10 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
             for k in direct_columns:
                 columns[k].append(getattr(item, k))
 
-            for k, (field, subfield) in indirect_items:
-                columns[k].append(getattr(item[field], subfield))
+            for field, subfields in indirect_items:
+                subitem = getattr(item, field)
+                for k, subfield in subfields:
+                    columns[k].append(getattr(subitem, subfield))
 
         table_array = np.frombuffer(b"".join(coerced_datas), dtype=inspector.dtype)
         del coerced_datas
@@ -412,8 +415,10 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
             for k in inspector.direct_columns:
                 columns[k][i] = item[k]
 
-            for k, (field, subfield) in indirect_items:
-                columns[k][i] = getattr(getattr(item, field), subfield)
+            for field, subfields in indirect_items:
+                subitem = getattr(item, field)
+                for k, subfield in subfields:
+                    columns[k][i] = getattr(subitem, subfield)
 
         table_array = np.frombuffer(coerced_datas_buf, dtype=inspector.dtype)
         del coerced_datas_buf
@@ -457,14 +462,14 @@ class _NumpyStructInspector:
         dtype = [(f, v[0]) for f, v in first_item.dtype.fields.items()]
         direct_nested_fields = first_item.nested_dtypes
         coerced_datas = [first_item.coerced_data]
-        indirect_cols = {}
+        indirect_columns = {}
 
         for k, v in first_item.items():
             if k not in first_item.dtype.names or k in direct_nested_fields:
                 if dataclasses.is_dataclass(v):
                     for subfield, subvalue in dataclass_asdict(v).items():
                         full_k = f"{k}_{subfield}"
-                        indirect_cols[full_k] = (k, subfield)
+                        indirect_columns.setdefault(k, []).append((full_k, subfield))
                         columns[full_k] = self._values_list(subvalue, length)
                 else:
                     columns[k] = self._values_list(v, length)
@@ -475,33 +480,33 @@ class _NumpyStructInspector:
         self._columns = columns
         self._direct_columns = direct_columns
         self._nested_fields = direct_nested_fields.keys()
-        self._indirect_columns = indirect_cols
+        self._indirect_columns = indirect_columns
 
     @property
-    def dtype(self):
+    def dtype(self) -> np.dtype:
         return self._dtype
 
     @property
-    def coerced_datas(self):
+    def coerced_datas(self) -> list[memoryview]:
         return self._coerced_datas
 
     @property
-    def columns(self):
+    def columns(self) -> dict[str, list[Any]]:
         return self._columns
 
     @property
-    def direct_columns(self):
+    def direct_columns(self) -> list[str]:
         return self._direct_columns
 
     @property
-    def nested_fields(self):
+    def nested_fields(self) -> KeysView[str]:
         return self._nested_fields
 
     @property
-    def indirect_columns(self):
+    def indirect_columns(self) -> dict[str, list[tuple[str, str]]]:
         return self._indirect_columns
 
-    def get_coerced_datas_buf(self, length: int):
+    def get_coerced_datas_buf(self, length: int) -> bytearray:
         assert self._coerced_datas is not None
         itemsize = self._dtype.itemsize
         first_coerced_data = self._coerced_datas[0]
