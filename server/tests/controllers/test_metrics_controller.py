@@ -1537,9 +1537,7 @@ async def test_developer_metrics_repogroups(client, headers):
     assert len(result.calculated) == 2
     assert all(
         (v > 0 or m == DeveloperMetricID.ACTIVE)
-        for m, v in zip(
-            sorted(sorted(DeveloperMetricID)), result.calculated[0].values[0][0].values,
-        )
+        for m, v in zip(sorted(DeveloperMetricID), result.calculated[0].values[0][0].values)
     )
     assert all(v == 0 for v in result.calculated[1].values[0][0].values)
 

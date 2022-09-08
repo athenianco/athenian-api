@@ -62,7 +62,7 @@ class Auth0:
         audience=AUTH0_AUDIENCE,
         client_id=AUTH0_CLIENT_ID,
         client_secret=AUTH0_CLIENT_SECRET,
-        whitelist: Sequence[str] = tuple(),
+        whitelist: Sequence[str] = (),
         default_user=DEFAULT_USER,
         key=KEY,
         cache: Optional[aiomcache.Client] = None,

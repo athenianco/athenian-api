@@ -309,24 +309,17 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
             for repo in repos:
                 labels[repo].append(label)
         return str(
-            dict(
-                (
-                    r,
-                    {
-                        **(
-                            {"title": pattern.pattern[2:-1]}
-                            if (pattern := self._title_regexps.get(r))
-                            else {}
-                        ),
-                        **(
-                            {"labels": sorted(repo_labels)}
-                            if (repo_labels := labels.get(r))
-                            else {}
-                        ),
-                    },
-                )
+            {
+                r: {
+                    **(
+                        {"title": pattern.pattern[2:-1]}
+                        if (pattern := self._title_regexps.get(r))
+                        else {}
+                    ),
+                    **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
+                }
                 for r in sorted(self._repos - {self._origin})
-            ),
+            },
         )
 
     def match(
@@ -437,20 +430,17 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                 for repo in repos:
                     labels[repo].setdefault(label, []).append(value)
         return str(
-            dict(
-                (
-                    r,
-                    {
-                        **(
-                            {"title": pattern.pattern[2:-1]}
-                            if (pattern := self._title_regexps.get(r))
-                            else {}
-                        ),
-                        **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
-                    },
-                )
+            {
+                r: {
+                    **(
+                        {"title": pattern.pattern[2:-1]}
+                        if (pattern := self._title_regexps.get(r))
+                        else {}
+                    ),
+                    **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
+                }
                 for r in sorted(self._repos - {self._origin})
-            ),
+            },
         )
 
     def title(self, repo: str) -> re.Pattern:

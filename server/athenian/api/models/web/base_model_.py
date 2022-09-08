@@ -137,7 +137,7 @@ class Enum(Slots):
     def __init__(cls, name, bases, dikt):
         """Initialize a new enumeration class type."""
         super().__init__(name, bases, dikt)
-        cls.__members = set(v for k, v in dikt.items() if not k.startswith("__"))
+        cls.__members = {v for k, v in dikt.items() if not k.startswith("__")}
         cls.__members.update(
             chain.from_iterable(getattr(base, "_Enum__members", ()) for base in bases),
         )

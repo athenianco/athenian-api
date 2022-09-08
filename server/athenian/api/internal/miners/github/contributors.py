@@ -328,7 +328,7 @@ async def mine_contributors(
     }
 
     user_roles = user_roles or fetchers_mapping.keys()
-    tasks = set(fetchers_mapping[role] for role in user_roles)
+    tasks = {fetchers_mapping[role] for role in user_roles}
     data = await gather(*(t() for t in tasks))
     stats = defaultdict(dict)
     for dikt in data:

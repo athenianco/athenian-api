@@ -25,8 +25,8 @@ from athenian.api.models.metadata.github import NodeCommitParent, PushCommit
     "property, count",
     [
         (FilterCommitsProperty.EVERYTHING, 596),
-        # (FilterCommitsProperty.NO_PR_MERGES, 596),
-        # (FilterCommitsProperty.BYPASSING_PRS, 289),
+        (FilterCommitsProperty.NO_PR_MERGES, 596),
+        (FilterCommitsProperty.BYPASSING_PRS, 289),
     ],
 )
 @with_defer
@@ -40,7 +40,7 @@ async def test_extract_commits_users(
     prefixer,
     precomputed_deployments,
 ):
-    args = dict(
+    args = dict(  # noqa: C408
         prop=property,
         date_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
         date_to=datetime(2020, 6, 1, tzinfo=timezone.utc),
@@ -98,7 +98,10 @@ async def test_extract_commits_users(
     with_deps = 0
     for dep in commits["deployments"].values:
         with_deps += dep == ["Dummy deployment"]
-    assert with_deps == 395
+    if property != FilterCommitsProperty.BYPASSING_PRS:
+        assert with_deps == 395
+    else:
+        assert with_deps == 258
     await wait_deferred()
     args["only_default_branch"] = True
     commits = await extract_commits(**args)

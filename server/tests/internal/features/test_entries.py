@@ -59,7 +59,7 @@ class TestCalcPullRequestFactsGithub:
         branches, default_branches = await BranchMiner.extract_branches(
             repos, prefixer, meta_ids, mdb, None,
         )
-        base_kwargs = dict(
+        base_kwargs = dict(  # noqa: C408
             repositories={"src-d/go-git"},
             participants={},
             labels=LabelFilter.empty(),

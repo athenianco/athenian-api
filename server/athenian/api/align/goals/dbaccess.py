@@ -385,7 +385,7 @@ async def _validate_team_goal_assignments(
     teams_stmt = sa.select([Team.id]).where(
         sa.and_(Team.id.in_(a.team_id for a in assignments), Team.owner_id == account_id),
     )
-    found_teams = set(r[0] for r in await sdb_conn.fetch_all(teams_stmt))
+    found_teams = {r[0] for r in await sdb_conn.fetch_all(teams_stmt)}
     if missing_teams := [a.team_id for a in assignments if a.team_id not in found_teams]:
         missing_teams_repr = ",".join(map(str, missing_teams))
         raise GoalMutationError(
