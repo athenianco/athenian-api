@@ -59,7 +59,7 @@ class MetricCalculator(Generic[T], ABC):
     """
 
     # Types of dependencies - upstream MetricCalculator-s.
-    deps: tuple[Type["MetricCalculator"], ...] = tuple()
+    deps: tuple[Type["MetricCalculator"], ...] = ()
 
     # specific Metric class
     metric: Type[NumpyMetric] = None

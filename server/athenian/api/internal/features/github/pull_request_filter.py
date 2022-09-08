@@ -173,7 +173,7 @@ class PullRequestListMiner:
         environments: Dict[str, List[str]],
     ) -> Tuple[Dict[str, Dict[str, List[MetricCalculator[int]]]], Iterable[MetricCalculator]]:
         """Intialize PR metric calculators needed to calculate the stage timings."""
-        quantiles = dict(quantiles=(0, 1))
+        quantiles = {"quantiles": (0, 1)}
         ordered_envs = np.empty(len(environments), dtype=object)
         repos_in_env = np.empty(len(environments), dtype=object)
         for env_index, (env, repos) in enumerate(environments.items()):

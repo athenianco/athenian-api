@@ -266,7 +266,7 @@ class TestListTeams(Requester):
         if account == 2:
             expected_teams = []
         else:
-            expected_teams = [t for t in initial_teams]
+            expected_teams = list(initial_teams)
 
         assert len(teams) == len(expected_teams)
 

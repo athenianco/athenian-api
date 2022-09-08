@@ -31,7 +31,7 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
     ]
 
     assert len(contribs) == 212
-    assert len(set(c.login for c in contribs)) == len(contribs)
+    assert len({c.login for c in contribs}) == len(contribs)
     assert all(c.login.startswith("github.com/") for c in contribs)
 
     contribs = {c.login: c for c in contribs}

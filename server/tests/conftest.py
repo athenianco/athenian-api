@@ -804,28 +804,24 @@ async def sample_deployments(rdb):
             name = "%s_%d_%02d_%02d" % (env, year, month, day)
             await rdb.execute(
                 insert(DeploymentNotification).values(
-                    dict(
-                        account_id=1,
-                        name=name,
-                        conclusion=conclusion,
-                        environment=env,
-                        started_at=datetime(year, month, day, tzinfo=timezone.utc),
-                        finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc),
-                    ),
+                    account_id=1,
+                    name=name,
+                    conclusion=conclusion,
+                    environment=env,
+                    started_at=datetime(year, month, day, tzinfo=timezone.utc),
+                    finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 ),
             )
             await rdb.execute(
                 insert(DeployedComponent).values(
-                    dict(
-                        account_id=1,
-                        deployment_name=name,
-                        repository_node_id=40550,
-                        reference=tag,
-                        resolved_commit_node_id=commit,
-                        created_at=datetime.now(timezone.utc),
-                    ),
+                    account_id=1,
+                    deployment_name=name,
+                    repository_node_id=40550,
+                    reference=tag,
+                    resolved_commit_node_id=commit,
+                    created_at=datetime.now(timezone.utc),
                 ),
             )
 

@@ -317,8 +317,8 @@ async def resolve_filter_prs_parameters(
         prefixer,
         logical_settings,
     ) = await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
-    events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
-    stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
+    events = {getattr(PullRequestEvent, e.upper()) for e in (filt.events or [])}
+    stages = {getattr(PullRequestStage, s.upper()) for s in (filt.stages or [])}
     if not events and not stages:
         raise ResponseError(
             InvalidRequestError(

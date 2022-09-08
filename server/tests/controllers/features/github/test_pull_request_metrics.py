@@ -1229,7 +1229,7 @@ async def test_calc_pull_request_metrics_deep_filters(
 
 
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
-    qargs = dict(quantiles=(0, 1))
+    qargs = {"quantiles": (0, 1)}
     ensemble = PullRequestMetricCalculatorEnsemble(
         PullRequestMetricID.PR_CYCLE_TIME,
         PullRequestMetricID.PR_WIP_COUNT,

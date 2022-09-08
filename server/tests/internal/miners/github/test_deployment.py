@@ -215,28 +215,24 @@ async def test_mine_deployments_append(
     name = "%s_%d_%02d_%02d" % ("production", 2019, 11, 2)
     await rdb.execute(
         insert(DeploymentNotification).values(
-            dict(
-                account_id=1,
-                name=name,
-                conclusion="SUCCESS",
-                environment="production",
-                started_at=datetime(2019, 11, 2, tzinfo=timezone.utc),
-                finished_at=datetime(2019, 11, 2, 0, 10, tzinfo=timezone.utc),
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            name=name,
+            conclusion="SUCCESS",
+            environment="production",
+            started_at=datetime(2019, 11, 2, tzinfo=timezone.utc),
+            finished_at=datetime(2019, 11, 2, 0, 10, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         ),
     )
     await rdb.execute(
         insert(DeployedComponent).values(
-            dict(
-                account_id=1,
-                deployment_name=name,
-                repository_node_id=40550,
-                reference="v4.13.1",
-                resolved_commit_node_id=2755244,
-                created_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            deployment_name=name,
+            repository_node_id=40550,
+            reference="v4.13.1",
+            resolved_commit_node_id=2755244,
+            created_at=datetime.now(timezone.utc),
         ),
     )
     deps = await mine_deployments(
@@ -353,28 +349,24 @@ async def test_mine_deployments_only_failed(
         name = "production_%d_%02d_%02d" % (year, month, day)
         await rdb.execute(
             insert(DeploymentNotification).values(
-                dict(
-                    account_id=1,
-                    name=name,
-                    conclusion=conclusion,
-                    environment="production",
-                    started_at=datetime(year, month, day, tzinfo=timezone.utc),
-                    finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                ),
+                account_id=1,
+                name=name,
+                conclusion=conclusion,
+                environment="production",
+                started_at=datetime(year, month, day, tzinfo=timezone.utc),
+                finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             ),
         )
         await rdb.execute(
             insert(DeployedComponent).values(
-                dict(
-                    account_id=1,
-                    deployment_name=name,
-                    repository_node_id=40550,
-                    reference=tag,
-                    resolved_commit_node_id=commit,
-                    created_at=datetime.now(timezone.utc),
-                ),
+                account_id=1,
+                deployment_name=name,
+                repository_node_id=40550,
+                reference=tag,
+                resolved_commit_node_id=commit,
+                created_at=datetime.now(timezone.utc),
             ),
         )
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
@@ -527,28 +519,24 @@ async def test_mine_deployments_no_prs(
     await rdb.execute(delete(DeploymentNotification))
     await rdb.execute(
         insert(DeploymentNotification).values(
-            dict(
-                account_id=1,
-                name="DeployWithoutPRs",
-                conclusion="SUCCESS",
-                environment="production",
-                started_at=datetime(2015, 5, 21, tzinfo=timezone.utc),
-                finished_at=datetime(2015, 5, 21, 0, 10, tzinfo=timezone.utc),
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            name="DeployWithoutPRs",
+            conclusion="SUCCESS",
+            environment="production",
+            started_at=datetime(2015, 5, 21, tzinfo=timezone.utc),
+            finished_at=datetime(2015, 5, 21, 0, 10, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         ),
     )
     await rdb.execute(
         insert(DeployedComponent).values(
-            dict(
-                account_id=1,
-                deployment_name="DeployWithoutPRs",
-                repository_node_id=40550,
-                reference="35b585759cbf29f8ec428ef89da20705d59f99ec",
-                resolved_commit_node_id=2755715,
-                created_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            deployment_name="DeployWithoutPRs",
+            repository_node_id=40550,
+            reference="35b585759cbf29f8ec428ef89da20705d59f99ec",
+            resolved_commit_node_id=2755715,
+            created_at=datetime.now(timezone.utc),
         ),
     )
     deps = await mine_deployments(
@@ -4659,28 +4647,24 @@ async def test_mine_deployments_reversed(
     name = "%s_%d_%02d_%02d" % ("production", 2019, 12, 1)
     await rdb.execute(
         insert(DeploymentNotification).values(
-            dict(
-                account_id=1,
-                name=name,
-                conclusion="SUCCESS",
-                environment="production",
-                started_at=datetime(2019, 12, 1, tzinfo=timezone.utc),
-                finished_at=datetime(2019, 12, 1, 0, 10, tzinfo=timezone.utc),
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            name=name,
+            conclusion="SUCCESS",
+            environment="production",
+            started_at=datetime(2019, 12, 1, tzinfo=timezone.utc),
+            finished_at=datetime(2019, 12, 1, 0, 10, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         ),
     )
     await rdb.execute(
         insert(DeployedComponent).values(
-            dict(
-                account_id=1,
-                deployment_name=name,
-                repository_node_id=40550,
-                reference="v4.13.0",
-                resolved_commit_node_id=2756276,
-                created_at=datetime.now(timezone.utc),
-            ),
+            account_id=1,
+            deployment_name=name,
+            repository_node_id=40550,
+            reference="v4.13.0",
+            resolved_commit_node_id=2756276,
+            created_at=datetime.now(timezone.utc),
         ),
     )
 

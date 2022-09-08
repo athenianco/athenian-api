@@ -1315,33 +1315,29 @@ async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
     mdb = mdb_rw
     await mdb.execute(
         insert(NodePullRequestJiraIssues).values(
-            dict(
-                node_id=1234,
-                node_acc=6366825,
-                jira_acc=1,
-                jira_id="12541",
-            ),
+            node_id=1234,
+            node_acc=6366825,
+            jira_acc=1,
+            jira_id="12541",
         ),
     )
     await mdb.execute(
         insert(PullRequest).values(
-            dict(
-                node_id=1234,
-                acc_id=6366825,
-                repository_full_name="athenianco/athenian-api",
-                repository_node_id=4321,
-                base_ref="base_ref",
-                head_ref="head_ref",
-                number=100500,
-                closed=True,
-                additions=0,
-                deletions=0,
-                changed_files=0,
-                commits=1,
-                user_node_id=0,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            ),
+            node_id=1234,
+            acc_id=6366825,
+            repository_full_name="athenianco/athenian-api",
+            repository_node_id=4321,
+            base_ref="base_ref",
+            head_ref="head_ref",
+            number=100500,
+            closed=True,
+            additions=0,
+            deletions=0,
+            changed_files=0,
+            commits=1,
+            user_node_id=0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         ),
     )
     try:

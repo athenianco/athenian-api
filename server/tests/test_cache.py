@@ -84,14 +84,14 @@ class TestCached:
         def crash(*_):
             raise ValueError
 
-        @cached(exptime=1, serialize=crash, deserialize=pickle.loads, key=lambda **_: tuple())
+        @cached(exptime=1, serialize=crash, deserialize=pickle.loads, key=lambda **_: ())
         async def test(cache):
             return 1
 
         await test(cache)
         await wait_deferred()
 
-        @cached(exptime=1, serialize=pickle.dumps, deserialize=crash, key=lambda **_: tuple())
+        @cached(exptime=1, serialize=pickle.dumps, deserialize=crash, key=lambda **_: ())
         async def test(cache):
             return 1
 

@@ -20,8 +20,8 @@ class LabelFilter:
     ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
         return cls(
-            include=set(s.lower().strip(" \t,") for s in (include or [])),
-            exclude=set(s.lower() for s in (exclude or [])),
+            include={s.lower().strip(" \t,") for s in (include or [])},
+            exclude={s.lower() for s in (exclude or [])},
         )
 
     @classmethod

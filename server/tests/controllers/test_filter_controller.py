@@ -363,7 +363,7 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     assert response.status == 200
     contribs = await response.json()
     assert len(contribs) == 202
-    assert len(set(c["login"] for c in contribs)) == len(contribs)
+    assert len({c["login"] for c in contribs}) == len(contribs)
     assert all(c["login"].startswith("github.com/") for c in contribs)
     contribs = {c["login"]: c for c in contribs}
     assert "github.com/mcuadros" in contribs
@@ -394,7 +394,7 @@ async def test_filter_contributors_smoke(client, headers, client_cache):
         assert response.status == 200
         contribs = await response.json()
         assert len(contribs) == 199
-        assert len(set(c["login"] for c in contribs)) == len(contribs)
+        assert len({c["login"] for c in contribs}) == len(contribs)
         assert all(c["login"].startswith("github.com/") for c in contribs)
         contribs = {c["login"]: c for c in contribs}
         assert "github.com/mcuadros" in contribs

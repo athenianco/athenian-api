@@ -628,7 +628,7 @@ async def gather(
         __tracebackhide__ = True  # noqa: F841
         nonlocal coros_or_futures
         if len(coros_or_futures) == 0:
-            return tuple()
+            return ()
         coros_or_futures = [(cf if cf is not None else dummy()) for cf in coros_or_futures]
         if len(coros_or_futures) == 1:
             return (await coros_or_futures[0],)
