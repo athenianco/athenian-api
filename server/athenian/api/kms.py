@@ -39,7 +39,7 @@ class AthenianKMS:
         else:
             service_file = os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON")
         self._kms = KMS(**evars, service_file=service_file)
-        self.log.info("Using Google KMS %(keyproject)s/%(keyring)s/%(keyname)s" % evars)
+        self.log.info("Using Google KMS %(keyproject)s/%(keyring)s/%(keyname)s", evars)
 
     async def encrypt(self, plaintext: Union[bytes, str]) -> str:
         """Encrypt text using Google KMS."""

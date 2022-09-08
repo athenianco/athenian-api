@@ -3006,8 +3006,7 @@ async def test_deployment_metrics_environments(
         )
         rbody = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + rbody
-        model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(rbody)]
-        return model
+        return [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(rbody)]
 
     model = await request()
     assert len(model) == 1

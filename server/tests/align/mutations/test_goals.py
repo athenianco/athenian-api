@@ -489,8 +489,7 @@ class TestCreateGoals(BaseCreateGoalTest):
     async def _create(self, *args: Any, **kwargs: Any) -> int:
         res = await self._request(*args, **kwargs)
         assert "errors" not in res
-        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
-        return new_goal_id
+        return res["data"]["createGoal"]["goal"]["id"]
 
 
 class BaseRemoveGoalTest(BaseGoalTest):

@@ -266,7 +266,7 @@ def _init_sentry(
         warn("SENTRY_PROJECT")
         return False
     sentry_env = os.getenv("SENTRY_ENV", "development")
-    log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
+    log.info("Sentry: https://[secure]@sentry.io/%s#%s", sentry_project, sentry_env)
 
     aiohttp_traces_sample_rate = float(
         os.getenv("SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0"),

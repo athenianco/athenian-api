@@ -332,8 +332,7 @@ def alternative_facts() -> pd.DataFrame:
     for col in (CheckRun.conclusion, CheckRun.check_suite_conclusion):
         df[col.name] = df[col.name].values.astype("S16")
     df[CheckRun.sha.name] = df[CheckRun.sha.name].values.astype("S40")
-    df = _finalize_check_runs(df, logging.getLogger("pytest.alternative_facts"))
-    return df
+    return _finalize_check_runs(df, logging.getLogger("pytest.alternative_facts"))
 
 
 @pytest.mark.parametrize(

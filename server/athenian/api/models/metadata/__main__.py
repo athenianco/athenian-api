@@ -58,7 +58,7 @@ def main() -> int:
                 session.close()
     for model, exc in errors:
         log.info("=" * 80)
-        log.info("github.%s / %s\n" % (model.__name__, model.__tablename__))
+        log.info("github.%s / %s\n", model.__name__, model.__tablename__)
         log.info("%s\n", exc)
     if not errors:
         # Synchronization level: 100%.

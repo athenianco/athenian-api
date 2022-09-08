@@ -7,6 +7,7 @@ flake8-builtins==1.5.3
 flake8-comprehensions==3.10.0
 flake8-debugger==4.1.2
 flake8-docstrings==1.6.0
+flake8-pie==0.16.0
 flake8-quotes==3.3.1
 flake8-sfs==0.0.3
 flake8==5.0.4
