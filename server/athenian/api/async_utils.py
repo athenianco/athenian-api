@@ -17,6 +17,7 @@ from pandas.core.internals.blocks import (
 )
 from pandas.core.internals.managers import BlockManager
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import Label
@@ -268,22 +269,10 @@ def _build_dtype(
             isinstance(c.type, Integer)
             or (isinstance(c.type, type) and issubclass(c.type, Integer))
         ) and (
-            (
-                info := getattr(
-                    c,
-                    "info",
-                    {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                )
-            ).get("erase_nulls", False)
+            (info := _get_col_info(c)).get("erase_nulls", False)
             or info.get("reset_nulls", False)
-            or (
-                not getattr(c, "nullable", False)
-                and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
-            )
+            or not _get_col_nullable(c)
         ):
-            info = getattr(
-                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-            )
             if info.get("erase_nulls", False):
                 int_erase_nulls.add(c.name)
             elif info.get("reset_nulls", False):
@@ -300,13 +289,7 @@ def _build_dtype(
             body.append((c.name, int_dtype))
         elif (
             isinstance(c.type, String) or (isinstance(c.type, type) and issubclass(c.type, String))
-        ) and (
-            info := getattr(
-                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-            )
-        ).get(
-            "dtype", False,
-        ):
+        ) and ((info := _get_col_info(c)).get("dtype", False)):
             dtype = np.dtype(info["dtype"])
             if info.get("erase_nulls"):
                 str_erase_nulls.add(c.name)
@@ -497,11 +480,7 @@ def _extract_integer_columns(
             or (isinstance(c.type, type) and issubclass(c.type, Integer))
         )
         and (
-            (
-                info := getattr(
-                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                )
-            ).get("erase_nulls", False)
+            (info := _get_col_info(c)).get("erase_nulls", False)
             or info.get("reset_nulls", False)
             or (
                 not getattr(c, "nullable", False)
@@ -511,9 +490,31 @@ def _extract_integer_columns(
     }
 
 
+def _unwrap_col(col: Column):
+    if isinstance(col, Label):
+        return _unwrap_col(col.element)
+    if isinstance(table := getattr(col, "table", None), sa.sql.Alias):
+        try:
+            return getattr(table.element.c, col.name)
+        except AttributeError:
+            pass
+
+    return col
+
+
+def _get_col_info(col: Column):
+    """Get the `info` attribute of the column, unwrapping Label and Alias if needed."""
+    return getattr(_unwrap_col(col), "info", {})
+
+
+def _get_col_nullable(col: Column):
+    """Get the `nullable` attribute of the column, unwrapping Label and Alias if needed."""
+    return getattr(_unwrap_col(col), "nullable", False)
+
+
 def _extract_fixed_string_columns(
     columns: Iterable[Union[Column, str]],
-) -> dict[str, tuple[str, bool]]:
+) -> dict[str, bool | str]:
     return {
         c.name: info["dtype"]
         for c in columns
@@ -523,11 +524,7 @@ def _extract_fixed_string_columns(
                 isinstance(c.type, String)
                 or (isinstance(c.type, type) and issubclass(c.type, String))
             )
-            and (
-                info := getattr(
-                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                )
-            ).get("dtype", False)
+            and (info := _get_col_info(c)).get("dtype", False)
         )
     }
 

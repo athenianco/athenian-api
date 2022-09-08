@@ -1119,6 +1119,7 @@ class PullRequestMiner:
                     ],
                 )
                 df[PullRequest.node_id.name] = df[PullRequest.node_id.name].astype(int)
+                df[_issue.project_id.name] = df[_issue.project_id.name].astype("S8")
                 return df.set_index([PullRequest.node_id.name, _issue.key.name])
             df = await read_sql_query(
                 sql.select(selected)
