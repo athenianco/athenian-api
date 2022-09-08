@@ -222,11 +222,11 @@ def memcached(event_loop, xapp, request):
     )
     client.version_future.cancel()
     trash = []
-    set = client.set
+    set_ = client.set
 
     async def tracked_set(key, value, exptime=0):
         trash.append(key)
-        return await set(key, value, exptime=exptime)
+        return await set_(key, value, exptime=exptime)
 
     client.set = tracked_set
 
