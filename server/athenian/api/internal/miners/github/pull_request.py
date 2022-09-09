@@ -83,6 +83,7 @@ from athenian.api.internal.miners.types import (
     PullRequestFacts,
     PullRequestFactsMap,
     PullRequestID,
+    PullRequestJIRADetails,
     nonemax,
     nonemin,
 )
@@ -1110,6 +1111,10 @@ class PullRequestMiner:
                 _issue_epic.key.label("epic"),
                 _issue.project_id,
             ]
+            if with_jira & JIRAEntityToFetch.TYPES:
+                selected.append(_issue.type_id)
+            if with_jira & JIRAEntityToFetch.PRIORITIES:
+                selected.append(_issue.priority_id)
             if not with_jira:
                 df = pd.DataFrame(
                     columns=[
@@ -1165,7 +1170,7 @@ class PullRequestMiner:
                 .aggregate(lambda s: set(flatten(s)))
             )
             rows = await mdb.fetch_all(
-                sql.select([Component.acc_id, Component.id, Component.name]).where(
+                sql.select(Component.acc_id, Component.id, Component.name).where(
                     sql.or_(
                         *(
                             sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
@@ -2987,6 +2992,20 @@ class PullRequestFactsMiner:
                 names = np.flip(pr.check_run[PullRequestCheckRun.f.name])
                 unique_names, last_encounters = np.unique(names, return_index=True)
                 merged_with_failed_check_runs = unique_names[failed_mask[last_encounters]]
+
+        jira_fields = {"ids": pr.jiras.index.values}
+        for field, col in (
+            (PullRequestJIRADetails.projects, Issue.project_id),
+            (PullRequestJIRADetails.priorities, Issue.priority_id),
+            (PullRequestJIRADetails.types, Issue.type_id),
+        ):
+            field_name = field.__name__
+            col_name = col.name
+            try:
+                jira_fields[field_name] = pr.jiras[col_name].values
+            except KeyError:
+                jira_fields[field_name] = np.array([], dtype="S")
+
         facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
@@ -3015,7 +3034,7 @@ class PullRequestFactsMiner:
             review_comments=human_review_comments,
             regular_comments=human_regular_comments,
             participants=participants,
-            jira_ids=pr.jiras.index.values.tolist(),
+            jira=PullRequestJIRADetails(**jira_fields),
             deployments=pr.deployments.index.get_level_values(1).values,
             environments=environments,
             deployment_conclusions=deployment_conclusions,

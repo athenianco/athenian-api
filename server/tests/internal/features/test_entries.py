@@ -4,6 +4,9 @@ from itertools import chain
 from typing import Any
 from unittest import mock
 
+import numpy as np
+from numpy.testing import assert_array_equal
+
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
@@ -31,6 +34,7 @@ from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMe
 from tests.conftest import build_fake_cache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.time import dt
 
 
@@ -54,26 +58,7 @@ class TestCalcPullRequestFactsGithub:
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
         )
-        prefixer = await Prefixer.load(meta_ids, mdb, None)
-        repos = release_match_setting_tag.native.keys()
-        branches, default_branches = await BranchMiner.extract_branches(
-            repos, prefixer, meta_ids, mdb, None,
-        )
-        base_kwargs = dict(  # noqa: C408
-            repositories={"src-d/go-git"},
-            participants={},
-            labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
-            exclude_inactive=False,
-            bots=set(),
-            release_settings=release_match_setting_tag,
-            logical_settings=LogicalRepositorySettings.empty(),
-            prefixer=prefixer,
-            fresh=False,
-            with_jira=JIRAEntityToFetch.NOTHING,
-            branches=branches,
-            default_branches=default_branches,
-        )
+        base_kwargs = await self._kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb, sdb)
         facts = await calculator.calc_pull_request_facts_github(
             time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
         )
@@ -93,6 +78,46 @@ class TestCalcPullRequestFactsGithub:
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
     @with_defer
+    async def test_with_jira_map(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+        release_match_setting_tag: ReleaseSettings,
+    ) -> None:
+        calculator = MetricEntriesCalculator(
+            1, (DEFAULT_MD_ACCOUNT_ID,), DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, None,
+        )
+        kwargs = await self._kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, sdb)
+        kwargs.update(
+            time_from=dt(2017, 8, 10),
+            time_to=dt(2017, 9, 1),
+            with_jira=JIRAEntityToFetch.EVERYTHING(),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAIssueFactory(
+                    id="20", key="I1", project_id="P1", type_id="T1", priority_id=None,
+                ),
+                md_factory.JIRAIssueFactory(
+                    id="21", key="I2", project_id="P1", type_id="T2", priority_id=None,
+                ),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="21"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            facts = await calculator.calc_pull_request_facts_github(**kwargs)
+
+        pr_facts = facts[facts.node_id == 162990]
+        assert sorted(pr_facts.jira_ids.iloc[0]) == ["I1", "I2"]
+        assert_array_equal(pr_facts.jira_projects.values[0], np.array([b"P1", b"P1"], dtype="S"))
+        assert_array_equal(pr_facts.jira_types.values[0], np.array(["T1", "T2"], dtype="S"))
+        assert_array_equal(pr_facts.jira_priorities.values[0], np.array(["", ""], dtype="S"))
+
+    @with_defer
     async def test_cache_with_jira_issues(
         self,
         mdb_rw: Database,
@@ -105,19 +130,9 @@ class TestCalcPullRequestFactsGithub:
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, build_fake_cache(),
         )
-        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb_rw, sdb)
-        base_kw = dict(
-            repositories={"src-d/go-git"},
-            participants={},
-            labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
-            exclude_inactive=False,
-            bots=set(),
-            fresh=False,
-            time_from=dt(2017, 8, 10),
-            time_to=dt(2017, 9, 1),
-            **shared_kwargs,
-        )
+        base_kw = await self._kwargs(meta_ids, mdb_rw, sdb)
+        base_kw.update(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1))
+        base_kw.pop("with_jira")
 
         calc = calculator.calc_pull_request_facts_github
 
@@ -156,6 +171,20 @@ class TestCalcPullRequestFactsGithub:
 
                 await calc(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
                 assert load_pdb_mock.call_count == 1
+
+    async def _kwargs(self, meta_ids: tuple[int, ...], mdb: Database, sdb: Database) -> dict:
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        return {
+            "repositories": {"src-d/go-git"},
+            "participants": {},
+            "labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
+            "exclude_inactive": False,
+            "bots": set(),
+            "fresh": False,
+            "with_jira": JIRAEntityToFetch.NOTHING,
+            **shared_kwargs,
+        }
 
 
 class TestCalcPullRequestMetricsLineGithub:

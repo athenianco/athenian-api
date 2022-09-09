@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import numpy as np
+from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
@@ -167,7 +168,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        JIRAEntityToFetch.ISSUES,
+        JIRAEntityToFetch.EVERYTHING(),
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
@@ -216,7 +217,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             LogicalRepositorySettings.empty(),
             prefixer,
             False,
-            JIRAEntityToFetch.ISSUES,
+            JIRAEntityToFetch.EVERYTHING(),
         )
         assert len(facts_unfresh) == 35
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -225,6 +226,13 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold
+
+    pr_facts = facts_unfresh[facts_unfresh.node_id == 163168]
+
+    assert_array_equal(pr_facts.jira_ids.iloc[0], np.array(["DEV-261"], dtype="U"))
+    assert_array_equal(pr_facts.jira_projects.values[0], np.array([b"10009"], dtype="S"))
+    assert_array_equal(pr_facts.jira_types.values[0], np.array([b"10016"], dtype="S"))
+    assert_array_equal(pr_facts.jira_priorities.values[0], np.array([b"3"], dtype="S"))
 
 
 @pytest.mark.parametrize(

@@ -84,6 +84,7 @@ from athenian.api.internal.miners.github.pull_request import (
 )
 from athenian.api.internal.miners.github.release_load import ReleaseLoader, dummy_releases_df
 from athenian.api.internal.miners.github.release_match import load_commit_dags
+from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.internal.miners.types import (
     Deployment,
     Label,
@@ -836,6 +837,10 @@ async def _filter_pull_requests(
     )
     # we want the released PR facts to overwrite the others
     facts = {**unreleased_facts, **released_facts}
+    # precomputed misses jira property since they are coming from pdb but property is needed
+    # to convert later the facts to a dataframe
+    PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
+
     del unreleased_facts, released_facts
 
     deployment_names = pr_miner.dfs.deployments.index.get_level_values(2).unique()
