@@ -90,14 +90,14 @@ async def test_set_account_from_token(client, headers, sdb):
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
 
 
 async def test_broken_json(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, data=b"hola",
     )
-    assert response.status == 400
+    assert response.status == 400, (await response.read()).decode()
 
 
 async def test_account_expiration_regular(client, headers, sdb):
@@ -109,7 +109,7 @@ async def test_account_expiration_regular(client, headers, sdb):
     response = await client.request(
         method="POST", path="/v1/token/create", headers=headers, json=body,
     )
-    assert response.status == 401
+    assert response.status == 401, (await response.read()).decode()
 
 
 @pytest.mark.parametrize(
@@ -138,4 +138,4 @@ async def test_account_expiration_god(client, headers, sdb, mapped_id, status):
     response = await client.request(
         method="POST", path="/v1/token/create", headers=headers, json=body,
     )
-    assert response.status == status
+    assert response.status == status, (await response.read()).decode()

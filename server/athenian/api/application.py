@@ -322,7 +322,9 @@ class AthenianApp(especifico.AioHttpApp):
         self.app["auth"] = self._auth0 = auth0_cls(
             whitelist=[
                 r"/v1/openapi.json$",
+                r"/private/openapi.json$",
                 r"/v1/ui(/|$)",
+                r"/private/ui(/|$)",
                 r"/v1/invite/check/?$",
                 r"/status/?$",
                 r"/prometheus/?$",
@@ -337,9 +339,7 @@ class AthenianApp(especifico.AioHttpApp):
             self.postprocess_response,
             self.manhole,
         ]
-        self.add_api(
-            "openapi.yaml",
-            base_path="/v1",
+        add_api_kwargs = dict(  # noqa: C408
             arguments={
                 "title": metadata.__description__,
                 "server_url": self._auth0.audience.rstrip("/"),
@@ -368,6 +368,8 @@ class AthenianApp(especifico.AioHttpApp):
             },
             validate_responses=validate_responses,
         )
+        self.add_api("openapi.yaml", base_path="/v1", **add_api_kwargs)
+        self.add_api("../align/spec/openapi.yaml", base_path="/private", **add_api_kwargs)
         GraphQL(align.create_graphql_schema()).attach(
             self.app, "/align", middlewares + [self._auth0.authenticate],
         )
@@ -907,7 +909,7 @@ class AthenianApp(especifico.AioHttpApp):
         components = api.specification.raw["components"]
         components["schemas"] = dict(sorted(components["schemas"].items()))
         # map from canonical path to the API spec of the handler
-        route_spec = {}
+        route_spec = self.app.get("route_spec", {})
         base_offset = len(api.base_path)
         for route in api.subapp.router.routes():
             method = route.method.lower()
