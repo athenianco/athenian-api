@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set
 
 from dateutil.rrule import DAILY, rrule
 from sqlalchemy import not_, or_
@@ -8,12 +8,15 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
+from athenian.api.internal.miners.github.precomputed_prs.utils_accelerated import (  # noqa: F401
+    triage_by_release_match,
+)
 from athenian.api.internal.miners.types import (
     MinedPullRequest,
     PullRequestFacts,
     PullRequestFactsMap,
 )
-from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings, default_branch_alias
+from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     PullRequestComment,
     PullRequestCommit,
@@ -134,59 +137,6 @@ def extract_release_match(
         .with_match(matched_by)
         .as_db(default_branches[drop_logical_repo(repo)])
     )
-
-
-# performance optimization
-rejected_name = ReleaseMatch.rejected.name
-force_push_drop_name = ReleaseMatch.force_push_drop.name
-release_match_name_to_enum = {obj.name: obj for obj in ReleaseMatch}
-
-
-def triage_by_release_match(
-    repo: str,
-    release_match: str,
-    release_settings: ReleaseSettings,
-    default_branches: Dict[str, str],
-    result: Any,
-    ambiguous: Dict[str, Any],
-) -> Optional[Any]:
-    """Check the release match of the specified `repo` and return `None` if it is not effective \
-    according to `release_settings`, or decide between `result` and `ambiguous`."""
-    # faster than `release_match in (rejected_name, force_push_drop_name)`
-    if release_match == rejected_name or release_match == force_push_drop_name:
-        return result
-    try:
-        required_release_match = release_settings.native[repo]
-    except KeyError:
-        # DEV-1451: if we don't have this repository in the release settings, then it is deleted
-        raise AssertionError(
-            f"You must take care of deleted repositories separately: {repo}",
-        ) from None
-    match_name, match_by = release_match.split("|", 1)
-    match = release_match_name_to_enum[match_name]  # faster than `ReleaseMatch[name]`
-    if required_release_match.match != ReleaseMatch.tag_or_branch:
-        if match != required_release_match.match:
-            return None
-        dump = result
-    else:
-        try:
-            dump = ambiguous[match_name]
-        except KeyError:
-            # event
-            return None
-    if match == ReleaseMatch.tag:
-        target = required_release_match.tags
-    elif match == ReleaseMatch.branch:
-        target = required_release_match.branches.replace(
-            default_branch_alias, default_branches.get(repo, default_branch_alias),
-        )
-    elif match == ReleaseMatch.event:
-        target = required_release_match.events
-    else:
-        raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
-    if target != match_by:
-        return None
-    return dump
 
 
 def remove_ambiguous_prs(

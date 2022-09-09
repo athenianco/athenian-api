@@ -3,4 +3,4 @@
 	url = https://github.com/athenianco/api-spec
 [submodule "server/athenian/api/align/spec"]
 	path = server/athenian/api/align/spec
-	url = https://github.com/athenianco/align-api-spec
+	url = https://github.com/athenianco/private-api-spec
