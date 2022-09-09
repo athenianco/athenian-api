@@ -1303,38 +1303,38 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         not_found_mask = unique_fact_envs[my_env_indexes] != envs
         my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
-        unused = np.in1d(
+        checked_mask = np.in1d(
             imap,
             np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True),
         )
-        imap[unused] = 0
+        imap[checked_mask] = 0
 
-        lengths = np.array([len(v) for v in fact_envs])
+        lengths = np.fromiter((len(v) for v in fact_envs), int, len(fact_envs))
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
         offsets = offsets[: np.argmax(offsets)]
         no_deps = lengths == 0
         successful_conclusions = all_conclusions == DeploymentConclusion.SUCCESS
 
-        for pos, ix in enumerate(my_env_indexes[::-1], 1):
-            pos = len(my_env_indexes) - pos
-            if ix >= 0:
-                ix_mask = imap == ix
-                if ix == 0:
-                    ix_mask[unused] = False
-                imap[ix_mask] = 1 << pos
-                finished_by_env[pos] = all_finished[ix_mask]
-                # one PR should not fail to deploy more than (1 << 16) times, seems legit
-                counts = np.add.reduceat(ix_mask, offsets).astype(np.uint16)
-                counts[no_deps[: len(counts)]] = 0
-                counts = counts[counts > 0]
-                counts_by_env[pos] = counts
-                internal_offsets = np.zeros(len(counts), dtype=int)
-                np.cumsum(counts[:-1], out=internal_offsets[1:])
-                conclusions_by_env[pos] = all_conclusions[ix_mask]
-                successful_by_env[pos] = np.bitwise_or.reduceat(
-                    successful_conclusions[ix_mask], internal_offsets,
-                )
+        for pos, ix in enumerate(my_env_indexes):
+            if ix < 0:
+                continue
+            ix_mask = imap == ix
+            ix_mask[checked_mask] = False
+            checked_mask[ix_mask] = True
+            imap[ix_mask] = 1 << pos
+            finished_by_env[pos] = all_finished[ix_mask]
+            # one PR should not fail to deploy more than (1 << 16) times, seems legit
+            counts = np.add.reduceat(ix_mask, offsets).astype(np.uint16)
+            counts[no_deps[: len(counts)]] = 0
+            counts = counts[counts > 0]
+            counts_by_env[pos] = counts
+            internal_offsets = np.zeros(len(counts), dtype=int)
+            np.cumsum(counts[:-1], out=internal_offsets[1:])
+            conclusions_by_env[pos] = all_conclusions[ix_mask]
+            successful_by_env[pos] = np.bitwise_or.reduceat(
+                successful_conclusions[ix_mask], internal_offsets,
+            )
 
         env_marks = np.bitwise_or.reduceat(imap, offsets)
         env_marks[no_deps[: len(env_marks)]] = 0

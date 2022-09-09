@@ -128,7 +128,7 @@ class IssueType(Base):
     __tablename__ = "issue_type"
 
     id = Column(Text, primary_key=True, info={"dtype": "S8", "erase_nulls": True})
-    project_id = Column(Text, nullable=False)
+    project_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     name = Column(Text, nullable=False)
     description = Column(Text)
     icon_url = Column(Text, nullable=False)
