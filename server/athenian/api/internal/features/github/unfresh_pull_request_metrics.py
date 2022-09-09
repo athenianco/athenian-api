@@ -84,7 +84,9 @@ class UnfreshPullRequestFactsFetcher:
         add_pdb_hits(pdb, "fresh", 1)
         if pr_jira_mapper is not None:
             done_jira_map_task = asyncio.create_task(
-                pr_jira_mapper.append(done_facts, jira_entities, meta_ids, mdb),
+                pr_jira_mapper.load_and_apply_to_pr_facts(
+                    done_facts, jira_entities, meta_ids, mdb,
+                ),
                 name="append_pr_jira_mapping/done",
             )
         done_node_ids = {node_id for node_id, _ in done_facts}
@@ -256,12 +258,12 @@ class UnfreshPullRequestFactsFetcher:
                 unreleased_prs.index.get_level_values(1).values,
             ):
                 try:
-                    facts[(node_id, repo)].jira_ids = unreleased_jira_map[node_id]
+                    facts[(node_id, repo)].jira = unreleased_jira_map[node_id]
                 except KeyError:
                     continue
         else:
-            for f in facts.values():
-                f.jira_ids = []
+            PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
+
         deps = pd.concat([released_deps, unreleased_deps])
         # there may be shared deployments in released_deps and unreleased_deps
         # the same way as in done_facts and merged_facts

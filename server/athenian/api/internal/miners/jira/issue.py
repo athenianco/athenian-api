@@ -23,7 +23,12 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFactsMap
+from athenian.api.internal.miners.types import (
+    PR_JIRA_DETAILS_COLUMN_MAP,
+    JIRAEntityToFetch,
+    PullRequestFactsMap,
+    PullRequestJIRADetails,
+)
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -831,7 +836,7 @@ class PullRequestJiraMapper:
         for pr_node_id, jira in jira_map.items():
             for repo in pr_node_ids[pr_node_id]:
                 try:
-                    prs[(pr_node_id, repo)].jira_ids = jira
+                    prs[(pr_node_id, repo)].jira = jira
                 except KeyError:
                     # we removed this PR in JIRA filter
                     continue
@@ -844,36 +849,97 @@ class PullRequestJiraMapper:
         entities: JIRAEntityToFetch | int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> dict[int, list[str]]:
+    ) -> dict[int, PullRequestJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 100:
             node_id_cond = nprji.node_id.in_any_values(prs)
         else:
             node_id_cond = nprji.node_id.in_(prs)
-        rows = await mdb.fetch_all(
-            sql.select([nprji.node_id, Issue.key])
+        columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
+        df = await read_sql_query(
+            sql.select(*columns)
             .select_from(
                 sql.outerjoin(
                     nprji,
                     Issue,
-                    sql.and_(
-                        nprji.jira_acc == Issue.acc_id,
-                        nprji.jira_id == Issue.id,
-                    ),
+                    sql.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
                 ),
             )
-            .where(
-                sql.and_(
-                    node_id_cond,
-                    nprji.node_acc.in_(meta_ids),
-                ),
-            ),
+            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
+            mdb,
+            columns,
+            index=nprji.node_id.name,
         )
-        result = defaultdict(list)
-        for r in rows:
-            result[r[0]].append(r[1])
-        return result
+        res: dict[int, PullRequestJIRADetails] = {}
+        cls.append_from_df(res, df)
+        return res
+
+    @classmethod
+    @sentry_span
+    def append_from_df(
+        cls,
+        existing: dict[int, PullRequestJIRADetails],
+        df: pd.DataFrame,
+    ) -> None:
+        """Add the JIRA details in `df` to `existing` mapping from PR node IDs to JIRA."""
+        pr_node_ids = df.index.get_level_values(0).values
+        order = np.argsort(pr_node_ids)
+        unique_pr_ids, group_counts = np.unique(pr_node_ids[order], return_counts=True)
+        empty_cols = {}
+        payload_columns = []
+        for col in JIRAEntityToFetch.to_columns(JIRAEntityToFetch.EVERYTHING()):
+            df_name, dtype = PR_JIRA_DETAILS_COLUMN_MAP[col]
+            if col.name not in df:
+                empty_cols[df_name] = np.array([], dtype=dtype)
+            else:
+                payload_columns.append(col)
+        pos = 0
+        for pr_id, group_count in zip(unique_pr_ids, group_counts):
+            indexes = order[pos : pos + group_count]
+            pos += group_count
+            # we can deduplicate. shall we? must benchmark the profit.
+            existing[pr_id] = PullRequestJIRADetails(
+                **{
+                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: df[c.name].values[indexes]
+                    for c in payload_columns
+                },
+                **empty_cols,
+            )
+
+    @classmethod
+    def apply_to_pr_facts(
+        self,
+        facts: PullRequestFactsMap,
+        jira: dict[int, PullRequestJIRADetails],
+    ) -> None:
+        """Apply the jira mappings to the facts in PullRequestFactsMap, in place."""
+        empty = PullRequestJIRADetails.empty()
+        for (pr_id, _), pr_facts in facts.items():
+            try:
+                pr_facts.jira = jira[pr_id]
+            except KeyError:
+                pr_facts.jira = empty
+
+    @classmethod
+    async def load_and_apply_to_pr_facts(
+        cls,
+        facts: PullRequestFactsMap,
+        entities: JIRAEntityToFetch | int,
+        meta_ids: tuple[int, ...],
+        mdb: DatabaseLike,
+    ) -> None:
+        """Load the jira mappings and apply it to the facts in PullRequestFactsMap, in place."""
+        pr_node_ids = np.fromiter((pr_node_id for pr_node_id, _ in facts), int, len(facts))
+        jira_map = await cls.load(pr_node_ids, entities, meta_ids, mdb)
+        cls.apply_to_pr_facts(facts, jira_map)
+
+    @classmethod
+    def apply_empty_to_pr_facts(self, facts: PullRequestFactsMap) -> None:
+        """Apply an empty jira mappings to the facts in PullRequestFactsMap, in place."""
+        empty_jira = PullRequestJIRADetails.empty()
+        for f in facts.values():
+            f.jira = empty_jira
 
 
 def resolve_work_began_and_resolved(

@@ -1075,7 +1075,7 @@ class JIRAMappingCalculator(SumMetricCalculator[int]):
         **kwargs,
     ) -> np.ndarray:
         result = self._calcs[0].peek.copy()
-        result[:, ~facts[PullRequestFacts.f.jira_ids].values.astype(bool)] = self.nan
+        result[:, ~facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].values.astype(bool)] = self.nan
         return result
 
 

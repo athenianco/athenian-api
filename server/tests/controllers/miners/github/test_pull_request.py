@@ -23,6 +23,7 @@ from athenian.api.internal.miners.github.precomputed_prs import (
 from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
 from athenian.api.internal.miners.types import (
     DAG,
+    JIRAEntityToFetch,
     MinedPullRequest,
     PRParticipationKind,
     PullRequestCheckRun,
@@ -1727,7 +1728,7 @@ async def test_pr_miner_jira_fetch(
         {},
         LabelFilter.empty(),
         JIRAFilter.empty(),
-        True,
+        JIRAEntityToFetch.EVERYTHING(),
         branches,
         default_branches,
         False,
@@ -1745,16 +1746,23 @@ async def test_pr_miner_jira_fetch(
     labels = set()
     epics = set()
     types = set()
+    priorities = set()
+    projects = set()
     for pr in miner:
         jira = pr.jiras
+        assert is_datetime64_any_dtype(jira[Issue.created.name])
+        assert is_datetime64_any_dtype(jira[Issue.updated.name])
         if not (pr_labels := jira[Issue.labels.name]).empty:
             labels.update(pr_labels.iloc[0])
-            assert is_datetime64_any_dtype(jira[Issue.created.name])
-            assert is_datetime64_any_dtype(jira[Issue.updated.name])
         if not (pr_epic := jira["epic"]).empty:
             epics.add(pr_epic.iloc[0])
         if not (pr_type := jira[Issue.type.name]).empty:
             types.add(pr_type.iloc[0])
+        if not (pr_priority := jira[Issue.priority_id.name]).empty:
+            priorities.add(pr_priority.iloc[0])
+        if not (pr_projects := jira[Issue.project_id.name]).empty:
+            projects.add(pr_projects.iloc[0])
+
     assert labels == {
         "enhancement",
         "new-charts",
@@ -1776,6 +1784,8 @@ async def test_pr_miner_jira_fetch(
     }
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140", "DEV-818", None}
     assert types == {"task", "story", "epic", "bug"}
+    assert priorities == {b"1", b"2", b"3", b"4", b"5", b"6"}
+    assert projects == {b"10009"}
     # !!!!!!!!!!!!!!
 
 

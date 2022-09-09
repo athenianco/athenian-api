@@ -4,7 +4,9 @@ from enum import IntEnum, auto
 from typing import Any, Mapping, Optional, Sequence, Type, Union
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.models.metadata.github import (
     NodePullRequest,
@@ -14,6 +16,7 @@ from athenian.api.models.metadata.github import (
     PullRequestReview,
     Release,
 )
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.typing_utils import numpy_struct
 
 
@@ -73,6 +76,20 @@ class JIRAEntityToFetch(IntEnum):
         for v in cls:
             mask |= v
         return mask
+
+    @classmethod
+    def to_columns(cls, value: int) -> list[InstrumentedAttribute]:
+        """Return the `model`'s columns corresponding to the `value`."""
+        result = []
+        if value & cls.ISSUES:
+            result.append(Issue.key)
+        if value & cls.PROJECTS:
+            result.append(Issue.project_id)
+        if value & cls.PRIORITIES:
+            result.append(Issue.priority_id)
+        if value & cls.TYPES:
+            result.append(Issue.type_id)
+        return result
 
 
 class Property(IntEnum):
@@ -255,6 +272,35 @@ datetime64 = timedelta64 = list
 s = None
 
 
+@dataclass(frozen=True, slots=True)
+class PullRequestJIRADetails:
+    """Extra JIRA information loaded for pull requests."""
+
+    ids: npt.NDArray[object]
+    projects: npt.NDArray[np.bytes_]
+    priorities: npt.NDArray[np.bytes_]
+    types: npt.NDArray[np.bytes_]
+
+    @classmethod
+    def empty(cls) -> "PullRequestJIRADetails":
+        """Return an empty instance."""
+        fields = {
+            name: np.array([], dtype=dtype) for name, dtype in PR_JIRA_DETAILS_COLUMN_MAP.values()
+        }
+        return cls(**fields)
+
+
+PR_JIRA_DETAILS_COLUMN_MAP = {
+    Issue.key: (PullRequestJIRADetails.ids.__name__, object),
+    Issue.project_id: (PullRequestJIRADetails.projects.__name__, Issue.project_id.info["dtype"]),
+    Issue.priority_id: (
+        PullRequestJIRADetails.priorities.__name__,
+        Issue.priority_id.info["dtype"],
+    ),
+    Issue.type_id: (PullRequestJIRADetails.types.__name__, Issue.type_id.info["dtype"]),
+}
+
+
 @numpy_struct
 class PullRequestFacts:
     """Various PR event timestamps and other properties."""
@@ -294,10 +340,7 @@ class PullRequestFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
-        jira_ids: list[str]
-        jira_priorities: [ascii]
-        jira_projects: [ascii]
-        jira_types: [ascii]
+        jira: PullRequestJIRADetails
         repository_full_name: str
         author: str
         merger: str
@@ -306,6 +349,15 @@ class PullRequestFacts:
         environments: Sequence[str]
         deployment_conclusions: Sequence[DeploymentConclusion]
         deployed: Sequence[datetime]
+
+    class INDIRECT_FIELDS:
+        """Indirect fields found in dataframe conversion done by df_from_structs."""
+
+        # added by df_from_structs() conversion when exploding `jira` field
+        JIRA_IDS = "jira_ids"
+        JIRA_PROJECTS = "jira_projects"
+        JIRA_PRIORITIES = "jira_priorities"
+        JIRA_TYPES = "jira_types"
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
@@ -451,7 +503,7 @@ class DAG:
         We generate `dtype` from this spec.
         """
 
-        hashes: ["S40"]  # noqa
+        hashes: ["S40"]  # noqa: F821
         vertexes: [np.uint32]
         edges: [np.uint32]
 

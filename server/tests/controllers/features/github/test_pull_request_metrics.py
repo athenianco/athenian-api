@@ -4,6 +4,7 @@ import itertools
 from typing import Sequence, Tuple
 
 import numpy as np
+from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
@@ -1405,7 +1406,7 @@ async def test_calc_pull_request_facts_github_jira(
         LogicalRepositorySettings.empty(),
         prefixer,
         False,
-        0,
+        JIRAEntityToFetch.NOTHING,
     ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -1425,10 +1426,50 @@ async def test_calc_pull_request_facts_github_jira(
     args[5] = JIRAFilter.empty()
     args[-1] = JIRAEntityToFetch.ISSUES
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
-    assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
+
+    assert facts.jira_ids.astype(bool).sum() == 60
     await wait_deferred()
     facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
-    assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
+    assert facts.jira_ids.astype(bool).sum() == 60
+
+
+@with_defer
+async def test_calc_pull_request_facts_github_jira_everything(
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    cache,
+):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    # metrics_calculator_cache_only = metrics_calculator_factory(1, (6366825,), cache_only=True)
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = [
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        JIRAEntityToFetch.EVERYTHING(),
+    ]
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    pr_fact = facts[facts.node_id == 163209]
+    assert facts.jira_ids.astype(bool).sum() == 60
+    assert_array_equal(pr_fact.jira_ids.values[0], np.array(["DEV-678"]))
+    assert_array_equal(pr_fact.jira_projects.values[0], np.array([b"10009"]))
+    assert_array_equal(pr_fact.jira_types.values[0], np.array([b"10024"]))
+    assert_array_equal(pr_fact.jira_priorities.values[0], np.array([b"5"]))
 
 
 @with_defer
