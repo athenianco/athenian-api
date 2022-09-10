@@ -39,6 +39,8 @@ from athenian.api.response import ResponseError
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
+from athenian.api.to_object_arrays import nested_lengths
+
 ReleaseMatch = IntEnum(
     "ReleaseMatch",
     {
@@ -347,7 +349,7 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
         else:
             pr_indexes = np.arange(len(prs))
         if self.has_titles:
-            lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
+            lengths = nested_lengths(titles) + 1
             offsets = np.zeros(len(lengths), dtype=int)
             np.cumsum(lengths[:-1], out=offsets[1:])
             concat_titles = "\n".join(titles)  # PR titles are guaranteed to not contain \n
@@ -465,7 +467,7 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         matched = {}
         if self.has_titles:
             titles = notifications.index.values
-            lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
+            lengths = nested_lengths(titles) + 1
             offsets = np.zeros(len(lengths), dtype=int)
             np.cumsum(lengths[:-1], out=offsets[1:])
             concat_titles = "\n".join(titles)  # deployment names are guaranteed to not contain \n

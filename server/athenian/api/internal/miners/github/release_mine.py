@@ -88,7 +88,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRebasedPullRequest,
     GitHubReleaseDeployment,
 )
-from athenian.api.to_object_arrays import is_null
+from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
@@ -934,7 +934,7 @@ def _filter_by_participants(
             break
         if rpk in participants:
             values = [releases[i][1][col] for i in missing_indexes]
-            lengths = np.fromiter((len(ca) for ca in values), int, len(values))
+            lengths = nested_lengths(values)
             values.append([-1])
             offsets = np.zeros(len(values), dtype=int)
             np.cumsum(lengths, out=offsets[1:])

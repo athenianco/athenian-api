@@ -131,7 +131,7 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.to_object_arrays import is_not_null
+from athenian.api.to_object_arrays import is_not_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
@@ -813,7 +813,7 @@ async def _filter_by_participants(
         people = np.array(participants[pkind])
         values = df[col].values
         offsets = np.zeros(len(values) + 1, dtype=int)
-        lengths = np.array([len(v) for v in values])
+        lengths = nested_lengths(values)
         np.cumsum(lengths, out=offsets[1:])
         values = np.concatenate([np.concatenate(values), [-1]])
         passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)[:-1]
@@ -834,7 +834,9 @@ async def _filter_by_prs(
 ) -> pd.DataFrame:
     pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values, dtype=int, casting="unsafe")
     unique_pr_node_ids = np.unique(pr_node_ids)
-    lengths = np.array([len(arr) for arr in df[DeploymentFacts.f.prs].values] + [0], dtype=int)
+    lengths = np.empty(len(df) + 1, dtype=int)
+    lengths[-1] = 0
+    nested_lengths(df[DeploymentFacts.f.prs].values, lengths)
     offsets = np.zeros(len(lengths), dtype=int)
     np.cumsum(lengths[:-1], out=offsets[1:])
     filters = [
@@ -1744,7 +1746,7 @@ async def _fetch_commit_stats(
         dag = dags[repo][1]
         pr_hashes = extract_pr_commits(*dag, np.array(hashes, dtype="S40"))
         merge_sha_indexes = np.searchsorted(merge_shas, hashes)
-        commit_counts = np.fromiter((len(c) for c in pr_hashes), int, len(pr_hashes))
+        commit_counts = nested_lengths(pr_hashes)
         if has_logical:
             _, sha_counts = np.unique(merge_shas[merge_sha_indexes], return_counts=True)
             commit_counts = np.repeat(commit_counts, sha_counts)
@@ -2113,7 +2115,7 @@ async def _resolve_commit_relationship(
             all_shas = np.concatenate([successful_shas, failed_shas])
             all_deployed_ats = np.concatenate([successful_deployed_ats, failed_deployed_ats])
             parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership)
-            noroot_mask = np.array([len(p) for p in parents], dtype=bool)
+            noroot_mask = nested_lengths(parents).astype(bool)
             root_mask = ~noroot_mask
             all_commits = np.concatenate([successful_commits, failed_commits])
             root_details_per_repo[env][repo_name] = (
@@ -2207,7 +2209,7 @@ async def _resolve_commit_relationship(
                 if reached_root:
                     noroot_mask = np.ones(len(parents), dtype=bool)
                 else:
-                    noroot_mask = np.array([len(p) for p in parents], dtype=bool)
+                    noroot_mask = nested_lengths(parents).astype(bool)
                 root_mask = ~noroot_mask
                 # oldest commits that we've just inserted
                 root_mask[success_len : success_len + len(cids)] = False

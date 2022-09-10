@@ -3,15 +3,28 @@
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Sequence
 
 cimport cython
 from cpython cimport PyObject
-from numpy cimport PyArray_DATA, ndarray, npy_bool
+from cpython.bytes cimport PyBytes_Check
+from cpython.unicode cimport PyUnicode_Check
+from numpy cimport (
+    PyArray_CheckExact,
+    PyArray_DATA,
+    PyArray_DIM,
+    PyArray_ISOBJECT,
+    PyArray_ISSTRING,
+    PyArray_NDIM,
+    import_array,
+    ndarray,
+    npy_bool,
+)
 
 import asyncpg
 import numpy as np
 
+import_array()
 
 cdef extern from "asyncpg_recordobj.h":
     PyObject *ApgRecord_GET_ITEM(PyObject *, int)
@@ -22,15 +35,20 @@ cdef extern from "Python.h":
     # these are the macros that read directly from the internal ob_items
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    bint PyList_CheckExact(PyObject *) nogil
+    Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
+    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
+    Py_ssize_t PyBytes_GET_SIZE(PyObject *) nogil
+
     PyObject *Py_None
     PyObject *Py_True
 
 
 @cython.boundscheck(False)
-def to_object_arrays_split(rows: List[Sequence[Any]],
+def to_object_arrays_split(rows: list[Sequence[Any]],
                            typed_indexes: Sequence[int],
                            obj_indexes: Sequence[int],
-                           ) -> Tuple[np.ndarray, np.ndarray]:
+                           ) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert a list of tuples into an object array. Any subclass of
     tuple in `rows` will be casted to tuple.
@@ -38,7 +56,7 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
     Parameters
     ----------
     rows : 2-d array (N, K)
-        List of tuples to be converted into an array. Each tuple must be of equal length,
+        list of tuples to be converted into an array. Each tuple must be of equal length,
         otherwise, the results are undefined.
     typed_indexes : array of integers
         Sequence of integer indexes in each tuple in `rows` that select the first result.
@@ -173,3 +191,84 @@ cdef void _is_not_null(const char *obj_arr,
     cdef long i
     for i in range(size):
         out_arr[i] = Py_None != (<const PyObject **> (obj_arr + i * stride))[0]
+
+
+def nested_lengths(arr not None, output=None) -> np.ndarray:
+    cdef:
+        long size
+        bint is_array = PyArray_CheckExact(arr)
+        ndarray result
+
+    if is_array:
+        assert PyArray_ISOBJECT(arr) or PyArray_ISSTRING(arr)
+        assert PyArray_NDIM(arr) == 1
+        size = PyArray_DIM(arr, 0)
+    else:
+        assert PyList_CheckExact(<PyObject *> arr)
+        size = PyList_GET_SIZE(<PyObject *> arr)
+
+    if output is None:
+        result = np.zeros(size, dtype=int)
+    else:
+        assert PyArray_CheckExact(output)
+        assert output.dtype == int
+        result = output
+    if size == 0:
+        return result
+    if is_array:
+        return _nested_lengths_arr(arr, size, result)
+    return _nested_lengths_list(<PyObject *> arr, size, result)
+
+
+cdef ndarray _nested_lengths_arr(ndarray arr, long size, ndarray result):
+    cdef:
+        PyObject **elements = <PyObject **>PyArray_DATA(arr)
+        PyObject *element
+        long i
+        long *result_data
+
+    if PyArray_ISSTRING(arr):
+        return np.char.str_len(arr)
+
+    result_data = <long *>PyArray_DATA(result)
+    element = elements[0]
+    if PyArray_CheckExact(<object> element):
+        for i in range(size):
+            result_data[i] = PyArray_DIM(<ndarray> elements[i], 0)
+    elif PyList_CheckExact(element):
+        for i in range(size):
+            result_data[i] = PyList_GET_SIZE(elements[i])
+    elif PyUnicode_Check(<object> element):
+        for i in range(size):
+            result_data[i] = PyUnicode_GET_LENGTH(elements[i])
+    elif PyBytes_Check(<object> element):
+        for i in range(size):
+            result_data[i] = PyBytes_GET_SIZE(elements[i])
+    else:
+        raise AssertionError(f"Unsupported nested type: {type(<object> element).__name__}")
+    return result
+
+
+cdef ndarray _nested_lengths_list(PyObject *arr, long size, ndarray result):
+    cdef:
+        PyObject *element
+        long i
+        long *result_data
+
+    result_data = <long *>PyArray_DATA(result)
+    element = PyList_GET_ITEM(arr, 0)
+    if PyArray_CheckExact(<object> element):
+        for i in range(size):
+            result_data[i] = PyArray_DIM(<ndarray> PyList_GET_ITEM(arr, i), 0)
+    elif PyList_CheckExact(element):
+        for i in range(size):
+            result_data[i] = PyList_GET_SIZE(PyList_GET_ITEM(arr, i))
+    elif PyUnicode_Check(<object> element):
+        for i in range(size):
+            result_data[i] = PyUnicode_GET_LENGTH(PyList_GET_ITEM(arr, i))
+    elif PyBytes_Check(<object> element):
+        for i in range(size):
+            result_data[i] = PyBytes_GET_SIZE(PyList_GET_ITEM(arr, i))
+    else:
+        raise AssertionError(f"Unsupported nested type: {type(<object> element).__name__}")
+    return result

@@ -58,7 +58,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseMatchTimespan,
 )
-from athenian.api.to_object_arrays import is_null
+from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 
@@ -1229,7 +1229,7 @@ class ReleaseMatcher:
             tags_concat = "\n".join(tags_to_check)
             found = [m.start() for m in regexp.finditer(tags_concat)]
             offsets = np.zeros(len(tags_to_check), dtype=int)
-            lengths = np.fromiter((len(s) for s in tags_to_check), int, len(tags_to_check)) + 1
+            lengths = nested_lengths(tags_to_check) + 1
             np.cumsum(lengths[:-1], out=offsets[1:])
             tags_matched = np.in1d(offsets, found)
             if len(indexes_matched := repo_indexes[tags_matched]):
