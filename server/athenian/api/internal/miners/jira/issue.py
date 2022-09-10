@@ -535,7 +535,6 @@ async def _fetch_released_prs(
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     pos = 0
-    pr_done_at_name = ghdprf.pr_done_at.name
     for group_count in group_counts:
         indexes = order[pos : pos + group_count]
         pos += group_count
@@ -545,7 +544,7 @@ async def _fetch_released_prs(
             for node_id, pr_done_at in zip(pr_node_ids_col[indexes], pr_done_at_col[indexes]):
                 key = (node_id, repo)
                 try:
-                    if released_prs[key][pr_done_at_name] < pr_done_at:
+                    if released_prs[key] < pr_done_at:
                         released_prs[key] = pr_done_at
                 except KeyError:
                     released_prs[key] = pr_done_at

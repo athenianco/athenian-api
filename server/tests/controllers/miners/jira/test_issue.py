@@ -3,6 +3,7 @@ from typing import Sequence
 
 import pandas as pd
 from pandas._testing import assert_frame_equal
+from sqlalchemy import insert
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.jira import JIRAConfig
@@ -27,6 +28,7 @@ from athenian.api.internal.settings import (
     ReleaseSettings,
 )
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
+from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
 
 @with_defer
@@ -83,16 +85,43 @@ async def test_fetch_jira_issues_releases(
         cache,
     ]
     issues = await fetch_jira_issues(*args)
+
     assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55  # 56 without cleaning
     assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 54  # 55 without cleaning
     assert (
         issues[ISSUE_PRS_RELEASED][issues[ISSUE_PRS_RELEASED].notnull()]
         > issues[ISSUE_PRS_BEGAN][issues[ISSUE_PRS_RELEASED].notnull()]
     ).all()
+
     await wait_deferred()
     args[-3] = args[-2] = None
     cached_issues = await fetch_jira_issues(*args)
     assert_frame_equal(issues, cached_issues)
+    args[-7] = ReleaseSettings({})
+    args[-3] = mdb
+    args[-2] = pdb
+    ghdprf = GitHubDonePullRequestFacts
+    await pdb.execute(
+        insert(ghdprf).values(
+            {
+                ghdprf.acc_id: 1,
+                ghdprf.pr_node_id: 163250,
+                ghdprf.repository_full_name: "src-d/go-git",
+                ghdprf.release_match: "branch|master",
+                ghdprf.pr_done_at: datetime(2018, 7, 17, tzinfo=timezone.utc),
+                ghdprf.pr_created_at: datetime(2018, 5, 17, tzinfo=timezone.utc),
+                ghdprf.number: 1,
+                ghdprf.updated_at: datetime.now(timezone.utc),
+                ghdprf.format_version: ghdprf.__table__.columns[
+                    ghdprf.format_version.key
+                ].default.arg,
+                ghdprf.data: b"test",
+            },
+        ),
+    )
+    issues = await fetch_jira_issues(*args)
+    assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55
+    assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 55
 
 
 @with_defer
