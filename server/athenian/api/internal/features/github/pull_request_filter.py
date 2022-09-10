@@ -87,6 +87,7 @@ from athenian.api.internal.miners.github.release_match import load_commit_dags
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.internal.miners.types import (
     Deployment,
+    JIRAEntityToFetch,
     Label,
     MinedPullRequest,
     PRParticipants,
@@ -837,8 +838,7 @@ async def _filter_pull_requests(
     )
     # we want the released PR facts to overwrite the others
     facts = {**unreleased_facts, **released_facts}
-    # precomputed misses jira property since they are coming from pdb but property is needed
-    # to convert later the facts to a dataframe
+    # precomputed facts miss `jira` property; we need it inside df_from_structs()
     PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
 
     del unreleased_facts, released_facts
@@ -1134,7 +1134,7 @@ async def _fetch_pull_requests(
         prs_df,
         facts,
         ambiguous,
-        True,
+        JIRAEntityToFetch.ISSUES,
         branches,
         default_branches,
         bots,
@@ -1155,7 +1155,7 @@ async def unwrap_pull_requests(
     prs_df: pd.DataFrame,
     precomputed_done_facts: PullRequestFactsMap,
     precomputed_ambiguous_done_facts: Dict[str, List[int]],
-    with_jira: bool,
+    with_jira: JIRAEntityToFetch | int,
     branches: pd.DataFrame,
     default_branches: Dict[str, str],
     bots: Set[str],
@@ -1352,4 +1352,7 @@ async def unwrap_pull_requests(
     if deployments_task is not None:
         await deployments_task
         deployments_task = deployments_task.result()
+    if with_jira == JIRAEntityToFetch.NOTHING:
+        # we need it inside df_from_structs()
+        PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
     return filtered_prs, dfs, facts, matched_bys, deployments_task
