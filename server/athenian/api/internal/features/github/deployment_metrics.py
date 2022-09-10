@@ -22,6 +22,7 @@ from athenian.api.internal.miners.types import (
 )
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
+from athenian.api.to_object_arrays import nested_lengths
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
@@ -117,7 +118,7 @@ def group_deployments_by_participants(
     ):
         values = df[col].values
         offsets = np.zeros(len(values) + 1, dtype=int)
-        lengths = np.array([len(v) for v in values])
+        lengths = nested_lengths(values)
         np.cumsum(lengths, out=offsets[1:])
         values = np.concatenate([np.concatenate(values), [-1]])
         preprocessed[pkind] = values, offsets, lengths == 0

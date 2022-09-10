@@ -23,6 +23,7 @@ from athenian.api.internal.miners.types import (
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
+from athenian.api.to_object_arrays import nested_lengths
 
 metric_calculators: dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
@@ -56,7 +57,7 @@ def group_releases_by_participants(
                 break
             if rpk in group:
                 values = df[col].values[missing_indexes]
-                lengths = np.fromiter((len(ca) for ca in values), int, len(values))
+                lengths = nested_lengths(values)
                 offsets = np.zeros(len(values) + 1, dtype=int)
                 np.cumsum(lengths, out=offsets[1:])
                 values = np.concatenate([np.concatenate(values), [-1]])

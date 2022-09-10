@@ -42,6 +42,7 @@ from athenian.api.internal.miners.types import (
 )
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.web import PullRequestMetricID
+from athenian.api.to_object_arrays import nested_lengths
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
@@ -1075,7 +1076,10 @@ class JIRAMappingCalculator(SumMetricCalculator[int]):
         **kwargs,
     ) -> np.ndarray:
         result = self._calcs[0].peek.copy()
-        result[:, ~facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].values.astype(bool)] = self.nan
+        result[
+            :,
+            ~nested_lengths(facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].values).astype(bool),
+        ] = self.nan
         return result
 
 
@@ -1309,7 +1313,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         )
         imap[checked_mask] = 0
 
-        lengths = np.fromiter((len(v) for v in fact_envs), int, len(fact_envs))
+        lengths = nested_lengths(fact_envs)
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
         offsets = offsets[: np.argmax(offsets)]
