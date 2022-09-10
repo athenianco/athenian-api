@@ -868,6 +868,9 @@ class MetricEntriesCalculator:
         all_participants = self._merge_release_participants(
             t.participants for request in requests for t in request.teams
         )
+        jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        jira_filter = reduce(operator.or_, jira_filters)
+
         releases, _, _, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -876,7 +879,7 @@ class MetricEntriesCalculator:
             time_from,
             time_to,
             LabelFilter.empty(),
-            JIRAFilter.empty(),  # should be possible to deduce from requests
+            jira_filter,
             release_settings,
             logical_settings,
             prefixer,

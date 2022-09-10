@@ -370,6 +370,35 @@ class TestJIRAFiltering(BaseMetricsTest):
             res = await request(jiraProjects=["P2"])
             assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
 
+    async def test_release_metric(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        metrics = [ReleaseMetricID.RELEASE_PRS]
+        dates = (date(2016, 1, 1), date(2019, 1, 1))
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueFactory(
+                    id="20", project_id="0", type="t0", priority_name="extreme",
+                ),
+                md_factory.JIRAProjectFactory(id="0", key="P0"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            request = partial(self._request, 1, 1, metrics, *dates)
+
+            res = await request()
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 450
+
+            res = await request(jiraIssueTypes=["T99"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraIssueTypes=["T0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 71
+
+            res = await request(jiraProjects=["P0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 71
 
     async def test_jira_fields_normalization(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))

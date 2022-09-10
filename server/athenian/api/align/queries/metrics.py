@@ -306,14 +306,15 @@ async def calculate_team_metrics(
                     [
                         TeamSpecificFilters(
                             team_id=team_id,
-                            repositories=td.repositories
-                            if td.repositories is not None
-                            else all_repos,
                             participants={
                                 ReleaseParticipationKind.PR_AUTHOR: td.members,
                                 ReleaseParticipationKind.COMMIT_AUTHOR: td.members,
                                 ReleaseParticipationKind.RELEASER: td.members,
                             },
+                            repositories=td.repositories
+                            if td.repositories is not None
+                            else all_repos,
+                            jira_filter=td.jira_filter,
                         )
                         for team_id, td in request.teams.items()
                     ],
