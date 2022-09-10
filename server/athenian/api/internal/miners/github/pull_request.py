@@ -803,7 +803,7 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_by_ids_cache,
-        key=lambda prs, unreleased, releases, time_to, logical_settings, truncate=True, with_jira=True, **_: (  # noqa
+        key=lambda prs, unreleased, releases, time_to, logical_settings, truncate=True, with_jira=JIRAEntityToFetch.ISSUES, **_: (  # noqa
             ",".join(map(str, prs.index.values)),
             ",".join(map(str, unreleased)),
             ",".join(map(str, releases[Release.node_id.name].values)),
@@ -834,7 +834,7 @@ class PullRequestMiner:
         rdb: Database,
         cache: Optional[aiomcache.Client],
         truncate: bool = True,
-        with_jira: bool = True,
+        with_jira: JIRAEntityToFetch | int = JIRAEntityToFetch.ISSUES,
         physical_repositories: Optional[Union[set[str], KeysView[str]]] = None,
     ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         """

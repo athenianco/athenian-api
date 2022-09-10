@@ -53,7 +53,7 @@ from athenian.api.internal.miners.jira.issue import (
     participant_columns,
     resolve_work_began_and_resolved,
 )
-from athenian.api.internal.miners.types import Deployment
+from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import fetch_teams_map
@@ -787,12 +787,10 @@ async def _issue_flow(
             return {}, {}
         prs_df, (facts, ambiguous), account_bots = await gather(
             read_sql_query(
-                select([PullRequest])
+                select(PullRequest)
                 .where(
-                    and_(
-                        PullRequest.acc_id.in_(meta_ids),
-                        PullRequest.node_id.in_(pr_ids),
-                    ),
+                    PullRequest.acc_id.in_(meta_ids),
+                    PullRequest.node_id.in_(pr_ids),
                 )
                 .order_by(PullRequest.node_id.name),
                 mdb,
@@ -833,7 +831,7 @@ async def _issue_flow(
                 prs_df,
                 facts,
                 ambiguous,
-                False,
+                JIRAEntityToFetch.NOTHING,
                 related_branches,
                 default_branches,
                 account_bots,

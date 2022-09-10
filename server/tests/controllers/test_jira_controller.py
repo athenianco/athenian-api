@@ -1171,7 +1171,19 @@ async def test_filter_jira_issue_prs_comments(client, headers):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precomputed_deployments):
+@pytest.mark.parametrize("with_pdb", [True])
+@with_defer
+async def test_filter_jira_issue_prs_deployments(
+    client,
+    headers,
+    mdb_rw,
+    precomputed_deployments,
+    with_pdb,
+    metrics_calculator_factory,
+    prefixer,
+    release_match_setting_tag,
+    bots,
+):
     body = {
         "date_from": "2018-09-01",
         "date_to": "2020-01-01",
@@ -1180,15 +1192,40 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
         "exclude_inactive": True,
         "return": ["issues", "issue_bodies"],
     }
-    await mdb_rw.execute(
-        insert(NodePullRequestJiraIssues).values(
+    if with_pdb:
+        args = (
+            datetime(2019, 6, 3, tzinfo=timezone.utc),
+            datetime(2019, 6, 19, tzinfo=timezone.utc),
+            {"src-d/go-git"},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            False,
+            0,
+        )
+        await metrics_calculator_factory(1, (6366825,)).calc_pull_request_facts_github(*args)
+        await wait_deferred()
+    await mdb_rw.execute_many(
+        insert(NodePullRequestJiraIssues),
+        [
             {
-                NodePullRequestJiraIssues.jira_acc: 1,
-                NodePullRequestJiraIssues.node_acc: 6366825,
-                NodePullRequestJiraIssues.node_id: 163373,
-                NodePullRequestJiraIssues.jira_id: "10100",
+                NodePullRequestJiraIssues.jira_acc.name: 1,
+                NodePullRequestJiraIssues.node_acc.name: 6366825,
+                NodePullRequestJiraIssues.node_id.name: 163373,
+                NodePullRequestJiraIssues.jira_id.name: "10100",
             },
-        ),
+            {
+                NodePullRequestJiraIssues.jira_acc.name: 1,
+                NodePullRequestJiraIssues.node_acc.name: 6366825,
+                NodePullRequestJiraIssues.node_id.name: 163221,
+                NodePullRequestJiraIssues.jira_id.name: "10100",
+            },
+        ],
     )
     try:
         response = await client.request(
@@ -1196,7 +1233,9 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
         )
     finally:
         await mdb_rw.execute(
-            delete(NodePullRequestJiraIssues).where(NodePullRequestJiraIssues.node_id == 163373),
+            delete(NodePullRequestJiraIssues).where(
+                NodePullRequestJiraIssues.node_id.in_([163373, 163221]),
+            ),
         )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -1206,8 +1245,8 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
     for issue in model.issues:
         if issue.id == "DEV-100":
             prs += 1
-            assert len(issue.prs) == 1
-            assert issue.prs[0].number == 1160
+            assert len(issue.prs) == 2
+            assert {issue.prs[i].number for i in range(2)} == {1160, 880}
     assert prs == 1
     assert model.deployments == {
         "Dummy deployment": DeploymentNotification(
