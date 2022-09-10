@@ -328,7 +328,10 @@ class TestBatchCalcPullRequestMetrics:
                 [[dt(2018, 1, 1), dt(2019, 9, 1)]],
                 [
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        1,
+                        ["src-d/go-git"],
+                        {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -337,7 +340,10 @@ class TestBatchCalcPullRequestMetrics:
                 [[dt(2017, 1, 1), dt(2017, 10, 1)]],
                 [
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        1,
+                        ["src-d/go-git"],
+                        {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -346,7 +352,10 @@ class TestBatchCalcPullRequestMetrics:
                 [[dt(2017, 8, 10), dt(2017, 8, 12)]],
                 [
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        1,
+                        ["src-d/go-git"],
+                        {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -404,7 +413,10 @@ class TestBatchCalcPullRequestMetrics:
                 [[dt(2019, 8, 25), dt(2019, 9, 1)]],
                 [
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        1,
+                        ["src-d/go-git"],
+                        {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -507,7 +519,10 @@ class TestBatchCalcReleaseMetrics:
                 time_intervals=[[dt(2018, 6, 12), dt(2020, 11, 11)]],
                 teams=[
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        1,
+                        ["src-d/go-git"],
+                        {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -516,7 +531,10 @@ class TestBatchCalcReleaseMetrics:
                 time_intervals=[[dt(2018, 1, 1), dt(2018, 6, 1)]],
                 teams=[
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        1,
+                        ["src-d/go-git"],
+                        {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -574,7 +592,10 @@ class TestBatchCalcReleaseMetrics:
                 time_intervals=[[dt(2019, 1, 12), dt(2019, 3, 11)]],
                 teams=[
                     TeamSpecificFilters(
-                        1, ["src-d/go-git"], {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        1,
+                        ["src-d/go-git"],
+                        {ReleaseParticipationKind.COMMIT_AUTHOR: [39789]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -683,6 +704,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
                         1,
                         ["src-d/go-git"],
                         {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -694,6 +716,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
                         1,
                         ["src-d/go-git"],
                         {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),
@@ -752,6 +775,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
                         1,
                         ["src-d/go-git"],
                         {JIRAParticipationKind.REPORTER: ["vadim markovtsev"]},
+                        JIRAFilter.empty(),
                     ),
                 ],
             ),

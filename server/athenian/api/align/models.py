@@ -279,13 +279,16 @@ class MetricValues(Model):
         return self._value
 
 
-class _BaseGoalInputFields(metaclass=Enum):  # noqa: PIE795
-    name = "name"
-    metric = "metric"
+class _GoalMetricFilters(metaclass=Enum):  # noqa: PIE795
     repositories = "repositories"
     jiraProjects = "jiraProjects"
     jiraPriorities = "jiraPriorities"
     jiraIssueTypes = "jiraIssueTypes"
+
+
+class _BaseGoalInputFields(_GoalMetricFilters):
+    name = "name"
+    metric = "metric"
 
 
 class CreateGoalInputFields(_BaseGoalInputFields):
@@ -325,12 +328,11 @@ class TeamGoalChangeFields(metaclass=Enum):
     remove = "remove"
 
 
-class MetricParamsFields(metaclass=Enum):
+class MetricParamsFields(_GoalMetricFilters):
     """Fields definitions for GraphQL MetricParams type."""
 
     teamId = "teamId"
     metrics = "metrics"
-    repositories = "repositories"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
 

@@ -1,5 +1,6 @@
 from datetime import date
-from typing import Any, Optional
+from functools import partial
+from typing import Any
 
 from freezegun import freeze_time
 from morcilla import Database
@@ -20,7 +21,8 @@ from tests.align.utils import (
     assert_extension_error,
     build_recursive_fields_structure,
 )
-from tests.testutils.db import models_insert
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import TeamFactory
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
@@ -51,13 +53,20 @@ class BaseMetricsTest(Requester):
                    $metrics: [String!]!,
                    $validFrom: Date!,
                    $expiresAt: Date!,
-                   $repositories: [String!]) {{
+                   $repositories: [String!],
+                   $jiraPriorities: [String!],
+                   $jiraProjects: [String!],
+                   $jiraIssueTypes: [String!],
+            ) {{
               metricsCurrentValues(accountId: $accountId, params: {{
                 teamId: $teamId,
                 metrics: $metrics,
                 validFrom: $validFrom,
                 expiresAt: $expiresAt,
-                repositories: $repositories
+                repositories: $repositories,
+                jiraPriorities: $jiraPriorities
+                jiraProjects: $jiraProjects,
+                jiraIssueTypes: $jiraIssueTypes,
               }}) {{
                 metric
                 value {{
@@ -73,9 +82,9 @@ class BaseMetricsTest(Requester):
         account_id: int,
         team_id: int,
         metrics: list[str],
-        repositories: Optional[list[str]],
         validFrom: date,
         expiresAt: date,
+        **extra: Any,  # other MetricParamsFields
     ) -> dict:
         assert isinstance(metrics, list)
         body = {
@@ -86,7 +95,7 @@ class BaseMetricsTest(Requester):
                 MetricParamsFields.metrics: metrics,
                 MetricParamsFields.validFrom: str(validFrom),
                 MetricParamsFields.expiresAt: str(expiresAt),
-                **{MetricParamsFields.repositories: repositories},  # noqa: PIE800
+                **extra,
             },
         }
         return await align_graphql_request(self.client, headers=self.headers, json=body)
@@ -126,18 +135,12 @@ class TestMetrics(BaseMetricsTest):
         mdb,
         precomputed_dead_prs,
     ) -> None:
-        res = await self._request(
-            1,
-            1,
-            [
-                PullRequestMetricID.PR_LEAD_TIME,
-                ReleaseMetricID.RELEASE_PRS,
-                JIRAMetricID.JIRA_RESOLVED,
-            ],
-            None,
-            date(2016, 1, 1),
-            date(2019, 1, 1),
-        )
+        metrics = [
+            PullRequestMetricID.PR_LEAD_TIME,
+            ReleaseMetricID.RELEASE_PRS,
+            JIRAMetricID.JIRA_RESOLVED,
+        ]
+        res = await self._request(1, 1, metrics, date(2016, 1, 1), date(2019, 1, 1))
         assert res == {
             "data": {
                 "metricsCurrentValues": [
@@ -207,9 +210,9 @@ class TestMetrics(BaseMetricsTest):
             1,
             1,
             [metric],
-            ["github.com/src-d/go-git"],
             date(2016, 1, 1),
             date(2019, 1, 1),
+            repositories=["github.com/src-d/go-git"],
         )
         assert len(mv := res["data"]["metricsCurrentValues"]) == 1
         assert mv[0]["metric"] == metric
@@ -225,14 +228,8 @@ class TestMetrics(BaseMetricsTest):
         validate_recursively(mv[0]["value"], value)
 
     async def test_fetch_two(self, sample_teams):
-        res = await self._request(
-            1,
-            1,
-            [JIRAMetricID.JIRA_RESOLVED, JIRAMetricID.JIRA_RESOLUTION_RATE],
-            None,
-            date(2019, 1, 1),
-            date(2022, 1, 1),
-        )
+        metrics = [JIRAMetricID.JIRA_RESOLVED, JIRAMetricID.JIRA_RESOLUTION_RATE]
+        res = await self._request(1, 1, metrics, date(2019, 1, 1), date(2022, 1, 1))
         assert res == {
             "data": {
                 "metricsCurrentValues": [
@@ -279,12 +276,7 @@ class TestMetrics(BaseMetricsTest):
             TeamFactory(id=2, parent_id=1, members=[39926]),
         )
         res = await self._request(
-            1,
-            1,
-            [PullRequestMetricID.PR_REVIEW_TIME],
-            None,
-            date(2005, 1, 1),
-            date(2005, 3, 31),
+            1, 1, [PullRequestMetricID.PR_REVIEW_TIME], date(2005, 1, 1), date(2005, 3, 31),
         )
         pr_review_time_data = res["data"]["metricsCurrentValues"][0]
         assert pr_review_time_data["metric"] == PullRequestMetricID.PR_REVIEW_TIME
@@ -297,24 +289,111 @@ class TestMetrics(BaseMetricsTest):
         assert team_2_data["value"] == {"float": None, "int": None, "str": None}
 
     async def test_repositories_param(self, sdb: Database) -> None:
-        await gather(models_insert(sdb, TeamFactory(id=1, members=[40020, 39789])))
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
         metrics = [PullRequestMetricID.PR_ALL_COUNT]
-        res = await self._request(1, 1, metrics, None, date(2016, 1, 1), date(2019, 1, 1))
+
+        dates = date(2016, 1, 1), date(2019, 1, 1)
+
+        res = await self._request(1, 1, metrics, *dates)
         value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
         assert value == 93
 
-        res = await self._request(
-            1, 1, metrics, ["github.com/src-d/go-git"], date(2016, 1, 1), date(2019, 1, 1),
-        )
+        res = await self._request(1, 1, metrics, *dates, repositories=["github.com/src-d/go-git"])
         value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
         # all data in big fixture is about go-git
         assert value == 93
 
-        res = await self._request(
-            1, 1, metrics, ["github.com/src-d/gitbase"], date(2016, 1, 1), date(2019, 1, 1),
-        )
+        res = await self._request(1, 1, metrics, *dates, repositories=["github.com/src-d/gitbase"])
         value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
         assert value == 0
+
+
+class TestJIRAFiltering(BaseMetricsTest):
+    async def test_pr_metric(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        metrics = [PullRequestMetricID.PR_ALL_COUNT]
+        dates = (date(2016, 1, 1), date(2019, 1, 1))
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="21"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162907, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162908, jira_id="20"),
+                md_factory.JIRAIssueFactory(
+                    id="20", project_id="0", type="t0", priority_name="extreme",
+                ),
+                md_factory.JIRAIssueFactory(
+                    id="21", project_id="1", type="t1", priority_name="medium",
+                ),
+                md_factory.JIRAProjectFactory(id="0", key="P0"),
+                md_factory.JIRAProjectFactory(id="1", key="P1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            request = partial(self._request, 1, 1, metrics, *dates)
+
+            res = await request(jiraPriorities=["extreme", "low"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 3
+
+            res = await request(jiraPriorities=["low"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraPriorities=["extreme"], jiraProjects=["P0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 3
+
+            res = await request(jiraPriorities=["extreme"], jiraProjects=["P1"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraPriorities=["medium"], jiraProjects=["P0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraPriorities=["medium"], jiraProjects=["P1"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
+
+            res = await request(jiraProjects=["P1"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
+
+            res = await request(jiraIssueTypes=["T0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 3
+
+            res = await request(jiraIssueTypes=["T1"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
+
+            res = await request(jiraIssueTypes=["t0"], jiraProjects=["P0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 3
+
+            res = await request(jiraIssueTypes=["T0"], jiraProjects=["P1"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraProjects=["P2"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+
+    async def test_jira_fields_normalization(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        metrics = [PullRequestMetricID.PR_ALL_COUNT]
+        dates = (date(2016, 1, 1), date(2019, 1, 1))
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueFactory(
+                    id="20", type="t0", priority_name="extreme", project_id="0",
+                ),
+                md_factory.JIRAProjectFactory(id="0"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            request = partial(self._request, 1, 1, metrics, *dates)
+
+            res = await request(jiraPriorities=["Extreme", "low"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
+
+            res = await request(jiraIssueTypes=["T0"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
 
 
 class TestMetricsNasty(BaseMetricsTest):
@@ -323,7 +402,6 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
-            None,
             date(2019, 1, 1),
             date(2022, 1, 1),
         )
@@ -331,7 +409,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 19, "column": 15}],
+                    "locations": [{"line": 23, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -347,7 +425,6 @@ class TestMetricsNasty(BaseMetricsTest):
             2,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
-            None,
             date(2019, 1, 1),
             date(2022, 1, 1),
         )
@@ -355,7 +432,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 19, "column": 15}],
+                    "locations": [{"line": 23, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -371,7 +448,6 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             ["whatever"],
-            None,
             date(2019, 1, 1),
             date(2022, 1, 1),
         )
@@ -379,7 +455,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 19, "column": 15}],
+                    "locations": [{"line": 23, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
@@ -395,7 +471,6 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
-            None,
             date(2022, 1, 1),
             date(2019, 1, 1),
         )
@@ -403,7 +478,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 19, "column": 15}],
+                    "locations": [{"line": 23, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
@@ -419,7 +494,6 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
-            None,
             date(1984, 1, 1),
             date(2002, 1, 1),
         )
@@ -434,7 +508,6 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             [PullRequestMetricID.PR_RELEASE_COUNT],
-            None,
             date(2022, 4, 1),
             date(2022, 4, 10),
         )
@@ -443,7 +516,12 @@ class TestMetricsNasty(BaseMetricsTest):
 
     async def test_fetch_invalid_metric(self, sample_teams) -> None:
         res = await self._request(
-            1, 1, ["whatever"], ["github.com/src-d/go-git"], date(2019, 1, 1), date(2022, 1, 1),
+            1,
+            1,
+            ["whatever"],
+            date(2019, 1, 1),
+            date(2022, 1, 1),
+            repositories=["github.com/src-d/go-git"],
         )
         assert res["errors"][0]["message"] == "Bad Request"
         assert_extension_error(res, "The following metrics are not supported: whatever")
@@ -453,9 +531,9 @@ class TestMetricsNasty(BaseMetricsTest):
             1,
             1,
             [PullRequestMetricID.PR_ALL_COUNT],
-            ["github.com/src-d/not-existing"],
             date(2019, 1, 1),
             date(2022, 1, 1),
+            repositories=["github.com/src-d/not-existing"],
         )
         assert res["errors"][0]["message"] == "Forbidden"
         assert_extension_error(res, "Account 1 is access denied to repos src-d/not-existing")

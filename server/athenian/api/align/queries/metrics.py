@@ -38,9 +38,16 @@ from athenian.api.internal.features.github.release_metrics import (
 from athenian.api.internal.features.jira.issue_metrics import (
     metric_calculators as jira_metric_calculators,
 )
-from athenian.api.internal.jira import get_jira_installation_or_none, load_mapped_jira_users
+from athenian.api.internal.jira import (
+    get_jira_installation,
+    get_jira_installation_or_none,
+    load_mapped_jira_users,
+    normalize_issue_type,
+    normalize_priority,
+)
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.access_classes import access_classes
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.types import (
@@ -85,9 +92,9 @@ async def resolve_metrics_current_values(
     teams_flat = flatten_teams(team_rows)
 
     repos = await _parse_repositories(params, accountId, meta_ids, info.context)
-
+    jira_filter = await _parse_jira_filter(params, accountId, info.context)
     teams = {
-        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], repos)
+        row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], repos, jira_filter)
         for row in team_rows
     }
     team_metrics_all_intervals = await calculate_team_metrics(
@@ -130,6 +137,42 @@ async def _parse_repositories(
     return repos
 
 
+async def _parse_jira_filter(
+    params: Mapping[str, Any],
+    account_id: int,
+    request: AthenianWebRequest,
+) -> JIRAFilter:
+    jira_projects = frozenset(params.get(MetricParamsFields.jiraProjects) or ())
+    jira_priorities = frozenset(
+        normalize_priority(p) for p in params.get(MetricParamsFields.jiraPriorities) or ()
+    )
+    jira_issue_types = frozenset(
+        normalize_issue_type(t) for t in params.get(MetricParamsFields.jiraIssueTypes) or ()
+    )
+    if jira_projects or jira_priorities or jira_issue_types:
+        jira_config = await get_jira_installation(
+            account_id, request.sdb, request.mdb, request.cache,
+        )
+        if jira_projects:
+            jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
+            custom_projects = True
+        else:
+            jira_projects = frozenset(jira_config.projects)
+            custom_projects = False
+        return JIRAFilter(
+            jira_config.acc_id,
+            jira_projects,
+            LabelFilter.empty(),
+            frozenset(),
+            frozenset(jira_issue_types or ()),
+            frozenset(jira_priorities or ()),
+            custom_projects,
+            False,
+        )
+    else:
+        return JIRAFilter.empty()
+
+
 def _parse_time_interval(params: Mapping[str, Any]) -> Interval:
     date_from, date_to = params[MetricParamsFields.validFrom], params[MetricParamsFields.expiresAt]
     if date_from > date_to:
@@ -164,11 +207,12 @@ class RequestedTeamDetails:
 
     members: Sequence[int]
     repositories: Optional[tuple[str, ...]]
+    jira_filter: JIRAFilter = JIRAFilter.empty()
     # add more filters here
 
     def filters(self) -> tuple[Any, ...]:
         """Return the tuple with contained team-specific filters."""
-        return (self.repositories,)  # add more filters here
+        return (self.repositories, self.jira_filter)  # add more filters here
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,10 +287,11 @@ async def calculate_team_metrics(
                     [
                         TeamSpecificFilters(
                             team_id=team_id,
+                            participants={PRParticipationKind.AUTHOR: members},
                             repositories=td.repositories
                             if td.repositories is not None
                             else all_repos,
-                            participants={PRParticipationKind.AUTHOR: members},
+                            jira_filter=td.jira_filter,
                         )
                         for (team_id, td), members in zip(request.teams.items(), team_members)
                     ],
