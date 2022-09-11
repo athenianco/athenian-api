@@ -329,10 +329,11 @@ async def calculate_team_metrics(
                     [
                         TeamSpecificFilters(
                             team_id=team_id,
+                            participants=_jirafy_team(td.members, jira_map),
                             repositories=td.repositories
                             if td.repositories is not None
                             else all_repos,
-                            participants=_jirafy_team(td.members, jira_map),
+                            jira_filter=td.jira_filter,
                         )
                         for team_id, td in request.teams.items()
                     ],

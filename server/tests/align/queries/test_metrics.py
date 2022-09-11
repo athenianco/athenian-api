@@ -5,7 +5,6 @@ from typing import Any
 from freezegun import freeze_time
 from morcilla import Database
 import pytest
-from sqlalchemy import insert
 
 from athenian.api.align.models import MetricParamsFields
 from athenian.api.align.queries.metrics import (
@@ -13,8 +12,6 @@ from athenian.api.align.queries.metrics import (
     TeamMetricsRequest,
     _simplify_requests,
 )
-from athenian.api.async_utils import gather
-from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.align.utils import (
     align_graphql_request,
@@ -23,7 +20,7 @@ from tests.align.utils import (
 )
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import TeamFactory
+from tests.testutils.factory.state import MappedJIRAIdentityFactory, TeamFactory
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -103,28 +100,13 @@ class BaseMetricsTest(Requester):
 
 @pytest.fixture(scope="function")
 async def sample_teams(sdb: Database) -> None:
-    id_values = [
-        MappedJIRAIdentity(
-            account_id=1,
-            confidence=1,
-            github_user_id=github_id,
-            jira_user_id=jira_id,
-        )
-        .create_defaults()
-        .explode(with_primary_keys=True)
-        for github_id, jira_id in (
-            (40020, "5de5049e2c5dd20d0f9040c1"),
-            (39789, "5dd58cb9c7ac480ee5674902"),
-            (40191, "5ddec0b9be6c1f0d071ff82d"),
-        )
-    ]
-    await gather(
-        models_insert(
-            sdb,
-            TeamFactory(id=1, members=[40020, 39789, 40070]),
-            TeamFactory(id=2, parent_id=1, members=[40191, 39926, 40418]),
-        ),
-        sdb.execute_many(insert(MappedJIRAIdentity), id_values),
+    await models_insert(
+        sdb,
+        TeamFactory(id=1, members=[40020, 39789, 40070]),
+        TeamFactory(id=2, parent_id=1, members=[40191, 39926, 40418]),
+        MappedJIRAIdentityFactory(github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1"),
+        MappedJIRAIdentityFactory(github_user_id=39789, jira_user_id="5dd58cb9c7ac480ee5674902"),
+        MappedJIRAIdentityFactory(github_user_id=40191, jira_user_id="5ddec0b9be6c1f0d071ff82d"),
     )
 
 
@@ -399,6 +381,38 @@ class TestJIRAFiltering(BaseMetricsTest):
 
             res = await request(jiraProjects=["P0"])
             assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 71
+
+    async def test_jira_metric(self, sdb: Database, mdb_rw: Database) -> None:
+        metrics = [JIRAMetricID.JIRA_OPEN]
+        dates = (date(2019, 1, 1), date(2022, 1, 1))
+
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[40020, 39789]),
+            MappedJIRAIdentityFactory(
+                github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
+            ),
+            MappedJIRAIdentityFactory(
+                github_user_id=39789, jira_user_id="5dd58cb9c7ac480ee5674902",
+            ),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueFactory(id="20", priority_name="extreme"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            request = partial(self._request, 1, 1, metrics, *dates)
+
+            res = await request()
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 15
+
+            res = await request(jiraPriorities=["foo"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
+
+            res = await request(jiraPriorities=["extreme"])
+            assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
 
     async def test_jira_fields_normalization(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))

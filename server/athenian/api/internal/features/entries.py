@@ -1267,12 +1267,17 @@ class MetricEntriesCalculator:
         reporters, assignees, commenters = self._merge_jira_participants(
             [t.participants for request in requests for t in request.teams],
         )
+
+        jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        jira_filter = reduce(operator.or_, jira_filters)
+        if not jira_filter:
+            jira_filter = JIRAFilter.from_jira_config(jira_ids)
+
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
             time_from,
             time_to,
-            # we can deduce the common superset from requests if possible
-            JIRAFilter.from_jira_config(jira_ids),
+            jira_filter,
             exclude_inactive,
             reporters,
             assignees,
