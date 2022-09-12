@@ -12,7 +12,7 @@ from athenian.api.internal.features.github.pull_request_metrics import (
 )
 from athenian.api.internal.miners.types import PRParticipationKind
 from athenian.api.typing_utils import df_from_structs
-from tests.controllers.conftest import generate_pr_samples
+from tests.conftest import generate_pr_samples
 from tests.controllers.features.github.test_pull_request_metrics import dt64arr_ns
 from tests.testutils.time import dt
 

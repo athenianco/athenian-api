@@ -38,7 +38,7 @@ from athenian.api.internal.jira import (
     resolve_projects,
 )
 from athenian.api.internal.logical_repos import drop_logical_repo
-from athenian.api.internal.miners.filters import LabelFilter
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
@@ -630,16 +630,19 @@ async def _issue_flow(
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
     epics = [] if JIRAFilterReturn.ONLY_FLYING not in return_ else False
+    jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
+        epics=epics,
+        labels=label_filter,
+        issue_types=types,
+        # priorities are already lower-cased and de-None-d
+        priorities=priorities,
+    )
+
     issues = await fetch_jira_issues(
-        jira_ids,
         time_from,
         time_to,
+        jira_filter,
         exclude_inactive,
-        label_filter,
-        # priorities are already lower-cased and de-None-d
-        priorities,
-        types,
-        epics,
         reporters,
         assignees,
         commenters,

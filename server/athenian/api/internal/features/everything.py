@@ -318,14 +318,10 @@ async def mine_all_jira_issues(
     except ResponseError:  # no JIRA installed
         return {}
     issues = await fetch_jira_issues(
-        jira_ids,
         datetime(1970, 1, 1, tzinfo=timezone.utc),
         datetime.now(timezone.utc),
+        JIRAFilter.from_jira_config(jira_ids),
         False,
-        LabelFilter.empty(),
-        [],
-        set(),
-        [],
         [],
         [],
         [],

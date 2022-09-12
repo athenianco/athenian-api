@@ -163,7 +163,7 @@ class RequestedTeamDetails:
     """Team members + all team-specific filters."""
 
     members: list[int]
-    repositories: Optional[tuple[str]]
+    repositories: Optional[tuple[str, ...]]
     # add more filters here
 
     def filters(self) -> tuple[Any, ...]:

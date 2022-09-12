@@ -1417,6 +1417,7 @@ async def test_calc_pull_request_facts_github_jira(
         LabelFilter({"performance", "task"}, set()),
         set(),
         set(),
+        set(),
         False,
         0,
     )

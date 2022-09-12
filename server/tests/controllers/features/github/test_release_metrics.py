@@ -58,6 +58,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
             LabelFilter({"performance", "bug"}, set()),
             set(),
             set(),
+            set(),
             False,
             False,
         ),

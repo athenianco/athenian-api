@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.internal.jira import JIRAConfig
-from athenian.api.internal.miners.filters import LabelFilter
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.jira import Issue
@@ -48,15 +48,14 @@ async def filter_epics(
     candidate_types = jira_ids.epic_candidate_types()
     if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.project_id)
+    jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
+        labels=labels, issue_types=candidate_types, priorities=priorities,
+    )
     epics = await fetch_jira_issues(
-        jira_ids,
         time_from,
         time_to,
+        jira_filter,
         exclude_inactive,
-        labels,
-        priorities,
-        candidate_types,
-        [],
         reporters,
         assignees,
         commenters,
@@ -101,14 +100,10 @@ async def filter_epics(
     if Issue.parent_id not in extra_columns:
         extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
-        jira_ids,
         None,
         None,
+        JIRAFilter.from_jira_config(jira_ids).replace(epics=epics[Issue.key.name].values),
         False,
-        LabelFilter.empty(),
-        [],
-        [],
-        epics[Issue.key.name].values,
         [],
         [],
         [],

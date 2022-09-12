@@ -1,16 +1,18 @@
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Set, Tuple
+from __future__ import annotations
+
+import dataclasses
+from typing import Any, Iterable, Optional
 
 from athenian.api.internal.jira import JIRAConfig, normalize_issue_type
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 
 
-@dataclass(slots=True, frozen=True)
+@dataclasses.dataclass(slots=True, frozen=True)
 class LabelFilter:
     """Pull Request labels: must/must not contain."""
 
-    include: Set[str]
-    exclude: Set[str]
+    include: set[str]
+    exclude: set[str]
 
     @classmethod
     def from_iterables(
@@ -25,7 +27,7 @@ class LabelFilter:
         )
 
     @classmethod
-    def empty(cls) -> "LabelFilter":
+    def empty(cls) -> LabelFilter:
         """Initialize an empty LabelFilter."""
         return cls(set(), set())
 
@@ -41,11 +43,13 @@ class LabelFilter:
         """Implement repr()."""
         return "LabelFilter(%r, %r)" % (self.include, self.exclude)
 
-    def compatible_with(self, other: "LabelFilter") -> bool:
+    def compatible_with(self, other: LabelFilter) -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
         return (
-            (not self.include) or (other.include and self.include.issuperset(other.include))
-        ) and ((not self.exclude) or (other.exclude and self.exclude.issubset(other.exclude)))
+            (not self.include) or (bool(other.include) and self.include.issuperset(other.include))
+        ) and (
+            (not self.exclude) or (bool(other.exclude) and self.exclude.issubset(other.exclude))
+        )
 
     def match(self, labels: Iterable[str]) -> bool:
         """Check whether a set of labels satisfies the filter."""
@@ -64,7 +68,7 @@ class LabelFilter:
         return not (self.exclude and self.exclude.intersection(labels))
 
     @classmethod
-    def split(cls, labels: Set[str]) -> Tuple[List[str], List[List[str]]]:
+    def split(cls, labels: set[str]) -> tuple[list[str], list[list[str]]]:
         """Split labels by comma "," and divide into two groups: singles and multiples."""
         singles = []
         multiples = []
@@ -77,52 +81,64 @@ class LabelFilter:
         return singles, multiples
 
 
-@dataclass(slots=True, frozen=True)
+@dataclasses.dataclass(slots=True, frozen=True)
 class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
-    projects: List[str]
+    projects: list[str]
     labels: LabelFilter
-    epics: Set[str]
-    issue_types: Set[str]
+    epics: set[str] | bool
+    issue_types: set[str]
+    priorities: set[str]
     custom_projects: bool  # PRs must be mapped to any issue in `projects`
     unmapped: bool  # select everything but the mapped PRs
 
+    def __post_init(self) -> None:
+        if self.epics is True:
+            raise ValueError("epics must be a set of strings or `False`")
+
     @classmethod
-    def empty(cls) -> "JIRAFilter":
+    def empty(cls) -> JIRAFilter:
         """Initialize an empty JIRAFilter."""
-        return cls(0, [], LabelFilter.empty(), set(), set(), False, False)
+        return cls(0, [], LabelFilter.empty(), set(), set(), set(), False, False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
-        return self.account > 0 and (
-            bool(self.labels)
-            or bool(self.epics)
-            or bool(self.issue_types)
-            or self.unmapped
-            or self.custom_projects
+        return self.account > 0 and any(
+            [
+                self.labels,
+                self.epics,
+                self.issue_types,
+                self.priorities,
+                self.unmapped,
+                self.custom_projects,
+            ],
         )
 
     def __str__(self) -> str:
         """Implement str()."""
-        if not self.unmapped:
-            return "[%s, %s, %s, custom_projects=%s, unmapped=%s]" % (
-                self.labels,
-                sorted(self.epics),
-                sorted(self.issue_types),
-                self.custom_projects,
-                self.unmapped,
-            )
-        return "<unmapped>"
+        if self.unmapped:
+            return "[%s, unmapped=True]" % self.account
+
+        projects = sorted(self.projects) if self.custom_projects else ["<all>"]
+        return "[%s, %s, %s, %s, %s, projects=%s]" % (
+            self.account,
+            self.labels,
+            self.epics if isinstance(self.epics, bool) else sorted(self.epics),
+            sorted(self.issue_types),
+            sorted(self.priorities),
+            projects,
+        )
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return "JIRAFilter(%r, %r, %r, %r, %r, %r)" % (
+        return "JIRAFilter(%r, %r, %r, %r, %r, %r, %r)" % (
             self.account,
             self.labels,
             self.epics,
             self.issue_types,
+            self.priorities,
             self.custom_projects,
             self.unmapped,
         )
@@ -131,7 +147,7 @@ class JIRAFilter:
         """Override {}.__repr__() in Sentry."""
         return repr(self)
 
-    def compatible_with(self, other: "JIRAFilter") -> bool:
+    def compatible_with(self, other: JIRAFilter) -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
         if self.unmapped != other.unmapped:
             return False
@@ -139,16 +155,24 @@ class JIRAFilter:
             return True
         if not self.labels.compatible_with(other.labels):
             return False
-        if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
+        if (self.epics is False) != (other.epics is False):
             return False
+        if not isinstance(self.epics, bool):
+            assert not isinstance(other.epics, bool)
+            if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
+                return False
         if self.issue_types and (  # noqa: PIE801
             not other.issue_types or not self.issue_types.issuperset(other.issue_types)
+        ):
+            return False
+        if self.priorities and (  # noqa: PIE801
+            not other.priorities or not self.priorities.issuperset(other.priorities)
         ):
             return False
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter], ids: Optional[JIRAConfig]) -> "JIRAFilter":
+    def from_web(cls, model: Optional[WebJIRAFilter], ids: Optional[JIRAConfig]) -> JIRAFilter:
         """Initialize a new JIRAFilter from the corresponding web model."""
         if model is None or ids is None:
             return cls.empty()
@@ -164,6 +188,20 @@ class JIRAFilter:
             labels=labels,
             epics={s.upper() for s in (model.epics or [])},
             issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
+            priorities=set(),  # not present in web model
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
+
+    @classmethod
+    def from_jira_config(cls, jira_config: JIRAConfig) -> JIRAFilter:
+        """Initialize a new JIRAFilter selecting everything belonging to the jira account."""
+        return cls.empty().replace(
+            account=jira_config.acc_id,
+            projects=list(jira_config.projects),
+            custom_projects=True,
+        )
+
+    def replace(self, **kwargs: Any) -> JIRAFilter:
+        """Return a new  JIRAFilter with some fields replaced."""
+        return dataclasses.replace(self, **kwargs)
