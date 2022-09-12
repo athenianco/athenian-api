@@ -118,16 +118,18 @@ class JIRAFilter:
 
     def __str__(self) -> str:
         """Implement str()."""
-        if not self.unmapped:
-            return "[%s, %s, %s, %s, custom_projects=%s, unmapped=%s]" % (
-                self.labels,
-                self.epics if isinstance(self.epics, bool) else sorted(self.epics),
-                sorted(self.issue_types),
-                sorted(self.priorities),
-                self.custom_projects,
-                self.unmapped,
-            )
-        return "<unmapped>"
+        if self.unmapped:
+            return "[%s, unmapped=True]" % self.account
+
+        projects = sorted(self.projects) if self.custom_projects else ["<all>"]
+        return "[%s, %s, %s, %s, %s, projects=%s]" % (
+            self.account,
+            self.labels,
+            self.epics if isinstance(self.epics, bool) else sorted(self.epics),
+            sorted(self.issue_types),
+            sorted(self.priorities),
+            projects,
+        )
 
     def __repr__(self) -> str:
         """Implement repr()."""
