@@ -28,8 +28,7 @@ from athenian.api.internal.settings import (
 )
 from athenian.api.models.metadata.github import NodeCommit, PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubCommitHistory
-from tests.conftest import _metadata_db
-from tests.controllers.conftest import SAMPLE_BOTS
+from tests.conftest import SAMPLE_BOTS, _metadata_db
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 

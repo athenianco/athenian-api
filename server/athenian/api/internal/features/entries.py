@@ -1192,15 +1192,15 @@ class MetricEntriesCalculator:
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         reporters, assignees, commenters = self._merge_jira_participants(participants)
+        jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
+            labels=label_filter, issue_types=types, epics=epics,
+        )
         issues = await fetch_jira_issues(
-            jira_ids,
             time_from,
             time_to,
+            jira_filter,
             exclude_inactive,
-            label_filter,
             priorities,
-            types,
-            epics,
             reporters,
             assignees,
             commenters,
@@ -1261,14 +1261,11 @@ class MetricEntriesCalculator:
         )
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
-            jira_ids,
             time_from,
             time_to,
-            exclude_inactive,
-            LabelFilter.empty(),
             # we can deduce the common superset from requests if possible
-            [],
-            [],
+            JIRAFilter.from_jira_config(jira_ids),
+            exclude_inactive,
             [],
             reporters,
             assignees,
@@ -1340,15 +1337,15 @@ class MetricEntriesCalculator:
     ) -> np.ndarray:
         """Calculate histograms over JIRA issues."""
         reporters, assignees, commenters = self._merge_jira_participants(participants)
+        jira_filters = JIRAFilter.from_jira_config(jira_ids).replace(
+            labels=label_filter, issue_types=types, epics=epics,
+        )
         issues = await fetch_jira_issues(
-            jira_ids,
             time_from,
             time_to,
+            jira_filters,
             exclude_inactive,
-            label_filter,
             priorities,
-            types,
-            epics,
             reporters,
             assignees,
             commenters,

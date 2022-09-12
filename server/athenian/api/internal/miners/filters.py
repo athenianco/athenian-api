@@ -1,11 +1,11 @@
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Set, Tuple
+import dataclasses
+from typing import Any, Iterable, List, Optional, Set, Tuple
 
 from athenian.api.internal.jira import JIRAConfig, normalize_issue_type
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 
 
-@dataclass(slots=True, frozen=True)
+@dataclasses.dataclass(slots=True, frozen=True)
 class LabelFilter:
     """Pull Request labels: must/must not contain."""
 
@@ -77,17 +77,21 @@ class LabelFilter:
         return singles, multiples
 
 
-@dataclass(slots=True, frozen=True)
+@dataclasses.dataclass(slots=True, frozen=True)
 class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
     projects: List[str]
     labels: LabelFilter
-    epics: Set[str]
+    epics: Set[str] | bool
     issue_types: Set[str]
     custom_projects: bool  # PRs must be mapped to any issue in `projects`
     unmapped: bool  # select everything but the mapped PRs
+
+    def __post_init(self) -> None:
+        if self.epics is True:
+            raise ValueError("epics must be a set of strings or `False`")
 
     @classmethod
     def empty(cls) -> "JIRAFilter":
@@ -109,7 +113,7 @@ class JIRAFilter:
         if not self.unmapped:
             return "[%s, %s, %s, custom_projects=%s, unmapped=%s]" % (
                 self.labels,
-                sorted(self.epics),
+                self.epics if isinstance(self.epics, bool) else sorted(self.epics),
                 sorted(self.issue_types),
                 self.custom_projects,
                 self.unmapped,
@@ -139,8 +143,12 @@ class JIRAFilter:
             return True
         if not self.labels.compatible_with(other.labels):
             return False
-        if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
+        if (self.epics is False) != (other.epics is False):
             return False
+        if not isinstance(self.epics, bool):
+            assert not isinstance(other.epics, bool)
+            if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
+                return False
         if self.issue_types and (  # noqa: PIE801
             not other.issue_types or not self.issue_types.issuperset(other.issue_types)
         ):
@@ -167,3 +175,16 @@ class JIRAFilter:
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
+
+    @classmethod
+    def from_jira_config(cls, jira_config: JIRAConfig) -> "JIRAFilter":
+        """Initialize a new JIRAFilter selecting everything belonging to the jira account."""
+        return cls.empty().replace(
+            account=jira_config.acc_id,
+            projects=list(jira_config.projects),
+            custom_projects=True,
+        )
+
+    def replace(self, **kwargs: Any) -> "JIRAFilter":
+        """Return a new  JIRAFilter with some fields replaced."""
+        return dataclasses.replace(self, **kwargs)

@@ -61,6 +61,7 @@ async def generate_jira_prs_query(
     :param on: JOIN by these two columns: node ID-like and acc_id-like.
     """
     assert jira
+    assert not isinstance(jira.epics, bool)  # not yet supported
     if columns is PullRequest:
         columns = [PullRequest]
     _map = aliased(NodePullRequestJiraIssues, name="m")
@@ -272,16 +273,12 @@ ISSUE_PR_IDS = "pr_ids"
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
-        installation_ids[0],
-        ",".join(installation_ids[1]),
+    key=lambda time_from, time_to, jira_filter, exclude_inactive, priorities, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
         time_from.timestamp() if time_from else "-",
         time_to.timestamp() if time_to else "-",
+        jira_filter,
         exclude_inactive,
-        labels,
         ",".join(sorted(priorities)),
-        ",".join(sorted(types)),
-        ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
@@ -292,14 +289,11 @@ ISSUE_PR_IDS = "pr_ids"
     ),
 )
 async def fetch_jira_issues(
-    installation_ids: JIRAConfig,
     time_from: Optional[datetime],
     time_to: Optional[datetime],
+    jira_filter: JIRAFilter,
     exclude_inactive: bool,
-    labels: LabelFilter,
     priorities: Collection[str],
-    types: Collection[str],
-    epics: Collection[str] | bool,
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
@@ -335,16 +329,14 @@ async def fetch_jira_issues(
     :param nested_assignees: If filter by assignee, include all the children's.
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
+    assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
     issues = await _fetch_issues(
-        installation_ids,
         time_from,
         time_to,
+        jira_filter,
         exclude_inactive,
-        labels,
         priorities,
-        types,
-        epics,
         reporters,
         assignees,
         commenters,
@@ -397,7 +389,7 @@ async def fetch_jira_issues(
         )
         .where(
             sql.and_(
-                NodePullRequestJiraIssues.jira_acc == installation_ids[0],
+                NodePullRequestJiraIssues.jira_acc == jira_filter.account,
                 NodePullRequestJiraIssues.node_acc.in_(meta_ids),
                 jira_id_cond,
             ),
@@ -564,14 +556,11 @@ async def _fetch_released_prs(
 
 @sentry_span
 async def _fetch_issues(
-    ids: JIRAConfig,
     time_from: Optional[datetime],
     time_to: Optional[datetime],
+    jira_filter: JIRAFilter,
     exclude_inactive: bool,
-    labels: LabelFilter,
     priorities: Collection[str],
-    types: Collection[str],
-    epics: Collection[str] | bool,
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
@@ -598,8 +587,8 @@ async def _fetch_issues(
     # this is backed with a DB index
     far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     and_filters = [
-        Issue.acc_id == ids.acc_id,
-        Issue.project_id.in_(ids.projects),
+        Issue.acc_id == jira_filter.account,
+        Issue.project_id.in_(jira_filter.projects),
         Issue.is_deleted.is_(False),
     ]
     filter_by_athenian_issue = False
@@ -613,21 +602,23 @@ async def _fetch_issues(
         and_filters.append(AthenianIssue.updated >= time_from)
     if len(priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
-    if len(types):
-        and_filters.append(sql.func.lower(Issue.type).in_(types))
-    if isinstance(epics, bool):
-        assert epics is False
+    if len(jira_filter.issue_types):
+        and_filters.append(sql.func.lower(Issue.type).in_(jira_filter.issue_types))
+    if isinstance(jira_filter.epics, bool):
+        assert jira_filter.epics is False
         epics_major = aliased(Epic, name="epics_major")
         epics_self = aliased(Epic, name="epics_self")
         for alias in (epics_major, epics_self):
             and_filters.append(alias.name.is_(None))
-    elif len(epics):
+    elif len(jira_filter.epics):
         epic = aliased(Issue, name="epic")
-        and_filters.append(epic.key.in_(epics))
+        and_filters.append(epic.key.in_(jira_filter.epics))
     or_filters = []
-    if labels:
-        components = await _load_components(labels, ids[0], mdb, cache)
-        _append_label_filters(labels, components, mdb.url.dialect == "postgresql", and_filters)
+    if jira_filter.labels:
+        components = await _load_components(jira_filter.labels, jira_filter.account, mdb, cache)
+        _append_label_filters(
+            jira_filter.labels, components, mdb.url.dialect == "postgresql", and_filters,
+        )
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
     if assignees and (postgres or (not commenters and not nested_assignees)):
@@ -671,7 +662,7 @@ async def _fetch_issues(
                 Issue.acc_id == Status.acc_id,
             ),
         )
-        if epics is False:
+        if jira_filter.epics is False:
             seed = sql.outerjoin(
                 sql.outerjoin(
                     seed,
@@ -687,7 +678,7 @@ async def _fetch_issues(
                     Issue.acc_id == epics_self.acc_id,
                 ),
             )
-        elif len(epics):
+        elif len(jira_filter.epics):
             seed = sql.join(
                 seed,
                 epic,
@@ -748,7 +739,7 @@ async def _fetch_issues(
         df = pd.concat(
             await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query)),
         )
-    df = _validate_and_clean_issues(df, ids[0])
+    df = _validate_and_clean_issues(df, jira_filter.account)
     sentry_sdk.Hub.current.scope.span.description = str(len(df))
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):

@@ -9,7 +9,6 @@ from sqlalchemy import insert
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.precomputed_prs import store_precomputed_done_facts
 from athenian.api.internal.miners.github.released_pr import matched_by_column
@@ -74,13 +73,10 @@ class TestFetchJIRAIssues:
         )
         await wait_deferred()
         args = [
-            JIRAConfig(1, ["10003", "10009"], {}),
             time_from,
             time_to,
+            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
             False,
-            LabelFilter.empty(),
-            [],
-            [],
             [],
             [],
             [],
@@ -144,13 +140,10 @@ class TestFetchJIRAIssues:
         cache,
     ):
         args = [
-            JIRAConfig(1, ["10003", "10009"], {}),
             None,
             None,
+            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
             False,
-            LabelFilter.empty(),
-            [],
-            [],
             [],
             [],
             [],
@@ -180,13 +173,10 @@ class TestFetchJIRAIssues:
         cache,
     ):
         args = [
-            JIRAConfig(1, ["10003", "10009"], {}),
             None,
             None,
+            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
             False,
-            LabelFilter.empty(),
-            [],
-            [],
             [],
             [],
             ["vadim markovtsev", None],
