@@ -1525,7 +1525,6 @@ class MetricEntriesCalculator:
         ),
         postprocess=_postprocess_cached_facts,
         cache=lambda self, **_: self._cache,
-        version=2,
     )
     async def _calc_pull_request_facts_github(
         self,

@@ -28,6 +28,7 @@ from athenian.api.internal.miners.types import (
     JIRAEntityToFetch,
     PRParticipants,
     PullRequestFactsMap,
+    PullRequestJIRADetails,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
@@ -253,12 +254,17 @@ class UnfreshPullRequestFactsFetcher:
         facts = {**open_facts, **merged_facts, **done_facts}
         if pr_jira_mapper is not None:
             unreleased_jira_map = unreleased_jira_map[0]
+            empty_jira = PullRequestJIRADetails.empty()
             for node_id, repo in zip(
                 unreleased_prs.index.get_level_values(0).values,
                 unreleased_prs.index.get_level_values(1).values,
             ):
                 try:
-                    facts[(node_id, repo)].jira = unreleased_jira_map[node_id]
+                    jira = unreleased_jira_map[node_id]
+                except KeyError:
+                    jira = empty_jira
+                try:
+                    facts[(node_id, repo)].jira = jira
                 except KeyError:
                     continue
         else:
