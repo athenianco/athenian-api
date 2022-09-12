@@ -153,7 +153,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     jira_filter = JIRAFilter(
-        1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False, False,
+        1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, set(), False, False,
     )
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from,

@@ -84,7 +84,9 @@ from athenian.api.models.metadata.github import CheckRun
             ["src-d/go-git"],
             [],
             LabelFilter.empty(),
-            JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False, False),
+            JIRAFilter(
+                1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, set(), False, False,
+            ),
             229,
         ),
         (

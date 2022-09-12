@@ -1193,14 +1193,13 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         reporters, assignees, commenters = self._merge_jira_participants(participants)
         jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
-            labels=label_filter, issue_types=types, epics=epics,
+            labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
         )
         issues = await fetch_jira_issues(
             time_from,
             time_to,
             jira_filter,
             exclude_inactive,
-            priorities,
             reporters,
             assignees,
             commenters,
@@ -1266,7 +1265,6 @@ class MetricEntriesCalculator:
             # we can deduce the common superset from requests if possible
             JIRAFilter.from_jira_config(jira_ids),
             exclude_inactive,
-            [],
             reporters,
             assignees,
             commenters,
@@ -1338,14 +1336,13 @@ class MetricEntriesCalculator:
         """Calculate histograms over JIRA issues."""
         reporters, assignees, commenters = self._merge_jira_participants(participants)
         jira_filters = JIRAFilter.from_jira_config(jira_ids).replace(
-            labels=label_filter, issue_types=types, epics=epics,
+            labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
         )
         issues = await fetch_jira_issues(
             time_from,
             time_to,
             jira_filters,
             exclude_inactive,
-            priorities,
             reporters,
             assignees,
             commenters,

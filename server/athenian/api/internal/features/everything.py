@@ -325,7 +325,6 @@ async def mine_all_jira_issues(
         [],
         [],
         [],
-        [],
         False,
         default_branches,
         release_settings,

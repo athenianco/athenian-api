@@ -1617,6 +1617,7 @@ class TestMineReleases:
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
+            set(),
             False,
             False,
         )
@@ -1656,6 +1657,7 @@ class TestMineReleases:
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
+            set(),
             False,
             False,
         )
@@ -1688,7 +1690,7 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         jira_filter = JIRAFilter(
-            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), False, True,
+            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), set(), False, True,
         )
         kwargs = self._kwargs(
             time_from=time_from,
@@ -1725,6 +1727,7 @@ class TestMineReleases:
             LabelFilter({"bug", "onboarding", "performance"}, set()),
             set(),
             set(),
+            set(),
             False,
             False,
         )
@@ -1759,7 +1762,7 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         kwargs["jira"] = JIRAFilter(
-            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), False, True,
+            1, ["10003", "10009"], LabelFilter.empty(), set(), set(), set(), False, True,
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 12

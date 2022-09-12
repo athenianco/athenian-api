@@ -49,14 +49,13 @@ async def filter_epics(
     if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.project_id)
     jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
-        labels=labels, issue_types=candidate_types,
+        labels=labels, issue_types=candidate_types, priorities=priorities,
     )
     epics = await fetch_jira_issues(
         time_from,
         time_to,
         jira_filter,
         exclude_inactive,
-        priorities,
         reporters,
         assignees,
         commenters,
@@ -105,7 +104,6 @@ async def filter_epics(
         None,
         JIRAFilter.from_jira_config(jira_ids).replace(epics=epics[Issue.key.name].values),
         False,
-        [],
         [],
         [],
         [],

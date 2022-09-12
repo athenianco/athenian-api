@@ -85,6 +85,8 @@ async def generate_jira_prs_query(
         )
     if jira.issue_types:
         filters.append(_issue.type.in_(jira.issue_types))
+    if jira.priorities:
+        filters.append(_issue.priority_name.in_(jira.priorities))
     if not jira.epics:
         filters.extend(
             [
@@ -273,12 +275,11 @@ ISSUE_PR_IDS = "pr_ids"
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, jira_filter, exclude_inactive, priorities, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
+    key=lambda time_from, time_to, jira_filter, exclude_inactive, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
         time_from.timestamp() if time_from else "-",
         time_to.timestamp() if time_to else "-",
         jira_filter,
         exclude_inactive,
-        ",".join(sorted(priorities)),
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
@@ -293,7 +294,6 @@ async def fetch_jira_issues(
     time_to: Optional[datetime],
     jira_filter: JIRAFilter,
     exclude_inactive: bool,
-    priorities: Collection[str],
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
@@ -336,7 +336,6 @@ async def fetch_jira_issues(
         time_to,
         jira_filter,
         exclude_inactive,
-        priorities,
         reporters,
         assignees,
         commenters,
@@ -560,7 +559,6 @@ async def _fetch_issues(
     time_to: Optional[datetime],
     jira_filter: JIRAFilter,
     exclude_inactive: bool,
-    priorities: Collection[str],
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
@@ -600,8 +598,8 @@ async def _fetch_issues(
     if exclude_inactive and time_from is not None:
         filter_by_athenian_issue = True
         and_filters.append(AthenianIssue.updated >= time_from)
-    if len(priorities):
-        and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
+    if len(jira_filter.priorities):
+        and_filters.append(sql.func.lower(Issue.priority_name).in_(jira_filter.priorities))
     if len(jira_filter.issue_types):
         and_filters.append(sql.func.lower(Issue.type).in_(jira_filter.issue_types))
     if isinstance(jira_filter.epics, bool):

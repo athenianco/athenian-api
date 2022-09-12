@@ -634,6 +634,8 @@ async def _issue_flow(
         epics=epics,
         labels=label_filter,
         issue_types=types,
+        # priorities are already lower-cased and de-None-d
+        priorities=priorities,
     )
 
     issues = await fetch_jira_issues(
@@ -641,8 +643,6 @@ async def _issue_flow(
         time_to,
         jira_filter,
         exclude_inactive,
-        # priorities are already lower-cased and de-None-d
-        priorities,
         reporters,
         assignees,
         commenters,
