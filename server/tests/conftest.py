@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections import defaultdict
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
@@ -17,10 +17,13 @@ from typing import Dict, List, Optional, Union, cast
 import warnings
 
 import aiomcache
+import faker
 from filelock import FileLock
 import sentry_sdk
 
 from athenian.api.async_utils import read_sql_query
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.miners.types import PullRequestFacts, nonemin
 
 try:
     import nest_asyncio
@@ -961,3 +964,181 @@ async def dag(mdb):
 async def precomputed_dead_prs(mdb, pdb, branches, dag) -> None:
     prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
     await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_factory(mdb, pdb, rdb, cache):
+    def build(account_id, meta_ids, with_cache=False, cache_only=False):
+        if cache_only:
+            return MetricEntriesCalculator(account_id, meta_ids, 28, None, None, None, cache)
+        if with_cache:
+            c = cache
+        else:
+            c = None
+
+        return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
+
+    return build
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
+    def build(account_id, meta_ids, with_cache=False, cache_only=False):
+        if cache_only:
+            return MetricEntriesCalculator(account_id, meta_ids, 28, None, None, None, memcached)
+        if with_cache:
+            c = memcached
+        else:
+            c = None
+
+        return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
+
+    return build
+
+
+SAMPLE_BOTS = {
+    "login",
+    "similar-code-searcher",
+    "prettierci",
+    "pull",
+    "dependabot",
+    "changeset-bot",
+    "jira",
+    "depfu",
+    "codecov-io",
+    "linear-app",
+    "pull-assistant",
+    "stale",
+    "codecov",
+    "sentry-io",
+    "minimum-review-bot",
+    "sonarcloud",
+    "thehub-integration",
+    "release-drafter",
+    "netlify",
+    "height",
+    "allcontributors",
+    "linc",
+    "cla-checker-service",
+    "unfurl-links",
+    "probot-auto-merge",
+    "snyk-bot",
+    "slash-commands",
+    "greenkeeper",
+    "cypress",
+    "gally-bot",
+    "commitlint",
+    "monocodus",
+    "dependabot-preview",
+    "vercel",
+    "codecov-commenter",
+    "botelastic",
+    "renovate",
+    "markdownify",
+    "coveralls",
+    "github-actions",
+    "codeclimate",
+    "zube",
+}
+
+
+@pytest.fixture(scope="session")
+def bots() -> set[str]:
+    return SAMPLE_BOTS
+
+
+def generate_pr_samples(n):
+    fake = faker.Faker()
+
+    def random_pr():
+        created_at = fake.date_time_between(start_date="-3y", end_date="-6M", tzinfo=timezone.utc)
+        first_commit = fake.date_time_between(
+            start_date="-3y1M", end_date=created_at, tzinfo=timezone.utc,
+        )
+        last_commit_before_first_review = fake.date_time_between(
+            start_date=created_at,
+            end_date=created_at + timedelta(days=30),
+            tzinfo=timezone.utc,
+        )
+        first_comment_on_first_review = fake.date_time_between(
+            start_date=last_commit_before_first_review,
+            end_date=timedelta(days=2),
+            tzinfo=timezone.utc,
+        )
+        first_review_request = fake.date_time_between(
+            start_date=last_commit_before_first_review,
+            end_date=first_comment_on_first_review,
+            tzinfo=timezone.utc,
+        )
+        approved_at = fake.date_time_between(
+            start_date=first_comment_on_first_review + timedelta(days=1),
+            end_date=first_comment_on_first_review + timedelta(days=30),
+            tzinfo=timezone.utc,
+        )
+        last_commit = fake.date_time_between(
+            start_date=first_comment_on_first_review + timedelta(days=1),
+            end_date=approved_at,
+            tzinfo=timezone.utc,
+        )
+        merged_at = fake.date_time_between(
+            approved_at, approved_at + timedelta(days=2), tzinfo=timezone.utc,
+        )
+        closed_at = merged_at
+        last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
+        released_at = fake.date_time_between(
+            merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc,
+        )
+        reviews = np.array(
+            [fake.date_time_between(created_at, last_review) for _ in range(random.randint(0, 3))],
+            dtype="datetime64[ns]",
+        )
+        activity_days = np.unique(
+            np.array(
+                [
+                    dt.replace(tzinfo=None)
+                    for dt in [
+                        created_at,
+                        closed_at,
+                        released_at,
+                        first_review_request,
+                        first_commit,
+                        last_commit_before_first_review,
+                        last_commit,
+                    ]
+                ]
+                + reviews.tolist(),
+                dtype="datetime64[D]",
+            ).astype("datetime64[ns]"),
+        )
+        return PullRequestFacts.from_fields(
+            created=pd.Timestamp(created_at),
+            first_commit=pd.Timestamp(first_commit or created_at),
+            work_began=nonemin(first_commit, created_at),
+            last_commit_before_first_review=pd.Timestamp(last_commit_before_first_review),
+            last_commit=pd.Timestamp(last_commit),
+            merged=pd.Timestamp(merged_at),
+            first_comment_on_first_review=pd.Timestamp(first_comment_on_first_review),
+            first_review_request=pd.Timestamp(first_review_request),
+            first_review_request_exact=first_review_request,
+            last_review=pd.Timestamp(last_review),
+            reviews=np.array(reviews),
+            activity_days=activity_days,
+            approved=pd.Timestamp(approved_at),
+            released=pd.Timestamp(released_at),
+            closed=pd.Timestamp(closed_at),
+            size=random.randint(10, 1000),
+            force_push_dropped=False,
+            release_ignored=False,
+            done=pd.Timestamp(released_at),
+            review_comments=max(0, random.randint(-5, 15)),
+            regular_comments=max(0, random.randint(-5, 15)),
+            participants=max(random.randint(-1, 4), 1),
+            merged_with_failed_check_runs=["flake8"] if fake.random.random() > 0.9 else [],
+        )
+
+    return [random_pr() for _ in range(n)]
+
+
+@pytest.fixture(scope="session")
+def pr_samples():
+    return generate_pr_samples
