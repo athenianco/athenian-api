@@ -417,8 +417,9 @@ class MetricEntriesCalculator:
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for pull request metrics.
 
-        A numpy array is returned for every request in `requests`.  The numpy array has the same
-        format of the return type of `calc_pull_request_metrics_line_github()`.
+        A numpy array is returned for every request in `requests`.
+        The numpy array has these axes:
+        - TeamSpecificFilters x granularities x intervals x metrics.
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_pull_request_metrics_line_github()` multiple times.
@@ -854,8 +855,9 @@ class MetricEntriesCalculator:
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for release metrics.
 
-        A numpy array is returned for every request in `requests`.  The numpy array has the same
-        format as the first item returned by `calc_release_metrics_line_github()`.
+        A numpy array is returned for every request in `requests`.
+        The numpy array has these axes:
+        - TeamSpecificFilters x granularities x intervals x metrics.
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_release_metrics_line_github()` multiple times.
@@ -1256,8 +1258,9 @@ class MetricEntriesCalculator:
         """
         Execute a set of requests for jira metrics.
 
-        A numpy array is returned for every request in `requests`.  The numpy array has the same
-        format as the first item returned by `calc_jira_metrics_line_github()`.
+        A numpy array is returned for every request in `requests`.
+        The numpy array has these axes:
+        - TeamSpecificFilters x granularities x intervals x metrics.
 
         Calling this method with multiple `requests` is more efficient than calling
         `calc_jira_metrics_line_github()` multiple times.
