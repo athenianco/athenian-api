@@ -106,8 +106,8 @@ async def load_precomputed_release_facts(
                 ],
             )
             .where(and_(*filters))
-            .with_statement_hint(f"Rows(release_facts #{len(ids)})")
-            .with_statement_hint(f"Rows(*VALUES* release_facts #{len(ids)})"),
+            .with_statement_hint("HashJoin(release_facts *VALUES*)")
+            .with_statement_hint(f"Rows(release_facts *VALUES* #{len(ids)})"),
         )
 
     with sentry_sdk.start_span(

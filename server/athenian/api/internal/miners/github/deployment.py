@@ -2646,6 +2646,7 @@ def _group_labels(df: pd.DataFrame) -> pd.DataFrame:
     return grouped_labels
 
 
+@sentry_span
 async def load_jira_issues_for_deployments(
     deployments: pd.DataFrame,
     jira_ids: Optional[JIRAConfig],

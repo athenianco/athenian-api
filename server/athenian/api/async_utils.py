@@ -8,13 +8,6 @@ from typing import Any, Awaitable, Iterable, Optional, Sequence, Type, Union
 import numpy as np
 import pandas as pd
 from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
-from pandas.core.internals.blocks import (
-    Block,
-    _extract_bool_array,
-    get_block_type as get_block_type_original,
-    lib as blocks_lib,
-    make_block as make_block_original,
-)
 from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 import sqlalchemy as sa
@@ -31,106 +24,7 @@ from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.to_object_arrays import is_null, to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
-
-
-class IntBlock(Block):
-    """
-    Custom Pandas block to carry S and U dtypes.
-
-    The name hacks the internals to recognize the block downstream.
-    """
-
-    __slots__ = ()
-    _can_hold_na = False
-
-    @property
-    def fill_value(self):
-        """Return an empty string."""
-        return self.values.dtype.type()
-
-    def take_nd(
-        self,
-        indexer,
-        axis: int = 0,
-        new_mgr_locs=None,
-        fill_value=blocks_lib.no_default,
-    ):
-        """Take values according to indexer and return them as a block."""
-        new_values = self.values.take(indexer, axis=axis)
-
-        if new_mgr_locs is None:
-            new_mgr_locs = self.mgr_locs
-
-        return self.make_block_same_class(new_values, new_mgr_locs)
-
-    def putmask(
-        self,
-        mask,
-        new,
-        inplace: bool = False,
-        axis: int = 0,
-        transpose: bool = False,
-    ) -> list["Block"]:
-        """Specialize DataFrame.where()."""
-        mask = _extract_bool_array(mask)
-        new_values = self.values if inplace else self.values.copy()
-        if isinstance(new, np.ndarray) and len(new) == len(mask):
-            new = new[mask]
-        mask = mask.reshape(new_values.shape)
-        new_values[mask] = new
-        return [self.make_block_same_class(new_values, placement=self.mgr_locs)]
-
-
-def get_block_type(values, dtype=None):
-    """Add block type exclusion for fixed-length bytes and strings."""
-    if (dtype or values.dtype).kind in ("S", "U"):
-        return IntBlock
-    return get_block_type_original(values, dtype)
-
-
-def make_block(values, placement, klass=None, ndim=None, dtype=None):
-    """Override the block class if we are S or U."""
-    if (
-        klass is not None
-        and klass.__name__ == "IntBlock"
-        and klass is not IntBlock
-        and values.dtype.kind in ("S", "U")
-    ):
-        if isinstance(values, pd.Series):
-            values = values.values
-        klass = IntBlock
-    return make_block_original(values, placement, klass=klass, ndim=ndim, dtype=dtype)
-
-
-pd.core.internals.blocks.get_block_type = get_block_type
-pd.core.internals.blocks.make_block = make_block
-pd.core.internals.managers.get_block_type = get_block_type
-pd.core.internals.managers.make_block = make_block
-
-
-original_index_new = pd.Index.__new__
-
-
-def _string_friendly_index_new(
-    cls: pd.Index,
-    data=None,
-    dtype=None,
-    copy=False,
-    name=None,
-    tupleize_cols=True,
-    **kwargs,
-) -> pd.Index:
-    if dtype is None and isinstance(data, np.ndarray) and data.dtype.kind in ("S", "U"):
-        # otherwise, pandas will coerce to object dtype; we know better
-        if copy:
-            data = data.copy()
-        return cls._simple_new(data, name)
-    return original_index_new(
-        cls, data=data, dtype=dtype, copy=copy, name=name, tupleize_cols=tupleize_cols, **kwargs,
-    )
-
-
-pd.Index.__new__ = _string_friendly_index_new
+from athenian.api.typing_utils import create_data_frame_from_arrays, make_block
 
 
 async def read_sql_query(
@@ -343,24 +237,6 @@ async def _fetch_query(
     return data
 
 
-def _create_block_manager_from_arrays(
-    arrays_typed: Sequence[np.ndarray],
-    arrays_obj: np.ndarray,
-    names_typed: list[str],
-    names_obj: list[str],
-    size: int,
-) -> BlockManager:
-    assert len(arrays_typed) == len(names_typed)
-    assert len(arrays_obj) == len(names_obj)
-    range_index = pd.RangeIndex(stop=size)
-    blocks = [
-        make_block(np.atleast_2d(arrays_typed[i]), placement=[i])
-        for i, arr in enumerate(arrays_typed)
-    ]
-    blocks.append(make_block(arrays_obj, placement=np.arange(len(arrays_obj)) + len(arrays_typed)))
-    return BlockManager(blocks, [pd.Index(names_typed + names_obj), range_index])
-
-
 def _wrap_sql_query(
     data: list[Sequence[Any]],
     columns: Union[Sequence[str], Sequence[InstrumentedAttribute], MetadataBase, StateBase],
@@ -430,10 +306,9 @@ def _wrap_sql_query(
             converted_typed = [arr[remain_mask] for arr in converted_typed]
             data_obj = data_obj[:, remain_mask]
     with sentry_sdk.start_span(op="wrap_sql_query/pd.DataFrame()", description=str(size)):
-        block_mgr = _create_block_manager_from_arrays(
+        frame = create_data_frame_from_arrays(
             converted_typed, data_obj, typed_cols_names, obj_cols_names, size,
         )
-        frame = pd.DataFrame(block_mgr, columns=typed_cols_names + obj_cols_names, copy=False)
         for column in dt_columns:
             try:
                 frame[column] = frame[column].dt.tz_localize(timezone.utc)
