@@ -711,6 +711,50 @@ class TestSimplifyRequests:
         self._assert_team_requests_equal(simplified[0], expected[0])
         self._assert_team_requests_equal(simplified[1], expected[1])
 
+    def test_different_repos_are_not_merged(self) -> None:
+        INTERVALS = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
+        requests = [
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_OPENED,),
+                INTERVALS,
+                {1: RequestedTeamDetails([1], ("org/repo1",))},
+            ),
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_OPENED,),
+                INTERVALS,
+                {1: RequestedTeamDetails([1], ("org/repo2",))},
+            ),
+        ]
+        simplified = _simplify_requests(requests)
+        assert len(simplified) == 2
+        self._assert_team_requests_equal(simplified[0], requests[0])
+        self._assert_team_requests_equal(simplified[1], requests[1])
+
+        requests.append(
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_CLOSED,),
+                INTERVALS,
+                {1: RequestedTeamDetails([1], ("org/repo1",))},
+            ),
+        )
+        simplified = _simplify_requests(requests)
+
+        expected = [
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_OPENED, PullRequestMetricID.PR_CLOSED),
+                INTERVALS,
+                {1: RequestedTeamDetails([1], ("org/repo1",))},
+            ),
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_OPENED,),
+                INTERVALS,
+                {1: RequestedTeamDetails([1], ("org/repo2",))},
+            ),
+        ]
+        assert len(simplified) == 2
+        self._assert_team_requests_equal(simplified[0], expected[0])
+        self._assert_team_requests_equal(simplified[1], expected[1])
+
     @classmethod
     def _assert_team_requests_equal(cls, tr0: TeamMetricsRequest, tr1: TeamMetricsRequest) -> None:
         assert sorted(tr0.metrics) == sorted(tr1.metrics)

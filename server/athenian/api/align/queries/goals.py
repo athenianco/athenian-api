@@ -16,6 +16,7 @@ from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoal
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
     TeamMetricsRequest,
+    TeamMetricsResult,
     calculate_team_metrics,
 )
 from athenian.api.align.queries.teams import build_team_tree_from_rows
@@ -107,9 +108,17 @@ class _GoalToServe:
     def request(self) -> TeamMetricsRequest:
         return self._request
 
-    def build_goal_tree(self, metric_values) -> GoalTree:
-        initial_metrics = metric_values[self._request.time_intervals[0]][self._request.metrics[0]]
-        current_metrics = metric_values[self._request.time_intervals[1]][self._request.metrics[0]]
+    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
+        intervals = self._request.time_intervals
+        metric = self._request.metrics[0]
+
+        initial_metrics = {}
+        current_metrics = {}
+        for team_id, team_detail in self._request.teams.items():
+            repos = team_detail.repositories
+            initial_metrics[team_id] = metric_values[(intervals[0], metric, team_id, repos)]
+            current_metrics[team_id] = metric_values[(intervals[1], metric, team_id, repos)]
+
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
         return _team_tree_to_goal_tree(
             self._goal_team_tree,

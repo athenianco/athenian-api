@@ -483,6 +483,36 @@ class TestGoals(BaseGoalsTest):
         # metrics for team 10 have been computed considering repositories [[40550, None]] filter
         assert team_10_goal["value"]["initial"]["int"] == 88
 
+    async def test_same_team_different_repos(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            GoalFactory(
+                id=20,
+                metric=PullRequestMetricID.PR_ALL_COUNT,
+                valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+            ),
+            GoalFactory(
+                id=21,
+                metric=PullRequestMetricID.PR_ALL_COUNT,
+                valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2022, 1, 1, tzinfo=timezone.utc),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=1, repositories=[[40550, None]]),
+            TeamGoalFactory(goal_id=21, team_id=1, repositories=[[39652769, None]]),
+        )
+        res = await self._request(1, 0)
+        goal_20 = res["data"]["goals"][0]
+        assert goal_20["id"] == 20
+        assert (tg := goal_20["teamGoal"])["team"]["id"] == 1
+        assert tg["value"]["initial"]["int"] == 88
+
+        goal_21 = res["data"]["goals"][1]
+        assert goal_21["id"] == 21
+        assert (tg := goal_21["teamGoal"])["team"]["id"] == 1
+        assert tg["value"]["initial"]["int"] == 0
+
     async def test_jira_fields(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
             sdb,

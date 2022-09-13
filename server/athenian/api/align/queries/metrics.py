@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import chain
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, cast
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
 
 import aiomcache
 from ariadne import ObjectType
@@ -97,7 +98,7 @@ async def resolve_metrics_current_values(
         row[Team.id.name]: RequestedTeamDetails(teams_flat[row[Team.id.name]], repos, jira_filter)
         for row in team_rows
     }
-    team_metrics_all_intervals = await calculate_team_metrics(
+    team_metrics = await calculate_team_metrics(
         [TeamMetricsRequest(params[MetricParamsFields.metrics], [time_interval], teams)],
         accountId,
         meta_ids,
@@ -108,11 +109,14 @@ async def resolve_metrics_current_values(
         info.context.cache,
         info.context.app["slack"],
     )
-    team_metrics = team_metrics_all_intervals[time_interval]
+    # Interval and repositories are invariant, TeamMetricsResult can be simplified
+    team_metrics_simple = {(k[1], k[2]): value for k, value in team_metrics.items()}
 
     team_tree = build_team_tree_from_rows(team_rows, team_id)
 
-    models = _build_metrics_response(team_tree, params[MetricParamsFields.metrics], team_metrics)
+    models = _build_metrics_response(
+        team_tree, params[MetricParamsFields.metrics], team_metrics_simple,
+    )
     return [m.to_dict() for m in models]
 
 
@@ -198,7 +202,9 @@ def _parse_time_interval(params: Mapping[str, Any]) -> Interval:
 Interval = tuple[datetime, datetime]
 
 
-TeamMetricsResult = dict[Interval, dict[str, dict[int, object]]]
+# interval, metric, team_id, repos
+TeamMetricsResultKey = tuple[Interval, str, int, Optional[tuple[str, ...]]]
+TeamMetricsResult = dict[TeamMetricsResultKey, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +231,34 @@ class TeamMetricsRequest:
     """A mapping of team id to team members and team-specific filters."""
 
 
+class _RepositoriesWrapper(tuple):
+    """Wrapper over repositories tuple to track whether the user requested metrics for all repo."""
+
+    # this allows to map back the tuple to `None` when building TeamMetricsResult
+
+    all_repos: bool
+
+    @classmethod
+    def from_requested_team_details(
+        cls,
+        td: RequestedTeamDetails,
+        all_repos,
+    ) -> _RepositoriesWrapper:
+        if td.repositories is None:
+            repos = cls(all_repos)
+            repos.all_repos = True
+        else:
+            repos = cls(td.repositories)
+            repos.all_repos = False
+        return repos
+
+    @property
+    def user_value(self) -> Optional[tuple[str, ...]]:
+        if self.all_repos:
+            return None
+        return self
+
+
 @sentry_span
 async def calculate_team_metrics(
     requests: Sequence[TeamMetricsRequest],
@@ -239,8 +273,10 @@ async def calculate_team_metrics(
 ) -> TeamMetricsResult:
     """Calculate a set of metrics for each team and time interval.
 
-    The result will be a nested dict structure indexed first by interval, then by metric and
-    finally by team id.
+    The result will be a dict where the keys are tuples with various parameters included in
+    `requests` to their metric value:
+    (Interval, metric name, team id, sequence of repositories).
+
     """
     requests = _simplify_requests(requests)
     QUANTILES = (0, 0.95)
@@ -288,16 +324,15 @@ async def calculate_team_metrics(
                         TeamSpecificFilters(
                             team_id=team_id,
                             participants={PRParticipationKind.AUTHOR: members},
-                            repositories=td.repositories
-                            if td.repositories is not None
-                            else all_repos,
+                            repositories=_RepositoriesWrapper.from_requested_team_details(
+                                td, all_repos,
+                            ),
                             jira_filter=td.jira_filter,
                         )
                         for (team_id, td), members in zip(request.teams.items(), team_members)
                     ],
                 ),
             )
-
         if release_metrics:
             release_collector.requests.append(
                 MetricsLineRequest(
@@ -311,9 +346,9 @@ async def calculate_team_metrics(
                                 ReleaseParticipationKind.COMMIT_AUTHOR: td.members,
                                 ReleaseParticipationKind.RELEASER: td.members,
                             },
-                            repositories=td.repositories
-                            if td.repositories is not None
-                            else all_repos,
+                            repositories=_RepositoriesWrapper.from_requested_team_details(
+                                td, all_repos,
+                            ),
                             jira_filter=td.jira_filter,
                         )
                         for team_id, td in request.teams.items()
@@ -330,9 +365,9 @@ async def calculate_team_metrics(
                         TeamSpecificFilters(
                             team_id=team_id,
                             participants=_jirafy_team(td.members, jira_map),
-                            repositories=td.repositories
-                            if td.repositories is not None
-                            else all_repos,
+                            repositories=_RepositoriesWrapper.from_requested_team_details(
+                                td, all_repos,
+                            ),
                             jira_filter=td.jira_filter,
                         )
                         for team_id, td in request.teams.items()
@@ -463,24 +498,26 @@ def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> Sequence[TeamM
                     (team_id, team_details.filters()), set(),
                 ).add(m)
 
-    # intervals => metrics => team ids and team-specific filters
-    simplified_tree: dict[Sequence[Interval], dict[tuple[str, ...], set[tuple]]] = {}
+    # intervals => metrics => team specific filters => team ids
+    simplified_tree: dict[Sequence[Interval], dict[tuple[str, ...], dict[tuple, set[int]]]] = {}
     for intervals, intervals_tree in requests_tree.items():
         simplified_tree[intervals] = {}
 
-        for filters, metrics in intervals_tree.items():
+        for (team_id, filters), metrics in intervals_tree.items():
             sorted_metrics = tuple(sorted(metrics))
-            simplified_tree[intervals].setdefault(sorted_metrics, set()).add(filters)
+            simplified_tree[intervals].setdefault(sorted_metrics, defaultdict(set))
+            simplified_tree[intervals][sorted_metrics][filters].add(team_id)
 
     # assemble the final groups
     requests = []
     for intervals_, intervals_tree_ in simplified_tree.items():
         for metrics_, grouped_filters in intervals_tree_.items():
-            teams = {
-                team_id: RequestedTeamDetails(teams_members[team_id], *filters)
-                for team_id, filters in grouped_filters
-            }
-            requests.append(TeamMetricsRequest(metrics_, intervals_, teams))
+            for filters, team_ids in grouped_filters.items():
+                teams_details = {
+                    team_id: RequestedTeamDetails(teams_members[team_id], *filters)
+                    for team_id in team_ids
+                }
+                requests.append(TeamMetricsRequest(metrics_, intervals_, teams_details))
 
     return requests
 
@@ -505,13 +542,13 @@ class BatchCalcResultCollector:
         """
         for request, calc_result in zip(self._requests, batch_calc_results):
             for interval_i, interval in enumerate(request.time_intervals):
-                int_ = cast(Interval, interval)
-                team_metrics_res.setdefault(int_, {})
                 for metric_i, metric in enumerate(request.metrics):
-                    team_metrics_res[int_].setdefault(metric, {})
                     for team_i, team_filters in enumerate(request.teams):
+                        # team_filters.repositories is of type _RepositoriesWrapper
+                        repos = team_filters.repositories.user_value
+                        key: TeamMetricsResultKey = (interval, metric, team_filters.team_id, repos)
                         val = calc_result[team_i][interval_i][0][metric_i].value
-                        team_metrics_res[int_][metric][team_filters.team_id] = val
+                        team_metrics_res[key] = val
 
     @property
     def requests(self) -> list[MetricsLineRequest]:
@@ -523,20 +560,23 @@ class BatchCalcResultCollector:
 def _build_metrics_response(
     team_tree: TeamTree,
     metrics: Sequence[str],
-    triaged: dict[str, dict[int, object]],
+    team_metrics: dict[tuple[str, int], object],
 ) -> list[MetricValues]:
     return [
-        MetricValues(metric, _build_team_metric_value(team_tree, triaged[metric]))
+        MetricValues(metric, _build_team_metric_value(metric, team_tree, team_metrics))
         for metric in metrics
     ]
 
 
 def _build_team_metric_value(
+    metric: str,
     team_tree: TeamTree,
-    metric_values: dict[int, object],
+    team_metrics: dict[tuple[str, int], object],
 ) -> TeamMetricValue:
     return TeamMetricValue(
         team=team_tree,
-        value=MetricValue(metric_values[team_tree.id]),
-        children=[_build_team_metric_value(child, metric_values) for child in team_tree.children],
+        value=MetricValue(team_metrics[(metric, team_tree.id)]),
+        children=[
+            _build_team_metric_value(metric, child, team_metrics) for child in team_tree.children
+        ],
     )
