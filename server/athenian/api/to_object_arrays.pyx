@@ -6,19 +6,26 @@
 from typing import Any, Sequence
 
 cimport cython
-from cpython cimport PyObject
-from cpython.bytes cimport PyBytes_Check
+from cpython cimport Py_INCREF, PyObject, PyTypeObject
+from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_Check
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check
+from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cpython.unicode cimport PyUnicode_Check
 from numpy cimport (
+    NPY_ARRAY_C_CONTIGUOUS,
     PyArray_CheckExact,
     PyArray_DATA,
+    PyArray_Descr,
     PyArray_DIM,
     PyArray_ISOBJECT,
     PyArray_ISSTRING,
     PyArray_NDIM,
+    PyArray_SetBaseObject,
+    dtype as nddtype,
     import_array,
     ndarray,
     npy_bool,
+    npy_intp,
 )
 
 import asyncpg
@@ -42,6 +49,20 @@ cdef extern from "Python.h":
 
     PyObject *Py_None
     PyObject *Py_True
+
+
+cdef extern from "numpy/arrayobject.h":
+    PyTypeObject PyArray_Type
+    ndarray PyArray_NewFromDescr(
+        PyTypeObject *subtype,
+        PyArray_Descr *descr,
+        int nd,
+        const npy_intp *dims,
+        const npy_intp *strides,
+        void *data,
+        int flags,
+        PyObject *obj,
+    )
 
 
 @cython.boundscheck(False)
@@ -272,3 +293,30 @@ cdef ndarray _nested_lengths_list(PyObject *arr, long size, ndarray result):
     else:
         raise AssertionError(f"Unsupported nested type: {type(<object> element).__name__}")
     return result
+
+
+def array_from_buffer(buffer not None, nddtype dtype, npy_intp count, npy_intp offset=0) -> ndarray:
+    cdef:
+        void *data
+    if PyBytes_Check(buffer):
+        data = PyBytes_AS_STRING(buffer) + offset
+    elif PyByteArray_Check(buffer):
+        data = PyByteArray_AS_STRING(buffer) + offset
+    elif PyMemoryView_Check(buffer):
+        data = (<char *>PyMemoryView_GET_BUFFER(buffer).buf) + offset
+    else:
+        raise ValueError(f"Unsupported buffer type: {type(buffer).__name__}")
+    Py_INCREF(dtype)
+    Py_INCREF(buffer)
+    arr = PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> dtype,
+        1,
+        &count,
+        NULL,
+        data,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    PyArray_SetBaseObject(arr, buffer)
+    return arr
