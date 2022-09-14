@@ -147,10 +147,8 @@ class BranchMiner:
                         ],
                     )
                     .where(
-                        and_(
-                            NodeRepositoryRef.acc_id.in_(meta_ids),
-                            NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos),
-                        ),
+                        NodeRepositoryRef.acc_id.in_(meta_ids),
+                        NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos),
                     )
                     .group_by(NodeRepositoryRef.parent_id),
                 )
@@ -177,12 +175,10 @@ class BranchMiner:
         mdb: DatabaseLike,
     ) -> pd.DataFrame:
         query = (
-            select([Branch])
+            select(Branch)
             .where(
-                and_(
-                    Branch.repository_node_id.in_(repos) if repos is not None else sa.true(),
-                    Branch.acc_id.in_(meta_ids),
-                ),
+                Branch.repository_node_id.in_(repos) if repos is not None else sa.true(),
+                Branch.acc_id.in_(meta_ids),
             )
             .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
             .with_statement_hint("Rows(ref rr n1 n2 *250)")

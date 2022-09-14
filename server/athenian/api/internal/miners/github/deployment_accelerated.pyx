@@ -16,6 +16,7 @@ from numpy cimport (
     NPY_STRING,
     PyArray_DATA,
     PyArray_Descr,
+    PyArray_DESCR,
     PyArray_DescrFromType,
     PyArray_DIM,
     dtype as npdtype,
@@ -87,12 +88,12 @@ def calc_pr_to_ix_prs(ndarray prs not None, ndarray prs_offsets not None) -> tup
         PyObject **prs_data = <PyObject **> PyArray_DATA(prs)
         PyObject **prs_offsets_data = <PyObject **> PyArray_DATA(prs_offsets)
         PyObject **dep_jira_col_data
-        long *dep_prs_offsets_data
+        uint32_t *dep_prs_offsets_data
         long *dep_prs_data
         PyObject *dep_prs
         PyObject *dep_prs_offsets
         ndarray empty = np.array([], dtype="S")
-        long beg, end
+        uint32_t beg, end
         object capsule
 
     (<PyObject *> objdtype).ob_refcnt += deps_count + 1
@@ -112,8 +113,9 @@ def calc_pr_to_ix_prs(ndarray prs not None, ndarray prs_offsets not None) -> tup
         dep_prs_count = PyArray_DIM(<ndarray> dep_prs, 0)
         dep_prs_data = <long *> PyArray_DATA(<ndarray> dep_prs)
         dep_prs_offsets = prs_offsets_data[di]
+        assert (<npdtype> PyArray_DESCR(<ndarray> dep_prs_offsets)).itemsize == 4
         dep_prs_offsets_count = PyArray_DIM(<ndarray> dep_prs_offsets, 0) + 1
-        dep_prs_offsets_data = <long *> PyArray_DATA(<ndarray> dep_prs_offsets)
+        dep_prs_offsets_data = <uint32_t *> PyArray_DATA(<ndarray> dep_prs_offsets)
         dep_jira_col = PyArray_NewFromDescr(
             &PyArray_Type,
             <PyArray_Descr *> objdtype,

@@ -1281,7 +1281,7 @@ async def _generate_deployment_facts(
             commits_prs.append(rf.commits_prs)
             commits_overall.append(rf.commits_overall)
             prs.append(rf.prs)
-        prs_offsets = np.cumsum([len(arr) for arr in prs], dtype=np.int32)[:-1]
+        prs_offsets = np.cumsum(nested_lengths(prs), dtype=np.uint32)[:-1]
         pr_authors = np.unique(np.concatenate(pr_authors))
         commit_authors = np.unique(np.concatenate(commit_authors))
         release_authors = np.array(list(release_authors - {None}), dtype=int)
