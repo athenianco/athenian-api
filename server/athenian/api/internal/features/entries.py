@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 import dataclasses
 from datetime import datetime, timezone
-from functools import partial
+from functools import partial, reduce
 from itertools import chain
 import logging
+import operator
 import pickle
 from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, TypeVar
 
@@ -380,7 +382,7 @@ class MetricEntriesCalculator:
 
     @staticmethod
     def _merge_pr_participants(participants: Iterable[PRParticipants]) -> PRParticipants:
-        all_participants = {}
+        all_participants: dict[PRParticipationKind, set[str]] = {}
         for p in participants:
             for k, v in p.items():
                 all_participants.setdefault(k, set()).update(v)
@@ -433,13 +435,16 @@ class MetricEntriesCalculator:
         all_metrics = set(chain.from_iterable(request.metrics for request in requests))
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
 
+        jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        jira_filter = reduce(operator.or_, jira_filters)
+
         df_facts = await self.calc_pull_request_facts_github(
             time_from,
             time_to,
             all_repositories,
             all_participants,
             LabelFilter.empty(),
-            JIRAFilter.empty(),  # could be deduced from requests
+            jira_filter,
             exclude_inactive,
             bots,
             release_settings,
@@ -459,6 +464,7 @@ class MetricEntriesCalculator:
         for request in requests:
             groups = np.empty(len(request.teams), dtype=object)
             group = np.empty(len(df_facts), dtype=np.uint8)
+            # TODO: add grouping by jira filter
             for i, group_by_filter in enumerate(
                 zip(
                     group_by_repo(
@@ -862,6 +868,9 @@ class MetricEntriesCalculator:
         all_participants = self._merge_release_participants(
             t.participants for request in requests for t in request.teams
         )
+        jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        jira_filter = reduce(operator.or_, jira_filters)
+
         releases, _, _, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -870,7 +879,7 @@ class MetricEntriesCalculator:
             time_from,
             time_to,
             LabelFilter.empty(),
-            JIRAFilter.empty(),  # should be possible to deduce from requests
+            jira_filter,
             release_settings,
             logical_settings,
             prefixer,
@@ -1258,12 +1267,17 @@ class MetricEntriesCalculator:
         reporters, assignees, commenters = self._merge_jira_participants(
             [t.participants for request in requests for t in request.teams],
         )
+
+        jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        jira_filter = reduce(operator.or_, jira_filters)
+        if not jira_filter:
+            jira_filter = JIRAFilter.from_jira_config(jira_ids)
+
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
             time_from,
             time_to,
-            # we can deduce the common superset from requests if possible
-            JIRAFilter.from_jira_config(jira_ids),
+            jira_filter,
             exclude_inactive,
             reporters,
             assignees,
@@ -1850,6 +1864,10 @@ class MetricsLineRequest:
         """Format for Sentry reports."""
         return str(self)
 
+    def all_jira_filters(self) -> Iterator[JIRAFilter]:
+        """Collect all JIRAFilter from the included TeamSpecificFilters."""
+        return (td.jira_filter for td in self.teams)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class TeamSpecificFilters:
@@ -1858,6 +1876,7 @@ class TeamSpecificFilters:
     team_id: int
     repositories: Sequence[str]
     participants: PRParticipants | ReleaseParticipants | JIRAParticipants
+    jira_filter: JIRAFilter
 
     def __str__(self) -> str:
         """Format the filters as a stable string."""
