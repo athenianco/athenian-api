@@ -65,7 +65,9 @@ async def generate_jira_prs_query(
     if columns is PullRequest:
         columns = [PullRequest]
     _map = aliased(NodePullRequestJiraIssues, name="m")
-    meta_ids_cond = (on[1].in_(meta_ids),) if meta_ids is not None else ()
+    filters = list(filters)
+    if meta_ids is not None:
+        filters.append(on[1].in_(meta_ids))
     if jira.unmapped:
         return (
             sql.select(columns)
@@ -74,10 +76,10 @@ async def generate_jira_prs_query(
                     seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
                 ),
             )
-            .where(sql.and_(*meta_ids_cond, _map.node_id.is_(None), *filters))
+            .where(_map.node_id.is_(None), *filters)
         )
     _issue = aliased(Issue, name="j")
-    filters.extend(meta_ids_cond)
+    filters.append(_issue.is_deleted.is_(False))
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
@@ -87,14 +89,9 @@ async def generate_jira_prs_query(
         filters.append(_issue.type.in_(jira.issue_types))
     if jira.priorities:
         filters.append(_issue.priority_name.in_(jira.priorities))
+
     if not jira.epics:
-        filters.extend(
-            [
-                _issue.is_deleted.is_(False),
-                _issue.acc_id == jira.account,
-                _issue.project_id.in_(jira.projects),
-            ],
-        )
+        filters.extend([_issue.acc_id == jira.account, _issue.project_id.in_(jira.projects)])
         return (
             sql.select(columns)
             .select_from(
@@ -114,18 +111,18 @@ async def generate_jira_prs_query(
                     ),
                 ),
             )
-            .where(sql.and_(*filters))
+            .where(*filters)
         )
 
     _issue_epic = aliased(Issue, name="e")
     filters.extend(
         [
-            _issue.is_deleted.is_(False),
             _issue_epic.acc_id == jira.account,
-            _issue_epic.project_id.in_(jira.projects),
             _issue_epic.key.in_(jira.epics),
+            _issue_epic.project_id.in_(jira.projects),
         ],
     )
+
     return (
         sql.select(columns)
         .select_from(
@@ -152,7 +149,7 @@ async def generate_jira_prs_query(
                 ),
             ),
         )
-        .where(sql.and_(*filters))
+        .where(*filters)
     )
 
 
@@ -176,10 +173,7 @@ async def _load_components(
             all_labels.add(part.strip())
     rows = await mdb.fetch_all(
         sql.select([Component.id, Component.name]).where(
-            sql.and_(
-                sql.func.lower(Component.name).in_(all_labels),
-                Component.acc_id == account,
-            ),
+            sql.func.lower(Component.name).in_(all_labels), Component.acc_id == account,
         ),
     )
     return {r[1].lower(): r[0] for r in rows}
@@ -387,11 +381,9 @@ async def fetch_jira_issues(
             ),
         )
         .where(
-            sql.and_(
-                NodePullRequestJiraIssues.jira_acc == jira_filter.account,
-                NodePullRequestJiraIssues.node_acc.in_(meta_ids),
-                jira_id_cond,
-            ),
+            NodePullRequestJiraIssues.jira_acc == jira_filter.account,
+            NodePullRequestJiraIssues.node_acc.in_(meta_ids),
+            jira_id_cond,
         )
         .with_statement_hint(
             f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
@@ -704,7 +696,7 @@ async def _fetch_issues(
         else:
             query = [query_starts().where(sql.and_(sql.or_(*or_filters), *and_filters))]
     else:
-        query = [query_starts().where(sql.and_(*and_filters))]
+        query = [query_starts().where(*and_filters)]
 
     def hint(q):
         return (

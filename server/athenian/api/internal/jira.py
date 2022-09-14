@@ -61,17 +61,12 @@ async def get_jira_id(
     return jira_id
 
 
-class JIRAConfig(
-    NamedTuple(
-        "JIRAConfig",
-        [
-            ("acc_id", int),
-            ("projects", dict[str, str]),
-            ("epics", dict[str, list[str]]),
-        ],
-    ),
-):
+class JIRAConfig(NamedTuple):
     """JIRA attributes: account ID, project id -> key mapping, epic issue types."""
+
+    acc_id: int
+    projects: dict[str, str]
+    epics: dict[str, list[str]]
 
     def epic_candidate_types(self) -> set[str]:
         """Return all possible issue types that can be epics."""
@@ -88,6 +83,14 @@ class JIRAConfig(
                 rows.append(f"{project_id}/{val}")
 
         return np.array(rows, dtype="S")
+
+    def translate_project_keys(self, project_keys: Iterable[str]) -> list[str]:
+        """Translate project keys to project IDs.
+
+        Unknown project keys are ignored.
+        """
+        key_to_id = {key: id_ for id_, key in self.projects.items()}
+        return [id_ for k in project_keys if (id_ := key_to_id.get(k)) is not None]
 
 
 @sentry_span

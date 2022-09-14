@@ -8,6 +8,7 @@ from athenian.api.models.metadata.github import (
     Bot,
     FetchProgress,
     NodePullRequestJiraIssues,
+    PullRequest,
     Repository,
     Team,
     TeamMember,
@@ -28,6 +29,28 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class PullRequestFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = PullRequest
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
+    user_node_id = factory.Sequence(lambda n: n + 1000)
+    user_login = factory.LazyAttribute(lambda pr: f"user-{pr.user_node_id}")
+    additions = 1
+    base_ref = "ABCDE"
+    changed_files = 1
+    deletions = 0
+    commits = 1
+    head_ref = "01234"
+    number = factory.Sequence(lambda n: n + 1)
+    title = factory.LazyAttribute(lambda pr: f"PR {pr.number}")
 
 
 class RepositoryFactory(SQLAlchemyModelFactory):
@@ -119,7 +142,7 @@ class JIRAProjectFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Project
 
-    acc_id = factory.Sequence(lambda n: n + 1)
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
     id = factory.Sequence(lambda n: str(n + 1))
     key = factory.Sequence(lambda n: f"PRJ-{n + 1:03d}")
     name = factory.Sequence(lambda n: f"Project {n + 1:03d}")

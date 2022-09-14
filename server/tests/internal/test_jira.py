@@ -8,6 +8,7 @@ from sqlalchemy.sql.functions import count
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.jira import (
+    JIRAConfig,
     disable_empty_projects,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
@@ -244,3 +245,9 @@ class TestDisableEmptyProjects:
         assert n_disabled == 1
         await assert_existing_row(sdb, JIRAProjectSetting, key="PRJ1", enabled=False)
         await assert_missing_row(sdb, JIRAProjectSetting, key="PRJ2", enabled=False)
+
+
+class TestJIRAConfig:
+    def test_translate_project_keys(self) -> None:
+        jira_config = JIRAConfig(1, {"id1": "k1", "id2": "k2"}, {})
+        assert jira_config.translate_project_keys(["k1", "k3", "k2"]) == ["id1", "id2"]

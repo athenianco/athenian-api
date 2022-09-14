@@ -11,8 +11,8 @@ from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 class LabelFilter:
     """Pull Request labels: must/must not contain."""
 
-    include: set[str]
-    exclude: set[str]
+    include: frozenset[str]
+    exclude: frozenset[str]
 
     @classmethod
     def from_iterables(
@@ -22,18 +22,27 @@ class LabelFilter:
     ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
         return cls(
-            include={s.lower().strip(" \t,") for s in (include or [])},
-            exclude={s.lower() for s in (exclude or [])},
+            include=frozenset(s.lower().strip(" \t,") for s in (include or [])),
+            exclude=frozenset(s.lower() for s in (exclude or [])),
         )
 
     @classmethod
     def empty(cls) -> LabelFilter:
         """Initialize an empty LabelFilter."""
-        return cls(set(), set())
+        return cls(frozenset(), frozenset())
 
     def __bool__(self) -> bool:
         """Return value indicating whether there is at least one included or excluded label."""
         return bool(self.include) or bool(self.exclude)
+
+    def __or__(self, other: LabelFilter) -> LabelFilter:
+        """Return a new LabelFilter which is logical union of this filter with another."""
+        return LabelFilter(
+            _join_filter_sets(self.include, other.include),
+            frozenset()
+            if (not self.exclude or not other.exclude)
+            else self.exclude & other.exclude,
+        )
 
     def __str__(self) -> str:
         """Implement str()."""
@@ -86,22 +95,24 @@ class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
-    projects: list[str]
+    projects: frozenset[str]
     labels: LabelFilter
-    epics: set[str] | bool
-    issue_types: set[str]
-    priorities: set[str]
+    epics: frozenset[str] | bool
+    issue_types: frozenset[str]
+    priorities: frozenset[str]
     custom_projects: bool  # PRs must be mapped to any issue in `projects`
     unmapped: bool  # select everything but the mapped PRs
 
-    def __post_init(self) -> None:
+    def __post_init__(self) -> None:
+        """Apply post init validation."""
         if self.epics is True:
             raise ValueError("epics must be a set of strings or `False`")
 
     @classmethod
     def empty(cls) -> JIRAFilter:
         """Initialize an empty JIRAFilter."""
-        return cls(0, [], LabelFilter.empty(), set(), set(), set(), False, False)
+        emptyset: frozenset[str] = frozenset()
+        return cls(0, emptyset, LabelFilter.empty(), emptyset, emptyset, emptyset, False, False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
@@ -114,6 +125,37 @@ class JIRAFilter:
                 self.unmapped,
                 self.custom_projects,
             ],
+        )
+
+    def __or__(self, other: JIRAFilter) -> JIRAFilter:
+        """Return a new JIRAFilter which is logical union of this filter with another."""
+        if (
+            ((self.account != other.account) and self.account and other.account)
+            or self.unmapped != other.unmapped
+            or isinstance(self.epics, bool) != isinstance(other.epics, bool)
+        ):
+            raise ValueError("Cannot union JIRAFilter with different accounts, unmapped or epics")
+
+        if not self.account or not other.account:
+            return self.empty()
+
+        if isinstance(self.epics, bool):
+            epics: bool | frozenset[str] = False
+        else:
+            assert not isinstance(other.epics, bool)
+            epics = _join_filter_sets(self.epics, other.epics)
+
+        projects = self.projects | other.projects  # guaranteed to be filled in both
+
+        return JIRAFilter(
+            self.account,
+            projects,
+            self.labels | other.labels,
+            epics,
+            _join_filter_sets(self.issue_types, other.issue_types),
+            _join_filter_sets(self.priorities, other.priorities),
+            True,
+            self.unmapped,
         )
 
     def __str__(self) -> str:
@@ -178,17 +220,17 @@ class JIRAFilter:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
         if not (custom_projects := bool(model.projects)):
-            projects = sorted(ids.projects)
+            projects = frozenset(ids.projects)
         else:
             reverse_map = {v: k for k, v in ids[1].items()}
-            projects = sorted(reverse_map[k] for k in model.projects if k in reverse_map)
+            projects = frozenset(reverse_map[k] for k in model.projects if k in reverse_map)
         return JIRAFilter(
             account=ids.acc_id,
             projects=projects,
             labels=labels,
-            epics={s.upper() for s in (model.epics or [])},
-            issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
-            priorities=set(),  # not present in web model
+            epics=frozenset([s.upper() for s in (model.epics or [])]),
+            issue_types=frozenset([normalize_issue_type(s) for s in (model.issue_types or [])]),
+            priorities=frozenset(),  # not present in web model
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
@@ -199,9 +241,17 @@ class JIRAFilter:
         return cls.empty().replace(
             account=jira_config.acc_id,
             projects=list(jira_config.projects),
+            # TODO: sometimes JIRAFilter is built from a JIRAConfig after projects have been
+            # manually restricted there, so setting False here is not possible
             custom_projects=True,
         )
 
     def replace(self, **kwargs: Any) -> JIRAFilter:
         """Return a new  JIRAFilter with some fields replaced."""
         return dataclasses.replace(self, **kwargs)
+
+
+def _join_filter_sets(set_a: frozenset, set_b: frozenset) -> frozenset:
+    if (not set_a) or (not set_b):
+        return frozenset()
+    return set_a | set_b

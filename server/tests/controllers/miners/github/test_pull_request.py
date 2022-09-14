@@ -1612,11 +1612,11 @@ async def test_pr_miner_jira_filter(
         LabelFilter.empty(),
         JIRAFilter(
             1,
-            ["10003", "10009"],
-            LabelFilter({"performance"}, set()),
-            set(),
-            set(),
-            set(),
+            frozenset(("10003", "10009")),
+            LabelFilter(frozenset(("performance",)), set()),
+            frozenset(),
+            frozenset(),
+            frozenset(),
             False,
             False,
         ),
@@ -1660,19 +1660,19 @@ async def test_pr_miner_jira_filter(
         874,
     } == numbers
     args[7] = JIRAFilter(
-        1, ["10003", "10009"], LabelFilter.empty(), {"DEV-149"}, set(), set(), False, False,
+        1, ("10003", "10009"), LabelFilter.empty(), {"DEV-149"}, set(), set(), False, False,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
     assert {821, 833, 846, 861} == numbers
     args[7] = JIRAFilter(
-        1, ["10003", "10009"], LabelFilter.empty(), set(), {"bug"}, set(), False, False,
+        1, ("10003", "10009"), LabelFilter.empty(), set(), {"bug"}, set(), False, False,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
     assert {800, 769, 896, 762, 807, 778, 855, 816, 754, 724, 790, 759, 792, 794, 795} == numbers
     args[7] = JIRAFilter(
-        1, ["10003", "10009"], LabelFilter({"api"}, set()), set(), {"task"}, set(), False, False,
+        1, ("10003", "10009"), LabelFilter({"api"}, set()), set(), {"task"}, set(), False, False,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
@@ -1708,7 +1708,7 @@ async def test_pr_miner_jira_filter(
         861,
     } == numbers
     args[7] = JIRAFilter(
-        1, ["10003", "10009"], LabelFilter.empty(), set(), set(), set(), False, True,
+        1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
@@ -1844,7 +1844,7 @@ async def test_pr_miner_jira_cache(
     assert len(miner) == 326
     args[7] = JIRAFilter(
         1,
-        ["10003", "10009"],
+        ("10003", "10009"),
         LabelFilter({"enhancement"}, set()),
         {"DEV-149"},
         {"task"},
@@ -1862,7 +1862,7 @@ async def test_pr_miner_jira_cache(
         assert pr.jiras[Issue.type.name].iloc[0] == "task"
     args[7] = JIRAFilter(
         1,
-        ["10003", "10009"],
+        ("10003", "10009"),
         LabelFilter({"enhancement,performance"}, set()),
         {"DEV-149"},
         {"task"},

@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import datetime, timezone
 from typing import Sequence
 
@@ -18,6 +19,7 @@ from athenian.api.internal.miners.jira.issue import (
     PullRequestJiraMapper,
     _fetch_released_prs,
     fetch_jira_issues,
+    generate_jira_prs_query,
 )
 from athenian.api.internal.miners.types import (
     JIRAEntityToFetch,
@@ -290,6 +292,76 @@ class TestFetchReleasedPRs:
             [["vmarkovtsev", 40020, dt, dt]],
             columns=["user_login", "user_node_id", "created_at", "submitted_at"],
         )
+
+
+class TestGenerateJIRAPRsQuery:
+    async def test_priority_filter(self, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.PullRequestFactory(node_id=1),
+                md_factory.PullRequestFactory(node_id=2),
+                md_factory.PullRequestFactory(node_id=3),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="2"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="3"),
+                md_factory.JIRAIssueFactory(id="1", project_id="1", priority_name="PR1"),
+                md_factory.JIRAIssueFactory(id="2", project_id="1", priority_name="PR1"),
+                md_factory.JIRAIssueFactory(id="3", project_id="1", priority_name="PR2"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            jira_filter = JIRAFilter(
+                1,
+                frozenset(("1",)),
+                LabelFilter.empty(),
+                frozenset(),
+                frozenset(),
+                {"PR1", "PR2"},
+                False,
+                False,
+            )
+            res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
+            assert [r[PullRequest.node_id.name] for r in res] == [1, 1, 2]
+
+            jira_filter = dataclasses.replace(jira_filter, priorities={"PR1"})
+            res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
+            assert [r[PullRequest.node_id.name] for r in res] == [1, 1]
+
+            jira_filter = dataclasses.replace(jira_filter, priorities={"PR2"})
+            res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
+            assert [r[PullRequest.node_id.name] for r in res] == [2]
+
+    async def test_multiple_filters(self, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.PullRequestFactory(node_id=1),
+                md_factory.PullRequestFactory(node_id=2),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="2"),
+                md_factory.JIRAIssueFactory(id="1", project_id="P1", priority_name="PR1"),
+                md_factory.JIRAIssueFactory(id="2", project_id="P2", priority_name="PR2"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            jira_filter = JIRAFilter(
+                1, ("P1",), LabelFilter.empty(), frozenset(), frozenset(), {"PR1"}, False, False,
+            )
+            res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
+            assert [r[PullRequest.node_id.name] for r in res] == [1]
+
+            jira_filter = dataclasses.replace(jira_filter, priorities={"PR2"})
+            res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
+            assert [r[PullRequest.node_id.name] for r in res] == []
+
+    @classmethod
+    async def _fetch_with_jira_filter(cls, mdb: Database, jira_filter):
+        query = await generate_jira_prs_query(
+            [], jira_filter, (DEFAULT_MD_ACCOUNT_ID,), mdb, None,
+        )
+        query = query.order_by(PullRequest.node_id)
+        return await mdb.fetch_all(query)
 
 
 class TestPullRequestJiraMapper:
