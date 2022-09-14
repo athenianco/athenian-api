@@ -40,6 +40,7 @@ setup(
             for path in (
                 code_root / "internal" / "miners" / "github" / "dag_accelerated.pyx",
                 code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
+                code_root / "internal" / "miners" / "github" / "deployment_accelerated.pyx",
                 code_root / "internal" / "miners" / "github" / "precomputed_prs" / "utils_accelerated.pyx",  # noqa
                 code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",  # noqa
                 code_root / "internal" / "logical_accelerated.pyx",
