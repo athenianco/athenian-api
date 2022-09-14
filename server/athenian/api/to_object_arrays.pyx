@@ -21,7 +21,7 @@ from numpy cimport (
     PyArray_ISSTRING,
     PyArray_NDIM,
     PyArray_SetBaseObject,
-    dtype as nddtype,
+    dtype as npdtype,
     import_array,
     ndarray,
     npy_bool,
@@ -295,7 +295,7 @@ cdef ndarray _nested_lengths_list(PyObject *arr, long size, ndarray result):
     return result
 
 
-def array_from_buffer(buffer not None, nddtype dtype, npy_intp count, npy_intp offset=0) -> ndarray:
+def array_from_buffer(buffer not None, npdtype dtype, npy_intp count, npy_intp offset=0) -> ndarray:
     cdef:
         void *data
     if PyBytes_Check(buffer):

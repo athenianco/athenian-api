@@ -947,6 +947,7 @@ def resolve_work_began_and_resolved(
     return work_began, max(issue_resolved, prs_released)
 
 
+@sentry_span
 async def fetch_jira_issues_for_prs(
     pr_nodes: Collection[int],
     meta_ids: tuple[int, ...],
@@ -960,14 +961,12 @@ async def fetch_jira_issues_for_prs(
     in_any_values = len(pr_nodes) > 100
     query = (
         sql.select(
-            [
-                prmap.node_id.label("node_id"),
-                regiss.key.label("key"),
-                regiss.title.label("title"),
-                regiss.labels.label("labels"),
-                regiss.type.label("type"),
-                epiciss.key.label("epic"),
-            ],
+            prmap.node_id.label("node_id"),
+            regiss.key.label("key"),
+            regiss.title.label("title"),
+            regiss.labels.label("labels"),
+            regiss.type.label("type"),
+            epiciss.key.label("epic"),
         )
         .select_from(
             sql.outerjoin(
