@@ -572,7 +572,8 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
 
     inspector.delete_data()
     typed_names = [name for name in inspector.dtype.names if name not in inspector.nested_fields]
-    typed_arrs = [table_array[name] for name in typed_names]
+    # must take a copy to make each strided array contiguous
+    typed_arrs = [table_array[name].copy() for name in typed_names]
     obj_names = list(columns)
     if (obj_arr := inspector.obj_arr) is None:
         obj_arr = np.empty((len(columns), length), dtype=object)

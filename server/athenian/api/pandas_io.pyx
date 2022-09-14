@@ -87,6 +87,7 @@ cdef extern from "numpy/arrayobject.h":
     bint PyArray_CheckExact(PyObject *) nogil
     PyArray_Descr *PyArray_DESCR(PyObject *) nogil
     int PyArray_TYPE(PyObject *) nogil
+    bint PyArray_IS_C_CONTIGUOUS(PyObject *) nogil
 
 
 def serialize_args(tuple args) -> bytes:
@@ -181,6 +182,11 @@ def serialize_df(df not None) -> bytes:
         ndim = PyArray_NDIM(arr_obj)
         assert 0 < ndim <= 2, f"block #{i} dimensions are not supported: {block}"
         if arr.dtype != object:
+            if not PyArray_IS_C_CONTIGUOUS(arr_obj):
+                bad_cols = '"' + '", "'.join(df.columns[loc]) + '"'
+                raise AssertionError(
+                    f"Column(s) {bad_cols} must be contiguous, we don't support strides",
+                )
             size += (
                 PyArray_ITEMSIZE(arr_obj)
                 * PyArray_DIM(arr_obj, 0)
@@ -344,6 +350,7 @@ cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *meas
                     if (
                         not PyArray_CheckExact(item)
                         or PyArray_NDIM(item) != 1
+                        or not PyArray_IS_C_CONTIGUOUS(item)
                     ):
                         return -y
                     if PyArray_TYPE(item) != int_dtype or (
