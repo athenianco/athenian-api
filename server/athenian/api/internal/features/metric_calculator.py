@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
+import dataclasses
 from datetime import datetime, timedelta
 from functools import reduce
 from graphlib import TopologicalSorter
@@ -44,7 +45,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSet
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass_asdict
-from athenian.api.unordered_unique import unordered_unique
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 DEFAULT_QUANTILE_STRIDE = 14
 
@@ -1005,6 +1006,69 @@ def group_by_lines(lines: Sequence[int], column: np.ndarray) -> list[np.ndarray]
     for i, g in zip(existing_groups, line_groups):
         full_line_groups[i] = g
     return full_line_groups
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class JIRAGrouping:
+    """Grouping definition based on jira entities.
+
+    `None` field values indicate that no grouping should be done on the corresponding dataframe
+    property.
+    On the opposite, a single empty field value makes this group select nothing.
+    """
+
+    projects: Optional[Collection[str]] = None
+    priorities: Optional[Collection[str]] = None
+    types: Optional[Collection[str]] = None
+
+    def __bool__(self) -> bool:
+        """Get whether the group definition is empty.  An empty group does not do any grouping."""
+        return any(f is not None for f in (self.projects, self.priorities, self.types))
+
+    @classmethod
+    def empty(cls) -> JIRAGrouping:
+        """Return a `JIRAGrouping` selecting all data."""
+        return cls()
+
+
+def group_pr_facts_by_jira(
+    jira_groups: Sequence[JIRAGrouping],
+    df: pd.DataFrame,
+) -> list[np.ndarray]:
+    """Build the groups according to the JIRA information expressed by the `jira_groups`.
+
+    `df` is the dataframe built from `PullRequestFacts` structs.
+
+    """
+    if df.empty:
+        return [np.array([], dtype=int)] * len(jira_groups)
+    res = []
+    for jira_group in jira_groups:
+        if jira_group:
+            df_matches = np.zeros(len(df), dtype=np.uint8)
+            required_n_matches = 0
+
+            for group_props, df_values in (
+                (jira_group.projects, df.jira_projects.values),
+                (jira_group.priorities, df.jira_priorities.values),
+                (jira_group.types, df.jira_types.values),
+            ):
+                if group_props is not None:
+                    required_n_matches += 1
+                    filter_values = np.array(list(group_props), dtype="S")
+                    all_values = np.concatenate(df_values)
+                    splits = np.cumsum(np.fromiter((len(v) for v in df_values), int, len(df)))
+                    match_mask = in1d_str(all_values, filter_values)
+                    match_indexes = np.flatnonzero(match_mask)
+                    field_res = np.unique(np.searchsorted(splits, match_indexes, side="right"))
+                    df_matches[field_res] += 1
+
+            group_res = np.flatnonzero(df_matches == required_n_matches)
+        else:
+            group_res = np.arange(len(df), dtype=int)
+
+        res.append(group_res)
+    return res
 
 
 def calculate_logical_duplication_mask(
