@@ -482,6 +482,9 @@ class ReleaseFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
+        sha: np.dtype("S40")  # noqa: F821
+        name: str
+        url: str
         repository_full_name: str
         prs_title: list[str]
         prs_jira: np.ndarray

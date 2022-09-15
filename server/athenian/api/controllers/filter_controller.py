@@ -701,35 +701,40 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 
 async def _load_jira_issues_for_releases(
     jira_ids: Optional[JIRAConfig],
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: pd.DataFrame,
     meta_ids: tuple[int, ...],
     mdb: Database,
 ) -> dict[str, LinkedJIRAIssue]:
+    if releases.empty:
+        return {}
+    releases[ReleaseFacts.f.prs_jira] = [
+        np.empty(len(v), dtype=object) for v in releases["prs_" + PullRequest.node_id.name].values
+    ]
     if jira_ids is None:
-        for _, facts in releases:
-            facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.name]), None)
         return {}
 
     pr_to_ix = {}
-    for ri, (_, facts) in enumerate(releases):
-        node_ids = facts["prs_" + PullRequest.node_id.name]
-        facts.prs_jira = [[] for _ in range(len(node_ids))]
+    for ri, node_ids in enumerate(releases["prs_" + PullRequest.node_id.name].values):
         for pri, node_id in enumerate(node_ids):
             pr_to_ix[node_id] = ri, pri
     rows = await fetch_jira_issues_for_prs(pr_to_ix, meta_ids, jira_ids, mdb)
     issues = {}
+    prs_jira_col = releases[ReleaseFacts.f.prs_jira].values
     for r in rows:
         key = r["key"]
         issues[key] = LinkedJIRAIssue(
             id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"],
         )
         ri, pri = pr_to_ix[r["node_id"]]
-        releases[ri][1].prs_jira[pri].append(key)
+        try:
+            prs_jira_col[ri][pri].append(key)
+        except AttributeError:
+            prs_jira_col[ri][pri] = [key]
     return issues
 
 
 async def _build_release_set_response(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: pd.DataFrame,
     avatars: Iterable[tuple[int, str]],
     deployments: dict[str, Deployment],
     prefixer: Prefixer,
@@ -740,7 +745,7 @@ async def _build_release_set_response(
     issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
     prefix_logical_repo = prefixer.prefix_logical_repo
     user_node_to_login = prefixer.user_node_to_prefixed_login.get
-    data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
+    data = _filtered_releases_from_df(releases, prefixer)
     model = ReleaseSet(
         data=data,
         include=ReleaseSetInclude(
@@ -760,30 +765,65 @@ async def _build_release_set_response(
     return model_response(model)
 
 
-def _filtered_release_from_tuple(
-    t: tuple[dict[str, Any], ReleaseFacts],
-    prefixer: Prefixer,
-) -> FilteredRelease:
-    details, facts = t
-    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
-    return FilteredRelease(
-        name=details[Release.name.name],
-        sha=details[Release.sha.name],
-        repository=details[Release.repository_full_name.name],
-        url=details[Release.url.name],
-        publisher=user_node_to_prefixed_login.get(facts.publisher),
-        published=facts.published.item().replace(tzinfo=timezone.utc),
-        age=facts.age,
-        added_lines=facts.additions,
-        deleted_lines=facts.deletions,
-        commits=facts.commits_count,
-        commit_authors=sorted(user_node_to_prefixed_login.get(u) for u in facts.commit_authors),
-        prs=_extract_release_prs(facts, prefixer),
-        deployments=facts.deployments,
-    )
+def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[FilteredRelease]:
+    if df.empty:
+        return []
+    repo_name_to_prefixed_name = prefixer.prefix_logical_repo
+    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login.get
+    return [
+        FilteredRelease(
+            name=name,
+            sha=sha,
+            repository=repo_name_to_prefixed_name(repo),
+            url=url,
+            publisher=user_node_to_prefixed_login(publisher),
+            published=pd.Timestamp(published, tzinfo=timezone.utc),
+            age=age,
+            added_lines=additions,
+            deleted_lines=deletions,
+            commits=commits_count,
+            commit_authors=sorted(user_node_to_prefixed_login(u) for u in commit_authors),
+            prs=_extract_released_prs(*prs_columns, prefixer=prefixer),
+            deployments=deployments,
+        )
+        for (
+            name,
+            sha,
+            repo,
+            url,
+            publisher,
+            published,
+            age,
+            additions,
+            deletions,
+            commits_count,
+            commit_authors,
+            *prs_columns,
+            deployments,
+        ) in zip(
+            df[ReleaseFacts.f.name].values,
+            df[ReleaseFacts.f.sha].values,
+            df[ReleaseFacts.f.repository_full_name].values,
+            df[ReleaseFacts.f.url].values,
+            df[ReleaseFacts.f.publisher].values,
+            df[ReleaseFacts.f.published].values,
+            df[ReleaseFacts.f.age].values,
+            df[ReleaseFacts.f.additions].values,
+            df[ReleaseFacts.f.deletions].values,
+            df[ReleaseFacts.f.commits_count].values,
+            df[ReleaseFacts.f.commit_authors].values,
+            df["prs_" + PullRequest.number.name].values,
+            df["prs_" + PullRequest.title.name].values,
+            df["prs_" + PullRequest.additions.name].values,
+            df["prs_" + PullRequest.deletions.name].values,
+            df["prs_" + PullRequest.user_node_id.name].values,
+            df[ReleaseFacts.f.prs_jira].values,
+            df[ReleaseFacts.f.deployments].values,
+        )
+    ]
 
 
-def _extract_release_prs(facts: ReleaseFacts, prefixer: Prefixer) -> list[ReleasedPullRequest]:
+def _extract_released_prs(*columns: np.ndarray, prefixer: Prefixer) -> list[ReleasedPullRequest]:
     user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
     return [
         ReleasedPullRequest(
@@ -794,14 +834,7 @@ def _extract_release_prs(facts: ReleaseFacts, prefixer: Prefixer) -> list[Releas
             author=user_node_to_prefixed_login.get(author),
             jira=jira or None,
         )
-        for number, title, adds, dels, author, jira in zip(
-            facts["prs_" + PullRequest.number.name],
-            facts["prs_" + PullRequest.title.name],
-            facts["prs_" + PullRequest.additions.name],
-            facts["prs_" + PullRequest.deletions.name],
-            facts["prs_" + PullRequest.user_node_id.name],
-            facts.prs_jira,
-        )
+        for number, title, adds, dels, author, jira in zip(*columns)
     ]
 
 
@@ -1030,16 +1063,22 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         request.rdb,
         request.cache,
     )
-    issues = await _load_jira_issues_for_releases(
-        jira_ids,
-        list(
-            chain.from_iterable(
-                chain.from_iterable(r[-1] for r in rr) for rr in releases.values()
-            ),
-        ),
-        meta_ids,
-        request.mdb,
-    )
+    if all_diffs := [r[-1] for rr in releases.values() for r in rr]:
+        all_diffs = pd.concat(all_diffs, ignore_index=True)
+        issues = await _load_jira_issues_for_releases(jira_ids, all_diffs, meta_ids, request.mdb)
+        pos = 0
+        for rr in releases.values():
+            for r in rr:
+                r[-1][ReleaseFacts.f.prs_jira] = all_diffs[ReleaseFacts.f.prs_jira].values[
+                    pos : pos + len(r[-1])
+                ]
+                pos += len(r[-1])
+    else:
+        issues = {}
+        for rr in releases.values():
+            for r in rr:
+                r[-1][ReleaseFacts.f.prs_jira] = None
+
     result = DiffedReleases(
         data={},
         include=ReleaseSetInclude(
@@ -1054,7 +1093,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
                 ReleaseDiff(
                     old=diff[0],
                     new=diff[1],
-                    releases=[_filtered_release_from_tuple(t, prefixer) for t in diff[2]],
+                    releases=_filtered_releases_from_df(diff[2], prefixer),
                 ),
             )
     return model_response(result)
@@ -1284,7 +1323,7 @@ async def _build_deployments_response(
                         releases_df["prs_" + PullRequest.additions.name].values,
                         releases_df["prs_" + PullRequest.deletions.name].values,
                         releases_df["prs_" + PullRequest.user_node_id.name].values,
-                        releases_df["prs_jira"].values,
+                        releases_df[ReleaseFacts.f.prs_jira].values,
                     )
                 ]
                 if not releases_df.empty

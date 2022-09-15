@@ -88,8 +88,10 @@ from athenian.api.models.precomputed.models import (
     GitHubRebasedPullRequest,
     GitHubReleaseDeployment,
 )
+from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
@@ -117,7 +119,7 @@ async def mine_releases(
     with_deployments: bool = True,
     releases_in_time_range: Optional[pd.DataFrame] = None,
 ) -> tuple[
-    list[tuple[dict[str, Any], ReleaseFacts]],
+    pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
     dict[str, ReleaseMatch],
     dict[str, Deployment],
@@ -169,7 +171,7 @@ async def mine_releases(
 
 def _triage_flags(
     result: tuple[
-        list[tuple[dict[str, Any], ReleaseFacts]],
+        pd.DataFrame,
         Union[list[tuple[int, str]], list[int]],
         dict[str, ReleaseMatch],
         dict[str, Deployment],
@@ -182,7 +184,7 @@ def _triage_flags(
     with_deployments: bool = True,
     **_,
 ) -> tuple[
-    list[tuple[dict[str, Any], ReleaseFacts]],
+    pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
     dict[str, ReleaseMatch],
     dict[str, Deployment],
@@ -213,8 +215,8 @@ def _triage_flags(
 @sentry_span
 @cached(
     exptime=middle_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_args,
+    deserialize=deserialize_args,
     key=lambda repos, participants, time_from, time_to, labels, jira, release_settings, logical_settings, releases_in_time_range, **_: (  # noqa
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
@@ -253,8 +255,9 @@ async def _mine_releases(
     with_pr_titles: bool,
     with_deployments: bool,
     releases_in_time_range: Optional[pd.DataFrame],
+    version=2,
 ) -> tuple[
-    list[tuple[dict[str, Any], ReleaseFacts]],
+    pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
     dict[str, ReleaseMatch],
     dict[str, Deployment],
@@ -291,7 +294,7 @@ async def _mine_releases(
         assert time_to is None
     if releases_in_time_range.empty:
         return (
-            [],
+            pd.DataFrame(),
             [],
             {r: v.match for r, v in release_settings.prefixed.items()},
             {},
@@ -667,33 +670,26 @@ async def _mine_releases(
                     )
                     my_age = my_published_at - first_published_at
                 repo_data.append(
-                    (
-                        {
-                            Release.node_id.name: my_id,
-                            Release.name.name: my_name,
-                            Release.repository_full_name.name: prefixer.prefix_logical_repo(repo),
-                            Release.url.name: my_url,
-                            Release.sha.name: my_commit,
-                        },
-                        ReleaseFacts.from_fields(
-                            published=my_published_at,
-                            publisher=my_author,
-                            matched_by=ReleaseMatch(my_matched_by),
-                            age=my_age,
-                            additions=my_additions,
-                            deletions=my_deletions,
-                            commits_count=commits_count,
-                            commit_authors=my_commit_authors,
-                            **my_prs,
-                            node_id=my_id,
-                            repository_full_name=repo,
-                        ),
+                    ReleaseFacts.from_fields(
+                        published=my_published_at,
+                        publisher=my_author,
+                        matched_by=ReleaseMatch(my_matched_by),
+                        age=my_age,
+                        additions=my_additions,
+                        deletions=my_deletions,
+                        commits_count=commits_count,
+                        commit_authors=my_commit_authors,
+                        **my_prs,
+                        node_id=my_id,
+                        name=my_name,
+                        url=my_url,
+                        sha=my_commit,
+                        repository_full_name=repo,
                     ),
                 )
                 if (len(data) + len(repo_data)) % 500 == 0:
                     await asyncio.sleep(0)
-            repo_data.reverse()
-            data += repo_data
+            data.extend(reversed(repo_data))
         if data:
             await defer(
                 store_precomputed_release_facts(
@@ -788,19 +784,19 @@ async def _mine_releases(
         result = _filter_by_labels(result, secondary[0], labels)
     if with_pr_titles:
         pr_title_map = {row[0]: row[1] for row in secondary[bool(labels)]}
-        for _, facts in result:
+        for facts in result:
             facts["prs_" + PullRequest.title.name] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
     if with_deployments:
         await deployments
         depmap, deployments = deployments.result()
-        for rd, facts in result:
-            facts.deployments = depmap.get(rd[Release.node_id.name])
+        for facts in result:
+            facts.deployments = depmap.get(facts.node_id)
     else:
         deployments = {}
     return (
-        result,
+        df_from_structs(result),
         avatars,
         {r: v.match for r, v in release_settings.prefixed.items()},
         deployments,
@@ -855,7 +851,7 @@ def _build_mined_releases(
     precomputed_facts: dict[tuple[int, str], ReleaseFacts],
     prefixer: Prefixer,
     with_avatars: bool,
-) -> tuple[list[tuple[dict[str, Any], ReleaseFacts]], Optional[np.ndarray], np.ndarray]:
+) -> tuple[list[ReleaseFacts], Optional[np.ndarray], np.ndarray]:
     release_repos = releases[Release.repository_full_name.name].values.astype("S", copy=False)
     release_keys = np.char.add(int_to_str(releases[Release.node_id.name].values), release_repos)
     precomputed_keys = np.char.add(
@@ -869,15 +865,12 @@ def _build_mined_releases(
     mask[unique_releases] = True
     mask &= has_precomputed_facts
     result = [
-        (
-            {
-                Release.node_id.name: my_id,
-                Release.name.name: my_name or my_tag,
-                Release.repository_full_name.name: prefixed_repo,
-                Release.url.name: my_url,
-                Release.sha.name: my_commit,
-            },
-            precomputed_facts[(my_id, my_repo)],
+        precomputed_facts[(my_id, my_repo)].with_optional_fields(
+            node_id=my_id,
+            name=my_name or my_tag,
+            repository_full_name=my_repo,
+            url=my_url,
+            sha=my_commit,
         )
         for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
             releases[Release.node_id.name].values[mask],
@@ -888,7 +881,7 @@ def _build_mined_releases(
             releases[Release.sha.name].values[mask],
         )
         # "gone" repositories, reposet-sync has not updated yet
-        if (prefixed_repo := prefixer.prefix_logical_repo(my_repo)) is not None
+        if prefixer.prefix_logical_repo(my_repo) is not None
     ]
     if not with_avatars:
         return result, None, has_precomputed_facts
@@ -910,16 +903,16 @@ def _build_mined_releases(
 
 
 def _filter_by_participants(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: list[ReleaseFacts],
     participants: ReleaseParticipants,
-) -> list[tuple[dict[str, Any], ReleaseFacts]]:
+) -> list[ReleaseFacts]:
     if not releases or not participants:
         return releases
     participants = {k: np.array(v, dtype=int) for k, v in participants.items()}
     if ReleaseParticipationKind.RELEASER in participants:
         missing_indexes = np.flatnonzero(
             np.in1d(
-                np.fromiter((r[1].publisher for r in releases), int, len(releases)),
+                np.fromiter((r.publisher for r in releases), int, len(releases)),
                 participants[ReleaseParticipationKind.RELEASER],
                 invert=True,
             ),
@@ -933,7 +926,7 @@ def _filter_by_participants(
         if len(missing_indexes) == 0:
             break
         if rpk in participants:
-            values = [releases[i][1][col] for i in missing_indexes]
+            values = [releases[i][col] for i in missing_indexes]
             lengths = nested_lengths(values)
             values.append([-1])
             offsets = np.zeros(len(values), dtype=int)
@@ -948,14 +941,14 @@ def _filter_by_participants(
 
 
 def _filter_by_labels(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: list[ReleaseFacts],
     labels_df: pd.DataFrame,
     labels_filter: LabelFilter,
-) -> list[tuple[dict[str, Any], ReleaseFacts]]:
+) -> list[ReleaseFacts]:
     if not releases:
         return releases
     key = "prs_" + PullRequest.node_id.name
-    pr_node_ids = [r[1][key] for r in releases]
+    pr_node_ids = [r[key] for r in releases]
     all_pr_node_ids = np.concatenate(pr_node_ids)
     left = find_left_prs_by_labels(
         pd.Index(all_pr_node_ids),
@@ -974,7 +967,7 @@ def _filter_by_labels(
     pr_node_id_key = "prs_" + PullRequest.node_id.name
     prs_hidden_releases = []
     pr_released_prs_columns = released_prs_columns(PullRequest)
-    for details, release in releases:
+    for release in releases:
         pr_node_ids = release[pr_node_id_key]
         passed = np.flatnonzero(np.in1d(pr_node_ids, left))
         if len(passed) < len(pr_node_ids):
@@ -983,7 +976,7 @@ def _filter_by_labels(
                 key = "prs_" + col.name
                 prs_hidden_release[key] = prs_hidden_release[key][passed]
             release = ReleaseFacts.from_fields(**prs_hidden_release)
-        prs_hidden_releases.append((details, release))
+        prs_hidden_releases.append(release)
     return prs_hidden_releases
 
 
@@ -1204,8 +1197,8 @@ async def _load_rebased_prs(
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_args,
+    deserialize=deserialize_args,
     key=lambda names, release_settings, logical_settings, **_: (
         {k: sorted(v) for k, v in sorted(names.items())},
         release_settings,
@@ -1223,11 +1216,7 @@ async def mine_releases_by_name(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[
-    list[tuple[dict[str, Any], ReleaseFacts]],
-    Collection[tuple[int, str]],
-    dict[str, Deployment],
-]:
+) -> tuple[pd.DataFrame, Collection[tuple[int, str]], dict[str, Deployment]]:
     """Collect details about each release specified by the mapping from repository names to \
     release names."""
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
@@ -1246,7 +1235,7 @@ async def mine_releases_by_name(
         cache,
     )
     if releases.empty:
-        return [], [], {}
+        return pd.DataFrame(), [], {}
     release_settings = release_settings.select(
         releases[Release.repository_full_name.name].unique(),
     )
@@ -1399,15 +1388,18 @@ async def mine_releases_by_name(
             (releases_remainder, avatars_remainder),
             *deployments,
         ) = gathered
-        releases = releases_tag + releases_branch + releases_remainder
+        releases = pd.concat(
+            [releases_tag, releases_branch, releases_remainder], ignore_index=True,
+        )
         avatars = set(chain(avatars_tag, avatars_branch, avatars_remainder))
         full_depmap = {}
         full_deployments = {}
         for depmap, deps in deployments:
             full_depmap.update(depmap)
             full_deployments.update(deps)
-    for rd, facts in releases:
-        facts.deployments = full_depmap.get(rd[Release.node_id.name])
+    releases[ReleaseFacts.f.deployments] = [
+        full_depmap.get(node_id) for node_id in releases[ReleaseFacts.f.node_id].values
+    ]
     return releases, avatars, full_deployments
 
 
@@ -1428,10 +1420,7 @@ async def mine_releases_by_ids(
     *,
     with_avatars: bool,
     with_pr_titles: bool,
-) -> Union[
-    tuple[list[tuple[dict[str, Any], ReleaseFacts]], list[tuple[int, str]]],
-    list[tuple[dict[str, Any], ReleaseFacts]],
-]:
+) -> tuple[pd.DataFrame, list[tuple[int, str]]] | pd.DataFrame:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
     result, avatars, _, _ = await mine_releases(
         releases[Release.repository_full_name.name].unique(),
@@ -1634,10 +1623,7 @@ async def diff_releases(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[
-    dict[str, list[tuple[str, str, list[tuple[dict[str, Any], ReleaseFacts]]]]],
-    list[tuple[str, str]],
-]:
+) -> tuple[dict[str, list[tuple[str, str, pd.DataFrame]]], list[tuple[str, str]]]:
     """Collect details about inner releases between the given boundaries for each repo."""
     log = logging.getLogger("%s.diff_releases" % metadata.__package__)
     names = defaultdict(set)
@@ -1704,45 +1690,44 @@ async def diff_releases(
     ]
     (releases, avatars, _, _), dags = await gather(*tasks, op="mine_releases + dags")
     del border_releases
-    releases_by_repo = defaultdict(list)
-    for r in releases:
-        releases_by_repo[r[0][Release.repository_full_name.name]].append(r)
-    del releases
+    order = np.argsort(releases[ReleaseFacts.f.repository_full_name].values, kind="stable")
+    unique_repos, repo_group_counts = np.unique(
+        releases[ReleaseFacts.f.repository_full_name].values[order], return_counts=True,
+    )
     result = {}
-    for repo, repo_releases in releases_by_repo.items():
-        repo = repo.split("/", 1)[1]
+    release_name_col = releases[ReleaseFacts.f.name].values
+    sha_col = releases[ReleaseFacts.f.sha]
+    pos = 0
+    for repo, repo_group_count in zip(unique_repos, repo_group_counts):
         repo_names = {v: k for k, v in names[repo].items()}
         pairs = borders[repo]
         result[repo] = repo_result = []
-        repo_releases = sorted(repo_releases, key=lambda r: r[1].published)
-        index = {r[0][Release.name.name]: i for i, r in enumerate(repo_releases)}
+        indexes = order[pos : pos + repo_group_count][::-1]
+        pos += repo_group_count
+        release_name_index = {name: i for i, name in enumerate(release_name_col[indexes])}
         for old, new in pairs:
             try:
-                start = index[repo_names[old]]
-                finish = index[repo_names[new]]
+                start = release_name_index[repo_names[old]]
+                finish = release_name_index[repo_names[new]]
             except KeyError:
                 log.warning("Release pair %s, %s was not found for %s", old, new, repo)
                 continue
             if start > finish:
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
-            start_sha, finish_sha = (
-                repo_releases[x][0][Release.sha.name] for x in (start, finish)
-            )
+            start_sha, finish_sha = (sha_col[indexes[x]] for x in (start, finish))
             hashes, _, _ = extract_subdag(*dags[repo][1], np.array([finish_sha]))
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
-                diff = []
-                for i in range(start + 1, finish + 1):
-                    r = repo_releases[i]
-                    sha = r[0][Release.sha.name]
-                    if hashes[searchsorted_inrange(hashes, np.array([sha]))] == sha:
-                        diff.append(r)
-                repo_result.append((old, new, diff))
+                pair_indexes = indexes[start + 1 : finish + 1]
+                shas = sha_col[pair_indexes]
+                found = hashes[searchsorted_inrange(hashes, shas)] == shas
+                diff = pair_indexes[found]
+                repo_result.append((old, new, releases.take(diff)))
             else:
                 log.warning(
                     "Release pair's old %s is not in the sub-DAG of %s for %s", old, new, repo,
                 )
-    return result, avatars if any(any(d for _, _, d in v) for v in result.values()) else {}
+    return result, avatars if any(any(len(d) for _, _, d in v) for v in result.values()) else {}
 
 
 @sentry_span
@@ -1807,9 +1792,9 @@ async def _load_release_deployments(
 
 
 def discover_first_outlier_releases(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: pd.DataFrame,
     threshold_factor=100,
-) -> tuple[list[tuple[dict[str, Any], ReleaseFacts]], dict[str, Sequence[int]]]:
+) -> tuple[pd.DataFrame, dict[str, Sequence[int]]]:
     """
     Apply heuristics to find first releases that should be hidden from the metrics.
 
@@ -1819,10 +1804,13 @@ def discover_first_outlier_releases(
     """
     oldest_release_by_repo = {}
     indexes_by_repo = defaultdict(list)
-    for i, (_, facts) in enumerate(releases):
-        repo = facts.repository_full_name
+    for i, (repo, ts) in enumerate(
+        zip(
+            releases[ReleaseFacts.f.repository_full_name].values,
+            releases[ReleaseFacts.f.published].values,
+        ),
+    ):
         indexes_by_repo[repo].append(i)
-        ts = facts.published
         try:
             _, min_ts = oldest_release_by_repo[repo]
         except KeyError:
@@ -1831,25 +1819,26 @@ def discover_first_outlier_releases(
             oldest_release_by_repo[repo] = i, ts
     outlier_releases = []
     prs = {}
+    age_col = releases[ReleaseFacts.f.age].values
+    pr_node_ids_col = releases["prs_" + PullRequest.node_id.name].values
     for repo, (i, _) in oldest_release_by_repo.items():
-        release, facts = releases[i]
-        if len(pr_node_ids := facts["prs_" + PullRequest.node_id.name]) == 0:
+        if len(pr_node_ids := pr_node_ids_col[i]) == 0:
             continue
-        ages = np.array([releases[j][1].age for j in indexes_by_repo[repo] if j != i])
-        if len(ages) < 2 or facts.age < np.median(ages) * threshold_factor:
+        ages = np.array([age_col[j] for j in indexes_by_repo[repo] if j != i])
+        if len(ages) < 2 or age_col[i] < np.median(ages) * threshold_factor:
             continue
-        args = dict(facts)
-        for key, val in args.items():
+        release = releases.iloc[i].copy()
+        for key, val in release.items():
             if key.startswith("prs_"):
                 if val is not None:
-                    args[key] = val[:0]
-        outlier_releases.append((release, ReleaseFacts.from_fields(**args)))
+                    release[key] = val[:0]
+        outlier_releases.append(release)
         prs[repo] = pr_node_ids
-    return outlier_releases, prs
+    return pd.DataFrame(outlier_releases), prs
 
 
 async def hide_first_releases(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: pd.DataFrame,
     prs: dict[str, Sequence[int]],
     default_branches: dict[str, str],
     release_settings: ReleaseSettings,
@@ -1863,7 +1852,12 @@ async def hide_first_releases(
     :param prs: Pull requests belonging to the first releases.
     """
     log = logging.getLogger(f"{metadata.__package__}.hide_first_releases")
-    logged_releases = {f.repository_full_name: r[Release.url.name] for r, f in releases}
+    logged_releases = dict(
+        zip(
+            releases[ReleaseFacts.f.repository_full_name].values,
+            releases[ReleaseFacts.f.url].values,
+        ),
+    )
     log.info("hiding %d first releases: %s", len(logged_releases), logged_releases)
 
     async def set_pr_release_ignored(repo: str, node_ids: np.ndarray):
@@ -1888,13 +1882,11 @@ async def hide_first_releases(
         else:
             extra_cols = [ghdprf.pr_created_at, ghdprf.number]
         rows = await pdb.fetch_all(
-            select([ghdprf.pr_node_id, ghdprf.release_match, ghdprf.data] + extra_cols).where(
-                and_(
-                    ghdprf.acc_id == account,
-                    ghdprf.format_version == format_version,
-                    ghdprf.repository_full_name == repo,
-                    ghdprf.pr_node_id.in_(node_ids),
-                ),
+            select(ghdprf.pr_node_id, ghdprf.release_match, ghdprf.data, *extra_cols).where(
+                ghdprf.acc_id == account,
+                ghdprf.format_version == format_version,
+                ghdprf.repository_full_name == repo,
+                ghdprf.pr_node_id.in_(node_ids),
             ),
         )
         updates = []
@@ -1940,13 +1932,23 @@ async def hide_first_releases(
             await pdb.execute_many(sql, updates)
 
     release_settings = ReleaseLoader.disambiguate_release_settings(
-        release_settings, {f.repository_full_name: f.matched_by for _, f in releases},
+        release_settings,
+        dict(
+            zip(
+                releases[ReleaseFacts.f.repository_full_name].values,
+                releases[ReleaseFacts.f.matched_by].values,
+            ),
+        ),
     )
 
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
+        keys = releases.columns
         await gather(
             store_precomputed_release_facts(
-                releases,
+                [
+                    ReleaseFacts.from_fields(**dict(zip(keys, row)))
+                    for row in zip(*(releases[k].values for k in keys))
+                ],
                 default_branches,
                 release_settings,
                 account,
@@ -1962,7 +1964,7 @@ async def hide_first_releases(
 
 
 async def override_first_releases(
-    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    releases: pd.DataFrame,
     default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,

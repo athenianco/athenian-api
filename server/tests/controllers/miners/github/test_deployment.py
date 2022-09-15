@@ -17,6 +17,7 @@ from athenian.api.internal.miners.types import (
     DeployedComponent as DeployedComponentStruct,
     Deployment,
     DeploymentConclusion,
+    ReleaseFacts,
 )
 from athenian.api.internal.settings import LogicalRepositorySettings
 
@@ -177,7 +178,7 @@ async def test_mine_release_by_name_deployments(
         None,
     )
     assert deps == proper_deployments
-    assert releases[0][1].deployments == ["Dummy deployment"]
+    assert releases.iloc[0].deployments == ["Dummy deployment"]
 
 
 @with_defer
@@ -216,8 +217,8 @@ async def test_mine_releases_deployments(
     assert deps == proper_deployments
     assert len(releases) == 53
     ndeps = 0
-    for _, f in releases:
-        ndeps += f.deployments is not None and f.deployments[0] == "Dummy deployment"
+    for rd in releases[ReleaseFacts.f.deployments].values:
+        ndeps += rd is not None and rd[0] == "Dummy deployment"
     assert ndeps == 51
 
 

@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import timezone
 from itertools import chain
 import logging
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 import morcilla
 import pandas as pd
@@ -142,7 +142,7 @@ def compose_release_match(match: ReleaseMatch, value: str) -> str:
 
 @sentry_span
 async def store_precomputed_release_facts(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+    releases: list[ReleaseFacts],
     default_branches: Dict[str, str],
     settings: ReleaseSettings,
     account: int,
@@ -152,9 +152,9 @@ async def store_precomputed_release_facts(
     """Put the new release facts to the pdb."""
     values = []
     skipped = defaultdict(int)
-    for dikt, facts in releases:
+    for facts in releases:
         repo = facts.repository_full_name
-        if dikt[Release.repository_full_name.name] is None:
+        if facts.repository_full_name is None:
             # could not prefix => gone
             skipped[repo] += 1
             continue
@@ -169,7 +169,7 @@ async def store_precomputed_release_facts(
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         values.append(
             GitHubReleaseFacts(
-                id=dikt[Release.node_id.name],
+                id=facts.node_id,
                 acc_id=account,
                 release_match=compose_release_match(setting.match, value),
                 repository_full_name=repo,

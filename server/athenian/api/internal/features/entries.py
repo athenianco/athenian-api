@@ -783,7 +783,7 @@ class MetricEntriesCalculator:
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         all_participants = self._merge_release_participants(participants)
-        releases, _, matched_bys, _ = await mine_releases(
+        df_facts, _, matched_bys, _ = await mine_releases(
             all_repositories,
             all_participants,
             branches,
@@ -804,7 +804,6 @@ class MetricEntriesCalculator:
             with_avatars=False,
             with_pr_titles=False,
         )
-        df_facts = df_from_structs((f for _, f in releases), length=len(releases))
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         dedupe_mask = calculate_logical_release_duplication_mask(
@@ -872,7 +871,7 @@ class MetricEntriesCalculator:
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         jira_filter = reduce(operator.or_, jira_filters)
 
-        releases, _, _, _ = await mine_releases(
+        df_facts, _, _, _ = await mine_releases(
             all_repositories,
             all_participants,
             branches,
@@ -893,7 +892,6 @@ class MetricEntriesCalculator:
             with_avatars=False,
             with_pr_titles=False,
         )
-        df_facts = df_from_structs((f for _, f in releases), length=len(releases))
 
         results = []
         for request in requests:
