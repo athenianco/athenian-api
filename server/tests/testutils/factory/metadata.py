@@ -14,7 +14,14 @@ from athenian.api.models.metadata.github import (
     TeamMember,
     User,
 )
-from athenian.api.models.metadata.jira import Issue, IssueType, Priority, Project, User as JIRAUser
+from athenian.api.models.metadata.jira import (
+    Issue,
+    IssueType,
+    Priority,
+    Progress,
+    Project,
+    User as JIRAUser,
+)
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
@@ -215,3 +222,17 @@ class JIRAPriorityFactory(SQLAlchemyModelFactory):
     name = factory.LazyAttribute(lambda issue: f"PRIORITY-{issue.id}")
     rank = 1
     status_color = "#ffffff"
+
+
+class JIRAProgressFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Progress
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    event_id = factory.Sequence(lambda n: str(n + 1))
+    event_type = "?"
+    current = 10
+    total = 100
+    is_initial = False
+    started_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
+    end_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))

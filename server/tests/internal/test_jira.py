@@ -1,8 +1,6 @@
-from datetime import datetime, timezone
-
 from freezegun import freeze_time
 import pytest
-from sqlalchemy import delete, distinct, insert, select, update
+from sqlalchemy import delete, distinct, insert, select
 from sqlalchemy.sql.functions import count
 
 from athenian.api.db import Database
@@ -17,7 +15,6 @@ from athenian.api.internal.jira import (
     normalize_issue_type,
     normalize_priority,
 )
-from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import (
     AccountJiraInstallation,
     JIRAProjectSetting,
@@ -187,26 +184,14 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
     assert matched + 1 == stored
 
 
-@pytest.mark.flaky(reruns=3)
 async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
-    await mdb_rw.execute(
-        insert(Progress).values(
-            {
-                Progress.current.name: 1,
-                Progress.total.name: 2,
-                Progress.acc_id.name: 1,
-                Progress.event_id.name: "guid",
-                Progress.event_type.name: "user",
-                Progress.started_at.name: datetime.now(timezone.utc),
-                Progress.end_at.name: datetime.now(timezone.utc),
-                Progress.is_initial.name: True,
-            },
-        ),
-    )
-    try:
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        models = [
+            md_factory.JIRAProgressFactory(current=1, total=2, event_type="user", is_initial=True),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
         assert (await match_jira_identities(1, (6366825,), sdb, mdb_rw, slack, None)) is None
-    finally:
-        await mdb_rw.execute(update(Progress).values({Progress.current.name: 10}))
 
 
 @pytest.mark.parametrize(
