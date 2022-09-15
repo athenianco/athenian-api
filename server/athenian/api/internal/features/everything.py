@@ -39,6 +39,7 @@ from athenian.api.internal.miners.types import JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.response import ResponseError
@@ -334,7 +335,8 @@ async def mine_all_jira_issues(
         mdb,
         pdb,
         cache,
-        extra_columns=participant_columns,
+        extra_columns=participant_columns
+        + (Issue.type, Issue.priority_name, Issue.epic_id, Issue.status, Issue.labels),
     )
     return {"": issues}
 

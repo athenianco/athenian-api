@@ -278,7 +278,9 @@ async def _epic_flow(
         Issue.reporter_id,
         Issue.commenters_ids,
         Issue.priority_id,
+        Issue.priority_name,
         Issue.status_id,
+        Issue.status,
         Issue.type_id,
         Issue.comments_count,
         Issue.url,
@@ -607,13 +609,17 @@ async def _issue_flow(
         return (None,) * 7
     log = logging.getLogger("%s.filter_jira_stuff/issue" % metadata.__package__)
     extra_columns = [
+        Issue.epic_id,
+        Issue.labels,
         Issue.project_id,
         Issue.components,
         Issue.assignee_id,
         Issue.reporter_id,
         Issue.commenters_ids,
         Issue.priority_id,
+        Issue.priority_name,
         Issue.status_id,
+        Issue.status,
         Issue.type_id,
         Issue.comments_count,
     ]
@@ -713,11 +719,9 @@ async def _issue_flow(
         if JIRAFilterReturn.LABELS not in return_:
             return []
         return await mdb.fetch_all(
-            select([Component.id, Component.name]).where(
-                and_(
-                    Component.id.in_(components),
-                    Component.acc_id == jira_ids[0],
-                ),
+            select(Component.id, Component.name).where(
+                Component.id.in_(components),
+                Component.acc_id == jira_ids[0],
             ),
         )
 
@@ -726,12 +730,10 @@ async def _issue_flow(
         if JIRAFilterReturn.USERS not in return_:
             return []
         return await mdb.fetch_all(
-            select([User.display_name, User.avatar_url, User.type, User.id])
+            select(User.display_name, User.avatar_url, User.type, User.id)
             .where(
-                and_(
-                    User.id.in_(people),
-                    User.acc_id == jira_ids[0],
-                ),
+                User.id.in_(people),
+                User.acc_id == jira_ids[0],
             )
             .order_by(User.display_name),
         )
@@ -741,11 +743,9 @@ async def _issue_flow(
         if JIRAFilterReturn.USERS not in return_:
             return []
         return await sdb.fetch_all(
-            select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id]).where(
-                and_(
-                    MappedJIRAIdentity.account_id == account,
-                    MappedJIRAIdentity.jira_user_id.in_(people),
-                ),
+            select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
+                MappedJIRAIdentity.account_id == account,
+                MappedJIRAIdentity.jira_user_id.in_(people),
             ),
         )
 
@@ -1076,13 +1076,8 @@ async def _fetch_priorities(
     if len(priorities) == 0:
         return []
     rows = await mdb.fetch_all(
-        select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
-        .where(
-            and_(
-                Priority.id.in_(priorities),
-                Priority.acc_id == acc_id,
-            ),
-        )
+        select(Priority.name, Priority.icon_url, Priority.rank, Priority.status_color)
+        .where(Priority.id.in_(priorities), Priority.acc_id == acc_id)
         .order_by(Priority.rank),
     )
     return [
@@ -1109,13 +1104,8 @@ async def _fetch_statuses(
     if len(statuses) == 0:
         return []
     rows = await mdb.fetch_all(
-        select([Status.id, Status.name, Status.category_name])
-        .where(
-            and_(
-                Status.id.in_(statuses),
-                Status.acc_id == acc_id,
-            ),
-        )
+        select(Status.id, Status.name, Status.category_name)
+        .where(Status.id.in_(statuses), Status.acc_id == acc_id)
         .order_by(Status.name),
     )
     # status IDs are account-wide unique

@@ -48,6 +48,8 @@ async def filter_epics(
     candidate_types = jira_ids.epic_candidate_types()
     if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.project_id)
+    if Issue.epic_id not in extra_columns:
+        extra_columns = (*extra_columns, Issue.epic_id)
     jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
         labels=labels, issue_types=candidate_types, priorities=priorities,
     )
@@ -71,10 +73,6 @@ async def filter_epics(
         extra_columns=extra_columns,
     )
     if epics.empty:
-
-        async def noop():
-            return []
-
         return (
             epics,
             pd.DataFrame(

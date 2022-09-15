@@ -562,16 +562,11 @@ async def _fetch_issues(
     postgres = mdb.url.dialect == "postgresql"
     columns = [
         Issue.id,
-        Issue.type,
         Issue.created,
         AthenianIssue.updated,
         AthenianIssue.work_began,
         AthenianIssue.resolved,
-        Issue.priority_name,
-        Issue.epic_id,
-        Issue.status,
         Status.category_name,
-        Issue.labels,
     ]
     columns.extend(extra_columns)
     # this is backed with a DB index
@@ -1004,8 +999,8 @@ async def fetch_jira_issues_for_prs(
     return await mdb.fetch_all(query)
 
 
-participant_columns = [
+participant_columns = (
     func.lower(Issue.reporter_display_name).label("reporter"),
     func.lower(Issue.assignee_display_name).label("assignee"),
     Issue.commenters_display_names.label("commenters"),
-]
+)

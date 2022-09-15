@@ -117,6 +117,7 @@ from athenian.api.internal.miners.types import (
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
@@ -1204,6 +1205,9 @@ class MetricEntriesCalculator:
         jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
             labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
         )
+        extra_columns = list(participant_columns) if len(participants) > 1 else []
+        if split_by_label:
+            extra_columns.append(Issue.labels)
         issues = await fetch_jira_issues(
             time_from,
             time_to,
@@ -1221,7 +1225,7 @@ class MetricEntriesCalculator:
             self._mdb,
             self._pdb,
             self._cache,
-            extra_columns=participant_columns if len(participants) > 1 else (),
+            extra_columns=extra_columns,
         )
         calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
@@ -1264,6 +1268,7 @@ class MetricEntriesCalculator:
         """
         all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
+        extra_columns = list(participant_columns)
         reporters, assignees, commenters = self._merge_jira_participants(
             [t.participants for request in requests for t in request.teams],
         )
@@ -1272,6 +1277,14 @@ class MetricEntriesCalculator:
         jira_filter = reduce(operator.or_, jira_filters)
         if not jira_filter:
             jira_filter = JIRAFilter.from_jira_config(jira_ids)
+        else:
+            extra_columns.extend(
+                [
+                    Issue.type_id,
+                    Issue.priority_id,
+                    Issue.project_id,
+                ],
+            )
 
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
@@ -1291,7 +1304,7 @@ class MetricEntriesCalculator:
             self._mdb,
             self._pdb,
             self._cache,
-            extra_columns=participant_columns,
+            extra_columns=extra_columns,
         )
 
         results = []
