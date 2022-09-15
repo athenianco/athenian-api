@@ -1,3 +1,4 @@
+import aiomcache
 from freezegun import freeze_time
 import pytest
 from sqlalchemy import delete, distinct, insert, select
@@ -9,6 +10,7 @@ from athenian.api.internal.jira import (
     JIRAConfig,
     JIRAEntitiesMapper,
     disable_empty_projects,
+    get_jira_id,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
     match_jira_identities,
@@ -20,6 +22,7 @@ from athenian.api.models.state.models import (
     JIRAProjectSetting,
     MappedJIRAIdentity,
 )
+from athenian.api.response import ResponseError
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID
@@ -29,6 +32,23 @@ from tests.testutils.factory.state import (
     AccountJiraInstallationFactory,
 )
 from tests.testutils.time import dt
+
+
+class TestGetJIRAID:
+    @with_defer
+    async def test_error_is_not_cached(self, sdb: Database, cache: aiomcache.Client) -> None:
+        with pytest.raises(ResponseError):
+            await get_jira_id(99999, sdb, cache)
+
+        await wait_deferred()
+
+        await models_insert(
+            sdb,
+            AccountFactory(id=99999),
+            AccountJiraInstallationFactory(account_id=99999, id=1000),
+        )
+
+        assert (await get_jira_id(99999, sdb, cache)) == 1000
 
 
 class TestJIRAConfig:

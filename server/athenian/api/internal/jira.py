@@ -60,10 +60,10 @@ async def get_jira_id(
 
     Raise ResponseError if no installation exists.
 
-    :return: JIRA installation ID and the list of enabled JIRA project IDs.
+    :return: JIRA installation ID
     """
     jira_id = await sdb.fetch_val(
-        select([AccountJiraInstallation.id]).where(AccountJiraInstallation.account_id == account),
+        select(AccountJiraInstallation.id).where(AccountJiraInstallation.account_id == account),
     )
     if jira_id is None:
         raise ResponseError(
