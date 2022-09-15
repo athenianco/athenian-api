@@ -731,7 +731,7 @@ async def _postprocess_deployed_releases(
     releases[Release.author.name] = [
         user_node_to_login_get(u) for u in releases[Release.author_node_id.name].values
     ]
-    release_facts = await mine_releases_by_ids(
+    release_facts_df = await mine_releases_by_ids(
         releases,
         branches,
         default_branches,
@@ -748,23 +748,31 @@ async def _postprocess_deployed_releases(
         with_pr_titles=True,
     )
     releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
-    releases_node_ids = set(releases.index.get_level_values(0).unique())
-    computed_node_ids = {r[Release.node_id.name] for r, _ in release_facts}
-    if diff := (releases_node_ids - computed_node_ids):
+    releases_node_ids = releases.index.get_level_values(0).unique()
+    computed_node_ids = (
+        release_facts_df[ReleaseFacts.f.node_id].unique()
+        if not release_facts_df.empty
+        else np.array([], dtype=int)
+    )
+    if len(diff := np.setdiff1d(releases_node_ids, computed_node_ids, assume_unique=True)):
         log = logging.getLogger(f"{metadata.__package__}.mine_releases_by_ids/deployed")
-        log.warning("failed to compute release facts of %s", diff)
+        log.warning("failed to compute release facts of %s", diff.tolist())
         # this can happen when somebody removes a release while we are here
         # also, on deleted releases
-    if len(release_facts) == 0:
+    if len(release_facts_df) == 0:
         return pd.DataFrame()
-    release_facts_df = df_from_structs([f for _, f in release_facts])
-    release_facts_df[Release.node_id.name] = [r[Release.node_id.name] for r, _ in release_facts]
     release_facts_df.set_index(
-        [Release.node_id.name, ReleaseFacts.f.repository_full_name], inplace=True,
+        [ReleaseFacts.f.node_id, ReleaseFacts.f.repository_full_name], inplace=True,
     )
     assert release_facts_df.index.is_unique
-    del release_facts
-    for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by):
+    for col in (
+        ReleaseFacts.f.publisher,
+        ReleaseFacts.f.published,
+        ReleaseFacts.f.matched_by,
+        ReleaseFacts.f.sha,
+        ReleaseFacts.f.name,
+        ReleaseFacts.f.url,
+    ):
         del release_facts_df[col]
     releases = release_facts_df.join(releases)
     return releases

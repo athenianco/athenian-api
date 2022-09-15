@@ -38,7 +38,7 @@ from athenian.api.internal.miners.github.release_mine import (
     hide_first_releases,
     mine_releases,
 )
-from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.miners.types import PullRequestFacts, ReleaseFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
@@ -270,8 +270,12 @@ async def precompute_reposet(
                 with_pr_titles=False,
                 with_deployments=False,
             )
-            releases_by_tag = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
-            releases_by_branch = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+            releases_by_tag = (
+                releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag
+            ).sum()
+            releases_by_branch = (
+                releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
+            ).sum()
             releases_count = len(releases)
             ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
                 releases,

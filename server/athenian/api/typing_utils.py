@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
@@ -138,7 +140,7 @@ class NumpyStruct(Mapping[str, Any]):
             setattr(self, attr, optional.get(attr))
 
     @classmethod
-    def from_fields(cls: NST, **kwargs: Any) -> NST:
+    def from_fields(cls: Type[NST], **kwargs: Any) -> NST:
         """Initialize a new instance of NumpyStruct from the dict of [im]mutable field values."""
         arr = np.zeros(1, cls.dtype)
         extra_bytes = []
@@ -187,6 +189,12 @@ class NumpyStruct(Mapping[str, Any]):
         if not extra_bytes:
             return cls(main_view)
         return cls(b"".join((main_view, *extra_bytes)), **kwargs)
+
+    def with_optional_fields(self: NST, **kwargs) -> NST:
+        """Set several optional fields and return self."""
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+        return self
 
     @property
     def data(self) -> bytes:
@@ -590,10 +598,11 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
     else:
 
         def set_dtype(k: str, v: Any) -> None:
-            if not isinstance(v, type) or not issubclass(
-                v, (datetime, np.datetime64, bool, int, float),
+            if not isinstance(v, np.dtype) and (
+                not isinstance(v, type)
+                or not issubclass(v, (datetime, np.datetime64, bool, int, float))
             ):
-                # we can only unbox types that have a "NaN" value
+                # we can only unbox types that have a "NaN" value or explicit dtypes
                 v = object
             column_types[k] = v
 
@@ -608,14 +617,18 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
     for i, (k, v) in enumerate(columns.items()):
         column_type = column_types.get(k, object)
         typed = False
-        if issubclass(column_type, datetime):
+        if isinstance(column_type, type) and issubclass(column_type, datetime):
             v = tslib.array_to_datetime(np.array(v, dtype=object), utc=True, errors="raise")[0]
             typed = True
-        elif issubclass(column_type, timedelta):
+        elif isinstance(column_type, type) and issubclass(column_type, timedelta):
             v = np.array(v, dtype="timedelta64[s]")
             typed = True
         elif np.dtype(column_type) != np.dtype(object):
-            if not issubclass(column_type, (bool, int)) or is_not_null(v).all():
+            if (
+                isinstance(column_type, np.dtype)
+                or not issubclass(column_type, (bool, int))
+                or is_not_null(v).all()
+            ):
                 v = np.array(v, dtype=column_type)
                 typed = True
         if typed:

@@ -230,7 +230,7 @@ async def mine_all_releases(
     cache: Optional[aiomcache.Client],
 ) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about releases."""
-    releases = (
+    result = (
         await mine_releases(
             repos,
             {},
@@ -253,11 +253,6 @@ async def mine_all_releases(
             with_pr_titles=True,
         )
     )[0]
-    df_gen = pd.DataFrame.from_records([r[0] for r in releases])
-    df_facts = df_from_structs([r[1] for r in releases])
-    del df_facts[Release.node_id.name]
-    del df_facts[Release.repository_full_name.name]
-    result = df_gen.join(df_facts)
     result.set_index(Release.node_id.name, inplace=True)
     user_node_to_login = prefixer.user_node_to_login.get
     for col in ("commit_authors", "prs_user_node_id"):
