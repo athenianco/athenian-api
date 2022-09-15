@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -11,6 +14,7 @@ from names_matcher import NamesMatcher
 import numpy as np
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+import sqlalchemy as sa
 from sqlalchemy import and_, func, insert, join, select
 from unidecode import unidecode
 
@@ -20,7 +24,14 @@ from athenian.api.cache import CancelCache, cached, max_exptime
 from athenian.api.db import DatabaseLike, ensure_db_datetime_tz, is_postgresql
 from athenian.api.internal.miners.github.contributors import load_organization_members
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues
-from athenian.api.models.metadata.jira import Issue, IssueType, Progress, Project, User as JIRAUser
+from athenian.api.models.metadata.jira import (
+    Issue,
+    IssueType,
+    Priority,
+    Progress,
+    Project,
+    User as JIRAUser,
+)
 from athenian.api.models.state.models import (
     AccountJiraInstallation,
     JIRAProjectSetting,
@@ -160,6 +171,61 @@ async def get_jira_installation_or_none(
         return await get_jira_installation(account, sdb, mdb, cache)
     except ResponseError:
         return None
+
+
+class JIRAEntitiesMapper:
+    """Maps various JIRA issue entities from their labels to their identifiers.
+
+    Issue priorities and issue types are mapped by this object.  Project are instead mapped
+    through JIRAConfig.
+    """
+
+    def __init__(
+        self,
+        priority_names_map: dict[str, list[str]],
+        types_map: dict[str, list[str]],
+    ) -> None:
+        """Build a mapper using the given dictionaries as mapping source."""
+        self._priority_names_map = priority_names_map
+        self._types_map = types_map
+
+    @classmethod
+    async def load(cls, jira_acc_id: int, mdb: DatabaseLike) -> JIRAEntitiesMapper:
+        """Load the mapper by loading data from DB."""
+        priority_stmt = sa.select(Priority.name, Priority.id).where(Priority.acc_id == jira_acc_id)
+        type_stmt = (
+            sa.select(IssueType.name, IssueType.id)
+            .where(IssueType.acc_id == jira_acc_id)
+            .distinct()
+        )
+
+        priority_rows, type_rows = await gather(
+            mdb.fetch_all(priority_stmt), mdb.fetch_all(type_stmt),
+        )
+
+        priority_names_map = defaultdict(list)
+        for priority_name, priority_id in priority_rows:
+            priority_names_map[priority_name].append(priority_id)
+        types_map = defaultdict(list)
+        for type_, type_id in type_rows:
+            types_map[type_].append(type_id)
+
+        return cls(priority_names_map, types_map)
+
+    def translate_priority_names(self, priority_names: Iterable[str]) -> list[str]:
+        """Translate a set of priority names to their identifiers.
+
+        Unknown priority names are ignored.
+        """
+        map_ = self._priority_names_map
+        return list(chain.from_iterable(map_.get(p, ()) for p in priority_names))
+
+    def translate_types(self, types: Iterable[str]) -> list[str]:
+        """Translate a set of types to their identifiers.
+
+        Unknown types are ignored.
+        """
+        return list(chain.from_iterable(self._types_map.get(p, ()) for p in types))
 
 
 @cached(
