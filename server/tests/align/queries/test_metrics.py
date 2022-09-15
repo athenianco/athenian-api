@@ -590,7 +590,7 @@ class TestSimplifyRequests:
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 ((dt(2001, 1, 1), dt(2001, 2, 1)),),
-                {1: RequestedTeamDetails([10], None), 2: RequestedTeamDetails([10, 20], None)},
+                {RequestedTeamDetails(1, 0, [10]), RequestedTeamDetails(2, 0, [10, 20])},
             ),
         ]
         simplified = _simplify_requests(requests)
@@ -602,18 +602,18 @@ class TestSimplifyRequests:
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS,
-                {
-                    1: RequestedTeamDetails([1], None),
-                    2: RequestedTeamDetails([10, 2], None),
-                },
+                [
+                    RequestedTeamDetails(1, 0, [1]),
+                    RequestedTeamDetails(2, 0, [10, 2]),
+                ],
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME,),
                 INTERVALS,
-                {
-                    1: RequestedTeamDetails([1], None),
-                    2: RequestedTeamDetails([10, 2], None),
-                },
+                [
+                    RequestedTeamDetails(1, 0, [1]),
+                    RequestedTeamDetails(2, 0, [10, 2]),
+                ],
             ),
         ]
         simplified = _simplify_requests(requests)
@@ -622,8 +622,8 @@ class TestSimplifyRequests:
             (PullRequestMetricID.PR_CLOSED, PullRequestMetricID.PR_RELEASE_TIME),
             INTERVALS,
             {
-                1: RequestedTeamDetails([1], None),
-                2: RequestedTeamDetails([10, 2], None),
+                RequestedTeamDetails(1, 0, [1]),
+                RequestedTeamDetails(2, 0, [10, 2]),
             },
         )
 
@@ -635,34 +635,36 @@ class TestSimplifyRequests:
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS,
-                {1: RequestedTeamDetails([10], None)},
+                {RequestedTeamDetails(1, 0, [10])},
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME,),
                 INTERVALS,
                 {
-                    1: RequestedTeamDetails([10], None),
-                    2: RequestedTeamDetails([10, 20], None),
+                    RequestedTeamDetails(1, 0, [10]),
+                    RequestedTeamDetails(2, 0, [10, 20]),
                 },
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_REVIEW_COUNT,),
                 INTERVALS,
-                {2: RequestedTeamDetails([10, 20], None)},
+                {RequestedTeamDetails(2, 0, [10, 20])},
             ),
         ]
 
-        simplified = sorted(_simplify_requests(requests), key=lambda r: list(r.teams) == [2])
+        simplified = sorted(
+            _simplify_requests(requests), key=lambda r: {t.team_id for t in r.teams} == {2},
+        )
         expected = [
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_CLOSED),
                 INTERVALS,
-                {1: RequestedTeamDetails([10], None)},
+                {RequestedTeamDetails(1, 0, [10])},
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_REVIEW_COUNT),
                 INTERVALS,
-                {2: RequestedTeamDetails([10, 20], None)},
+                {RequestedTeamDetails(2, 0, [10, 20])},
             ),
         ]
 
@@ -677,20 +679,22 @@ class TestSimplifyRequests:
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
-                {1: RequestedTeamDetails([1], None)},
+                {RequestedTeamDetails(1, 0, [1])},
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_OPENED,),
                 INTERVALS_1,
-                {1: RequestedTeamDetails([1], None)},
+                {RequestedTeamDetails(1, 0, [1])},
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
-                {2: RequestedTeamDetails([2], None)},
+                {RequestedTeamDetails(2, 0, [2])},
             ),
         ]
-        simplified = sorted(_simplify_requests(requests), key=lambda r: list(r.teams) == [2])
+        simplified = sorted(
+            _simplify_requests(requests), key=lambda r: {t.team_id for t in r.teams} == {2},
+        )
         assert len(simplified) == 2
 
         expected = [
@@ -698,14 +702,14 @@ class TestSimplifyRequests:
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
                 {
-                    1: RequestedTeamDetails([1], None),
-                    2: RequestedTeamDetails([2], None),
+                    RequestedTeamDetails(1, 0, [1]),
+                    RequestedTeamDetails(2, 0, [2]),
                 },
             ),
             TeamMetricsRequest(
                 (PullRequestMetricID.PR_OPENED,),
                 INTERVALS_1,
-                {1: RequestedTeamDetails([1], None)},
+                {RequestedTeamDetails(1, 0, [1])},
             ),
         ]
         self._assert_team_requests_equal(simplified[0], expected[0])

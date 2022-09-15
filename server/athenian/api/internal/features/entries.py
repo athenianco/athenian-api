@@ -1874,14 +1874,16 @@ class TeamSpecificFilters:
     """Filters that are different for each team."""
 
     team_id: int
-    repositories: Sequence[str]
+    # filters start here
+    repositories: tuple[str]
     participants: PRParticipants | ReleaseParticipants | JIRAParticipants
     jira_filter: JIRAFilter
+    # add more filters here
 
     def __str__(self) -> str:
         """Format the filters as a stable string."""
         # participants are fully defined by the team ID
-        return f"{self.team_id}|{','.join(self.repositories)}"
+        return f"{self.team_id}|{','.join(self.repositories)}|{self.jira_filter}"
 
     def __sentry_repr__(self):
         """Format for Sentry."""

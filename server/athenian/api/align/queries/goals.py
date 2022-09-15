@@ -8,7 +8,9 @@ from graphql import GraphQLResolveInfo
 
 from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
 from athenian.api.align.goals.dbaccess import (
+    AliasedGoalColumns,
     GoalColumnAlias,
+    TeamGoalColumns,
     fetch_team_goals,
     resolve_goal_repositories,
 )
@@ -16,6 +18,7 @@ from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoal
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
     TeamMetricsRequest,
+    TeamMetricsResult,
     calculate_team_metrics,
 )
 from athenian.api.align.queries.teams import build_team_tree_from_rows
@@ -107,7 +110,7 @@ class _GoalToServe:
     def request(self) -> TeamMetricsRequest:
         return self._request
 
-    def build_goal_tree(self, metric_values) -> GoalTree:
+    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
         initial_metrics = metric_values[self._request.time_intervals[0]][self._request.metrics[0]]
         current_metrics = metric_values[self._request.time_intervals[1]][self._request.metrics[0]]
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
@@ -147,16 +150,30 @@ class _GoalToServe:
 
         # in the metrics requests only ask for teams present in the pruned tree
         goal_tree_team_ids = pruned_tree.flatten_team_ids()
-        requested_teams = {}
+        requested_teams = []
         for team_id in goal_tree_team_ids:
             try:
-                repositories = rows_by_team[team_id][TeamGoal.repositories.name]
+                team_goal_row = rows_by_team[team_id]
             except KeyError:
-                repositories = goal_row[GoalColumnAlias.REPOSITORIES.value]
+                team_goal_row = goal_row
+                columns = AliasedGoalColumns
+                goal_id = 0  # the filters are shared
+            else:
+                columns = TeamGoalColumns
+                goal_id = team_goal_row[TeamGoal.goal_id.name]
+            repositories = team_goal_row[columns[TeamGoal.repositories.name]]
             if repositories is not None:
                 repo_names = resolve_goal_repositories(repositories, prefixer)
                 repositories = tuple(name.unprefixed for name in repo_names)
-            requested_teams[team_id] = RequestedTeamDetails(team_member_map[team_id], repositories)
+            # add more filters here: team_goal_row[columns[TeamGoal.jira_projects.name]] etc.
+            requested_teams.append(
+                RequestedTeamDetails(
+                    team_id=team_id,
+                    goal_id=goal_id,
+                    members=team_member_map[team_id],
+                    repositories=repositories,
+                ),
+            )
 
         team_metrics_request = TeamMetricsRequest(
             metrics=[metric],
@@ -170,8 +187,8 @@ class _GoalToServe:
 class GoalMetricValues:
     """The metric values for a Goal across all teams."""
 
-    initial: Mapping[int, Any]
-    current: Mapping[int, Any]
+    initial: Mapping[tuple[int, int], Any]
+    current: Mapping[tuple[int, int], Any]
 
 
 @sentry_span
@@ -209,17 +226,20 @@ def _team_tree_to_team_goal_tree(
     team_goal_rows_map: Mapping[int, Row],
     metric_values: GoalMetricValues,
 ) -> TeamGoalTree:
+    team_id = team_tree.id
     try:
-        team_goal_row = team_goal_rows_map[team_tree.id]
+        team_goal_row = team_goal_rows_map[team_id]
     except KeyError:
         # the team can be present in the tree but have no team goal
         target = None
+        goal_id = 0
     else:
+        goal_id = team_goal_row[TeamGoal.goal_id.name]
         target = MetricValue(team_goal_row[TeamGoal.target.name])
 
     goal_value = GoalValue(
-        current=MetricValue(metric_values.current.get(team_tree.id)),
-        initial=MetricValue(metric_values.initial.get(team_tree.id)),
+        current=MetricValue(metric_values.current.get((team_id, goal_id))),
+        initial=MetricValue(metric_values.initial.get((team_id, goal_id))),
         target=target,
     )
     children = [

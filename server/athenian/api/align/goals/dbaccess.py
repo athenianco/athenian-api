@@ -182,10 +182,14 @@ class GoalColumnAlias(Enum):
 
     """
 
-    REPOSITORIES = "goal_repositories"
-    JIRA_PROJECTS = "goal_jira_projects"
-    JIRA_PRIORITIES = "goal_jira_priorities"
-    JIRA_ISSUE_TYPES = "goal_issue_types"
+    REPOSITORIES = f"goal_{Goal.repositories.name}"
+    JIRA_PROJECTS = f"goal_{Goal.jira_projects.name}"
+    JIRA_PRIORITIES = f"goal_{Goal.jira_priorities.name}"
+    JIRA_ISSUE_TYPES = f"goal_{Goal.jira_issue_types.name}"
+
+
+AliasedGoalColumns = {getattr(Goal, f.value[5:].lower()).name: f.value for f in GoalColumnAlias}
+TeamGoalColumns = {f: f for f in AliasedGoalColumns}
 
 
 @sentry_span
