@@ -1430,13 +1430,24 @@ class PullRequestMiner:
             updated_min=updated_min,
             updated_max=updated_max,
         )
+
+        labels: Optional[pd.DataFrame] = None
+
+        async def load_labels() -> Optional[pd.DataFrame]:
+            if not with_labels:
+                return None
+            if labels is not None:
+                return labels
+            return await fetch_labels_to_filter(prs.index.values, meta_ids, mdb)
+
         if (
             columns is not PullRequest
             and PullRequest.merge_commit_id not in columns
             and PullRequest.merge_commit_sha not in columns
         ):
             prs, labels = await pr_list_coro
-            return prs, dags, labels if with_labels else None
+            labels = await load_labels()
+            return prs, dags, labels
 
         if fetch_branch_dags_task is None:
             fetch_branch_dags_task = cls._fetch_branch_dags(
@@ -1444,14 +1455,6 @@ class PullRequestMiner:
             )
 
         dags, (prs, labels) = await gather(fetch_branch_dags_task, pr_list_coro)
-
-        async def load_labels():
-            if not with_labels:
-                return None
-            if labels is not None:
-                return labels
-            return await fetch_labels_to_filter(prs.index.values, meta_ids, mdb)
-
         prs, labels = await gather(
             cls.mark_dead_prs(prs, branches, dags, account, meta_ids, mdb, pdb, columns),
             load_labels(),

@@ -98,6 +98,7 @@ class UnfreshPullRequestFactsFetcher:
         blacklist = PullRequest.node_id.notin_any_values(done_node_ids)
         physical_repos = coerce_logical_repos(repositories)
         has_logical_repos = physical_repos != repositories
+        with_labels = logical_settings.has_prs_by_label(physical_repos)
         tasks = [
             # map_releases_to_prs is not required because such PRs are already released,
             # by definition
@@ -141,7 +142,7 @@ class UnfreshPullRequestFactsFetcher:
                     PullRequest.user_login,
                     PullRequest.title,
                 ],
-                with_labels=logical_settings.has_prs_by_label(physical_repos),
+                with_labels=with_labels,
             ),
         ]
         if jira and done_facts:
@@ -149,11 +150,7 @@ class UnfreshPullRequestFactsFetcher:
                 cls._filter_done_facts_jira(miner, done_facts, jira, meta_ids, mdb, cache),
             )
         else:
-
-            async def identity():
-                return
-
-            tasks.append(identity())
+            tasks.append(None)
         if not exclude_inactive:
             tasks.append(
                 cls._fetch_inactive_merged_unreleased_prs(
@@ -191,13 +188,13 @@ class UnfreshPullRequestFactsFetcher:
             "load_precomputed_done_facts_filters/ambiguous",
             remove_ambiguous_prs(done_facts, ambiguous, matched_bys),
         )
+        assert with_labels == (unreleased_labels is not None)
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
         unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
         open_prs = unique_unreleased_pr_node_ids[unmerged_mask]
         open_pr_authors = dict(
             zip(open_prs, unreleased_prs[PullRequest.user_login.name].values[unmerged_mask]),
         )
-
         unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings,
         )
