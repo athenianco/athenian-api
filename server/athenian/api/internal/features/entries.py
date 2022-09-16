@@ -222,7 +222,6 @@ class MetricEntriesCalculator:
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
     done_prs_facts_loader = DonePRFactsLoader
-    load_delta = 0
     _log = logging.getLogger(f"{metadata.__package__}.MetricEntriesCalculator")
 
     def __init__(
@@ -247,10 +246,6 @@ class MetricEntriesCalculator:
         self._pdb = pdb
         self._rdb = rdb
         self._cache = cache
-
-    def is_ready_for(self, account: int, meta_ids: tuple[int, ...]) -> bool:
-        """Check whether the calculator is ready for the given account and meta ids."""
-        return True
 
     @staticmethod
     def align_time_min_max(time_intervals, stride: int) -> tuple[datetime, datetime]:

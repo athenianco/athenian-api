@@ -67,6 +67,7 @@ from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_a
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.miners.types import (
     Deployment,
+    JIRAEntityToFetch,
     PullRequestFacts,
     ReleaseFacts,
     ReleaseParticipants,
@@ -113,10 +114,12 @@ async def mine_releases(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
+    *,
     force_fresh: bool = False,
     with_avatars: bool = True,
     with_pr_titles: bool = False,
     with_deployments: bool = True,
+    with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     releases_in_time_range: Optional[pd.DataFrame] = None,
 ) -> tuple[
     pd.DataFrame,
@@ -135,6 +138,8 @@ async def mine_releases(
     :param with_pr_titles: Indicates whether released PR titles must be fetched.
     :param with_deployments: Indicates whether we must load the deployments to which the filtered
                              releases belong.
+    :param with_jira: Indicates which JIRA information to load for each release from \
+                      the released PR mapped to JIRA issues.
     :param releases_in_time_range: Shortcut to skip the initial loading of releases in \
                                    [time_from, time_to).
     :return: 1. list of releases (general info, computed facts). \
@@ -164,9 +169,10 @@ async def mine_releases(
         with_avatars,
         with_pr_titles,
         with_deployments,
+        with_jira,
         releases_in_time_range,
     )
-    return result[:-3]
+    return result[:4]
 
 
 def _triage_flags(
@@ -178,10 +184,12 @@ def _triage_flags(
         bool,
         bool,
         bool,
+        JIRAEntityToFetch,
     ],
     with_avatars: bool = True,
     with_pr_titles: bool = False,
     with_deployments: bool = True,
+    with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     **_,
 ) -> tuple[
     pd.DataFrame,
@@ -191,6 +199,7 @@ def _triage_flags(
     bool,
     bool,
     bool,
+    JIRAEntityToFetch,
 ]:
     (
         main,
@@ -200,6 +209,7 @@ def _triage_flags(
         cached_with_avatars,
         cached_with_pr_titles,
         cached_with_deployments,
+        cached_with_jira,
     ) = result
     if with_pr_titles and not cached_with_pr_titles:
         raise CancelCache()
@@ -209,7 +219,9 @@ def _triage_flags(
         avatars = [p[0] for p in avatars]
     if with_deployments and not cached_with_deployments:
         raise CancelCache()
-    return main, avatars, matches, deps, with_avatars, with_pr_titles, with_deployments
+    if with_jira & cached_with_jira != with_jira:
+        raise CancelCache()
+    return main, avatars, matches, deps, with_avatars, with_pr_titles, with_deployments, with_jira
 
 
 @sentry_span
@@ -231,6 +243,7 @@ def _triage_flags(
         else "",
     ),
     postprocess=_triage_flags,
+    version=2,
 )
 async def _mine_releases(
     repos: Collection[str],
@@ -254,8 +267,8 @@ async def _mine_releases(
     with_avatars: bool,
     with_pr_titles: bool,
     with_deployments: bool,
+    with_jira: JIRAEntityToFetch,
     releases_in_time_range: Optional[pd.DataFrame],
-    version=2,
 ) -> tuple[
     pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
@@ -264,6 +277,7 @@ async def _mine_releases(
     bool,
     bool,
     bool,
+    JIRAEntityToFetch,
 ]:
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     if internal_releases := (releases_in_time_range is None):
@@ -294,13 +308,14 @@ async def _mine_releases(
         assert time_to is None
     if releases_in_time_range.empty:
         return (
-            pd.DataFrame(),
+            _empty_mined_releases_df(),
             [],
             {r: v.match for r, v in release_settings.prefixed.items()},
             {},
             with_avatars,
             with_pr_titles,
             with_deployments,
+            with_jira,
         )
     has_logical_prs = logical_settings.has_logical_prs()
     if with_deployments:
@@ -740,26 +755,20 @@ async def _mine_releases(
         tasks.insert(
             0,
             mdb.fetch_all(
-                select([NodePullRequest.id, NodePullRequest.title]).where(
-                    and_(
-                        NodePullRequest.acc_id.in_(meta_ids),
-                        NodePullRequest.id.in_any_values(all_pr_node_ids),
-                    ),
+                select(NodePullRequest.id, NodePullRequest.title).where(
+                    NodePullRequest.acc_id.in_(meta_ids),
+                    NodePullRequest.id.in_any_values(all_pr_node_ids),
                 ),
             ),
         )
     if labels:
         query = (
             select(
-                [
-                    PullRequestLabel.pull_request_node_id,
-                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-                ],
+                PullRequestLabel.pull_request_node_id,
+                func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
             ).where(
-                and_(
-                    PullRequestLabel.acc_id.in_(meta_ids),
-                    PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids),
-                ),
+                PullRequestLabel.acc_id.in_(meta_ids),
+                PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids),
             )
         ).with_statement_hint("Leading(*VALUES* prl label repo)")
         tasks.insert(
@@ -803,7 +812,23 @@ async def _mine_releases(
         with_avatars,
         with_pr_titles,
         with_deployments,
+        with_jira,
     )
+
+
+def _empty_mined_releases_df():
+    df = {}
+    for key, val in ReleaseFacts.Immutable.__annotations__.items():
+        if isinstance(val, list):
+            val = object
+        df[key] = np.array([], dtype=val)
+    for key, val in ReleaseFacts.Optional.__annotations__.items():
+        if not (
+            isinstance(val, np.dtype) or isinstance(val, type) and issubclass(val, (bool, int))
+        ):
+            val = object
+        df[key] = np.array([], dtype=val)
+    return pd.DataFrame(df)
 
 
 def _null_to_zero_int(df: pd.DataFrame, col: str) -> tuple[np.ndarray, np.ndarray]:
@@ -1235,7 +1260,7 @@ async def mine_releases_by_name(
         cache,
     )
     if releases.empty:
-        return pd.DataFrame(), [], {}
+        return _empty_mined_releases_df(), [], {}
     release_settings = release_settings.select(
         releases[Release.repository_full_name.name].unique(),
     )
@@ -1571,12 +1596,10 @@ async def _complete_commit_hashes(
     if not candidates:
         return {repo: {s: s for s in strs} for repo, strs in names.items()}
     queries = [
-        select([PushCommit.repository_full_name, PushCommit.sha]).where(
-            and_(
-                PushCommit.acc_id.in_(meta_ids),
-                PushCommit.repository_full_name == repo,
-                func.substr(PushCommit.sha, 1, 7).in_(prefixes),
-            ),
+        select(PushCommit.repository_full_name, PushCommit.sha).where(
+            PushCommit.acc_id.in_(meta_ids),
+            PushCommit.repository_full_name == repo,
+            func.substr(PushCommit.sha, 1, 7).in_(prefixes),
         )
         for repo, prefixes in candidates.items()
     ]
@@ -1664,7 +1687,7 @@ async def diff_releases(
             cache,
         )
 
-    tasks = [
+    (releases, avatars, _, _), dags = await gather(
         mine_releases(
             repos,
             {},
@@ -1687,9 +1710,11 @@ async def diff_releases(
             with_pr_titles=True,
         ),
         fetch_dags(),
-    ]
-    (releases, avatars, _, _), dags = await gather(*tasks, op="mine_releases + dags")
+        op="mine_releases + dags",
+    )
     del border_releases
+    if releases.empty:
+        return {}, []
     order = np.argsort(releases[ReleaseFacts.f.repository_full_name].values, kind="stable")
     unique_repos, repo_group_counts = np.unique(
         releases[ReleaseFacts.f.repository_full_name].values[order], return_counts=True,
