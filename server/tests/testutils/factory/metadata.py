@@ -15,6 +15,7 @@ from athenian.api.models.metadata.github import (
     User,
 )
 from athenian.api.models.metadata.jira import (
+    AthenianIssue,
     Issue,
     IssueType,
     Priority,
@@ -143,6 +144,18 @@ class TeamMemberFactory(SQLAlchemyModelFactory):
     acc_id = DEFAULT_MD_ACCOUNT_ID
     parent_id = factory.Sequence(lambda n: n + 1)
     child_id = factory.Sequence(lambda n: n + 2)
+
+
+class JIRAAthenianIssueFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = AthenianIssue
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    work_began = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=5))
+    resolved = None
+    updated = None
+    nested_assignee_display_names: dict = {}
 
 
 class JIRAProjectFactory(SQLAlchemyModelFactory):

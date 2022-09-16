@@ -70,6 +70,7 @@ from athenian.api.internal.features.metric_calculator import (
     MetricCalculatorEnsemble,
     deduplicate_groups,
     group_by_repo,
+    group_jira_facts_by_jira,
     group_pr_facts_by_jira,
     group_to_indexes,
 )
@@ -469,24 +470,18 @@ class MetricEntriesCalculator:
 
         results = []
         for request in requests:
-            groups = np.empty(len(request.teams), dtype=object)
-            group = np.empty(len(df_facts), dtype=np.uint8)
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
-            for i, group_by_filter in enumerate(
-                zip(
-                    group_by_repo(
-                        PullRequest.repository_full_name.name,
-                        [t.repositories for t in request.teams],
-                        df_facts,
-                    ),
-                    group_prs_by_participants([t.participants for t in request.teams], df_facts),
-                    group_pr_facts_by_jira(jira_grouping, df_facts),
+            group_by = [
+                group_by_repo(
+                    PullRequest.repository_full_name.name,
+                    [t.repositories for t in request.teams],
+                    df_facts,
                 ),
-            ):
-                group[:] = 0
-                for g in group_by_filter:
-                    group[g] += 1
-                groups[i] = np.flatnonzero(group == len(group_by_filter))
+                group_prs_by_participants([t.participants for t in request.teams], df_facts),
+                group_pr_facts_by_jira(jira_grouping, df_facts),
+            ]
+
+            groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
             groups = deduplicate_groups(
                 groups,
                 df_facts,
@@ -1302,17 +1297,14 @@ class MetricEntriesCalculator:
         )
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
-        jira_filter = reduce(operator.or_, jira_filters)
-        if not jira_filter:
-            jira_filter = JIRAFilter.from_jira_config(jira_ids)
-        else:
-            extra_columns.extend(
-                [
-                    Issue.type_id,
-                    Issue.priority_id,
-                    Issue.project_id,
-                ],
-            )
+        convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            jira_filters, self._account, jira_ids.acc_id, self._mdb, self._cache,
+        )
+        if any(jira_filters):
+            # if any filter is True-ish group_jira_facts_by_jira will need the extra info to group
+            extra_columns.extend([Issue.type_id, Issue.priority_id, Issue.project_id])
+
+        jira_filter = reduce(operator.or_, jira_filters) or JIRAFilter.from_jira_config(jira_ids)
 
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
@@ -1337,11 +1329,13 @@ class MetricEntriesCalculator:
 
         results = []
         for request in requests:
+            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
+            group_by = [
+                split_issues_by_participants([t.participants for t in request.teams], issues),
+                group_jira_facts_by_jira(jira_grouping, issues),
+            ]
+            groups = _intersect_items_groups(len(request.teams), len(issues), *group_by)
             calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
-            groups = group_to_indexes(
-                issues,
-                partial(split_issues_by_participants, [t.participants for t in request.teams]),
-            )
             results.append(calc(issues, request.time_intervals, groups))
 
         return results
@@ -1927,6 +1921,27 @@ def _compose_cache_key_participants(participants: Sequence[AnyParticipants]) -> 
     return ";".join(
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items())) for p in participants
     )
+
+
+def _intersect_items_groups(
+    n_groups: int,
+    n_items: int,
+    *group_arrays: np.ndarray,
+) -> list[np.ndarray]:
+    """Intersect lists of groups.
+
+    Each group in the result will be the intersection of groups in `group_arrays` index by index.
+    Each group_arrays must generate `n_groups`.
+
+    """
+    groups = np.empty(n_groups, dtype=object)
+    group = np.empty(n_items, dtype=np.uint8)
+    for i, group_masks in enumerate(zip(*group_arrays)):
+        group[:] = 0
+        for mask in group_masks:
+            group[mask] += 1
+        groups[i] = np.flatnonzero(group == len(group_masks))
+    return groups
 
 
 def make_calculator(

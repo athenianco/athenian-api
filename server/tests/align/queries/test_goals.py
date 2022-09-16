@@ -1,5 +1,6 @@
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import Optional, Sequence
 
 import pytest
@@ -753,6 +754,90 @@ class TestJIRAFiltering(BaseGoalsTest):
             # no PR selected
             assert goal_21["teamGoal"]["children"][0]["team"]["id"] == 11
             assert goal_21["teamGoal"]["children"][0]["value"]["initial"]["int"] == 0
+
+    async def test_jira_metric(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = JIRAMetricID.JIRA_OPEN
+        t = dt(2005, 1, 2)
+
+        GoalF = partial(
+            GoalFactory, metric=metric, valid_from=t, expires_at=t + timedelta(days=30),
+        )
+
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020]),
+            TeamFactory(id=11, members=[40020], parent_id=10),
+            GoalF(id=20, jira_priorities=["p0"], jira_projects=["PJ0", "PJXX"]),
+            GoalF(id=21),
+            GoalF(id=22),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_projects=["PJ0"]),
+            TeamGoalFactory(
+                goal_id=21, team_id=10, jira_projects=["PJ1"], jira_priorities=["p0", "p1"],
+            ),
+            TeamGoalFactory(
+                goal_id=22, team_id=10, jira_projects=["PJ0"], jira_issue_types=["t0"],
+            ),
+            TeamGoalFactory(
+                goal_id=22, team_id=11, jira_projects=["PJ0"], jira_issue_types=["t0"],
+            ),
+            MappedJIRAIdentityFactory(
+                github_user_id=39789, jira_user_id="5dd58cb9c7ac480ee5674902",
+            ),
+            MappedJIRAIdentityFactory(
+                github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
+            ),
+        )
+        IF = partial(md_factory.JIRAIssueFactory, created=t)
+        priority_0 = {"priority_id": "10", "priority_name": "P0"}
+        priority_1 = {"priority_id": "11", "priority_name": "P1"}
+        type_0 = {"type_id": "100", "type": "T0"}
+        user0 = {"assignee_display_name": "waren long"}
+        user1 = {"assignee_display_name": "vadim markovtsev"}
+        models = [
+            md_factory.JIRAProjectFactory(id="0", key="PJ0"),
+            md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+            md_factory.JIRAPriorityFactory(id="10", name="P0"),
+            md_factory.JIRAPriorityFactory(id="11", name="P1"),
+            md_factory.JIRAIssueTypeFactory(id="100", name="T0"),
+            IF(id="10", project_id="0", **user1, **priority_0),
+            IF(id="11", project_id="0", **user1, **priority_0, **type_0),
+            IF(id="12", project_id="1", **user1, **priority_0),
+            IF(id="13", project_id="0", **user0, **priority_0, **type_0),
+            IF(id="14", project_id="1", **user0, **priority_1),
+            *[
+                md_factory.JIRAAthenianIssueFactory(id=id_, updated=t)
+                for id_ in ("10", "11", "12", "13", "14")
+            ],
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res = await self._request(1, 10)
+            assert (goal_20 := res["data"]["goals"][0])["id"] == 20
+            assert goal_20["teamGoal"]["team"]["id"] == 10
+            # issues 10, 11 and 13 counted
+            assert goal_20["teamGoal"]["team"]["id"] == 10
+            assert goal_20["teamGoal"]["value"]["current"]["int"] == 3
+
+            # team goal is missing, filters taken from goal; issues 10 and 11 counted
+            assert goal_20["teamGoal"]["children"][0]["team"]["id"] == 11
+            assert goal_20["teamGoal"]["children"][0]["value"]["current"]["int"] == 2
+
+            assert (goal_21 := res["data"]["goals"][1])["id"] == 21
+            assert goal_21["teamGoal"]["team"]["id"] == 10
+            # issues 12 and 14 counted
+            assert goal_21["teamGoal"]["value"]["current"]["int"] == 2
+
+            assert (goal_22 := res["data"]["goals"][2])["id"] == 22
+            # issues 11 and 13 counted
+            assert goal_22["teamGoal"]["team"]["id"] == 10
+            assert goal_22["teamGoal"]["value"]["current"]["int"] == 2
+
+            assert goal_22["teamGoal"]["children"][0]["team"]["id"] == 11
+            # issues 11 counted
+            assert goal_22["teamGoal"]["children"][0]["value"]["current"]["int"] == 1
 
     @classmethod
     async def _update_team_goal(
