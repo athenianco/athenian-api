@@ -67,7 +67,9 @@ class ReleaseNotification(create_time_mixin(created_at=True, updated_at=True), B
     name = Column(Text())
     author_node_id = Column(BigInteger(), info={"reset_nulls": True})
     url = Column(Text())
-    published_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    published_at = Column(
+        TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
+    )
     cloned = Column(Boolean(), nullable=False, default=False, server_default="false")
 
 

@@ -5,7 +5,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Any, Callable, Collection, Iterable, Optional, Sequence, Union
+from typing import Any, Callable, Collection, Iterable, Mapping, Optional, Sequence, Union
 
 import aiomcache
 import numpy as np
@@ -64,10 +64,12 @@ from athenian.api.internal.miners.github.release_load import (
 from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
-from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
+from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, generate_jira_prs_query
 from athenian.api.internal.miners.types import (
     Deployment,
     JIRAEntityToFetch,
+    LoadedJIRADetails,
+    LoadedJIRAReleaseDetails,
     PullRequestFacts,
     ReleaseFacts,
     ReleaseParticipants,
@@ -319,7 +321,7 @@ async def _mine_releases(
         )
     has_logical_prs = logical_settings.has_logical_prs()
     if with_deployments:
-        deployments = asyncio.create_task(
+        deployments_task = asyncio.create_task(
             _load_release_deployments(
                 releases_in_time_range,
                 default_branches,
@@ -335,6 +337,8 @@ async def _mine_releases(
             ),
             name=f"_load_release_deployments({len(releases_in_time_range)})",
         )
+    else:
+        deployments_task = None
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, release_settings, account, pdb,
     )
@@ -350,6 +354,14 @@ async def _mine_releases(
         precomputed_facts = await _filter_precomputed_release_facts_by_jira(
             precomputed_facts, jira, meta_ids, mdb, cache,
         )
+    if with_jira != JIRAEntityToFetch.NOTHING:
+        precomputed_jira_entities_task = asyncio.create_task(
+            _load_jira_from_precomputed_release_facts(precomputed_facts, with_jira, meta_ids, mdb),
+            name="mine_releases/_load_jira_from_precomputed_release_facts",
+        )
+    else:
+        precomputed_jira_entities_task = None
+    new_jira_entities_coro = None
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases_in_time_range, precomputed_facts, prefixer, True,
     )
@@ -357,10 +369,8 @@ async def _mine_releases(
     missing_release_indexes = np.flatnonzero(~has_precomputed_facts)
     missed_releases_count = len(missing_release_indexes)
     add_pdb_misses(pdb, "release_facts", missed_releases_count)
-    missing_repos = (
-        releases_in_time_range[Release.repository_full_name.name]
-        .take(missing_release_indexes)
-        .unique()
+    missing_repos = unordered_unique(
+        releases_in_time_range[Release.repository_full_name.name].values[missing_release_indexes],
     )
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
@@ -559,6 +569,10 @@ async def _mine_releases(
         prs_node_ids = prs_df[PullRequest.node_id.name].values
         if with_pr_titles or labels:
             all_pr_node_ids.append(prs_node_ids)
+        if with_jira != JIRAEntityToFetch.NOTHING:
+            new_jira_entities_coro = PullRequestJiraMapper.load(
+                prs_node_ids, with_jira, meta_ids, mdb,
+            )
         prs_numbers = prs_df[PullRequest.number.name].values
         prs_additions = prs_df[PullRequest.additions.name].values
         prs_deletions = prs_df[PullRequest.deletions.name].values
@@ -715,7 +729,7 @@ async def _mine_releases(
         log.info("mined %d new releases", len(data))
         return data
 
-    tasks = [main_flow()]
+    tasks = [precomputed_jira_entities_task, new_jira_entities_coro, deployments_task, main_flow()]
     if with_avatars:
         all_authors = np.unique(
             np.concatenate(
@@ -749,6 +763,8 @@ async def _mine_releases(
         tasks.insert(
             0, mine_user_avatars(UserAvatarKeys.NODE, meta_ids, mdb, cache, logins=all_authors),
         )
+    else:
+        tasks.insert(0, None)
     if (with_pr_titles or labels) and all_pr_node_ids:
         all_pr_node_ids = np.concatenate(all_pr_node_ids)
     if with_pr_titles:
@@ -761,6 +777,8 @@ async def _mine_releases(
                 ),
             ),
         )
+    else:
+        tasks.insert(0, None)
     if labels:
         query = (
             select(
@@ -780,26 +798,50 @@ async def _mine_releases(
                 index=PullRequestLabel.pull_request_node_id.name,
             ),
         )
+    else:
+        tasks.insert(0, None)
     mentioned_authors = set(mentioned_authors)
-    *secondary, mined_releases = await gather(*tasks, op="mine missing releases")
+    (
+        labels_result,
+        pr_titles_result,
+        avatars_result,
+        _,
+        new_pr_jira_map,
+        _,
+        mined_releases,
+    ) = await gather(*tasks, op="mine missing releases")
+    if with_jira != JIRAEntityToFetch.NOTHING:
+        release_jira_map = (
+            precomputed_jira_entities_task.result()
+            | _convert_pr_jira_map_to_release_jira_map(
+                ((f.node_id, f.repository_full_name) for f in mined_releases),
+                *_take_pr_ids_from_precomputed_release_facts(mined_releases),
+                new_pr_jira_map,
+                with_jira,
+            )
+        )
+    else:
+        release_jira_map = {}
     result.extend(mined_releases)
     if with_avatars:
-        avatars = [p for p in secondary[-1] if p[0] in mentioned_authors]
+        avatars = [p for p in avatars_result if p[0] in mentioned_authors]
     else:
         avatars = list(mentioned_authors)
     if participants:
         result = _filter_by_participants(result, participants)
     if labels:
-        result = _filter_by_labels(result, secondary[0], labels)
+        result = _filter_by_labels(result, labels_result, labels)
     if with_pr_titles:
-        pr_title_map = {row[0]: row[1] for row in secondary[bool(labels)]}
+        pr_title_map = {row[0]: row[1] for row in pr_titles_result}
         for facts in result:
             facts["prs_" + PullRequest.title.name] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
+    empty_jira = LoadedJIRAReleaseDetails.empty()
+    for facts in result:
+        facts.jira = release_jira_map.get((facts.node_id, facts.repository_full_name), empty_jira)
     if with_deployments:
-        await deployments
-        depmap, deployments = deployments.result()
+        depmap, deployments = deployments_task.result()
         for facts in result:
             facts.deployments = depmap.get(facts.node_id)
     else:
@@ -823,11 +865,15 @@ def _empty_mined_releases_df():
             val = object
         df[key] = np.array([], dtype=val)
     for key, val in ReleaseFacts.Optional.__annotations__.items():
+        if key == "jira":
+            continue
         if not (
             isinstance(val, np.dtype) or isinstance(val, type) and issubclass(val, (bool, int))
         ):
             val = object
         df[key] = np.array([], dtype=val)
+    for key in LoadedJIRAReleaseDetails.__dataclass_fields__:
+        df[f"jira_{key}"] = np.array([], dtype=object)
     return pd.DataFrame(df)
 
 
@@ -1014,12 +1060,8 @@ async def _filter_precomputed_release_facts_by_jira(
     cache: Optional[aiomcache.Client],
 ) -> dict[tuple[int, str], ReleaseFacts]:
     assert jira
-    pr_ids = [getattr(f, "prs_" + PullRequest.node_id.name) for f in precomputed_facts.values()]
-    if not pr_ids:
-        return {}
-    lengths = [len(ids) for ids in pr_ids]
-    pr_ids = np.concatenate(pr_ids)
-    if len(pr_ids) == 0:
+    pr_ids, lengths = _take_pr_ids_from_precomputed_release_facts(precomputed_facts.values())
+    if pr_ids is None:
         return {}
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
@@ -1046,6 +1088,90 @@ async def _filter_precomputed_release_facts_by_jira(
     matching_pr_ids = np.sort(df[PullRequest.node_id.name].values)
     release_keys = np.unique(release_keys[np.searchsorted(pr_ids, matching_pr_ids)])
     return {(tk := tuple(k)): precomputed_facts[tk] for k in release_keys}
+
+
+@sentry_span
+async def _load_jira_from_precomputed_release_facts(
+    precomputed_facts: dict[tuple[int, str], ReleaseFacts],
+    jira_entities: JIRAEntityToFetch,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> dict[tuple[int, str], LoadedJIRAReleaseDetails]:
+    pr_ids, lengths = _take_pr_ids_from_precomputed_release_facts(precomputed_facts.values())
+    if pr_ids is None:
+        return {}
+    pr_map = await PullRequestJiraMapper.load(pr_ids, jira_entities, meta_ids, mdb)
+    return _convert_pr_jira_map_to_release_jira_map(
+        precomputed_facts, pr_ids, lengths, pr_map, jira_entities,
+    )
+
+
+def _convert_pr_jira_map_to_release_jira_map(
+    keys: Optional[Iterable[tuple[int, str]]],
+    pr_ids: Optional[npt.NDArray[int]],
+    lengths: Optional[npt.NDArray[int]],
+    pr_map: Mapping[int, LoadedJIRADetails],
+    jira_entities: JIRAEntityToFetch,
+) -> dict[tuple[int, str], LoadedJIRAReleaseDetails]:
+    result = {}
+    if pr_ids is None or len(pr_ids) == 0:
+        return result
+    attr_map = [
+        (JIRAEntityToFetch.ISSUES, "ids"),
+        (JIRAEntityToFetch.PROJECTS, "projects"),
+        (JIRAEntityToFetch.PRIORITIES, "priorities"),
+        (JIRAEntityToFetch.TYPES, "types"),
+    ]
+    empty = LoadedJIRAReleaseDetails.empty()
+    empty_ids = np.array([], dtype=object)
+    pos = 0
+    for key, prs_count in zip(keys, lengths):
+        release_prs = pr_ids[pos : pos + prs_count]
+        pos += prs_count
+        release_jira_entities = LoadedJIRAReleaseDetails(*([] for _ in attr_map), None)
+        for pr in release_prs:
+            for flag, attr in attr_map:
+                if jira_entities & flag:
+                    try:
+                        values = getattr(pr_map[pr], attr)
+                    except KeyError:
+                        if attr == "ids":
+                            values = empty_ids
+                        else:
+                            continue
+                    getattr(release_jira_entities, attr).append(values)
+        dikt = {
+            attr: unordered_unique(np.concatenate(attr_val))
+            if (attr_val := getattr(release_jira_entities, attr))
+            else getattr(empty, attr)
+            for _, attr in attr_map[1:]
+        }
+        if ids_val := release_jira_entities.ids:
+            dikt["ids"] = np.concatenate(ids_val)
+            offsets = np.zeros(len(ids_val) + 1, dtype=np.uint32)
+            np.cumsum(nested_lengths(ids_val), out=offsets[1:])
+            dikt["pr_offsets"] = offsets
+        else:
+            dikt["ids"] = empty.ids
+            dikt["pr_offsets"] = empty.pr_offsets
+        result[key] = LoadedJIRAReleaseDetails(**dikt)
+    return result
+
+
+def _take_pr_ids_from_precomputed_release_facts(
+    precomputed_facts: Collection[ReleaseFacts],
+) -> tuple[Optional[npt.NDArray[int]], Optional[npt.NDArray[int]]]:
+    pr_ids = np.empty(len(precomputed_facts), dtype=object)
+    key = "prs_" + PullRequest.node_id.name
+    for i, f in enumerate(precomputed_facts):
+        pr_ids[i] = getattr(f, key)
+    if len(pr_ids) == 0:
+        return None, None
+    lengths = nested_lengths(pr_ids)
+    pr_ids = np.concatenate(pr_ids)
+    if len(pr_ids) == 0:
+        return None, None
+    return pr_ids, lengths
 
 
 @sentry_span
@@ -1284,6 +1410,7 @@ async def mine_releases_by_name(
                 cache,
                 with_avatars=True,
                 with_pr_titles=True,
+                with_jira=JIRAEntityToFetch.ISSUES,
             ),
             _load_release_deployments(
                 releases,
@@ -1322,6 +1449,7 @@ async def mine_releases_by_name(
                 cache,
                 with_avatars=True,
                 with_pr_titles=True,
+                with_jira=JIRAEntityToFetch.ISSUES,
             ),
             mine_releases_by_ids(
                 branch_releases := releases[
@@ -1344,6 +1472,7 @@ async def mine_releases_by_name(
                 cache,
                 with_avatars=True,
                 with_pr_titles=True,
+                with_jira=JIRAEntityToFetch.ISSUES,
             ),
             mine_releases_by_ids(
                 remainder_releases := releases[
@@ -1362,6 +1491,7 @@ async def mine_releases_by_name(
                 cache,
                 with_avatars=True,
                 with_pr_titles=True,
+                with_jira=JIRAEntityToFetch.ISSUES,
             ),
             _load_release_deployments(
                 tag_releases,
@@ -1445,6 +1575,7 @@ async def mine_releases_by_ids(
     *,
     with_avatars: bool,
     with_pr_titles: bool,
+    with_jira: JIRAEntityToFetch,
 ) -> tuple[pd.DataFrame, list[tuple[int, str]]] | pd.DataFrame:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
     result, avatars, _, _ = await mine_releases(
@@ -1469,6 +1600,7 @@ async def mine_releases_by_ids(
         with_avatars=with_avatars,
         with_pr_titles=with_pr_titles,
         with_deployments=False,
+        with_jira=with_jira,
         releases_in_time_range=releases,
     )
     if with_avatars:
@@ -1708,6 +1840,7 @@ async def diff_releases(
             cache,
             force_fresh=True,
             with_pr_titles=True,
+            with_jira=JIRAEntityToFetch.ISSUES,
         ),
         fetch_dags(),
         op="mine_releases + dags",

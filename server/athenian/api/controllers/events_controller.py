@@ -225,7 +225,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 name=n.name,
                 author_node_id=resolved_users.get(author),
                 url=n.url,
-                published_at=n.published_at or datetime.now(timezone.utc),
+                published_at=n.published_at,
             )
             .create_defaults()
             .explode(with_primary_keys=True),

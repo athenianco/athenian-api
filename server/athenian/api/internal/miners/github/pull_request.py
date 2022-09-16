@@ -76,6 +76,7 @@ from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     JIRAEntityToFetch,
+    LoadedJIRADetails,
     MinedPullRequest,
     PRParticipants,
     PRParticipationKind,
@@ -83,7 +84,6 @@ from athenian.api.internal.miners.types import (
     PullRequestFacts,
     PullRequestFactsMap,
     PullRequestID,
-    PullRequestJIRADetails,
     nonemax,
     nonemin,
 )
@@ -2996,18 +2996,22 @@ class PullRequestFactsMiner:
                 unique_names, last_encounters = np.unique(names, return_index=True)
                 merged_with_failed_check_runs = unique_names[failed_mask[last_encounters]]
 
-        jira_fields = {"ids": pr.jiras.index.values}
-        for field, col in (
-            (PullRequestJIRADetails.projects, Issue.project_id),
-            (PullRequestJIRADetails.priorities, Issue.priority_id),
-            (PullRequestJIRADetails.types, Issue.type_id),
-        ):
-            field_name = field.__name__
-            col_name = col.name
-            try:
-                jira_fields[field_name] = pr.jiras[col_name].values
-            except KeyError:
-                jira_fields[field_name] = np.array([], dtype="S")
+        if pr.jiras.empty:
+            jira_details = LoadedJIRADetails.empty()
+        else:
+            jira_fields = {"ids": pr.jiras.index.values}
+            for field, col in (
+                (LoadedJIRADetails.projects, Issue.project_id),
+                (LoadedJIRADetails.priorities, Issue.priority_id),
+                (LoadedJIRADetails.types, Issue.type_id),
+            ):
+                field_name = field.__name__
+                col_name = col.name
+                try:
+                    jira_fields[field_name] = pr.jiras[col_name].values
+                except KeyError:
+                    jira_fields[field_name] = np.array([], dtype="S")
+            jira_details = LoadedJIRADetails(**jira_fields)
 
         facts = PullRequestFacts.from_fields(
             created=created,
@@ -3037,7 +3041,7 @@ class PullRequestFactsMiner:
             review_comments=human_review_comments,
             regular_comments=human_regular_comments,
             participants=participants,
-            jira=PullRequestJIRADetails(**jira_fields),
+            jira=jira_details,
             deployments=pr.deployments.index.get_level_values(1).values,
             environments=environments,
             deployment_conclusions=deployment_conclusions,

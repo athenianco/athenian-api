@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum, auto
-from typing import Any, Mapping, Optional, Sequence, Type, Union
+from typing import Any, Mapping, Optional, Sequence, Type, TypeVar, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -272,32 +272,41 @@ datetime64 = timedelta64 = list
 s = None
 
 
+LJD = TypeVar("LJD")
+
+
 @dataclass(frozen=True, slots=True)
-class PullRequestJIRADetails:
-    """Extra JIRA information loaded for pull requests."""
+class LoadedJIRADetails:
+    """Extra JIRA information loaded for pull requests, releases, etc."""
 
     ids: npt.NDArray[object]
-    projects: npt.NDArray[np.bytes_]
-    priorities: npt.NDArray[np.bytes_]
-    types: npt.NDArray[np.bytes_]
+    projects: npt.NDArray[bytes]
+    priorities: npt.NDArray[bytes]
+    types: npt.NDArray[bytes]
 
     @classmethod
-    def empty(cls) -> "PullRequestJIRADetails":
-        """Return an empty instance."""
-        fields = {
+    def _fields(cls) -> dict[str, Any]:
+        return {
             name: np.array([], dtype=dtype) for name, dtype in PR_JIRA_DETAILS_COLUMN_MAP.values()
         }
-        return cls(**fields)
+
+    @classmethod
+    def empty(cls: Type[LJD]) -> LJD:
+        """Return an empty instance."""
+        attr = f"_empty_{cls.__qualname__}"
+        try:
+            return getattr(cls, attr)
+        except AttributeError:
+            obj = cls(**cls._fields())
+            setattr(cls, attr, obj)
+            return obj
 
 
 PR_JIRA_DETAILS_COLUMN_MAP = {
-    Issue.key: (PullRequestJIRADetails.ids.__name__, object),
-    Issue.project_id: (PullRequestJIRADetails.projects.__name__, Issue.project_id.info["dtype"]),
-    Issue.priority_id: (
-        PullRequestJIRADetails.priorities.__name__,
-        Issue.priority_id.info["dtype"],
-    ),
-    Issue.type_id: (PullRequestJIRADetails.types.__name__, Issue.type_id.info["dtype"]),
+    Issue.key: (LoadedJIRADetails.ids.__name__, object),
+    Issue.project_id: (LoadedJIRADetails.projects.__name__, Issue.project_id.info["dtype"]),
+    Issue.priority_id: (LoadedJIRADetails.priorities.__name__, Issue.priority_id.info["dtype"]),
+    Issue.type_id: (LoadedJIRADetails.types.__name__, Issue.type_id.info["dtype"]),
 }
 
 
@@ -340,7 +349,7 @@ class PullRequestFacts:
         """Mutable fields that are None by default. We do not serialize them."""
 
         node_id: int
-        jira: PullRequestJIRADetails
+        jira: LoadedJIRADetails
         repository_full_name: str
         author: str
         merger: str
@@ -440,6 +449,19 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     return max(arg for arg in args if arg)
 
 
+@dataclass(frozen=True, slots=True)
+class LoadedJIRAReleaseDetails(LoadedJIRADetails):
+    """Extra JIRA information loaded for releases."""
+
+    pr_offsets: npt.NDArray[int]
+
+    @classmethod
+    def _fields(cls) -> dict[str, Any]:
+        dikt = super(LoadedJIRAReleaseDetails, cls)._fields()
+        dikt["pr_offsets"] = np.array([], dtype=int)
+        return dikt
+
+
 def released_prs_columns(model: Union[Type[PullRequest], Type[NodePullRequest]]):
     """Return the columns that must exist in the released PR DataFrame."""
     return [
@@ -487,7 +509,7 @@ class ReleaseFacts:
         url: str
         repository_full_name: str
         prs_title: list[str]
-        prs_jira: np.ndarray
+        jira: LoadedJIRAReleaseDetails
         deployments: Optional[np.ndarray]
 
     def max_timestamp(self) -> datetime:

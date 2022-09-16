@@ -26,9 +26,9 @@ from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, gener
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     JIRAEntityToFetch,
+    LoadedJIRADetails,
     PRParticipants,
     PullRequestFactsMap,
-    PullRequestJIRADetails,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
@@ -251,7 +251,7 @@ class UnfreshPullRequestFactsFetcher:
         facts = {**open_facts, **merged_facts, **done_facts}
         if pr_jira_mapper is not None:
             unreleased_jira_map = unreleased_jira_map[0]
-            empty_jira = PullRequestJIRADetails.empty()
+            empty_jira = LoadedJIRADetails.empty()
             for node_id, repo in zip(
                 unreleased_prs.index.get_level_values(0).values,
                 unreleased_prs.index.get_level_values(1).values,

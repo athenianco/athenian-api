@@ -186,7 +186,7 @@ def calc_pr_to_ix_releases(ndarray releases not None, pr_to_ix_obj not None) -> 
             for pri in range(released_prs_count):
                 PyList_SET_ITEM(prs_jira_list, pri, PyList_New(0))
                 dereference(pr_to_ix)[release_node_ids_data[pri]].push_back(PullRequestAddr(di, ri, pri))
-        dep_releases["prs_jira"] = prs_jira_arr
+        dep_releases["jira_ids"] = prs_jira_arr
 
 
 def pr_to_ix_to_node_id_array(pr_to_ix_obj not None) -> ndarray:
@@ -260,7 +260,7 @@ def apply_jira_rows(list rows not None, deployments not None, pr_to_ix_obj not N
             aux[pair1.first] = vec_to_arr(&pair1.second)
     releases_col = deployments["releases"].values
     for pair3 in release_keys:
-        aux = releases_col[pair3.first]["prs_jira"].values
+        aux = releases_col[pair3.first]["jira_ids"].values
         for pair2 in pair3.second:
             prs = aux[pair2.first]
             for pair1 in pair2.second:

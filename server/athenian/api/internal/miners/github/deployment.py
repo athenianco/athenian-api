@@ -100,6 +100,7 @@ from athenian.api.internal.miners.jira.issue import (
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     DeploymentFacts,
+    JIRAEntityToFetch,
     PullRequestJIRAIssueItem,
     ReleaseFacts,
     ReleaseParticipants,
@@ -746,6 +747,7 @@ async def _postprocess_deployed_releases(
         cache,
         with_avatars=False,
         with_pr_titles=True,
+        with_jira=JIRAEntityToFetch.NOTHING,
     )
     releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
     releases_node_ids = releases.index.get_level_values(0).unique()
@@ -2675,7 +2677,7 @@ async def load_jira_issues_for_deployments(
                 empty_jira[i] = [[]] * len(repos)
             deployments["jira"] = empty_jira
             for releases in deployments["releases"].values:
-                releases["prs_jira"] = np.empty(len(releases), dtype=object)
+                releases["jira_ids"] = np.empty(len(releases), dtype=object)
         return {}
 
     jira_col, pr_to_ix = calc_pr_to_ix_prs(
