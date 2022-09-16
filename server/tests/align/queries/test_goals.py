@@ -699,12 +699,12 @@ class TestJIRAFiltering(BaseGoalsTest):
             GoalFactory(
                 id=21, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
             ),
-            TeamGoalFactory(goal_id=20, team_id=10, jira_priorities=["P0", "P1"]),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_priorities=["p0", "p1"]),
             TeamGoalFactory(
-                goal_id=20, team_id=11, jira_projects=["PJ1"], jira_issue_types=["T0", "T1"],
+                goal_id=20, team_id=11, jira_projects=["PJ1"], jira_issue_types=["t0", "t1"],
             ),
-            TeamGoalFactory(goal_id=21, team_id=10, jira_projects=["PJ0"], jira_priorities=["P0"]),
-            TeamGoalFactory(goal_id=21, team_id=11, jira_projects=["PJ1"], jira_priorities=["T0"]),
+            TeamGoalFactory(goal_id=21, team_id=10, jira_projects=["PJ0"], jira_priorities=["p0"]),
+            TeamGoalFactory(goal_id=21, team_id=11, jira_projects=["PJ1"], jira_priorities=["t0"]),
         )
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:

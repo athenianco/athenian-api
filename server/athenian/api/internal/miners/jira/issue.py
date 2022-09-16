@@ -88,7 +88,8 @@ async def generate_jira_prs_query(
     if jira.issue_types:
         filters.append(_issue.type.in_(jira.issue_types))
     if jira.priorities:
-        filters.append(_issue.priority_name.in_(jira.priorities))
+        # priorities are normalized in JIRAFilter but not in the DB
+        filters.append(sql.func.lower(_issue.priority_name).in_(jira.priorities))
 
     if not jira.epics:
         filters.extend([_issue.acc_id == jira.account, _issue.project_id.in_(jira.projects)])
