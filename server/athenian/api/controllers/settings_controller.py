@@ -695,9 +695,10 @@ async def _find_matching_logical_repository(
         if existing[col.name] != getattr(logical_repo, col.name):
             return existing, False
 
-    matching_release_setting = await sdb_conn.fetch_one(
-        select(ReleaseSetting).where(
-            ReleaseSetting.repository == f"{parent_name}/{logical_repo.name}",
+    matching_release_setting = await sdb_conn.fetch_val(
+        select([1]).where(
+            ReleaseSetting.repo_id == logical_repo.repository_id,
+            ReleaseSetting.logical_name == logical_repo.name,
             ReleaseSetting.account_id == logical_repo.account_id,
             ReleaseSetting.branches == release_match_setting.branches,
             ReleaseSetting.tags == release_match_setting.tags,
@@ -748,7 +749,8 @@ async def _delete_logical_repository(
         sdb.execute(
             delete(ReleaseSetting).where(
                 ReleaseSetting.account_id == account,
-                ReleaseSetting.repository == str(name),
+                ReleaseSetting.logical_name == name.logical,
+                ReleaseSetting.repo_id == repo_id,
             ),
         ),
         clean_repository_sets(),

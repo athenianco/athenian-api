@@ -395,11 +395,7 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
     await models_insert(
         sdb,
         ReleaseSettingFactory(
-            repo_id=40550,
-            branches="master",
-            tags="v.*",
-            match=ReleaseMatch.tag,
-            repository="github.com/src-d/go-git",
+            repo_id=40550, branches="master", tags="v.*", match=ReleaseMatch.tag,
         ),
     )
     response = await client.request(
