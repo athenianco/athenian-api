@@ -14,7 +14,7 @@ from athenian.api.models.metadata.github import (
     TeamMember,
     User,
 )
-from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
+from athenian.api.models.metadata.jira import Issue, IssueType, Priority, Project, User as JIRAUser
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
@@ -150,6 +150,20 @@ class JIRAProjectFactory(SQLAlchemyModelFactory):
     is_deleted = False
 
 
+class JIRAIssueTypeFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = IssueType
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    project_id = factory.Sequence(lambda n: f"proj-{n + 1}")
+    name = factory.LazyAttribute(lambda issue: f"ISSUETYPE-{issue.id}")
+    icon_url = factory.LazyAttribute(lambda i: f"https://jira.com/issuetype-{i.id}-icon.png")
+    is_subtask = False
+    is_epic = False
+    normalized_name = factory.LazyAttribute(lambda issue: issue.name.lower())
+
+
 class JIRAIssueFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Issue
@@ -190,3 +204,14 @@ class JIRAUserFactory(SQLAlchemyModelFactory):
     type = "?"
     display_name = factory.LazyAttribute(lambda user: f"jira user {user.id}")
     avatar_url = factory.LazyAttribute(lambda user: f"https://jira.com/user-{user.id}.jpg")
+
+
+class JIRAPriorityFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Priority
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    name = factory.LazyAttribute(lambda issue: f"PRIORITY-{issue.id}")
+    rank = 1
+    status_color = "#ffffff"

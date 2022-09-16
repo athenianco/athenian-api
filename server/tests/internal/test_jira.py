@@ -9,6 +9,7 @@ from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.jira import (
     JIRAConfig,
+    JIRAEntitiesMapper,
     disable_empty_projects,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
@@ -24,12 +25,47 @@ from athenian.api.models.state.models import (
 )
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID
 from tests.testutils.factory.state import (
     AccountFactory,
     AccountGitHubAccountFactory,
     AccountJiraInstallationFactory,
 )
 from tests.testutils.time import dt
+
+
+class TestJIRAConfig:
+    def test_translate_project_keys(self) -> None:
+        jira_config = JIRAConfig(1, {"id1": "k1", "id2": "k2"}, {})
+        assert jira_config.translate_project_keys(["k1", "k3", "k2"]) == ["id1", "id2"]
+
+
+class TestJIRAEntitiesMapper:
+    async def test_load(self, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAIssueTypeFactory(id="10", name="T1"),
+                md_factory.JIRAIssueTypeFactory(id="20", name="T1"),
+                md_factory.JIRAIssueTypeFactory(id="30", name="T3", project_id="0"),
+                md_factory.JIRAIssueTypeFactory(id="30", name="T3", project_id="1"),
+                md_factory.JIRAPriorityFactory(id="100", name="PR1"),
+                md_factory.JIRAPriorityFactory(id="200", name="PR1"),
+                md_factory.JIRAPriorityFactory(id="300", name="PR3"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            mapper = await JIRAEntitiesMapper.load(DEFAULT_JIRA_ACCOUNT_ID, mdb_rw)
+
+            assert mapper.translate_priority_names(("PR1", "PR3")) == ["100", "200", "300"]
+            assert mapper.translate_priority_names(("PR1", "PR2", "PR3")) == [
+                "100",
+                "200",
+                "300",
+            ]
+            assert mapper.translate_priority_names(("PR1",)) == ["100", "200"]
+
+            assert mapper.translate_types(("T1",)) == ["10", "20"]
+            assert mapper.translate_types(("T2", "T1", "T3")) == ["10", "20", "30"]
 
 
 @with_defer
@@ -245,9 +281,3 @@ class TestDisableEmptyProjects:
         assert n_disabled == 1
         await assert_existing_row(sdb, JIRAProjectSetting, key="PRJ1", enabled=False)
         await assert_missing_row(sdb, JIRAProjectSetting, key="PRJ2", enabled=False)
-
-
-class TestJIRAConfig:
-    def test_translate_project_keys(self) -> None:
-        jira_config = JIRAConfig(1, {"id1": "k1", "id2": "k2"}, {})
-        assert jira_config.translate_project_keys(["k1", "k3", "k2"]) == ["id1", "id2"]
