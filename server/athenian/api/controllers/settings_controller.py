@@ -25,7 +25,7 @@ from athenian.api.internal.jira import (
 )
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
@@ -601,8 +601,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 ) from e
         db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
     settings = Settings.from_request(request, web_model.account)
-    full_name = f"{repo}/{web_model.name}"
-    prefixed_name = f"{web_model.parent}/{web_model.name}"
+    name = RepositoryName.from_prefixed(web_model.parent).with_logical(web_model.name)
 
     del body["account"]
     response = model_response(WebLogicalRepository.from_dict(body))
@@ -619,13 +618,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 # existing logical repository is different, delete it
                 async with sdb_conn.transaction():
                     await _delete_logical_repository(
-                        web_model.name,
-                        full_name,
-                        prefixed_name,
-                        repo_id,
-                        web_model.account,
-                        sdb_conn,
-                        request.pdb,
+                        name, repo_id, web_model.account, sdb_conn, request.pdb,
                     )
 
         else:
@@ -641,7 +634,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
             await sdb_conn.execute(insert(LogicalRepository).values(db_model.explode()))
             # create the release settings
             await settings.set_release_matches(
-                [prefixed_name],
+                [str(name)],
                 web_model.releases.branches,
                 web_model.releases.tags,
                 web_model.releases.events,
@@ -655,11 +648,11 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 select([RepositorySet]).where(RepositorySet.owner_id == web_model.account),
             )
             for row in rows:
-                if re.fullmatch(row[RepositorySet.tracking_re.name], prefixed_name):
+                if re.fullmatch(row[RepositorySet.tracking_re.name], str(name)):
                     items = row[RepositorySet.items.name]
                     items.insert(
-                        bisect_right([r[0] for r in items], prefixed_name),
-                        (prefixed_name, repo_id),
+                        bisect_right([r[0] for r in items], str(name)),
+                        (str(name), repo_id),
                     )
                     await sdb_conn.execute(
                         update(RepositorySet)
@@ -690,7 +683,7 @@ async def _find_matching_logical_repository(
     extra properties and `release_match_setting`.
     """
     existing = await sdb_conn.fetch_one(
-        select([LogicalRepository]).where(
+        select(LogicalRepository).where(
             LogicalRepository.account_id == logical_repo.account_id,
             LogicalRepository.name == logical_repo.name,
             LogicalRepository.repository_id == logical_repo.repository_id,
@@ -716,9 +709,7 @@ async def _find_matching_logical_repository(
 
 
 async def _delete_logical_repository(
-    name: str,
-    full_name: str,
-    prefixed_name: str,
+    name: RepositoryName,
     repo_id: int,
     account: int,
     sdb: DatabaseLike,
@@ -731,8 +722,8 @@ async def _delete_logical_repository(
         )
         for row in rows:
             items = row[RepositorySet.items.name]
-            index = bisect_left([r[0] for r in items], prefixed_name)
-            if index < len(items) and items[index][0] == prefixed_name:
+            index = bisect_left([r[0] for r in items], str(name))
+            if index < len(items) and items[index][0] == str(name):
                 items.pop(index)
                 await sdb.execute(
                     update(RepositorySet)
@@ -750,18 +741,18 @@ async def _delete_logical_repository(
         sdb.execute(
             delete(LogicalRepository).where(
                 LogicalRepository.account_id == account,
-                LogicalRepository.name == name,
+                LogicalRepository.name == name.logical,
                 LogicalRepository.repository_id == repo_id,
             ),
         ),
         sdb.execute(
             delete(ReleaseSetting).where(
                 ReleaseSetting.account_id == account,
-                ReleaseSetting.repository == prefixed_name,
+                ReleaseSetting.repository == str(name),
             ),
         ),
         clean_repository_sets(),
-        *_schedule_pdb_reset_for_logical_repo(full_name, account, pdb),
+        *_schedule_pdb_reset_for_logical_repo(name.unprefixed, account, pdb),
     ]
     await gather(*tasks, op="_delete_logical_repository")
 
@@ -836,36 +827,30 @@ async def delete_logical_repository(request: AthenianWebRequest, body: dict) -> 
     """Delete a logical repository."""
     model = LogicalRepositoryGetRequest.from_dict(body)
     try:
-        prefix, org, name, logical = model.name.split("/", 3)
+        name = RepositoryName.from_prefixed(model.name)
+        if not name.is_logical:
+            raise ValueError()
     except ValueError:
         raise ResponseError(InvalidRequestError(".name", "Invalid logical repository name."))
-    root_name = f"{org}/{name}"
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     try:
-        repo_id = prefixer.repo_name_to_node[root_name]
+        repo_id = prefixer.repo_name_to_node[name.unprefixed_physical]
     except KeyError:
+        physical_name = name.with_logical(None)
         raise ResponseError(
-            ForbiddenError(f"Access denied to `{prefix}/{root_name}` or it does not exist."),
+            ForbiddenError(f"Access denied to `{physical_name}` or it does not exist."),
         )
     repo = await request.sdb.fetch_one(
         select([LogicalRepository]).where(
             and_(
                 LogicalRepository.account_id == model.account,
-                LogicalRepository.name == logical,
+                LogicalRepository.name == name.logical,
                 LogicalRepository.repository_id == repo_id,
             ),
         ),
     )
     if repo is None:
         raise ResponseError(NotFoundError(f"Logical repository {model.name} does not exist."))
-    await _delete_logical_repository(
-        logical,
-        f"{org}/{name}/{logical}",
-        model.name,
-        repo_id,
-        model.account,
-        request.sdb,
-        request.pdb,
-    )
+    await _delete_logical_repository(name, repo_id, model.account, request.sdb, request.pdb)
     return web.Response()
