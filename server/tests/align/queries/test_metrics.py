@@ -343,10 +343,10 @@ class TestJIRAFiltering(BaseMetricsTest):
 
             request = partial(self._request, 1, 1, metrics, *dates)
 
-            res = await request(jiraPriorities=["extreme", "low"])
+            res = await request(jiraPriorities=["extreme", "verylow"])
             assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 3
 
-            res = await request(jiraPriorities=["low"])
+            res = await request(jiraPriorities=["verylow"])
             assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 0
 
             res = await request(jiraPriorities=["extreme"], jiraProjects=["P0"])
@@ -450,13 +450,13 @@ class TestJIRAFiltering(BaseMetricsTest):
             models = [
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
                 md_factory.JIRAIssueTypeFactory(id="100", name="t0"),
-                md_factory.JIRAPriorityFactory(id="100", name="extreme"),
+                md_factory.JIRAPriorityFactory(id="100", name="VeryHigh"),
                 md_factory.JIRAIssueFactory(
                     id="20",
                     type_id="100",
                     type="t0",
                     priority_id="100",
-                    priority_name="extreme",
+                    priority_name="VeryHigh",
                     project_id="0",
                 ),
                 md_factory.JIRAProjectFactory(id="0"),
@@ -466,7 +466,7 @@ class TestJIRAFiltering(BaseMetricsTest):
 
             request = partial(self._request, 1, 1, metrics, *dates)
 
-            res = await request(jiraPriorities=["Extreme", "low"])
+            res = await request(jiraPriorities=["verYhigh", "verylow"])
             assert res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"] == 1
 
             res = await request(jiraIssueTypes=["T0"])
