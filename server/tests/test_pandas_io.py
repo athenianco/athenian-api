@@ -11,6 +11,7 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.check_run import mine_check_runs
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.pandas_io import deserialize_df, json_dumps, serialize_df
+from athenian.api.typing_utils import create_data_frame_from_arrays
 
 
 async def test_zero_rows(mdb):
@@ -91,4 +92,17 @@ async def test_all_null_rows(mdb):
 
 async def test_all_empty_list_rows(mdb):
     df = pd.DataFrame({"a": [[], []]})
+    assert_frame_equal(df, deserialize_df(serialize_df(df)))
+
+
+async def test_fortran():
+    ints = np.empty((2, 10), dtype=int, order="F")
+    objs = np.empty((2, 10), dtype=object, order="F")
+    ints[0] = np.arange(10)
+    ints[1] = np.arange(10, 20)
+    objs[0] = [f"1_{i}" for i in range(10)]
+    objs[1] = [f"2_{i}" for i in range(10)]
+    df = create_data_frame_from_arrays(ints, objs, ["one", "two"], ["three", "four"], 10)
+    df._consolidate_inplace()
+    df._mgr.blocks[0].values = ints
     assert_frame_equal(df, deserialize_df(serialize_df(df)))
