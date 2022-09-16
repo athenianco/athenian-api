@@ -42,6 +42,7 @@ from athenian.api.internal.features.statistics import (
 )
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass_asdict
@@ -1067,6 +1068,36 @@ def group_pr_facts_by_jira(
         else:
             group_res = np.arange(len(df), dtype=int)
 
+        res.append(group_res)
+    return res
+
+
+def group_jira_facts_by_jira(
+    jira_groups: Sequence[JIRAGrouping],
+    df: pd.Dataframe,
+) -> list[np.ndarray]:
+    """Build the groups according to `jira_groups`.
+
+    `df` is the dataframe in the format returned by `fetch_jira_issues`, built from Issue table.
+    """
+    if df.empty:
+        return [np.array([], dtype=int)] * len(jira_groups)
+    res = []
+    for jira_group in jira_groups:
+        if jira_group:
+            df_matches = np.full(len(df), True, dtype=bool)
+            for group_props, df_values in (
+                (jira_group.projects, df[Issue.project_id.name].values),
+                (jira_group.priorities, df[Issue.priority_id.name].values),
+                (jira_group.types, df[Issue.type_id.name].values),
+            ):
+                if group_props is not None:
+                    filter_values = np.array(list(group_props), dtype="S")
+                    prop_matches = in1d_str(df_values, filter_values)
+                    df_matches[~prop_matches] = False
+            group_res = np.flatnonzero(df_matches)
+        else:
+            group_res = np.arange(len(df), dtype=int)
         res.append(group_res)
     return res
 
