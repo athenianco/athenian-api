@@ -6,7 +6,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sqlalchemy as sa
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query_with_join_collapse
@@ -102,8 +102,8 @@ class BranchMiner:
             commit_ids = np.concatenate([rb[0] for rb in ambiguous_defaults.values()])
             committed_dates = dict(
                 await mdb.fetch_all(
-                    select([NodeCommit.id, NodeCommit.committed_date]).where(
-                        and_(NodeCommit.id.in_(commit_ids), NodeCommit.acc_id.in_(meta_ids)),
+                    select(NodeCommit.id, NodeCommit.committed_date).where(
+                        NodeCommit.id.in_(commit_ids), NodeCommit.acc_id.in_(meta_ids),
                     ),
                 ),
             )
@@ -125,11 +125,9 @@ class BranchMiner:
         if zero_branch_repos:
             existing_zero_branch_repos = dict(
                 await mdb.fetch_all(
-                    select([Repository.node_id, Repository.full_name]).where(
-                        and_(
-                            Repository.full_name.in_(zero_branch_repos),
-                            Repository.acc_id.in_(meta_ids),
-                        ),
+                    select(Repository.node_id, Repository.full_name).where(
+                        Repository.full_name.in_(zero_branch_repos),
+                        Repository.acc_id.in_(meta_ids),
                     ),
                 ),
             )
@@ -206,8 +204,8 @@ async def load_branch_commit_dates(
     branch_commit_ids = branches[Branch.commit_id.name].values
     branch_commit_dates = dict(
         await mdb.fetch_all(
-            select([NodeCommit.id, NodeCommit.committed_date]).where(
-                and_(NodeCommit.id.in_(branch_commit_ids), NodeCommit.acc_id.in_(meta_ids)),
+            select(NodeCommit.id, NodeCommit.committed_date).where(
+                NodeCommit.id.in_(branch_commit_ids), NodeCommit.acc_id.in_(meta_ids),
             ),
         ),
     )

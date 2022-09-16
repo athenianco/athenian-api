@@ -82,12 +82,14 @@ cdef extern from "Python.h":
 cdef extern from "numpy/arrayobject.h":
     char *PyArray_BYTES(PyObject *) nogil
     npy_intp PyArray_DIM(PyObject *, size_t) nogil
+    npy_intp PyArray_STRIDE(PyObject *, size_t) nogil
     int PyArray_NDIM(PyObject *) nogil
     npy_intp PyArray_ITEMSIZE(PyObject *) nogil
     bint PyArray_CheckExact(PyObject *) nogil
     PyArray_Descr *PyArray_DESCR(PyObject *) nogil
     int PyArray_TYPE(PyObject *) nogil
     bint PyArray_IS_C_CONTIGUOUS(PyObject *) nogil
+    bint PyArray_IS_F_CONTIGUOUS(PyObject *) nogil
 
 
 def serialize_args(tuple args) -> bytes:
@@ -182,7 +184,7 @@ def serialize_df(df not None) -> bytes:
         ndim = PyArray_NDIM(arr_obj)
         assert 0 < ndim <= 2, f"block #{i} dimensions are not supported: {block}"
         if arr.dtype != object:
-            if not PyArray_IS_C_CONTIGUOUS(arr_obj):
+            if not PyArray_IS_C_CONTIGUOUS(arr_obj) and not PyArray_IS_F_CONTIGUOUS(arr_obj):
                 bad_cols = '"' + '", "'.join(df.columns[loc]) + '"'
                 raise AssertionError(
                     f"Column(s) {bad_cols} must be contiguous, we don't support strides",
@@ -231,7 +233,7 @@ def serialize_df(df not None) -> bytes:
             memset(output + aux_size, 0, 16 - aux_size)
             output += 16
             ndim = PyArray_NDIM(arr_obj)
-            (<uint32_t *> output)[0] = PyArray_DIM(arr_obj, 0)
+            (<uint32_t *> output)[0] = ((<uint32_t> PyArray_IS_F_CONTIGUOUS(arr_obj)) << 31) | <uint32_t> PyArray_DIM(arr_obj, 0)
             (<uint32_t *> output)[1] = PyArray_DIM(arr_obj, 1) if ndim > 1 else nodim
             output += 8
             if not strncmp(input, b"object", aux_size):
@@ -497,7 +499,7 @@ cdef void _serialize_object_block(
     vector[ColumnMeasurement] *measurements,
 ) nogil:
     cdef:
-        npy_intp columns, rows, y, x, i
+        npy_intp columns, rows, stride_y, stride_x, y, x, i
         PyObject **data = <PyObject **> PyArray_BYTES(block)
         PyObject *item
         PyObject **subitems
@@ -509,6 +511,8 @@ cdef void _serialize_object_block(
 
     columns = PyArray_DIM(block, 0)
     rows = PyArray_DIM(block, 1)
+    stride_y = PyArray_STRIDE(block, 0) >> 3
+    stride_x = PyArray_STRIDE(block, 1) >> 3
     for y in range(columns):
         measurement = measurements.data()[y]
         output[0] = dtype = measurement.dtype
@@ -522,7 +526,7 @@ cdef void _serialize_object_block(
         bookmark = <uint32_t *> output
         output += measurement.nulls * 4
         for x in range(rows):
-            item = data[x]
+            item = data[y * stride_y + x * stride_x]
             if item == Py_None:
                 bookmark[0] = x
                 bookmark += 1
@@ -571,7 +575,6 @@ cdef void _serialize_object_block(
                 bookmark = <uint32_t *>(output + 4)
                 output = _write_json(item, <char *>bookmark)
                 bookmark[-1] = output - <char *>bookmark
-        data += rows
 
 
 cdef inline void _write_str(PyObject *obj, char **output) nogil:
@@ -797,6 +800,8 @@ def deserialize_df(bytes buffer) -> DataFrame:
         input += 16
         input_size -= 16
         columns = (<uint32_t *> input)[0]
+        aux = columns & 0x80000000u
+        columns = columns & 0x7FFFFFFFu
         rows = (<uint32_t *> input)[1]
         input += 8
         input_size -= 8
@@ -804,7 +809,7 @@ def deserialize_df(bytes buffer) -> DataFrame:
             shape = (columns, rows)
         else:
             shape = (columns,)
-        arr = np.empty(shape, dtype=dtype)
+        arr = np.empty(shape, dtype=dtype, order="F" if aux else "C")
         if dtype != object:
             arr_data = PyArray_BYTES(<PyObject *> arr)
             arr_size = dtype.itemsize * columns * (rows if rows != nodim else 1)
