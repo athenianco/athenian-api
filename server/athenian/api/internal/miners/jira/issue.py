@@ -26,8 +26,8 @@ from athenian.api.internal.miners.github.precomputed_prs import triage_by_releas
 from athenian.api.internal.miners.types import (
     PR_JIRA_DETAILS_COLUMN_MAP,
     JIRAEntityToFetch,
+    LoadedJIRADetails,
     PullRequestFactsMap,
-    PullRequestJIRADetails,
 )
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
@@ -825,7 +825,7 @@ class PullRequestJiraMapper:
         entities: JIRAEntityToFetch | int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> dict[int, PullRequestJIRADetails]:
+    ) -> dict[int, LoadedJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 100:
@@ -847,7 +847,7 @@ class PullRequestJiraMapper:
             columns,
             index=nprji.node_id.name,
         )
-        res: dict[int, PullRequestJIRADetails] = {}
+        res: dict[int, LoadedJIRADetails] = {}
         cls.append_from_df(res, df)
         return res
 
@@ -855,7 +855,7 @@ class PullRequestJiraMapper:
     @sentry_span
     def append_from_df(
         cls,
-        existing: dict[int, PullRequestJIRADetails],
+        existing: dict[int, LoadedJIRADetails],
         df: pd.DataFrame,
     ) -> None:
         """Add the JIRA details in `df` to `existing` mapping from PR node IDs to JIRA."""
@@ -875,7 +875,7 @@ class PullRequestJiraMapper:
             indexes = order[pos : pos + group_count]
             pos += group_count
             # we can deduplicate. shall we? must benchmark the profit.
-            existing[pr_id] = PullRequestJIRADetails(
+            existing[pr_id] = LoadedJIRADetails(
                 **{
                     PR_JIRA_DETAILS_COLUMN_MAP[c][0]: df[c.name].values[indexes]
                     for c in payload_columns
@@ -887,10 +887,10 @@ class PullRequestJiraMapper:
     def apply_to_pr_facts(
         self,
         facts: PullRequestFactsMap,
-        jira: dict[int, PullRequestJIRADetails],
+        jira: dict[int, LoadedJIRADetails],
     ) -> None:
         """Apply the jira mappings to the facts in PullRequestFactsMap, in place."""
-        empty = PullRequestJIRADetails.empty()
+        empty = LoadedJIRADetails.empty()
         for (pr_id, _), pr_facts in facts.items():
             try:
                 pr_facts.jira = jira[pr_id]
@@ -913,7 +913,7 @@ class PullRequestJiraMapper:
     @classmethod
     def apply_empty_to_pr_facts(self, facts: PullRequestFactsMap) -> None:
         """Apply an empty jira mappings to the facts in PullRequestFactsMap, in place."""
-        empty_jira = PullRequestJIRADetails.empty()
+        empty_jira = LoadedJIRADetails.empty()
         for f in facts.values():
             f.jira = empty_jira
 
@@ -996,6 +996,50 @@ async def fetch_jira_issues_for_prs(
             query.with_statement_hint("Leading((((m *VALUES*) regular) epic))")
             .with_statement_hint(f"Rows(m *VALUES* #{len(pr_nodes)})")
             .with_statement_hint(f"Rows(m *VALUES* regular #{len(pr_nodes)})")
+        )
+    return await mdb.fetch_all(query)
+
+
+@sentry_span
+async def fetch_jira_issues_by_keys(
+    keys: Collection[str],
+    jira_ids: JIRAConfig,
+    mdb: DatabaseLike,
+) -> list[Mapping[str, Any]]:
+    """Load brief information about JIRA issues mapped to the given issue keys."""
+    regiss = aliased(Issue, name="regular")
+    epiciss = aliased(Issue, name="epic")
+    in_any_values = len(keys) > 100
+    query = (
+        sql.select(
+            regiss.key.label("key"),
+            regiss.title.label("title"),
+            regiss.labels.label("labels"),
+            regiss.type.label("type"),
+            epiciss.key.label("epic"),
+        )
+        .select_from(
+            sql.outerjoin(
+                regiss,
+                epiciss,
+                sql.and_(
+                    epiciss.id == regiss.epic_id,
+                    epiciss.acc_id == regiss.acc_id,
+                ),
+            ),
+        )
+        .where(
+            regiss.key.in_any_values(keys) if in_any_values else regiss.key.in_(keys),
+            regiss.acc_id == jira_ids[0],
+            regiss.project_id.in_(jira_ids[1]),
+            regiss.is_deleted.is_(False),
+        )
+    )
+    if in_any_values:
+        (
+            query.with_statement_hint("Leading(((regular *VALUES*) epic))")
+            .with_statement_hint(f"Rows(*VALUES* regular #{len(keys)})")
+            .with_statement_hint(f"Rows(*VALUES* regular epic #{len(keys)})")
         )
     return await mdb.fetch_all(query)
 

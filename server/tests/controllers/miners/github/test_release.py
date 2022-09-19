@@ -2258,9 +2258,9 @@ async def test_override_first_releases_smoke(
     for key in ReleaseFacts.f:
         if key.startswith("prs_"):
             checked += 1
-            if key not in ("prs_title", "prs_jira"):
+            if key != "prs_title":
                 assert len(facts[key] if facts[key] is not None else []) > 0, key
-    assert checked == 7
+    assert checked == 6
     rows = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.data]).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,
@@ -2284,7 +2284,7 @@ async def test_override_first_releases_smoke(
         if key.startswith("prs_"):
             checked += 1
             assert facts[key] is None or len(facts[key]) == 0, key
-    assert checked == 7
+    assert checked == 6
     rows = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.data]).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,

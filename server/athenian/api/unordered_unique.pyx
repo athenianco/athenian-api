@@ -14,6 +14,7 @@ from numpy cimport (
     PyArray_DATA,
     PyArray_DESCR,
     PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
     PyArray_NDIM,
     PyArray_STRIDE,
     dtype as np_dtype,
@@ -46,6 +47,7 @@ def unordered_unique(ndarray arr not None) -> np.ndarray:
     cdef:
         np_dtype dtype = <np_dtype>PyArray_DESCR(arr)
     assert PyArray_NDIM(arr) == 1
+    assert PyArray_IS_C_CONTIGUOUS(arr)
     if dtype.kind == b"S" or dtype.kind == b"U":
         return _unordered_unique_str(arr, dtype)
     elif dtype.kind == b"i" or dtype.kind == b"u":
@@ -72,7 +74,7 @@ cdef ndarray _unordered_unique_pystr(ndarray arr):
         Py_ssize_t str_len
         int64_t i, \
             length = PyArray_DIM(arr, 0), \
-            stride = PyArray_STRIDE(arr, 0)
+            stride = PyArray_STRIDE(arr, 0) >> 3
         unordered_map[string_view, int64_t] hashtable
         pair[string_view, int64_t] it
         ndarray result

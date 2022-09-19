@@ -609,7 +609,7 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
         for k, v in optionals.__annotations__.items():
             if (sub_ks := inspector.indirect_columns.get(k)) is not None:
                 for full_k, sub_k in sub_ks:
-                    set_dtype(full_k, v.__annotations__[sub_k])
+                    set_dtype(full_k, v.__dataclass_fields__[sub_k].type)
             else:
                 set_dtype(k, v)
 

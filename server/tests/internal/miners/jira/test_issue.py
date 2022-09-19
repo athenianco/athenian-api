@@ -23,10 +23,10 @@ from athenian.api.internal.miners.jira.issue import (
 )
 from athenian.api.internal.miners.types import (
     JIRAEntityToFetch,
+    LoadedJIRADetails,
     MinedPullRequest,
     PullRequestCheckRun,
     PullRequestFacts,
-    PullRequestJIRADetails,
 )
 from athenian.api.internal.settings import (
     LogicalRepositorySettings,
@@ -393,7 +393,7 @@ class TestPullRequestJiraMapper:
 
         assert sorted(prs) == [(10, "repo0"), (10, "repo1"), (11, "repo1")]
 
-        assert prs[(10, "repo0")].jira == PullRequestJIRADetails(
+        assert prs[(10, "repo0")].jira == LoadedJIRADetails(
             ids=["I20"], projects=[b"P0"], priorities=[b"PR"], types=[b"T"],
         )
         assert prs[(10, "repo0")].jira == prs[(10, "repo1")].jira
@@ -456,8 +456,8 @@ class TestPullRequestJiraMapper:
             (11, "repo1"): PullRequestFacts(b""),
         }
         mapping = {
-            10: PullRequestJIRADetails(["I1"], [b"P0"], [], []),
-            11: PullRequestJIRADetails(["I0", "I1"], [b"P0", b"P1"], [], [b"bug", b"task"]),
+            10: LoadedJIRADetails(["I1"], [b"P0"], [], []),
+            11: LoadedJIRADetails(["I0", "I1"], [b"P0", b"P1"], [], [b"bug", b"task"]),
         }
 
         PullRequestJiraMapper.apply_to_pr_facts(facts, mapping)
