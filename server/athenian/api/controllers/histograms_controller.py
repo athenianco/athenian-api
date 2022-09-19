@@ -44,14 +44,14 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     filters, repos = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, (branches, default_branches), account_bots = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(repos),
+        settings.list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True,
         ),
@@ -149,8 +149,8 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     filters = await compile_filters_checks(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )

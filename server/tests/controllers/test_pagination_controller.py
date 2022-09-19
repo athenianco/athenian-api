@@ -225,13 +225,7 @@ async def test_paginate_prs_empty(client, headers):
 async def test_paginate_prs_same_day(client, headers, sdb):
     await models_insert(
         sdb,
-        ReleaseSettingFactory(
-            repo_id=40550,
-            branches="",
-            tags=".*",
-            match=ReleaseMatch.tag,
-            repository="github.com/src-d/go-git",
-        ),
+        ReleaseSettingFactory(repo_id=40550, branches="", tags=".*", match=ReleaseMatch.tag),
     )
 
     main_request = {

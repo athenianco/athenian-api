@@ -1184,11 +1184,11 @@ async def _collect_ids(
         get_metadata_account_ids(account, sdb, cache),
         op="sdb/ids",
     )
-    settings = Settings.from_request(request, account)
     prefixer = await Prefixer.load(meta_ids, mdb, cache)
+    settings = Settings.from_request(request, account, prefixer)
     (branches, default_branches), logical_settings = await gather(
         BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
-        settings.list_logical_repositories(prefixer, repos),
+        settings.list_logical_repositories(repos),
         op="sdb/branches and releases",
     )
     repos = logical_settings.append_logical_prs(repos)

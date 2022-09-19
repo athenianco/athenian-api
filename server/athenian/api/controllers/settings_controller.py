@@ -80,14 +80,10 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     # Check the user separately beforehand to avoid security problems.
     await get_user_account_status_from_request(request, id)
 
-    async def load_prefixer():
-        meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
-        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-        return meta_ids, prefixer
+    meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = await Settings.from_request(request, id, prefixer).list_release_matches()
 
-    (meta_ids, prefixer), settings = await gather(
-        load_prefixer(), Settings.from_request(request, id).list_release_matches(), op="sdb",
-    )
     model = {
         k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.prefixed.items()
     }
@@ -114,13 +110,13 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
     except ValueError as e:
         raise ResponseError(BadRequestError(str(e))) from e
     meta_ids = await get_metadata_account_ids(rule.account, request.sdb, request.cache)
-    settings = Settings.from_request(request, rule.account)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, rule.account, prefixer)
 
     match = ReleaseMatch[rule.match]
     rule.events = rule.events or ".*"
     repos = await settings.set_release_matches(
-        rule.repositories, rule.branches, rule.tags, rule.events, match, meta_ids, prefixer,
+        rule.repositories, rule.branches, rule.tags, rule.events, match, meta_ids,
     )
     return web.json_response(sorted(repos))
 
@@ -507,15 +503,11 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
 async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web.Response:
     """List the currently configured logical repositories."""
     await get_user_account_status_from_request(request, id)
-    settings = Settings.from_request(request, id)
 
-    async def load_prefixer():
-        meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
-        return await Prefixer.load(meta_ids, request.mdb, request.cache)
-
-    prefixer, release_settings, rows = await gather(
-        load_prefixer(),
-        settings.list_release_matches(),
+    meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    release_settings, rows = await gather(
+        Settings.from_request(request, id, prefixer).list_release_matches(),
         request.sdb.fetch_all(
             select([LogicalRepository]).where(LogicalRepository.account_id == id),
         ),
@@ -600,7 +592,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                     ),
                 ) from e
         db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
-    settings = Settings.from_request(request, web_model.account)
+    settings = Settings.from_request(request, web_model.account, prefixer)
     name = RepositoryName.from_prefixed(web_model.parent).with_logical(web_model.name)
 
     del body["account"]
@@ -640,7 +632,6 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 web_model.releases.events,
                 ReleaseMatch[web_model.releases.match],
                 meta_ids,
-                prefixer,
                 dereference=False,
             )
             # append to repository sets

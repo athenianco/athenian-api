@@ -23,7 +23,7 @@ from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.github.pull_request_filter import fetch_pull_requests
 from athenian.api.internal.miners.types import PRParticipationKind, PullRequestListItem
-from athenian.api.internal.settings import ReleaseMatchSetting, Settings
+from athenian.api.internal.settings import Prefixer, ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.state.models import ReleaseSetting
 
@@ -379,7 +379,8 @@ async def _fetch_prs_data(
     await gather(sdb_.connect(), mdb_.connect(), pdb_.connect())
 
     log.info("Fetching PRs data...")
-    account_settings = Settings.from_account(account, sdb_, mdb_, cache, None)
+    prefixer = await Prefixer.load(meta_ids, mdb_, cache)
+    account_settings = Settings.from_account(account, prefixer, sdb_, mdb_, cache, None)
     releases_match_settings = await account_settings.list_release_matches(
         ["github.com/" + repo for repo in prs_collection.keys()],
     )

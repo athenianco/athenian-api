@@ -806,7 +806,7 @@ async def _calc_shared_kwargs(
     sdb: Database,
 ) -> dict[str, Any]:
     prefixer = await Prefixer.load(meta_ids, mdb, None)
-    settings = Settings.from_account(1, sdb, mdb, None, None)
+    settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
     release_settings = await settings.list_release_matches()
     repos = release_settings.native.keys()
     branches, default_branches = await BranchMiner.extract_branches(

@@ -1021,8 +1021,8 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
             .explode(),
         ),
     )
-    settings = Settings.from_account(1, sdb, mdb, None, None)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
+    logical_settings = await settings.list_logical_repositories()
     any_with = with_labels or with_title
     assert logical_settings.has_logical_prs() == any_with
     assert logical_settings.has_logical_deployments() == any_with
@@ -1160,6 +1160,7 @@ async def test_delete_logical_repository_smoke(
         "account": 1,
         "name": "github.com/src-d/go-git/alpha",
     }
+    await assert_existing_row(sdb, ReleaseSetting, repo_id=40550, logical_name="alpha")
     response = await client.request(
         method="POST",
         path="/v1/settings/logical_repository/delete",
@@ -1177,12 +1178,7 @@ async def test_delete_logical_repository_smoke(
         ["github.com/src-d/go-git", 40550],
         ["github.com/src-d/go-git/beta", 40550],
     ]
-    row = await sdb.fetch_one(
-        select([ReleaseSetting]).where(
-            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
-        ),
-    )
-    assert row is None
+    await assert_missing_row(sdb, ReleaseSetting, repo_id=40550, logical_name="alpha")
 
 
 @pytest.mark.app_validate_responses(False)
@@ -1402,7 +1398,7 @@ class TestSetLogicalRepository(Requester):
             )
             await wait_deferred()
         await self._test_set_logical_repository(sdb, 1)
-        settings = Settings.from_account(1, sdb, mdb, None, None)
+        settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
         df_post = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from,
             time_to,
@@ -1413,7 +1409,7 @@ class TestSetLogicalRepository(Requester):
             False,
             bots,
             await settings.list_release_matches(),
-            await settings.list_logical_repositories(prefixer),
+            await settings.list_logical_repositories(),
             prefixer,
             False,
             0,

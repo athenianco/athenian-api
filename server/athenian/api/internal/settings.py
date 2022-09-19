@@ -19,6 +19,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+import sqlalchemy as sa
 from sqlalchemy import and_, select
 
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
@@ -636,6 +637,7 @@ class Settings:
         account: int,
         user_id: Optional[str],
         login: Optional[Callable[[], Coroutine[None, None, str]]],
+        prefixer: Prefixer,
         sdb: DatabaseLike,
         mdb: DatabaseLike,
         cache: Optional[aiomcache.Client],
@@ -645,6 +647,7 @@ class Settings:
         self._account = account
         self._user_id = user_id
         self._login = login
+        self._prefixer = prefixer
         self._sdb = sdb
         self._mdb = mdb
         self._cache = cache
@@ -654,6 +657,7 @@ class Settings:
     def from_account(
         cls,
         account: int,
+        prefixer: Prefixer,
         sdb: Database,
         mdb: Database,
         cache: Optional[aiomcache.Client],
@@ -665,6 +669,7 @@ class Settings:
             account=account,
             user_id=None,
             login=None,
+            prefixer=prefixer,
             sdb=sdb,
             mdb=mdb,
             cache=cache,
@@ -672,7 +677,12 @@ class Settings:
         )
 
     @classmethod
-    def from_request(cls, request: AthenianWebRequest, account: int) -> "Settings":
+    def from_request(
+        cls,
+        request: AthenianWebRequest,
+        account: int,
+        prefixer: Prefixer,
+    ) -> "Settings":
         """Create a new Settings class instance in readwrite mode from the request object and \
         the account ID."""
 
@@ -684,6 +694,7 @@ class Settings:
             account=account,
             user_id=request.uid,
             login=login_loader,
+            prefixer=prefixer,
             sdb=request.sdb,
             mdb=request.mdb,
             cache=request.cache,
@@ -702,23 +713,44 @@ class Settings:
         """
         if repos is None:
             repos = await get_account_repositories(self._account, True, self._sdb)
-        repos = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
+
+        # collect also physical repositories for requested logical repositories
+        repos_to_collect = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
+
+        repo_names_to_collect = {RepositoryName.from_prefixed(repo) for repo in repos_to_collect}
+
+        name_to_node = self._prefixer.repo_name_to_node.get
+        all_repo_ids = {
+            id_ for r in repo_names_to_collect if (id_ := name_to_node(r.unprefixed_physical))
+        }
+
+        # query is approximate, not requested logical repos are selected
+        # those are discarded when iterating rows
         rows = await self._sdb.fetch_all(
-            select([ReleaseSetting]).where(
-                and_(
-                    ReleaseSetting.account_id == self._account,
-                    ReleaseSetting.repository.in_(repos),
-                ),
+            sa.select(ReleaseSetting).where(
+                ReleaseSetting.account_id == self._account,
+                ReleaseSetting.repo_id.in_(all_repo_ids),
             ),
         )
+
         settings = []
         loaded = set()
         for row in rows:
-            repo = row[ReleaseSetting.repository.name]
-            loaded.add(repo)
+            row_repo_name = RepositoryName.from_prefixed(
+                self._prefixer.repo_node_to_prefixed_name[row[ReleaseSetting.repo_id.name]],
+            )
+            if logical_name := row[ReleaseSetting.logical_name.name]:
+                row_repo_name = row_repo_name.with_logical(logical_name)
+
+            if row_repo_name not in repo_names_to_collect:
+                # not requested logical repos
+                continue
+
+            loaded.add(row_repo_name)
+
             settings.append(
                 (
-                    repo,
+                    str(row_repo_name),
                     ReleaseMatchSetting(
                         branches=row[ReleaseSetting.branches.name],
                         tags=row[ReleaseSetting.tags.name],
@@ -728,28 +760,31 @@ class Settings:
                 ),
             )
         missing_logical = []
-        for repo in repos:
-            if repo not in loaded:
-                if RepositoryName.from_prefixed(repo).is_logical:
-                    missing_logical.append(repo)
-                    continue
+        for r in repo_names_to_collect:
+            if r in loaded:
+                continue
+            if r.is_logical:
+                missing_logical.append(str(r))
+            else:
                 settings.append(
                     (
-                        repo,
+                        str(r),
                         ReleaseMatchSetting(
                             branches=default_branch_alias,
                             tags=".*",
                             events=".*",
-                            match=ReleaseMatch.tag_or_branch,
+                            match=ReleaseMatch[ReleaseMatchStrategy.TAG_OR_BRANCH],
                         ),
                     ),
                 )
+
         if missing_logical:
             raise ResponseError(
                 MissingSettingsError(
                     detail=f"Logical repositories must have release settings: {missing_logical}",
                 ),
             )
+
         settings.sort()
         settings = dict(settings)
         return ReleaseSettings(settings)
@@ -762,7 +797,6 @@ class Settings:
         events: str,
         match: ReleaseMatch,
         meta_ids: tuple[int, ...],
-        prefixer: Prefixer,
         dereference: bool = True,
         pointer_root: str = "",
     ) -> set[str]:
@@ -797,7 +831,7 @@ class Settings:
 
         if dereference:
             settings = Settings.from_account(
-                self._account, self._sdb, self._mdb, self._cache, self._slack,
+                self._account, self._prefixer, self._sdb, self._mdb, self._cache, self._slack,
             )
             repos, _ = await resolve_repos(
                 repos,
@@ -820,7 +854,7 @@ class Settings:
                     "submitted event."
                 )
                 raise ResponseError(InvalidRequestError(f"{pointer_root}.{match}", detail=msg))
-            repo_id = prefixer.repo_name_to_node[repo_name.unprefixed_physical]
+            repo_id = self._prefixer.repo_name_to_node[repo_name.unprefixed_physical]
             values.append(
                 ReleaseSetting(
                     repository=repo,
@@ -857,7 +891,6 @@ class Settings:
 
     async def list_logical_repositories(
         self,
-        prefixer: Prefixer,
         repos: Optional[Collection[str]] = None,
         pointer: Optional[str] = None,
     ) -> LogicalRepositorySettings:
@@ -879,7 +912,7 @@ class Settings:
             logical_repos = coerce_logical_repos(repos)
             diff_repos = repos - logical_repos.keys()
             repos = logical_repos.keys()
-        repo_name_to_node = prefixer.repo_name_to_node.get
+        repo_name_to_node = self._prefixer.repo_name_to_node.get
         repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
         rows = await self._sdb.fetch_all(
             select([LogicalRepository]).where(
@@ -891,7 +924,7 @@ class Settings:
         )
         prs = {}
         deployments = {}
-        repo_node_to_name = prefixer.repo_node_to_name.__getitem__
+        repo_node_to_name = self._prefixer.repo_node_to_name.__getitem__
         for row in rows:
             physical_name = repo_node_to_name(row[LogicalRepository.repository_id.name])
             logical_name = "/".join((physical_name, row[LogicalRepository.name.name]))

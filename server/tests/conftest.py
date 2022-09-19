@@ -1201,14 +1201,12 @@ async def release_match_setting_tag_logical_db(sdb):
     await models_insert(
         sdb,
         ReleaseSettingFactory(
-            repository="github.com/src-d/go-git/alpha",
             logical_name="alpha",
             repo_id=40550,
             branches="master",
             match=ReleaseMatch.tag,
         ),
         ReleaseSettingFactory(
-            repository="github.com/src-d/go-git/beta",
             logical_name="beta",
             repo_id=40550,
             branches="master",

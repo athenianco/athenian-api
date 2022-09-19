@@ -99,10 +99,10 @@ def main():
         meta_ids = await get_metadata_account_ids(args.account, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         prefixed_repos = prefixer.prefix_repo_names(args.repos)
-        settings = Settings.from_account(args.account, sdb, mdb, None, None)
+        settings = Settings.from_account(args.account, prefixer, sdb, mdb, None, None)
         release_settings, logical_settings = await gather(
             settings.list_release_matches(prefixed_repos),
-            settings.list_logical_repositories(prefixer, prefixed_repos),
+            settings.list_logical_repositories(prefixed_repos),
         )
         branches, default_branches = await BranchMiner.extract_branches(
             args.repos, prefixer, meta_ids, mdb, None,

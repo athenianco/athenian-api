@@ -140,8 +140,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     filters, repos = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
@@ -172,7 +172,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         calculated=[],
     )
 
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, (branches, default_branches), account_bots = await gather(
         settings.list_release_matches(repos),
         BranchMiner.extract_branches(
@@ -613,8 +613,8 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
@@ -628,7 +628,6 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone,
     )
-    settings = Settings.from_request(request, filt.account)
     release_settings = await settings.list_release_matches(all_repos)
 
     met = CalculatedDeveloperMetrics(
@@ -722,8 +721,8 @@ async def _compile_filters_releases(
     checkers = {}
     all_repos = set()
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request, account, meta_ids, for_set, i, all_repos, checkers,
@@ -765,7 +764,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         filt.date_from, filt.date_to, filt.granularities, filt.timezone,
     )
 
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, (branches, default_branches), jira_ids = await gather(
         settings.list_release_matches(repos),
         BranchMiner.extract_branches(
@@ -852,8 +851,8 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     filters = await compile_filters_checks(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
@@ -962,18 +961,18 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, filt.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
 
-    filters = await _compile_filters_deployments(
-        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
-    )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone,
     )
     calculated = []
-    release_settings, (branches, default_branches) = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(),  # no "repos"!
+    filters, release_settings, (branches, default_branches) = await gather(
+        _compile_filters_deployments(
+            filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
+        ),
+        settings.list_release_matches(),  # no "repos"!
         BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
     )
 
