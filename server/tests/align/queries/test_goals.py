@@ -1,9 +1,12 @@
+import contextlib
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 import pytest
+import sqlalchemy as sa
 
 from athenian.api.db import Database
+from athenian.api.models.state.models import AccountGitHubAccount, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID
 from tests.align.utils import (
     align_graphql_request,
@@ -11,15 +14,22 @@ from tests.align.utils import (
     build_fragment,
     build_recursive_fields_structure,
 )
+from tests.testutils.auth import mock_auth0
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import (
+    AccountFactory,
+    AccountGitHubAccountFactory,
     GoalFactory,
     MappedJIRAIdentityFactory,
+    RepositorySetFactory,
     TeamFactory,
     TeamGoalFactory,
+    UserAccountFactory,
 )
 from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 class BaseGoalsTest(Requester):
@@ -112,21 +122,31 @@ class BaseGoalsTest(Requester):
         repositories: Optional[list[str]] = None,
         depth: int = 6,
         only_with_targets: bool = False,
+        user_id: Optional[str] = None,
     ) -> dict:
         if repositories is None:
-            repositories = {}
+            repositories_kwargs = {}
         else:
-            repositories = {"repositories": repositories}
-        body = {
+            repositories_kwargs = {"repositories": repositories}
+        body: dict[str, str | dict] = {
             "query": self._query(goal_fields, value_fields, team_fields, depth=depth),
             "variables": {
                 "accountId": account_id,
                 "teamId": team_id,
                 "onlyWithTargets": only_with_targets,
-                **repositories,
+                **repositories_kwargs,
             },
         }
-        return await align_graphql_request(self.client, headers=self.headers, json=body)
+        if user_id:
+            headers = self.headers.copy()
+            headers["Authorization"] = f"Bearer {user_id}"
+            auth_ctx = mock_auth0()
+        else:
+            headers = self.headers
+            auth_ctx = contextlib.nullcontext()
+
+        with auth_ctx:
+            return await align_graphql_request(self.client, headers=headers, json=body)
 
 
 class TestGoalsErrors(BaseGoalsTest):
@@ -140,6 +160,22 @@ class TestGoalsErrors(BaseGoalsTest):
     ) -> None:
         res = await self._request(1, 0)
         assert_extension_error(res, "Root team not found or access denied")
+
+    async def test_jira_not_installed_filtering(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = PullRequestMetricID.PR_OPENED
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2022, 1, 1)}
+        await sdb.execute(sa.delete(AccountGitHubAccount))
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            AccountGitHubAccountFactory(id=DEFAULT_MD_ACCOUNT_ID, account_id=33),
+            UserAccountFactory(account_id=33, user_id="gh|XXX"),
+            TeamFactory(id=10, members=[39789, 40020, 40191], owner_id=33),
+            GoalFactory(id=20, metric=metric, account_id=33, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_projects=["p1"]),
+        )
+        res = await self._request(33, 10, user_id="gh|XXX")
+        assert_extension_error(res, "JIRA has not been installed to the metadata yet.")
 
 
 class TestGoals(BaseGoalsTest):
@@ -513,7 +549,7 @@ class TestGoals(BaseGoalsTest):
         assert (tg := goal_21["teamGoal"])["team"]["id"] == 1
         assert tg["value"]["initial"]["int"] == 0
 
-    async def test_jira_fields(self, sdb: Database, mdb_rw: Database) -> None:
+    async def test_jira_fields(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10, members=[39789]),
@@ -534,3 +570,201 @@ class TestGoals(BaseGoalsTest):
         assert res["data"]["goals"][1]["jiraProjects"] is None
         assert res["data"]["goals"][1]["jiraPriorities"] == ["low"]
         assert res["data"]["goals"][1]["jiraIssueTypes"] is None
+
+    async def test_jira_not_installed(self, sdb: Database, mdb_rw: Database) -> None:
+        # jira installation is not needed when jira metrics/filters are not used
+        metric = PullRequestMetricID.PR_OPENED
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2022, 1, 1)}
+        await sdb.execute(sa.delete(AccountGitHubAccount))
+
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            AccountGitHubAccountFactory(id=DEFAULT_MD_ACCOUNT_ID, account_id=33),
+            UserAccountFactory(account_id=33, user_id="gh|XXX"),
+            TeamFactory(id=10, members=[39789, 40020, 40191], owner_id=33),
+            GoalFactory(id=20, metric=metric, account_id=33, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10),
+            RepositorySetFactory(id=100, owner_id=33, items=[["github.com/a/b", 1]]),
+        )
+        res = await self._request(33, 10, user_id="gh|XXX")
+        assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 0
+
+
+class TestJIRAFiltering(BaseGoalsTest):
+    async def test_pr_metric_priority(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = PullRequestMetricID.PR_OPENED
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(
+                id=20, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_priorities=None),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueFactory(
+                    id="20", priority_name="prio0", priority_id="100", project_id="1",
+                ),
+                md_factory.JIRAPriorityFactory(id="100", name="prio0"),
+                md_factory.JIRAPriorityFactory(id="101", name="prio1"),
+                md_factory.JIRAProjectFactory(id="1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            res = await self._request(1, 10)
+            assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 93
+
+            # no issue with this priority, nothing is computed
+            await self._update_team_goal(sdb, 10, 20, {TeamGoal.jira_priorities: ["prio1"]})
+            res = await self._request(1, 10)
+            assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 0
+
+            # unknown priority, nothing is computed
+            await self._update_team_goal(sdb, 10, 20, {TeamGoal.jira_priorities: ["prio2"]})
+            res = await self._request(1, 10)
+            assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 0
+
+            await self._update_team_goal(sdb, 10, 20, {TeamGoal.jira_priorities: ["prio0"]})
+            res = await self._request(1, 10)
+            # only pr 162901 is counted
+            assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 1
+
+    async def test_pr_metric_unexisting_project(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = PullRequestMetricID.PR_OPENED
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(
+                id=20, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            GoalFactory(
+                id=21, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_projects=["P1"]),
+            TeamGoalFactory(goal_id=21, team_id=10, jira_projects=None),
+        )
+        res = await self._request(1, 10)
+        assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 0
+        assert res["data"]["goals"][1]["teamGoal"]["value"]["initial"]["int"] == 93
+
+    async def test_pr_metric_more_goals(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = PullRequestMetricID.PR_OPENED
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(
+                id=20, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            GoalFactory(
+                id=21, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            GoalFactory(
+                id=22, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_projects=None),
+            TeamGoalFactory(goal_id=21, team_id=10, jira_projects=["P0"]),
+            TeamGoalFactory(goal_id=22, team_id=10, jira_projects=["P1"]),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueFactory(id="20", project_id="0"),
+                md_factory.JIRAProjectFactory(id="0", key="P0"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            res = await self._request(1, 10)
+            assert res["data"]["goals"][0]["id"] == 20
+            assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 93
+
+            assert res["data"]["goals"][1]["id"] == 21
+            assert res["data"]["goals"][1]["teamGoal"]["value"]["initial"]["int"] == 1
+
+            assert res["data"]["goals"][2]["id"] == 22
+            assert res["data"]["goals"][2]["teamGoal"]["value"]["initial"]["int"] == 0
+
+    async def test_pr_metric_complex_filters(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = PullRequestMetricID.PR_OPENED
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            TeamFactory(id=11, members=[39789, 40020, 40191], parent_id=10),
+            GoalFactory(
+                id=20, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            GoalFactory(
+                id=21, metric=metric, valid_from=dt(2019, 1, 1), expires_at=dt(2022, 1, 1),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_priorities=["P0", "P1"]),
+            TeamGoalFactory(
+                goal_id=20, team_id=11, jira_projects=["PJ1"], jira_issue_types=["T0", "T1"],
+            ),
+            TeamGoalFactory(goal_id=21, team_id=10, jira_projects=["PJ0"], jira_priorities=["P0"]),
+            TeamGoalFactory(goal_id=21, team_id=11, jira_projects=["PJ1"], jira_priorities=["T0"]),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAProjectFactory(id="0", key="PJ0"),
+                md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+                md_factory.JIRAPriorityFactory(id="100", name="P0"),
+                md_factory.JIRAPriorityFactory(id="101", name="P1"),
+                md_factory.JIRAIssueTypeFactory(id="100", name="T0"),
+                md_factory.JIRAIssueTypeFactory(id="101", name="T1"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="21"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=162908, jira_id="22"),
+                *[
+                    md_factory.JIRAIssueFactory(
+                        id=id_,
+                        project_id=project_id,
+                        priority_id=priority_id,
+                        priority_name=priority_name,
+                        type_id=type_id,
+                        type=type_,
+                    )
+                    for (id_, project_id, priority_id, priority_name, type_id, type_) in (
+                        ("20", "0", "100", "P0", "100", "T0"),
+                        ("21", "0", "101", "P1", "100", "T0"),
+                        ("22", "1", "100", "P0", "101", "T1"),
+                    )
+                ],
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            res = await self._request(1, 10)
+            assert (goal_20 := res["data"]["goals"][0])["id"] == 20
+            assert goal_20["teamGoal"]["team"]["id"] == 10
+            # both PRs are selected, priorities is P0, P1
+            assert goal_20["teamGoal"]["value"]["initial"]["int"] == 2
+
+            assert goal_20["teamGoal"]["children"][0]["team"]["id"] == 11
+            # only 162908 is selected
+            assert goal_20["teamGoal"]["children"][0]["value"]["initial"]["int"] == 1
+
+            # only 162901 is selected
+            assert (goal_21 := res["data"]["goals"][1])["id"] == 21
+            assert goal_21["teamGoal"]["team"]["id"] == 10
+
+            # no PR selected
+            assert goal_21["teamGoal"]["children"][0]["team"]["id"] == 11
+            assert goal_21["teamGoal"]["children"][0]["value"]["initial"]["int"] == 0
+
+    @classmethod
+    async def _update_team_goal(
+        cls,
+        sdb: Database,
+        team_id: int,
+        goal_id: int,
+        values: dict,
+    ) -> None:
+        values = {**values, TeamGoal.updated_at: datetime.now(timezone.utc)}
+        await sdb.execute(
+            sa.update(TeamGoal)
+            .where(TeamGoal.team_id == team_id, TeamGoal.goal_id == goal_id)
+            .values(values),
+        )

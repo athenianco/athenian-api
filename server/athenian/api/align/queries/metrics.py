@@ -39,7 +39,8 @@ from athenian.api.internal.features.jira.issue_metrics import (
     metric_calculators as jira_metric_calculators,
 )
 from athenian.api.internal.jira import (
-    get_jira_installation,
+    JIRAConfig,
+    check_jira_installation,
     get_jira_installation_or_none,
     load_mapped_jira_users,
     normalize_issue_type,
@@ -79,7 +80,7 @@ async def resolve_metrics_current_values(
 ) -> Any:
     """Serve metricsCurrentValues()."""
     team_id = params[MetricParamsFields.teamId]
-    team_rows, meta_ids = await gather(
+    team_rows, meta_ids, jira_config = await gather(
         fetch_teams_recursively(
             accountId,
             info.context.sdb,
@@ -87,12 +88,15 @@ async def resolve_metrics_current_values(
             root_team_ids=[team_id],
         ),
         get_metadata_account_ids(accountId, info.context.sdb, info.context.cache),
+        get_jira_installation_or_none(
+            accountId, info.context.sdb, info.context.mdb, info.context.cache,
+        ),
     )
     time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
 
     repos = await _parse_repositories(params, accountId, meta_ids, info.context)
-    jira_filter = await _parse_jira_filter(params, accountId, info.context)
+    jira_filter = _parse_jira_filter(params, accountId, info.context, jira_config)
     teams = [
         RequestedTeamDetails(
             team_id=(row_team_id := row[Team.id.name]),
@@ -113,6 +117,7 @@ async def resolve_metrics_current_values(
         info.context.rdb,
         info.context.cache,
         info.context.app["slack"],
+        jira_config,
     )
     team_metrics = team_metrics_all_intervals[time_interval]
 
@@ -143,10 +148,11 @@ async def _parse_repositories(
     return repos
 
 
-async def _parse_jira_filter(
+def _parse_jira_filter(
     params: Mapping[str, Any],
     account_id: int,
     request: AthenianWebRequest,
+    unchecked_jira_config: Optional[JIRAConfig],
 ) -> JIRAFilter:
     jira_projects = frozenset(params.get(MetricParamsFields.jiraProjects) or ())
     jira_priorities = frozenset(
@@ -156,9 +162,7 @@ async def _parse_jira_filter(
         normalize_issue_type(t) for t in params.get(MetricParamsFields.jiraIssueTypes) or ()
     )
     if jira_projects or jira_priorities or jira_issue_types:
-        jira_config = await get_jira_installation(
-            account_id, request.sdb, request.mdb, request.cache,
-        )
+        jira_config = check_jira_installation(unchecked_jira_config)
         if jira_projects:
             jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
             custom_projects = True
@@ -248,6 +252,7 @@ async def calculate_team_metrics(
     rdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
+    unchecked_jira_config: Optional[JIRAConfig],
 ) -> TeamMetricsResult:
     """Calculate a set of metrics for each team and time interval.
 
@@ -355,6 +360,7 @@ async def calculate_team_metrics(
     calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
     tasks = []
     if pr_requests := pr_collector.requests:
+        jira_acc_id = unchecked_jira_config.acc_id if unchecked_jira_config else None
         pr_task = calculator.batch_calc_pull_request_metrics_line_github(
             requests=pr_requests,
             quantiles=QUANTILES,
@@ -366,6 +372,7 @@ async def calculate_team_metrics(
             branches=branches,
             default_branches=default_branches,
             fresh=False,
+            jira_acc_id=jira_acc_id,
         )
         tasks.append(pr_task)
 
@@ -382,7 +389,7 @@ async def calculate_team_metrics(
         tasks.append(release_task)
 
     if jira_requests := jira_collector.requests:
-        jira_conf = await get_jira_installation_or_none(account, sdb, mdb, cache)
+        jira_conf = check_jira_installation(unchecked_jira_config)
         jira_task = calculator.batch_calc_jira_metrics_line_github(
             requests=jira_requests,
             quantiles=QUANTILES,

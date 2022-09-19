@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
-
+import aiomcache
 from freezegun import freeze_time
 import pytest
-from sqlalchemy import delete, distinct, insert, select, update
+from sqlalchemy import delete, distinct, insert, select
 from sqlalchemy.sql.functions import count
 
 from athenian.api.db import Database
@@ -11,18 +10,19 @@ from athenian.api.internal.jira import (
     JIRAConfig,
     JIRAEntitiesMapper,
     disable_empty_projects,
+    get_jira_id,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
     match_jira_identities,
     normalize_issue_type,
     normalize_priority,
 )
-from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import (
     AccountJiraInstallation,
     JIRAProjectSetting,
     MappedJIRAIdentity,
 )
+from athenian.api.response import ResponseError
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID
@@ -32,6 +32,23 @@ from tests.testutils.factory.state import (
     AccountJiraInstallationFactory,
 )
 from tests.testutils.time import dt
+
+
+class TestGetJIRAID:
+    @with_defer
+    async def test_error_is_not_cached(self, sdb: Database, cache: aiomcache.Client) -> None:
+        with pytest.raises(ResponseError):
+            await get_jira_id(99999, sdb, cache)
+
+        await wait_deferred()
+
+        await models_insert(
+            sdb,
+            AccountFactory(id=99999),
+            AccountJiraInstallationFactory(account_id=99999, id=1000),
+        )
+
+        assert (await get_jira_id(99999, sdb, cache)) == 1000
 
 
 class TestJIRAConfig:
@@ -187,26 +204,14 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
     assert matched + 1 == stored
 
 
-@pytest.mark.flaky(reruns=3)
 async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
-    await mdb_rw.execute(
-        insert(Progress).values(
-            {
-                Progress.current.name: 1,
-                Progress.total.name: 2,
-                Progress.acc_id.name: 1,
-                Progress.event_id.name: "guid",
-                Progress.event_type.name: "user",
-                Progress.started_at.name: datetime.now(timezone.utc),
-                Progress.end_at.name: datetime.now(timezone.utc),
-                Progress.is_initial.name: True,
-            },
-        ),
-    )
-    try:
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        models = [
+            md_factory.JIRAProgressFactory(current=1, total=2, event_type="user", is_initial=True),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
         assert (await match_jira_identities(1, (6366825,), sdb, mdb_rw, slack, None)) is None
-    finally:
-        await mdb_rw.execute(update(Progress).values({Progress.current.name: 10}))
 
 
 @pytest.mark.parametrize(

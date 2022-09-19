@@ -66,12 +66,14 @@ from athenian.api.internal.features.jira.issue_metrics import (
 )
 from athenian.api.internal.features.metric_calculator import (
     DEFAULT_QUANTILE_STRIDE,
+    JIRAGrouping,
     MetricCalculatorEnsemble,
     deduplicate_groups,
     group_by_repo,
+    group_pr_facts_by_jira,
     group_to_indexes,
 )
-from athenian.api.internal.jira import JIRAConfig
+from athenian.api.internal.jira import JIRAConfig, JIRAEntitiesMapper
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.check_run import mine_check_runs
@@ -118,7 +120,9 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.web import NoSourceDataError
 from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -410,6 +414,7 @@ class MetricEntriesCalculator:
         branches: pd.DataFrame,
         default_branches: dict[str, str],
         fresh: bool,
+        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for pull request metrics.
 
@@ -433,7 +438,12 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+        )
         jira_filter = reduce(operator.or_, jira_filters)
+
+        jira_entities_to_fetch = self._get_jira_entities_to_fetch(jira_filters, all_metrics)
 
         df_facts = await self.calc_pull_request_facts_github(
             time_from,
@@ -448,11 +458,11 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            # FIXME(vmarkovtsev): check JIRA filters
-            JIRAEntityToFetch(pr_metrics_need_jira_mapping(all_metrics)),
+            jira_entities_to_fetch,
             branches,
             default_branches,
         )
+
         dedupe_mask = calculate_logical_prs_duplication_mask(
             df_facts, release_settings, logical_settings,
         )
@@ -461,7 +471,7 @@ class MetricEntriesCalculator:
         for request in requests:
             groups = np.empty(len(request.teams), dtype=object)
             group = np.empty(len(df_facts), dtype=np.uint8)
-            # TODO: add grouping by jira filter
+            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
             for i, group_by_filter in enumerate(
                 zip(
                     group_by_repo(
@@ -470,6 +480,7 @@ class MetricEntriesCalculator:
                         df_facts,
                     ),
                     group_prs_by_participants([t.participants for t in request.teams], df_facts),
+                    group_pr_facts_by_jira(jira_grouping, df_facts),
                 ),
             ):
                 group[:] = 0
@@ -814,6 +825,27 @@ class MetricEntriesCalculator:
         )
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
+
+    @classmethod
+    def _get_jira_entities_to_fetch(
+        cls,
+        jira_filters: Iterable[JIRAFilter],
+        pr_metrics: Iterable[str],
+    ) -> JIRAEntityToFetch:
+        """Get entities to fetch, in order to compute `pr_metrics` and then group by the filter."""
+        jira_entities_to_fetch = JIRAEntityToFetch.NOTHING
+        if pr_metrics_need_jira_mapping(pr_metrics):
+            jira_entities_to_fetch |= JIRAEntityToFetch.ISSUES
+        # for projects, types, and priorities, if at least one filter constraints on the property
+        # we need to fetch it to group on it
+        for jira_filter in jira_filters:
+            if jira_filter.projects:
+                jira_entities_to_fetch |= JIRAEntityToFetch.PROJECTS
+            if jira_filter.issue_types:
+                jira_entities_to_fetch |= JIRAEntityToFetch.TYPES
+            if jira_filter.priorities:
+                jira_entities_to_fetch |= JIRAEntityToFetch.PRIORITIES
+        return jira_entities_to_fetch
 
     @staticmethod
     def _merge_release_participants(
@@ -1250,7 +1282,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         default_branches: dict[str, str],
-        jira_ids: Optional[JIRAConfig],
+        jira_ids: JIRAConfig,
     ) -> Sequence[np.ndarray]:
         """
         Execute a set of requests for jira metrics.
@@ -1824,6 +1856,64 @@ class MetricEntriesCalculator:
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
         )
         return all_facts_df, with_jira
+
+
+class _JIRAFilterToGroupingConverter:
+    """Converter of JIRAFilter objects to JIRAGrouping-s.
+
+    Instances should be created with `build()`, which pre-scans all groups to be handled
+    and avoids to build `entities_mapper` if possible.
+    `jira_filters` passed to each __call__ should be part of `all_filters_ passed to `build()`.
+
+    """
+
+    def __init__(self, entities_mapper: Optional[JIRAEntitiesMapper]):
+        self._entities_mapper = entities_mapper
+
+    @classmethod
+    async def build(
+        cls,
+        all_filters: Iterable[JIRAFilter],
+        account: int,
+        jira_acc_id: Optional[int],
+        mdb: Database,
+        cache,
+    ) -> _JIRAFilterToGroupingConverter:
+        if any((f.priorities or f.issue_types) for f in all_filters):
+            if jira_acc_id is None:
+                raise ResponseError(
+                    NoSourceDataError(detail="JIRA not installed for the account."),
+                )
+            entities_mapper = await JIRAEntitiesMapper.load(jira_acc_id, mdb)
+        else:
+            entities_mapper = None
+        return cls(entities_mapper)
+
+    def __call__(self, jira_filters: Iterable[JIRAFilter]) -> list[JIRAGrouping]:
+        groups = []
+        for jira_filter in jira_filters:
+            if jira_filter:
+                projects = jira_filter.projects if jira_filter.custom_projects else None
+                if jira_filter.priorities:
+                    priorities = self._mapper.translate_priority_names(jira_filter.priorities)
+                else:
+                    priorities = None
+                if jira_filter.issue_types:
+                    issue_types = self._mapper.translate_types(jira_filter.issue_types)
+                else:
+                    issue_types = None
+                group = JIRAGrouping(projects, priorities, issue_types)
+            else:  # this includes when custom_project is True and only projects is present
+                group = JIRAGrouping.empty()
+            groups.append(group)
+
+        return groups
+
+    @property
+    def _mapper(self) -> JIRAEntitiesMapper:
+        if self._entities_mapper is None:
+            raise ValueError("A JIRAEntitiesMapper is required to convert a filled JIRAFilter")
+        return self._entities_mapper
 
 
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:

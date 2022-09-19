@@ -3,8 +3,8 @@ from functools import partial
 from typing import Any
 
 from freezegun import freeze_time
-from morcilla import Database
 import pytest
+import sqlalchemy as sa
 
 from athenian.api.align.models import MetricParamsFields
 from athenian.api.align.queries.metrics import (
@@ -12,6 +12,8 @@ from athenian.api.align.queries.metrics import (
     TeamMetricsRequest,
     _simplify_requests,
 )
+from athenian.api.db import Database
+from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.align.utils import (
     align_graphql_request,
@@ -289,6 +291,17 @@ class TestMetrics(BaseMetricsTest):
         value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
         assert value == 0
 
+    async def test_jira_not_installed(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        await sdb.execute(sa.delete(AccountJiraInstallation))
+        metrics = [PullRequestMetricID.PR_ALL_COUNT]
+
+        dates = date(2016, 1, 1), date(2019, 1, 1)
+
+        res = await self._request(1, 1, metrics, *dates)
+        value = res["data"]["metricsCurrentValues"][0]["value"]["value"]["int"]
+        assert value == 93
+
 
 class TestJIRAFiltering(BaseMetricsTest):
     async def test_pr_metric(self, sdb: Database, mdb_rw: Database) -> None:
@@ -298,18 +311,32 @@ class TestJIRAFiltering(BaseMetricsTest):
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
+                md_factory.JIRAProjectFactory(id="0", key="P0"),
+                md_factory.JIRAProjectFactory(id="1", key="P1"),
+                md_factory.JIRAPriorityFactory(id="100", name="extreme"),
+                md_factory.JIRAPriorityFactory(id="101", name="medium"),
+                md_factory.JIRAIssueTypeFactory(id="100", name="t0"),
+                md_factory.JIRAIssueTypeFactory(id="101", name="t1"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="21"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162907, jira_id="20"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162908, jira_id="20"),
                 md_factory.JIRAIssueFactory(
-                    id="20", project_id="0", type="t0", priority_name="extreme",
+                    id="20",
+                    project_id="0",
+                    type="t0",
+                    type_id="100",
+                    priority_id="100",
+                    priority_name="extreme",
                 ),
                 md_factory.JIRAIssueFactory(
-                    id="21", project_id="1", type="t1", priority_name="medium",
+                    id="21",
+                    project_id="1",
+                    type="t1",
+                    type_id="101",
+                    priority_id="101",
+                    priority_name="medium",
                 ),
-                md_factory.JIRAProjectFactory(id="0", key="P0"),
-                md_factory.JIRAProjectFactory(id="1", key="P1"),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
@@ -422,8 +449,15 @@ class TestJIRAFiltering(BaseMetricsTest):
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
+                md_factory.JIRAIssueTypeFactory(id="100", name="t0"),
+                md_factory.JIRAPriorityFactory(id="100", name="extreme"),
                 md_factory.JIRAIssueFactory(
-                    id="20", type="t0", priority_name="extreme", project_id="0",
+                    id="20",
+                    type_id="100",
+                    type="t0",
+                    priority_id="100",
+                    priority_name="extreme",
+                    project_id="0",
                 ),
                 md_factory.JIRAProjectFactory(id="0"),
             ]
