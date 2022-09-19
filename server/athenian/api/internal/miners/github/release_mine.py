@@ -2009,6 +2009,8 @@ async def hide_first_releases(
     :param releases: First releases detected by `discover_first_outlier_releases()`.
     :param prs: Pull requests belonging to the first releases.
     """
+    if releases.empty:
+        return
     log = logging.getLogger(f"{metadata.__package__}.hide_first_releases")
     logged_releases = dict(
         zip(
