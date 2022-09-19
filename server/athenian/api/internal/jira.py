@@ -211,17 +211,18 @@ class JIRAEntitiesMapper:
             mdb.fetch_all(priority_stmt), mdb.fetch_all(type_stmt),
         )
 
+        # priority and issue types are not normalized in their table, maps are built normalized
         priority_names_map = defaultdict(list)
         for priority_name, priority_id in priority_rows:
-            priority_names_map[priority_name].append(priority_id)
+            priority_names_map[normalize_priority(priority_name)].append(priority_id)
         types_map = defaultdict(list)
         for type_, type_id in type_rows:
-            types_map[type_].append(type_id)
+            types_map[normalize_issue_type(type_)].append(type_id)
 
         return cls(priority_names_map, types_map)
 
     def translate_priority_names(self, priority_names: Iterable[str]) -> list[str]:
-        """Translate a set of priority names to their identifiers.
+        """Translate a set of normalized priority names to their identifiers.
 
         Unknown priority names are ignored.
         """
@@ -229,7 +230,7 @@ class JIRAEntitiesMapper:
         return list(chain.from_iterable(map_.get(p, ()) for p in priority_names))
 
     def translate_types(self, types: Iterable[str]) -> list[str]:
-        """Translate a set of types to their identifiers.
+        """Translate a set of normalized types to their identifiers.
 
         Unknown types are ignored.
         """

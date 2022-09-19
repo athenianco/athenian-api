@@ -304,8 +304,8 @@ class TestGenerateJIRAPRsQuery:
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="2"),
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="3"),
-                md_factory.JIRAIssueFactory(id="1", project_id="1", priority_name="PR1"),
-                md_factory.JIRAIssueFactory(id="2", project_id="1", priority_name="PR1"),
+                md_factory.JIRAIssueFactory(id="1", project_id="1", priority_name="Pr1"),
+                md_factory.JIRAIssueFactory(id="2", project_id="1", priority_name="pr1"),
                 md_factory.JIRAIssueFactory(id="3", project_id="1", priority_name="PR2"),
             ]
             mdb_cleaner.add_models(*models)
@@ -317,18 +317,18 @@ class TestGenerateJIRAPRsQuery:
                 LabelFilter.empty(),
                 frozenset(),
                 frozenset(),
-                {"PR1", "PR2"},
+                {"pr1", "pr2"},
                 False,
                 False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1, 1, 2]
 
-            jira_filter = dataclasses.replace(jira_filter, priorities={"PR1"})
+            jira_filter = dataclasses.replace(jira_filter, priorities={"pr1"})
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1, 1]
 
-            jira_filter = dataclasses.replace(jira_filter, priorities={"PR2"})
+            jira_filter = dataclasses.replace(jira_filter, priorities={"pr2"})
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [2]
 
@@ -346,12 +346,12 @@ class TestGenerateJIRAPRsQuery:
             await models_insert(mdb_rw, *models)
 
             jira_filter = JIRAFilter(
-                1, ("P1",), LabelFilter.empty(), frozenset(), frozenset(), {"PR1"}, False, False,
+                1, ("P1",), LabelFilter.empty(), frozenset(), frozenset(), {"pr1"}, False, False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1]
 
-            jira_filter = dataclasses.replace(jira_filter, priorities={"PR2"})
+            jira_filter = dataclasses.replace(jira_filter, priorities={"pr2"})
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == []
 

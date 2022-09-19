@@ -73,16 +73,16 @@ class TestJIRAEntitiesMapper:
             await models_insert(mdb_rw, *models)
             mapper = await JIRAEntitiesMapper.load(DEFAULT_JIRA_ACCOUNT_ID, mdb_rw)
 
-            assert mapper.translate_priority_names(("PR1", "PR3")) == ["100", "200", "300"]
-            assert mapper.translate_priority_names(("PR1", "PR2", "PR3")) == [
+            assert mapper.translate_priority_names(("pr1", "pr3")) == ["100", "200", "300"]
+            assert mapper.translate_priority_names(("pr1", "pr2", "pr3")) == [
                 "100",
                 "200",
                 "300",
             ]
-            assert mapper.translate_priority_names(("PR1",)) == ["100", "200"]
+            assert mapper.translate_priority_names(("pr1",)) == ["100", "200"]
 
-            assert mapper.translate_types(("T1",)) == ["10", "20"]
-            assert mapper.translate_types(("T2", "T1", "T3")) == ["10", "20", "30"]
+            assert mapper.translate_types(("t1",)) == ["10", "20"]
+            assert mapper.translate_types(("t2", "t1", "t3")) == ["10", "20", "30"]
 
 
 @with_defer
