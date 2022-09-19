@@ -5,9 +5,11 @@ import pandas as pd
 from athenian.api.internal.features.metric_calculator import (
     JIRAGrouping,
     group_by_repo,
+    group_jira_facts_by_jira,
     group_pr_facts_by_jira,
 )
 from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.models.metadata.jira import Issue
 
 
 def test_group_by_repo_single_repos():
@@ -132,3 +134,66 @@ class TestGroupPRFactsByJIRA:
         return pd.DataFrame.from_records(
             data, columns=[self.PROJECTS, self.PRIORITIES, self.TYPES],
         )
+
+
+class TestGroupJIRAFactsByJIRA:
+    def test_empty_df(self) -> None:
+        df = self._make_df()
+        res = group_jira_facts_by_jira([JIRAGrouping(["p0"], None, ["t0", "t1"])], df)
+        assert len(res) == 1
+        assert_array_equal(res[0], np.array([], dtype=int))
+
+    def test_single_group(self) -> None:
+        df = self._make_df(
+            (b"p0", b"t0", None),
+            (b"p0", b"t1", b"pr0"),
+            (b"p0", b"t0", b"pr0"),
+            (b"p1", b"t1", None),
+        )
+        jira_groups = [JIRAGrouping(["p0"], types=["t0"])]
+        res = group_jira_facts_by_jira(jira_groups, df)
+        assert len(res) == 1
+        assert_array_equal(res[0], np.array([0, 2]))
+
+        jira_groups = [JIRAGrouping(["p0"], priorities=["pr0", "pr1"])]
+        res = group_jira_facts_by_jira(jira_groups, df)
+        assert len(res) == 1
+        assert_array_equal(res[0], np.array([1, 2]))
+
+        jira_groups = [JIRAGrouping(types=["t0"], priorities=["pr0", "pr1"])]
+        res = group_jira_facts_by_jira(jira_groups, df)
+        assert len(res) == 1
+        assert_array_equal(res[0], np.array([2]))
+
+    def test_multiple_groups(self) -> None:
+        df = self._make_df(
+            (b"p0", b"t0", None),
+            (b"p0", b"t1", b"pr0"),
+            (b"p0", b"t0", None),
+            (b"p0", b"t0", b"pr0"),
+            (b"p0", b"t1", None),
+            (b"p1", b"t2", b"pr0"),
+            (b"p1", b"t0", b"pr0"),
+            (b"p1", b"t0", b"pr1"),
+        )
+        jira_groups = [
+            JIRAGrouping(["p1"]),
+            JIRAGrouping(types=["t0", "t2"]),
+            JIRAGrouping(types=["t0", "t2"], priorities=["pr0"]),
+            JIRAGrouping(types=["t2"], priorities=["pr1"]),
+            JIRAGrouping(projects=["p0", "p2"], types=["t0", "t2"], priorities=["pr0"]),
+            JIRAGrouping.empty(),
+        ]
+        res = group_jira_facts_by_jira(jira_groups, df)
+        assert len(res) == 6
+        assert_array_equal(res[0], np.array([5, 6, 7]))
+        assert_array_equal(res[1], np.array([0, 2, 3, 5, 6, 7]))
+        assert_array_equal(res[2], np.array([3, 5, 6]))
+        assert_array_equal(res[3], np.array([]))
+        assert_array_equal(res[4], np.array([3]))
+        assert_array_equal(res[5], np.arange(8))
+
+    @classmethod
+    def _make_df(cls, *rows: tuple) -> pd.DataFrame:
+        columns = [Issue.project_id.name, Issue.type_id.name, Issue.priority_id.name]
+        return pd.DataFrame.from_records(rows, columns=columns).astype("S")
