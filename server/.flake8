@@ -2,7 +2,9 @@
 ignore=SFS101,SFS301,D100,D104,D301,W503,W504,E203,B023,B024,A002,A003,PIE781,PIE786,PIE787,PIE793,PIE798,PIE806
 max-line-length=99
 inline-quotes="
+exclude=athenian/api/sentry_native
 per-file-ignores=
+    athenian/api/sentry_native:
     tests/*:D
     **/__init__.py:F401
     athenian/api/models/web/__init__.py:F401

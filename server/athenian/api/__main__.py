@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import dataclasses
 from datetime import datetime, timezone
 import getpass
@@ -50,6 +51,7 @@ from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
 from athenian.api.segment import SegmentClient
+from athenian.api.sentry_native import fini as sentry_native_fini, init as sentry_native_init
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 # Global Sentry tracing sample rate override
@@ -334,7 +336,7 @@ def _init_sentry(
     flogging.trailing_dot_exceptions.add(sentry_log.name)
     sentry_sdk.init(
         environment=sentry_env,
-        dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
+        dsn=(sentry_dsn := f"https://{sentry_key}@o336028.ingest.sentry.io/{sentry_project}"),
         integrations=[
             AioHttpIntegration(transaction_style="method_and_path_pattern"),
             LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
@@ -349,7 +351,7 @@ def _init_sentry(
         max_breadcrumbs=20,
         attach_stacktrace=True,
         request_bodies="always",
-        release="%s@%s" % (metadata.__package__, metadata.__version__),
+        release=(sentry_release := f"{metadata.__package__}@{metadata.__version__}"),
         traces_sampler=sample_trace,
         before_send=before_send,
     )
@@ -364,6 +366,9 @@ def _init_sentry(
             scope.set_tag("commit", app_env.commit)
         if app_env.build_date is not None:
             scope.set_tag("build_date", app_env.build_date)
+
+    sentry_native_init(sentry_dsn, sentry_release, sentry_env)
+    atexit.register(sentry_native_fini)
     return True
 
 

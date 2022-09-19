@@ -1,4 +1,6 @@
 .idea
+.vscode
+**/.sentry-native
 /.ci
 .tours/
 

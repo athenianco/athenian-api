@@ -453,12 +453,12 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
 class LoadedJIRAReleaseDetails(LoadedJIRADetails):
     """Extra JIRA information loaded for releases."""
 
-    pr_offsets: npt.NDArray[int]
+    pr_offsets: npt.NDArray[np.uint32]
 
     @classmethod
     def _fields(cls) -> dict[str, Any]:
         dikt = super(LoadedJIRAReleaseDetails, cls)._fields()
-        dikt["pr_offsets"] = np.array([], dtype=int)
+        dikt["pr_offsets"] = np.array([], dtype=np.uint32)
         return dikt
 
 

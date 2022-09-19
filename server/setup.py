@@ -47,6 +47,7 @@ setup(
                 code_root / "to_object_arrays.pyx",
                 code_root / "unordered_unique.pyx",
                 code_root / "pandas_io.pyx",
+                code_root / "sentry_native.pyx",
                 code_root / "models" / "sql_builders.pyx",
             )
             # fmt: on
