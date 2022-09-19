@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import AccountGitHubAccount, TeamGoal
-from athenian.api.models.web import JIRAMetricID, PullRequestMetricID
+from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.align.utils import (
     align_graphql_request,
     assert_extension_error,
@@ -838,6 +838,22 @@ class TestJIRAFiltering(BaseGoalsTest):
             assert goal_22["teamGoal"]["children"][0]["team"]["id"] == 11
             # issues 11 counted
             assert goal_22["teamGoal"]["children"][0]["value"]["current"]["int"] == 1
+
+    async def test_release_metric(self, sdb: Database, mdb_rw: Database) -> None:
+        metric = ReleaseMetricID.RELEASE_COUNT
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2022, 1, 1)}
+
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric, **dates),
+            GoalFactory(id=21, metric=metric, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, jira_issue_types=["bug"]),
+            TeamGoalFactory(goal_id=21, team_id=10, jira_issue_types=["task"]),
+        )
+        res = await self._request(1, 10)
+        assert res["data"]["goals"][0]["teamGoal"]["value"]["initial"]["int"] == 6
+        assert res["data"]["goals"][1]["teamGoal"]["value"]["initial"]["int"] == 11
 
     @classmethod
     async def _update_team_goal(
