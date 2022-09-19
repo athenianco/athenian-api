@@ -857,7 +857,6 @@ class Settings:
             repo_id = self._prefixer.repo_name_to_node[repo_name.unprefixed_physical]
             values.append(
                 ReleaseSetting(
-                    repository=repo,
                     logical_name=repo_name.logical or "",
                     repo_id=repo_id,
                     account_id=self._account,

@@ -5,13 +5,20 @@ from typing import Any
 from aiohttp import ClientResponse
 from aiohttp.web_runner import GracefulExit
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, Settings
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import (
+    LogicalRepositorySettings,
+    ReleaseMatch,
+    RepositoryName,
+    Settings,
+)
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import (
     GitHubDeploymentFacts,
@@ -45,6 +52,7 @@ from tests.testutils.db import (
     model_insert_stmt,
     models_insert,
 )
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.precomputed import (
     GitHubDonePullRequestFactsFactory,
     GitHubOpenPullRequestFactsFactory,
@@ -55,7 +63,7 @@ from tests.testutils.requester import Requester
 
 
 class TestSetReleaseMatch(Requester):
-    async def test_create_release_setting(self, client, sdb, disable_default_user):
+    async def test_create_release_setting(self, client, sdb, mdb, disable_default_user):
         body = {
             "repositories": ["{1}"],
             "account": 1,
@@ -63,41 +71,31 @@ class TestSetReleaseMatch(Requester):
             "tags": ".*",
             "match": ReleaseMatchStrategy.TAG,
         }
+        prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
         response = await self._request(json=body)
-        repos = await self._validate_release_settings(body, response, sdb, True)
+        repos = await self._validate_release_settings(body, response, sdb, prefixer, True)
         assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
 
-        gitbase_row = await assert_existing_row(
-            sdb,
-            ReleaseSetting,
-            repository="github.com/src-d/gitbase",
-            logical_name="",
-        )
         # there are two rows for gitbase in api_repositories, in the big 6MB fixture
-        assert gitbase_row[ReleaseSetting.repo_id.name] in (39652769, 39652699)
-
-        await assert_existing_row(
-            sdb,
-            ReleaseSetting,
-            repository="github.com/src-d/go-git",
-            logical_name="",
-            repo_id=40550,
+        gitbase_exists = await sdb.fetch_val(
+            sa.select([1]).where(
+                ReleaseSetting.logical_name == "",
+                ReleaseSetting.repo_id.in_((39652769, 39652699)),
+            ),
         )
+        assert gitbase_exists is not None
+
+        await assert_existing_row(sdb, ReleaseSetting, logical_name="", repo_id=40550)
 
         body.update({"branches": ".*", "tags": "v.*", "match": ReleaseMatchStrategy.BRANCH})
         response = await self._request(json=body)
-        repos = await self._validate_release_settings(body, response, sdb, True)
+        repos = await self._validate_release_settings(body, response, sdb, prefixer, True)
         assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
 
-    async def test_update_existing(self, sdb, disable_default_user):
+    async def test_update_existing(self, sdb, mdb, disable_default_user):
         await models_insert(
             sdb,
-            ReleaseSettingFactory(
-                repository="github.com/src-d/go-git",
-                repo_id=40550,
-                match=ReleaseMatch.branch,
-                branches="foo",
-            ),
+            ReleaseSettingFactory(repo_id=40550, match=ReleaseMatch.branch, branches="foo"),
         )
         body = {
             "repositories": ["github.com/src-d/go-git"],
@@ -107,20 +105,20 @@ class TestSetReleaseMatch(Requester):
             "match": ReleaseMatchStrategy.TAG,
         }
 
+        prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
         response = await self._request(json=body)
-        repos = await self._validate_release_settings(body, response, sdb, True)
+        repos = await self._validate_release_settings(body, response, sdb, prefixer, True)
         assert repos == ["github.com/src-d/go-git"]
         await assert_existing_row(
             sdb,
             ReleaseSetting,
-            repository="github.com/src-d/go-git",
             repo_id=40550,
             logical_name="",
             match=ReleaseMatch.tag,
             tags="v.*",
         )
 
-    async def test_different_accounts(self, sdb, disable_default_user):
+    async def test_different_accounts(self, sdb, mdb, disable_default_user):
         body1 = {
             "repositories": ["github.com/src-d/go-git"],
             "account": 1,
@@ -148,8 +146,9 @@ class TestSetReleaseMatch(Requester):
             "match": ReleaseMatchStrategy.BRANCH,
         }
         response2 = await self._request(json=body2)
-        await self._validate_release_settings(body1, response1, sdb, False)
-        await self._validate_release_settings(body2, response2, sdb, False)
+        prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
+        await self._validate_release_settings(body1, response1, sdb, prefixer, False)
+        await self._validate_release_settings(body2, response2, sdb, prefixer, False)
 
     async def test_default_user(self):
         body1 = {
@@ -279,23 +278,13 @@ class TestSetReleaseMatch(Requester):
         response = await self._request(json=body)
         assert response.status == 200, await response.read()
         await assert_existing_row(
-            sdb,
-            ReleaseSetting,
-            repository="github.com/src-d/go-git/alpha",
-            logical_name="alpha",
-            repo_id=40550,
-            match=ReleaseMatch.event,
+            sdb, ReleaseSetting, logical_name="alpha", repo_id=40550, match=ReleaseMatch.event,
         )
 
     async def test_update_logical(self, sdb, disable_default_user):
         await models_insert(
             sdb,
-            ReleaseSettingFactory(
-                repository="github.com/src-d/go-git/alpha",
-                repo_id=40550,
-                logical_name="alpha",
-                match=ReleaseMatch.branch,
-            ),
+            ReleaseSettingFactory(repo_id=40550, logical_name="alpha", match=ReleaseMatch.branch),
         )
 
         body = {
@@ -308,12 +297,7 @@ class TestSetReleaseMatch(Requester):
         response = await self._request(json=body)
         assert response.status == 200, await response.read()
         await assert_existing_row(
-            sdb,
-            ReleaseSetting,
-            repository="github.com/src-d/go-git/alpha",
-            logical_name="alpha",
-            repo_id=40550,
-            match=ReleaseMatch.event,
+            sdb, ReleaseSetting, logical_name="alpha", repo_id=40550, match=ReleaseMatch.event,
         )
 
     async def test_logical_fail(
@@ -345,21 +329,27 @@ class TestSetReleaseMatch(Requester):
             ),
         )
 
-    async def _validate_release_settings(self, body, response, sdb, exhaustive: bool):
+    async def _validate_release_settings(self, body, response, sdb, prefixer, exhaustive: bool):
         assert response.status == 200
-        repos = json.loads((await response.read()).decode("utf-8"))
+        repos = await response.json()
         assert len(repos) > 0
         assert repos[0].startswith("github.com/")
         df = await read_sql_query(
             select(ReleaseSetting),
             sdb,
             ReleaseSetting,
-            index=[ReleaseSetting.repository.name, ReleaseSetting.account_id.name],
+            index=[
+                ReleaseSetting.repo_id.name,
+                ReleaseSetting.logical_name.name,
+                ReleaseSetting.account_id.name,
+            ],
         )
         if exhaustive:
             assert len(df) == len(repos)
         for r in repos:
-            s = df.loc[r, body["account"]]
+            name = RepositoryName.from_prefixed(r)
+            repo_id = prefixer.repo_name_to_node[name.unprefixed]
+            s = df.loc[(repo_id, name.logical or "", body["account"])]
             assert s["branches"] == body["branches"]
             assert s["tags"] == body["tags"]
             assert s["match"] == (body["match"] == ReleaseMatchStrategy.TAG)
@@ -1439,12 +1429,10 @@ class TestSetLogicalRepository(Requester):
         await models_insert(
             sdb,
             ReleaseSettingFactory(
-                repository="github.com/src-d/go-git/alpha",
                 repo_id=40550,
                 logical_name="alpha",
                 branches="master",
                 tags="v.*",
-                events=".*",
                 match=ReleaseMatch.tag,
             ),
         )
@@ -1457,13 +1445,7 @@ class TestSetLogicalRepository(Requester):
             "releases": {"branches": "master", "tags": "v.*", "match": "tag", "events": ".*"},
         }
         await self._request(json=body)
-        await assert_existing_row(
-            sdb,
-            ReleaseSetting,
-            repository="github.com/src-d/go-git/alpha",
-            logical_name="alpha",
-            repo_id=40550,
-        )
+        await assert_existing_row(sdb, ReleaseSetting, logical_name="alpha", repo_id=40550)
 
     @pytest.mark.app_validate_responses(False)
     async def test_clean_deployments(self, sdb, logical_settings_db, pdb) -> None:
@@ -1560,7 +1542,6 @@ class TestSetLogicalRepository(Requester):
         await assert_existing_row(
             sdb,
             ReleaseSetting,
-            repository="github.com/src-d/go-git/alpha",
             logical_name="alpha",
             repo_id=40550,
             branches="master",
