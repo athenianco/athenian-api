@@ -382,7 +382,7 @@ class TestBatchCalcPullRequestMetrics:
 
         await wait_deferred()
         batch_calc_res = await calculator.batch_calc_pull_request_metrics_line_github(
-            requests, **base_kwargs,
+            requests, jira_acc_id=None, **base_kwargs,
         )
         batched_res_values = [req_res[0][0][0][0].value for req_res in batch_calc_res]
         for i in range(len(requests)):
@@ -431,6 +431,7 @@ class TestBatchCalcPullRequestMetrics:
             exclude_inactive=False,
             bots=set(),
             fresh=False,
+            jira_acc_id=None,
             **shared_kwargs,
         )
 

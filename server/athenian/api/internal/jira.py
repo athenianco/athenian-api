@@ -7,7 +7,7 @@ import logging
 import marshal
 import pickle
 import re
-from typing import Iterable, NamedTuple, Optional
+from typing import Iterable, NamedTuple, Optional, TypeVar
 
 import aiomcache
 from names_matcher import NamesMatcher
@@ -65,11 +65,7 @@ async def get_jira_id(
     jira_id = await sdb.fetch_val(
         select(AccountJiraInstallation.id).where(AccountJiraInstallation.account_id == account),
     )
-    if jira_id is None:
-        raise ResponseError(
-            NoSourceDataError(detail="JIRA has not been installed to the metadata yet."),
-        )
-    return jira_id
+    return check_jira_installation(jira_id)
 
 
 class JIRAConfig(NamedTuple):
@@ -171,6 +167,18 @@ async def get_jira_installation_or_none(
         return await get_jira_installation(account, sdb, mdb, cache)
     except ResponseError:
         return None
+
+
+JIRAConfOrID = TypeVar("JIRAConfOrID", bound=int | JIRAConfig)
+
+
+def check_jira_installation(jira: Optional[JIRAConfOrID]) -> JIRAConfOrID:
+    """Check the JIRAConfig or account id, raise exception if it is None."""
+    if jira is None:
+        raise ResponseError(
+            NoSourceDataError(detail="JIRA has not been installed to the metadata yet."),
+        )
+    return jira
 
 
 class JIRAEntitiesMapper:

@@ -25,6 +25,12 @@ from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.db import Row
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.jira import (
+    JIRAConfig,
+    check_jira_installation,
+    get_jira_installation_or_none,
+)
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
@@ -45,7 +51,7 @@ async def resolve_goals(
     **kwargs,
 ) -> Any:
     """Serve goals() query."""
-    team_rows, meta_ids = await gather(
+    team_rows, meta_ids, jira_config = await gather(
         fetch_teams_recursively(
             accountId,
             info.context.sdb,
@@ -54,8 +60,10 @@ async def resolve_goals(
             root_team_ids=None if teamId == 0 else [teamId],
         ),
         get_metadata_account_ids(accountId, info.context.sdb, info.context.cache),
+        get_jira_installation_or_none(
+            accountId, info.context.sdb, info.context.mdb, info.context.cache,
+        ),
     )
-
     team_tree = build_team_tree_from_rows(team_rows, None if teamId == 0 else teamId)
     team_member_map = flatten_teams(team_rows)
     team_ids = [row[Team.id.name] for row in team_rows]
@@ -69,11 +77,15 @@ async def resolve_goals(
     # iter all team goal rows, grouped by goal, to build _GoalToServe object for the goal
     for _, group_team_goal_rows_iter in groupby(team_goal_rows, itemgetter(Goal.id.name)):
         goal_team_goal_rows = list(group_team_goal_rows_iter)
-        goals_to_serve.append(
-            _GoalToServe(
-                goal_team_goal_rows, team_tree, team_member_map, prefixer, onlyWithTargets,
-            ),
+        goal_to_serve = _GoalToServe(
+            goal_team_goal_rows,
+            team_tree,
+            team_member_map,
+            prefixer,
+            onlyWithTargets,
+            jira_config,
         )
+        goals_to_serve.append(goal_to_serve)
 
     all_metric_values = await calculate_team_metrics(
         [g.request for g in goals_to_serve],
@@ -85,6 +97,7 @@ async def resolve_goals(
         rdb=info.context.rdb,
         cache=info.context.cache,
         slack=info.context.app["slack"],
+        unchecked_jira_config=jira_config,
     )
     return [to_serve.build_goal_tree(all_metric_values).to_dict() for to_serve in goals_to_serve]
 
@@ -99,11 +112,12 @@ class _GoalToServe:
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
         only_with_targets: bool,
+        jira_config: Optional[JIRAConfig],
     ):
         self._team_goal_rows = team_goal_rows
         self._prefixer = prefixer
         self._request, self._goal_team_tree = self._team_goal_rows_to_request(
-            team_goal_rows, team_tree, team_member_map, prefixer, only_with_targets,
+            team_goal_rows, team_tree, team_member_map, prefixer, jira_config, only_with_targets,
         )
 
     @property
@@ -129,6 +143,7 @@ class _GoalToServe:
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
+        unchecked_jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
     ) -> tuple[TeamMetricsRequest, TeamTree]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
@@ -165,13 +180,39 @@ class _GoalToServe:
             if repositories is not None:
                 repo_names = resolve_goal_repositories(repositories, prefixer)
                 repositories = tuple(name.unprefixed for name in repo_names)
-            # add more filters here: team_goal_row[columns[TeamGoal.jira_projects.name]] etc.
+
+            jira_projects = team_goal_row[columns[TeamGoal.jira_projects.name]]
+            jira_priorities = team_goal_row[columns[TeamGoal.jira_priorities.name]]
+            jira_issue_types = team_goal_row[columns[TeamGoal.jira_issue_types.name]]
+
+            if jira_projects or jira_priorities or jira_issue_types:
+                jira_config = check_jira_installation(unchecked_jira_config)
+                if jira_projects:
+                    jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
+                    custom_projects = True
+                else:
+                    jira_projects = frozenset(jira_config.projects)
+                    custom_projects = False
+                jira_filter = JIRAFilter(
+                    jira_config.acc_id,
+                    jira_projects,
+                    LabelFilter.empty(),
+                    frozenset(),
+                    frozenset(jira_issue_types or ()),
+                    frozenset(jira_priorities or ()),
+                    custom_projects,
+                    False,
+                )
+            else:
+                jira_filter = JIRAFilter.empty()
+
             requested_teams.append(
                 RequestedTeamDetails(
                     team_id=team_id,
                     goal_id=goal_id,
                     members=team_member_map[team_id],
                     repositories=repositories,
+                    jira_filter=jira_filter,
                 ),
             )
 
