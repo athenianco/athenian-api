@@ -38,7 +38,6 @@ from athenian.api.models.web import (
     ReleaseMatchStrategy,
     WorkType as WebWorkType,
 )
-from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from tests.testutils.db import (
     assert_existing_row,
@@ -433,22 +432,6 @@ async def test_get_release_match_settings_nasty_input(client, headers, sdb, acco
         method="GET", path="/v1/settings/release_match/%d" % account, headers=headers,
     )
     assert response.status == code
-
-
-async def test_get_release_match_settings_logical_fail(sdb, mdb, logical_settings_db):
-    settings = Settings.from_account(1, sdb, mdb, None, None)
-    with pytest.raises(ResponseError, match="424"):
-        await settings.list_release_matches(["github.com/src-d/go-git/alpha"])
-
-
-async def test_get_release_match_settings_logical_success(
-    sdb,
-    mdb,
-    logical_settings_db,
-    release_match_setting_tag_logical_db,
-):
-    settings = Settings.from_account(1, sdb, mdb, None, None)
-    await settings.list_release_matches(["github.com/src-d/go-git/alpha"])
 
 
 JIRA_PROJECTS = [
