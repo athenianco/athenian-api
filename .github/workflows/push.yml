@@ -43,7 +43,7 @@ jobs:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: false
     - name: actions/cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-static-checks-${{ hashFiles('server/requirements-lint.txt') }}
@@ -105,23 +105,30 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
-    - name: actions/cache
-      uses: actions/cache@v2
+    - name: cache pip
+      uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-custom-checks-
+    - name: cache libsentry
+      uses: actions/cache@v3
+      with:
+        path: /usr/local/lib/libsentry.so /usr/local/include/sentry.h
+        key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
     - name: pip
       run: |
         set -x
-        sudo apt-get update
-        sudo apt-get install -y libcurl4-gnutls-dev
-        cd server/athenian/api/sentry_native
-        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build --parallel
-        sudo cmake --install build
-        rm -rf *
-        cd -
+        if [ ! -e /usr/local/include/sentry.h ]; then 
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-gnutls-dev
+          cd server/athenian/api/sentry_native
+          cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build --parallel
+          sudo cmake --install build
+          rm -rf *
+          cd -
+        fi
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
@@ -208,12 +215,17 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
-    - name: actions/cache pip
-      uses: actions/cache@v2
+    - name: cache pip
+      uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-main-
+    - name: cache libsentry
+      uses: actions/cache@v3
+      with:
+        path: /usr/local/lib/libsentry.so /usr/local/include/sentry.h
+        key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
     - name: godotenv
       run: |
         set -x
@@ -225,14 +237,16 @@ jobs:
     - name: pip
       run: |
         set -x
-        sudo apt-get update
-        sudo apt-get install -y libcurl4-gnutls-dev
-        cd server/athenian/api/sentry_native
-        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build --parallel
-        sudo cmake --install build
-        rm -rf *
-        cd -
+        if [ ! -e /usr/local/include/sentry.h ]; then 
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-gnutls-dev
+          cd server/athenian/api/sentry_native
+          cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build --parallel
+          sudo cmake --install build
+          rm -rf *
+          cd -
+        fi
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
@@ -473,12 +487,12 @@ jobs:
     - uses: satackey/action-docker-layer-caching@v0.0.11
       continue-on-error: true
     - name: actions/cache google-cloud-sdk
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/google-cloud-sdk
         key: ubuntu-22.04-google-cloud-sdk
     - name: actions/cache godotenv
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/.local/bin/godotenv
         key: ubuntu-22.04-godotenv
