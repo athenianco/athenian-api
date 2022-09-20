@@ -131,11 +131,11 @@ jobs:
         cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
         cmake --build build --parallel
         sudo cmake --install build
-        rm -rf *
         cd -
     - name: pip
       run: |
         set -x
+        rm -rf server/athenian/api/sentry_native/*
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
@@ -248,7 +248,6 @@ jobs:
         cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
         cmake --build build --parallel
         sudo cmake --install build
-        rm -rf *
         cd -
     - name: godotenv
       run: |
@@ -261,6 +260,7 @@ jobs:
     - name: pip
       run: |
         set -x
+        rm -rf server/athenian/api/sentry_native/*
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
