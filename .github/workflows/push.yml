@@ -111,6 +111,8 @@ jobs:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-custom-checks-
+    - name: chown /usr/local
+      run: sudo chown $(whoami) /usr/local/lib /usr/local/include
     - name: cache libsentry
       id: cache-libsentry
       uses: actions/cache@v3
@@ -226,6 +228,8 @@ jobs:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-main-
+    - name: chown /usr/local
+      run: sudo chown $(whoami) /usr/local/lib /usr/local/include
     - name: cache libsentry
       id: cache-libsentry
       uses: actions/cache@v3

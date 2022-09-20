@@ -2114,10 +2114,9 @@ async def test_store_open_pull_request_facts_smoke(
     assert true_dict == loaded_facts
 
     loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
-        dfs.prs.index.get_level_values(0),
+        dfs.prs.index,
         datetime(2016, 1, 1),
         datetime(2020, 1, 1),
-        {"src-d/go-git"},
         True,
         authors,
         1,
@@ -2128,10 +2127,9 @@ async def test_store_open_pull_request_facts_smoke(
         assert facts.author == authors[node_id]
     assert true_dict == loaded_facts
     loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
-        dfs.prs.index.get_level_values(0),
+        dfs.prs.index,
         datetime(2019, 11, 1),
         datetime(2020, 1, 1),
-        {"src-d/go-git"},
         True,
         authors,
         1,

@@ -191,15 +191,18 @@ class UnfreshPullRequestFactsFetcher:
         assert with_labels == (unreleased_labels is not None)
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
         unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
-        open_prs = unique_unreleased_pr_node_ids[unmerged_mask]
         open_pr_authors = dict(
-            zip(open_prs, unreleased_prs[PullRequest.user_login.name].values[unmerged_mask]),
+            zip(
+                unique_unreleased_pr_node_ids[unmerged_mask],
+                unreleased_prs[PullRequest.user_login.name].values[unmerged_mask],
+            ),
         )
         unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings,
         )
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
         merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
+        open_prs = unreleased_prs.index.take(np.flatnonzero(~merged_mask))
         merged_prs = unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(
             inactive_merged_prs,
         )
@@ -208,7 +211,6 @@ class UnfreshPullRequestFactsFetcher:
                 open_prs,
                 time_from,
                 time_to,
-                repositories,
                 exclude_inactive,
                 open_pr_authors,
                 account,
