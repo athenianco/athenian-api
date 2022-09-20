@@ -45,7 +45,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     cd / && \
     rm -rf /cpython && \
     apt-mark hold python3.10 python3.10-minimal libpython3.10 libpython3.10-minimal && \
-    pip3 install --no-cache-dir cython>=0.29.30 && \
+    pip3 install --no-cache-dir 'cython>=0.29.30' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

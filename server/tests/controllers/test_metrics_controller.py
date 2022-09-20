@@ -13,7 +13,7 @@ from athenian.api.internal.miners.github import developer
 from athenian.api.internal.miners.github.release_mine import mine_releases, override_first_releases
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
-from athenian.api.models.state.models import ReleaseSetting, Team
+from athenian.api.models.state.models import Team
 from athenian.api.models.web import (
     CalculatedCodeCheckMetrics,
     CalculatedDeploymentMetric,
@@ -30,6 +30,8 @@ from athenian.api.models.web import (
     ReleaseMetricID,
 )
 from athenian.api.serialization import FriendlyJson
+from tests.testutils.db import models_insert
+from tests.testutils.factory.state import ReleaseSettingFactory
 from tests.testutils.requester import Requester
 
 
@@ -1018,34 +1020,24 @@ class TestCalcMetricsPRs(Requester):
 
     @pytest.mark.app_validate_responses(False)
     async def test_logical_dupes(self, logical_settings_db, sdb):
-        await sdb.execute(
-            insert(ReleaseSetting).values(
-                ReleaseSetting(
-                    repository="github.com/src-d/go-git/alpha",
-                    account_id=1,
-                    branches="master",
-                    tags=".*",
-                    events=".*",
-                    match=ReleaseMatch.tag,
-                )
-                .create_defaults()
-                .explode(with_primary_keys=True),
+        await models_insert(
+            sdb,
+            ReleaseSettingFactory(
+                repository="github.com/src-d/go-git/alpha",
+                branches="master",
+                match=ReleaseMatch.tag,
+                repo_id=40550,
+                logical_name="alpha",
+            ),
+            ReleaseSettingFactory(
+                repository="github.com/src-d/go-git/beta",
+                branches="master",
+                match=ReleaseMatch.tag,
+                repo_id=40550,
+                logical_name="beta",
             ),
         )
-        await sdb.execute(
-            insert(ReleaseSetting).values(
-                ReleaseSetting(
-                    repository="github.com/src-d/go-git/beta",
-                    account_id=1,
-                    branches="master",
-                    tags=".*",
-                    events=".*",
-                    match=ReleaseMatch.tag,
-                )
-                .create_defaults()
-                .explode(with_primary_keys=True),
-            ),
-        )
+
         body = {
             "for": [
                 {
