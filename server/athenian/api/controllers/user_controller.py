@@ -50,14 +50,11 @@ from athenian.api.models.web import (
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
-from athenian.api.sentry_native import crash
 from athenian.api.serialization import deserialize_datetime
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
-    if request.uid == "github|2793551":
-        crash()
     user = await request.user()
     user.accounts = await load_user_accounts(
         user.id,

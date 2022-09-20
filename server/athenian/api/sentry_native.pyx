@@ -34,10 +34,5 @@ def init(str dsn not None, str release not None, str env not None) -> None:
     sentry_init(options)
 
 
-def crash():
-    cdef int *ptr = NULL
-    ptr[100] = 100500
-
-
 def fini():
     sentry_close()
