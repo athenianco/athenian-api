@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from itertools import repeat
 from typing import Collection, Iterable, Mapping, Set, Tuple
 
 import morcilla
@@ -7,8 +8,9 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, case, select
 
+from athenian.api.async_utils import read_sql_query
 from athenian.api.db import dialect_specific_insert
-from athenian.api.internal.logical_repos import drop_logical_repo
+from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.miners.github.precomputed_prs.utils import (
     append_activity_days_filter,
     collect_activity_days,
@@ -21,6 +23,7 @@ from athenian.api.internal.miners.types import (
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 class OpenPRFactsLoader:
@@ -89,12 +92,11 @@ class OpenPRFactsLoader:
     @sentry_span
     async def load_open_pull_request_facts_unfresh(
         cls,
-        prs: Iterable[int],
+        prs: pd.Index,
         time_from: datetime,
         time_to: datetime,
-        repositories: Collection[str],
         exclude_inactive: bool,
-        authors: Mapping[str, str],
+        authors: Mapping[int, str],
         account: int,
         pdb: morcilla.Database,
     ) -> PullRequestFactsMap:
@@ -110,9 +112,10 @@ class OpenPRFactsLoader:
         ghoprf = GitHubOpenPullRequestFacts
         selected = {ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data}
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+        prs_repos_bytes = prs.get_level_values(1).values.astype("S")
         filters = [
-            ghoprf.pr_node_id.in_(prs),
-            ghoprf.repository_full_name.in_(repositories),
+            ghoprf.pr_node_id.in_(prs.get_level_values(0).unique()),
+            ghoprf.repository_full_name.in_(unordered_unique(prs_repos_bytes)),
             ghoprf.format_version == default_version,
             ghoprf.acc_id == account,
         ]
@@ -121,37 +124,47 @@ class OpenPRFactsLoader:
                 time_from, time_to, selected, filters, ghoprf.activity_days, postgres,
             )
         selected = sorted(selected, key=lambda i: i.key)
-        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
-        if not rows:
+        df = await read_sql_query(select(selected).where(*filters), pdb, selected)
+        if df.empty:
             return {}
+        haystack = np.char.add(
+            int_to_str(df[ghoprf.pr_node_id.name].values),
+            df[ghoprf.repository_full_name.name].values.astype("S"),
+        )
+        needle = np.char.add(int_to_str(prs.get_level_values(0).values), prs_repos_bytes)
+        matched_mask = in1d_str(haystack, needle, skip_leading_zeros=True)
+        fetched_node_ids = df[ghoprf.pr_node_id.name].values
+        fetched_repos = df[ghoprf.repository_full_name.name].values
+        fetched_datas = df[ghoprf.data.name].values
+        if exclude_inactive and not postgres:
+            fetched_activity_days = df[ghoprf.activity_days.name].values
+        else:
+            fetched_activity_days = repeat(True)
+        if not matched_mask.all():
+            fetched_node_ids = fetched_node_ids[matched_mask]
+            fetched_repos = fetched_repos[matched_mask]
+            fetched_datas = fetched_datas[matched_mask]
+            if not postgres:
+                fetched_activity_days = fetched_activity_days[matched_mask]
         facts = {}
-        remove_physical = set()
-        for row in rows:
+        for node_id, repo, data, activity_days in zip(
+            fetched_node_ids, fetched_repos, fetched_datas, fetched_activity_days,
+        ):
             if exclude_inactive and not postgres:
                 activity_days = {
                     datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                    for d in row[ghoprf.activity_days.name]
+                    for d in activity_days
                 }
                 if not activity_days.intersection(date_range):
                     continue
-            node_id = row[ghoprf.pr_node_id.name]
-            repo = row[ghoprf.repository_full_name.name]
-            physical_repo = drop_logical_repo(repo)
-            if physical_repo != repo and physical_repo in repositories:
-                remove_physical.add((node_id, physical_repo))
             facts[(node_id, repo)] = PullRequestFacts(
-                data=row[ghoprf.data.name],
+                data=data,
                 node_id=node_id,
                 repository_full_name=repo,
                 author=authors.get(node_id, ""),
                 merger="",
                 releaser="",
             )
-        for pair in remove_physical:
-            try:
-                del facts[pair]
-            except KeyError:
-                continue
         return facts
 
     @classmethod
