@@ -164,3 +164,8 @@ async def parse_request_repositories(
         return dump_goal_repositories(prefixer.prefixed_repo_names_to_identities(repo_names))
     except ValueError as e:
         raise ResponseError(InvalidRequestError(".repositories", str(e)))
+
+
+async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate the metrics for the goal tree."""
+    raise NotImplementedError()
