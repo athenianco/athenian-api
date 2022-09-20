@@ -392,18 +392,14 @@ async def test_get_release_match_settings_defaults(client, headers):
 
 
 async def test_get_release_match_settings_existing(client, headers, sdb):
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git",
-                account_id=1,
-                branches="master",
-                tags="v.*",
-                events=".*",
-                match=ReleaseMatch.tag,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            repo_id=40550,
+            branches="master",
+            tags="v.*",
+            match=ReleaseMatch.tag,
+            repository="github.com/src-d/go-git",
         ),
     )
     response = await client.request(

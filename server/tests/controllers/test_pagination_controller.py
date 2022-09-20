@@ -2,11 +2,11 @@ from datetime import date
 import json
 
 import pytest
-from sqlalchemy import insert
 
 from athenian.api.internal.settings import ReleaseMatch
-from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import PullRequestPaginationPlan, PullRequestStage
+from tests.testutils.db import models_insert
+from tests.testutils.factory.state import ReleaseSettingFactory
 
 
 # TODO: fix response validation against the schema
@@ -222,21 +222,17 @@ async def test_paginate_prs_empty(client, headers):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_paginate_prs_same_day(client, headers, sdb):
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git",
-                account_id=1,
-                branches="",
-                tags=".*",
-                events=".*",
-                match=ReleaseMatch.tag,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            repo_id=40550,
+            branches="",
+            tags=".*",
+            match=ReleaseMatch.tag,
+            repository="github.com/src-d/go-git",
         ),
     )
-    print("filter", flush=True)
+
     main_request = {
         "date_from": "2015-10-23",
         "date_to": "2015-10-23",
@@ -251,7 +247,6 @@ async def test_paginate_prs_same_day(client, headers, sdb):
     )
     assert response.status == 200
     await response.read()
-    print("paginate", flush=True)
     body = {
         "request": main_request,
         "batch": 5,

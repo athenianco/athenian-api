@@ -23,7 +23,7 @@ from athenian.api.models.persistentdata.models import (
     ReleaseNotification,
 )
 from athenian.api.models.precomputed.models import GitHubRelease
-from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
+from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import (
     CommitsList,
     DeployedComponent,
@@ -43,22 +43,19 @@ from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
+from tests.testutils.db import models_insert
+from tests.testutils.factory.state import ReleaseSettingFactory
 
 
 @pytest.fixture(scope="function")
 async def with_event_releases(sdb, rdb):
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git",
-                account_id=1,
-                branches="master",
-                tags=".*",
-                events=".*",
-                match=ReleaseMatch.event.value,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            repo_id=40550,
+            branches="master",
+            match=ReleaseMatch.event.value,
+            repository="github.com/src-d/go-git",
         ),
     )
     await rdb.execute(
@@ -216,20 +213,16 @@ async def test_filter_repositories_exclude_inactive_cache(client, headers, clien
 
 @pytest.mark.filter_repositories
 async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
-    await sdb.execute(
-        insert(ReleaseSetting).values(
-            ReleaseSetting(
-                repository="github.com/src-d/go-git",
-                account_id=1,
-                branches="master",
-                tags=".*",
-                events=".*",
-                match=ReleaseMatch.branch.value,
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            repo_id=40550,
+            branches="master",
+            match=ReleaseMatch.branch.value,
+            repository="github.com/src-d/go-git",
         ),
     )
+
     await pdb.execute(
         insert(GitHubRelease).values(
             GitHubRelease(
