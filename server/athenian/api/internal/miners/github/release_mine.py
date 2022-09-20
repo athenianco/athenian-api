@@ -245,7 +245,6 @@ def _triage_flags(
         else "",
     ),
     postprocess=_triage_flags,
-    version=2,
 )
 async def _mine_releases(
     repos: Collection[str],

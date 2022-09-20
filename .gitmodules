@@ -4,3 +4,7 @@
 [submodule "server/athenian/api/align/spec"]
 	path = server/athenian/api/align/spec
 	url = https://github.com/athenianco/private-api-spec
+[submodule "server/athenian/api/sentry_native"]
+	path = server/athenian/api/sentry_native
+	url = https://github.com/getsentry/sentry-native
+	ignore = dirty
