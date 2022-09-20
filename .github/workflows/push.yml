@@ -112,23 +112,28 @@ jobs:
         key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-custom-checks-
     - name: cache libsentry
+      id: cache-libsentry
       uses: actions/cache@v3
       with:
-        path: /usr/local/lib/libsentry.so /usr/local/include/sentry.h
+        path: |
+          /usr/local/lib/libsentry.so
+          /usr/local/include/sentry.h
         key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
+    - name: sentry-native
+      if: steps.cache-libsentry.outputs.cache-hit != 'true'
+      run: |
+        set -x
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-gnutls-dev
+        cd server/athenian/api/sentry_native
+        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
+        cmake --build build --parallel
+        sudo cmake --install build
+        rm -rf *
+        cd -
     - name: pip
       run: |
         set -x
-        if [ ! -e /usr/local/include/sentry.h ]; then 
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-gnutls-dev
-          cd server/athenian/api/sentry_native
-          cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-          cmake --build build --parallel
-          sudo cmake --install build
-          rm -rf *
-          cd -
-        fi
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
@@ -222,10 +227,25 @@ jobs:
         key: ubuntu-22.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-main-
     - name: cache libsentry
+      id: cache-libsentry
       uses: actions/cache@v3
       with:
-        path: /usr/local/lib/libsentry.so /usr/local/include/sentry.h
+        path: |
+          /usr/local/lib/libsentry.so
+          /usr/local/include/sentry.h
         key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
+    - name: sentry-native
+      if: steps.cache-libsentry.outputs.cache-hit != 'true'
+      run: |
+        set -x
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-gnutls-dev
+        cd server/athenian/api/sentry_native
+        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
+        cmake --build build --parallel
+        sudo cmake --install build
+        rm -rf *
+        cd -
     - name: godotenv
       run: |
         set -x
@@ -237,16 +257,6 @@ jobs:
     - name: pip
       run: |
         set -x
-        if [ ! -e /usr/local/include/sentry.h ]; then 
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-gnutls-dev
-          cd server/athenian/api/sentry_native
-          cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-          cmake --build build --parallel
-          sudo cmake --install build
-          rm -rf *
-          cd -
-        fi
         python3 -m pip install --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
