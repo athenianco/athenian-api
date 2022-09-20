@@ -512,6 +512,7 @@ jobs:
         GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
         make pubsub-publish
         docker tag $IMAGE us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api
+        docker run --rm --env-file .env --entrypoint /server/submit_debug_info.sh $IMAGE
         IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api make docker-push
         godotenv -s sentry-cli releases finalize $current_version
     - name: clear env
