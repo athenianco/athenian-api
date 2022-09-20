@@ -72,6 +72,7 @@ from athenian.api.internal.features.metric_calculator import (
     group_by_repo,
     group_jira_facts_by_jira,
     group_pr_facts_by_jira,
+    group_release_facts_by_jira,
     group_to_indexes,
 )
 from athenian.api.internal.jira import JIRAConfig, JIRAEntitiesMapper
@@ -874,6 +875,7 @@ class MetricEntriesCalculator:
         prefixer: Prefixer,
         branches: pd.DataFrame,
         default_branches: dict[str, str],
+        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for release metrics.
 
@@ -893,6 +895,9 @@ class MetricEntriesCalculator:
             t.participants for request in requests for t in request.teams
         )
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
+        convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+        )
         jira_filter = reduce(operator.or_, jira_filters)
 
         df_facts, _, _, _ = await mine_releases(
@@ -915,29 +920,26 @@ class MetricEntriesCalculator:
             self._cache,
             with_avatars=False,
             with_pr_titles=False,
+            with_jira=self._get_jira_entities_to_fetch(jira_filters, ()),
         )
 
         results = []
         for request in requests:
-            groups = np.empty(len(request.teams), dtype=object)
-            group = np.empty(len(df_facts), dtype=np.uint8)
-            for i, group_by_filter in enumerate(
-                zip(
-                    group_by_repo(
-                        Release.repository_full_name.name,
-                        [t.repositories for t in request.teams],
-                        df_facts,
-                    ),
-                    group_releases_by_participants(
-                        [t.participants for t in request.teams],
-                        df_facts,
-                    ),
+            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
+            group_by = [
+                group_by_repo(
+                    Release.repository_full_name.name,
+                    [t.repositories for t in request.teams],
+                    df_facts,
                 ),
-            ):
-                group[:] = 0
-                for g in group_by_filter:
-                    group[g] += 1
-                groups[i] = np.flatnonzero(group == len(group_by_filter))
+                group_releases_by_participants(
+                    [t.participants for t in request.teams],
+                    df_facts,
+                ),
+                group_release_facts_by_jira(jira_grouping, df_facts),
+            ]
+            groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
+
             dedupe_mask = calculate_logical_release_duplication_mask(
                 df_facts, release_settings, logical_settings,
             )

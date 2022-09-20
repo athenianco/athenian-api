@@ -388,9 +388,10 @@ class TestJIRAFiltering(BaseMetricsTest):
             models = [
                 md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
                 md_factory.JIRAIssueFactory(
-                    id="20", project_id="0", type="t0", priority_name="extreme",
+                    id="20", project_id="0", type_id="0", type="t0", priority_name="extreme",
                 ),
                 md_factory.JIRAProjectFactory(id="0", key="P0"),
+                md_factory.JIRAIssueTypeFactory(id="0", name="t0"),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)

@@ -560,7 +560,7 @@ class TestBatchCalcReleaseMetrics:
         await wait_deferred()
 
         batched_calc_res = await calculator.batch_calc_release_metrics_line_github(
-            requests, quantiles=[0, 1], **shared_kwargs,
+            requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
         )
 
         release_prs = global_calc_res[0][0][0][0][0]
@@ -604,7 +604,7 @@ class TestBatchCalcReleaseMetrics:
 
         calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
         first_res = await calculator.batch_calc_release_metrics_line_github(
-            requests, quantiles=[0, 1], **shared_kwargs,
+            requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
         )
         await wait_deferred()
 
@@ -612,7 +612,7 @@ class TestBatchCalcReleaseMetrics:
             f"{MetricEntriesCalculator.__module__}.mine_releases", wraps=mine_releases,
         ) as mine_mock:
             second_res = await calculator.batch_calc_release_metrics_line_github(
-                requests, quantiles=[0, 1], **shared_kwargs,
+                requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
             )
 
         mine_mock.assert_not_called()

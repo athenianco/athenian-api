@@ -1072,6 +1072,14 @@ def group_pr_facts_by_jira(
     return res
 
 
+group_release_facts_by_jira = group_pr_facts_by_jira
+"""Build the groups according to the JIRA information expressed by the `jira_groups`.
+
+`df` is the dataframe built from `ReleaseFacts` structs.
+
+"""
+
+
 def group_jira_facts_by_jira(
     jira_groups: Sequence[JIRAGrouping],
     df: pd.Dataframe,
