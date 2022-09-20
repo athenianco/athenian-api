@@ -133,16 +133,17 @@ RUN apt-get update && \
 ADD server /server
 ADD README.md /
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4-gnutls-dev && \
-    echo "Installing Python packages" && \
+    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev && \
+    echo "Building Sentry Native" && \
     cd /server/athenian/api/sentry_native && \
     cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo && \
     cmake --build build --parallel && \
     cmake --install build && \
-    rm -rf build && \
+    rm -rf build /usr/local/lib/cmake && \
     cd - && \
+    echo "Installing Python packages" && \
     pip3 install --no-deps -e /server && \
-    apt-get purge -y gcc g++ cmake make libcurl4-gnutls-dev && \
+    apt-get purge -y gcc g++ cmake make libcurl4-openssl-dev libssl-dev && \
     apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
     apt-get clean
