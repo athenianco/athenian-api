@@ -46,8 +46,10 @@ async def filter_epics(
     """
     # filter the epics according to the passed filters
     candidate_types = jira_ids.epic_candidate_types()
-    if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
-        extra_columns = (*extra_columns, Issue.project_id)
+    if candidate_types != {"epic"}:
+        for col in (Issue.project_id, Issue.type):
+            if col not in extra_columns:
+                extra_columns = (*extra_columns, col)
     if Issue.epic_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.epic_id)
     jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
