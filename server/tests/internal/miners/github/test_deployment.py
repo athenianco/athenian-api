@@ -8,7 +8,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import and_, delete, func, insert, select
+from sqlalchemy import delete, func, insert, select
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
@@ -36,6 +36,7 @@ from athenian.api.models.precomputed.models import (
 )
 from tests.conftest import get_default_branches, get_release_match_setting_tag
 from tests.testutils.db import assert_missing_row, count, models_insert
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.persistentdata import (
     DeployedComponentFactory,
     DeploymentNotificationFactory,
@@ -5330,16 +5331,11 @@ async def test_invalidate_newer_deploys_in_pdb_different_envs(
 
 async def _validate_deployed_prs(pdb: morcilla.Database) -> None:
     rows = await pdb.fetch_all(
-        select([GitHubPullRequestDeployment.pull_request_id])
+        select(GitHubPullRequestDeployment.pull_request_id)
         .where(
-            and_(
-                GitHubPullRequestDeployment.deployment_name.like("production_%"),
-                GitHubPullRequestDeployment.deployment_name.notin_(
-                    [
-                        "production_2018_01_10",
-                        "production_2018_01_12",
-                    ],
-                ),
+            GitHubPullRequestDeployment.deployment_name.like("production_%"),
+            GitHubPullRequestDeployment.deployment_name.notin_(
+                ["production_2018_01_10", "production_2018_01_12"],
             ),
         )
         .group_by(GitHubPullRequestDeployment.pull_request_id)
@@ -5649,6 +5645,25 @@ class TestHideOutlierFirstDeployments:
         await hide_outlier_first_deployments(deps, 1, (6366825,), mdb, pdb, 1.1)
 
         await assert_missing_row(pdb, GitHubPullRequestDeployment, deployment_name="alpha-0")
+
+    async def test_handle_unknown_repository(self, mdb, pdb) -> None:
+        success = DeploymentNotification.CONCLUSION_SUCCESS
+        df = self._mk_deployments_df(
+            ("deploy0", "prod", dt(2020, 1, 1), success, ["org/repo"]),
+            ("deploy1", "prod", dt(2020, 1, 2), success, ["org/repo"]),
+        )
+        await hide_outlier_first_deployments(df, 1, (DEFAULT_MD_ACCOUNT_ID,), mdb, pdb, 1.1)
+
+    @classmethod
+    def _mk_deployments_df(cls, *rows) -> pd.DataFrame:
+        df_columns = [
+            DeploymentNotification.name.name,
+            DeploymentNotification.environment.name,
+            DeploymentNotification.started_at.name,
+            DeploymentNotification.conclusion.name,
+            "repositories",
+        ]
+        return pd.DataFrame.from_records(rows, columns=df_columns)
 
     @classmethod
     def _mine_common_kwargs(cls, **extra: Any) -> dict:
