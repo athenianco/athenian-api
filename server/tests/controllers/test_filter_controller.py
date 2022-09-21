@@ -211,12 +211,7 @@ async def test_filter_repositories_exclude_inactive_cache(client, headers, clien
 async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
     await models_insert(
         sdb,
-        ReleaseSettingFactory(
-            repo_id=40550,
-            branches="master",
-            match=ReleaseMatch.branch.value,
-            repository="github.com/src-d/go-git",
-        ),
+        ReleaseSettingFactory(repo_id=40550, branches="master", match=ReleaseMatch.branch.value),
     )
 
     await pdb.execute(

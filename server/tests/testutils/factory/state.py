@@ -71,9 +71,6 @@ class ReleaseSettingFactory(SQLAlchemyModelFactory):
     class Meta:
         model = ReleaseSetting
 
-    repository = factory.LazyAttribute(
-        lambda rel_setting: f"github.com/org/repo-{rel_setting.repo_id}",
-    )
     repo_id = factory.Sequence(lambda n: n + 1)
     logical_name = ""
     account_id = DEFAULT_ACCOUNT_ID
