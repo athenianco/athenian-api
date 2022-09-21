@@ -2829,7 +2829,16 @@ async def _search_outlier_first_deployments(
 
         first_deploy_idx = np.argmin(group["started_at"].values)
         first_deploy_time = group["started_at"].values[first_deploy_idx]
-        first_deploy_interval = first_deploy_time - repo_creation_times[drop_logical_repo(repo)]
+        try:
+            repo_creation_time = repo_creation_times[drop_logical_repo(repo)]
+        except KeyError:
+            log.warning(
+                'Repository "%s" found in deployment facts doesn\'t exist in mdb anymore',
+                drop_logical_repo(repo),
+            )
+            continue
+
+        first_deploy_interval = first_deploy_time - repo_creation_time
 
         if (first_deploy_interval / median_interval) > threshold:
             deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
