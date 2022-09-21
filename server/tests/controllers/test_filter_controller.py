@@ -85,8 +85,9 @@ async def test_filter_repositories_no_repos(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body,
     )
-    assert response.status == 200
-    repos = json.loads((await response.read()).decode("utf-8"))
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    repos = json.loads(text)
     assert repos == []
 
 
@@ -2300,8 +2301,9 @@ async def test_filter_commits_bypassing_prs_no_with(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/commits", headers=headers, json=body,
     )
-    assert response.status == 200
-    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    commits = CommitsList.from_dict(json.loads(text))
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
     body["date_from"] = "2019-06-01"

@@ -12,212 +12,45 @@ from athenian.api.models.web.pull_request_with import PullRequestWith
 class _FilterPullRequestsRequest(Model, sealed=False):
     """PR filters for /filter/pull_requests."""
 
-    attribute_types = {
-        "in_": List[str],
-        "events": List[str],
-        "stages": List[str],
-        "with_": PullRequestWith,
-        "exclude_inactive": bool,
-        "updated_from": Optional[date],
-        "updated_to": Optional[date],
-        "limit": int,
-        "environments": Optional[list[str]],
-    }
+    in_: (List[str], "in")
+    events: Optional[List[str]]
+    stages: Optional[List[str]]
+    with_: (Optional[PullRequestWith], "with")
+    exclude_inactive: bool
+    updated_from: Optional[date]
+    updated_to: Optional[date]
+    limit: Optional[int]
+    environments: Optional[list[str]]
 
-    attribute_map = {
-        "in_": "in",
-        "events": "events",
-        "stages": "stages",
-        "with_": "with",
-        "exclude_inactive": "exclude_inactive",
-        "updated_from": "updated_from",
-        "updated_to": "updated_to",
-        "limit": "limit",
-        "environments": "environments",
-    }
-
-    def __init__(
-        self,
-        in_: Optional[List[str]] = None,
-        events: Optional[List[str]] = None,
-        stages: Optional[List[str]] = None,
-        with_: Optional[PullRequestWith] = None,
-        exclude_inactive: Optional[bool] = None,
-        updated_from: Optional[date] = None,
-        updated_to: Optional[date] = None,
-        limit: Optional[int] = None,
-        environments: Optional[list[str]] = None,
-    ):
-        """FilterPullRequestsRequest - a model defined in OpenAPI
-
-        :param in_: The in_ of this FilterPullRequestsRequest.
-        :param events: The events of this FilterPullRequestsRequest.
-        :param stages: The stages of this FilterPullRequestsRequest.
-        :param with_: The with_ of this FilterPullRequestsRequest.
-        :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
-        :param updated_from: The updated_from of this FilterPullRequestsRequest.
-        :param updated_to: The updated_to of this FilterPullRequestsRequest.
-        :param limit: The limit of this FilterPullRequestsRequest.
-        :param environments: The environments of this FilterPullRequestsRequest.
-        """
-        self._in_ = in_
-        self._events = events
-        self._stages = stages
-        self._with_ = with_
-        self._exclude_inactive = exclude_inactive
-        self._updated_from = updated_from
-        self._updated_to = updated_to
-        self._limit = limit
-        self._environments = environments
-
-    @property
-    def in_(self) -> List[str]:
-        """Gets the in_ of this FilterPullRequestsRequest.
-
-        :return: The in_ of this FilterPullRequestsRequest.
-        """
-        return self._in_
-
-    @in_.setter
-    def in_(self, in_: List[str]):
-        """Sets the in of this FilterPullRequestsRequest.
-
-        :param in_: The in of this FilterPullRequestsRequest.
-        """
-        if in_ is None:
-            raise ValueError("Invalid value for `in`, must not be `None`")
-
-        self._in_ = in_
-
-    @property
-    def events(self) -> List[str]:
-        """Gets the events of this FilterPullRequestsRequest.
-
-        :return: The events of this FilterPullRequestsRequest.
-        """
-        return self._events
-
-    @events.setter
-    def events(self, events: List[str]):
+    def validate_events(self, events: Optional[list[str]]) -> Optional[list[str]]:
         """Sets the events of this FilterPullRequestsRequest.
 
         :param events: The events of this FilterPullRequestsRequest.
         """
         if events is None:
-            raise ValueError("Invalid value for `events`, must not be `None`")
+            return None
 
         for stage in events:
             if stage not in PullRequestEvent:
                 raise ValueError("Invalid stage: %s" % stage)
 
-        self._events = events
+        return events
 
-    @property
-    def stages(self) -> List[str]:
-        """Gets the stages of this FilterPullRequestsRequest.
-
-        :return: The stages of this FilterPullRequestsRequest.
-        """
-        return self._stages
-
-    @stages.setter
-    def stages(self, stages: List[str]):
+    def validate_stages(self, stages: Optional[list[str]]) -> Optional[list[str]]:
         """Sets the stages of this FilterPullRequestsRequest.
 
         :param stages: The stages of this FilterPullRequestsRequest.
         """
         if stages is None:
-            raise ValueError("Invalid value for `stages`, must not be `None`")
+            return None
 
         for stage in stages:
             if stage not in PullRequestStage:
                 raise ValueError("Invalid stage: %s" % stage)
 
-        self._stages = stages
+        return stages
 
-    @property
-    def with_(self) -> Optional[PullRequestWith]:
-        """Gets the with_ of this FilterPullRequestsRequest.
-
-        :return: The with_ of this FilterPullRequestsRequest.
-        """
-        return self._with_
-
-    @with_.setter
-    def with_(self, with_: PullRequestWith):
-        """Sets the with_ of this FilterPullRequestsRequest.
-
-        :param with_: The with_ of this FilterPullRequestsRequest.
-        """
-        self._with_ = with_
-
-    @property
-    def exclude_inactive(self) -> bool:
-        """Gets the exclude_inactive of this FilterPullRequestsRequest.
-
-        Value indicating whether PRs without events in the given time frame shall be ignored.
-
-        :return: The exclude_inactive of this FilterPullRequestsRequest.
-        """
-        return self._exclude_inactive
-
-    @exclude_inactive.setter
-    def exclude_inactive(self, exclude_inactive: bool):
-        """Sets the exclude_inactive of this FilterPullRequestsRequest.
-
-        Value indicating whether PRs without events in the given time frame shall be ignored.
-
-        :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
-        """
-        if exclude_inactive is None:
-            raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
-
-        self._exclude_inactive = exclude_inactive
-
-    @property
-    def updated_from(self) -> Optional[date]:
-        """Gets the updated_from of this Model.
-
-        :return: The updated_from of this Model.
-        """
-        return self._updated_from
-
-    @updated_from.setter
-    def updated_from(self, updated_from: date) -> None:
-        """Sets the updated_from of this Model.
-
-        :param updated_from: The updated_from of this Model.
-        """
-        self._updated_from = updated_from
-
-    @property
-    def updated_to(self) -> Optional[date]:
-        """Gets the updated_to of this Model.
-
-        :return: The updated_to of this Model.
-        """
-        return self._updated_to
-
-    @updated_to.setter
-    def updated_to(self, updated_to: date) -> None:
-        """Sets the updated_to of this Model.
-
-        :param updated_to: The updated_to of this Model.
-        """
-        self._updated_to = updated_to
-
-    @property
-    def limit(self) -> int:
-        """Gets the limit of this FilterPullRequestsRequest.
-
-        Value indicating whether PRs without events in the given time frame shall be ignored.
-
-        :return: The limit of this FilterPullRequestsRequest.
-        """
-        return self._limit
-
-    @limit.setter
-    def limit(self, limit: int):
+    def validate_limit(self, limit: Optional[int]) -> Optional[int]:
         """Sets the limit of this FilterPullRequestsRequest.
 
         Value indicating whether PRs without events in the given time frame shall be ignored.
@@ -227,27 +60,7 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         if limit is not None and limit < 1:
             raise ValueError("`limit` must be greater than 0: %s" % limit)
 
-        self._limit = limit
-
-    @property
-    def environments(self) -> Optional[list[str]]:
-        """Gets the environments of this FilterPullRequestsRequest.
-
-        Target environments for the deployment events, impacts `events` and `stages`.
-
-        :return: The environments of this FilterPullRequestsRequest.
-        """
-        return self._environments
-
-    @environments.setter
-    def environments(self, environments: Optional[list[str]]):
-        """Sets the environments of this FilterPullRequestsRequest.
-
-        Target environments for the deployment events, impacts `events` and `stages`.
-
-        :param environments: The environments of this FilterPullRequestsRequest.
-        """
-        self._environments = environments
+        return limit
 
 
 FilterPullRequestsRequest = AllOf(

@@ -151,8 +151,9 @@ async def test_paginate_prs_no_done(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request,
     )
-    assert response.status == 200
-    await response.read()
+    text = (await response.read()).decode()
+    assert response.status == 200, text
+
     print("paginate", flush=True)
     body = {
         "request": main_request,

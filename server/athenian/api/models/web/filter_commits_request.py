@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.commit_filter import _CommitFilter
@@ -17,32 +16,9 @@ class _FilterCommitsProperty(Enum):
 class _FilterCommitsRequest(Model, sealed=False):
     """Filter for listing commits."""
 
-    attribute_types = {
-        "property": str,
-    }
+    property: str
 
-    def __init__(
-        self,
-        property: Optional[str] = None,
-    ):
-        """CodeFilter - a model defined in OpenAPI
-
-        :param property: The property of this CodeFilter.
-        """
-        self._property = property
-
-    @property
-    def property(self) -> str:
-        """Gets the property of this CodeFilter.
-
-        Main trait of the commits - the core of the filter.
-
-        :return: The property of this CodeFilter.
-        """
-        return self._property
-
-    @property.setter
-    def property(self, property: str):
+    def validate_property(self, property: str) -> str:
         """Sets the property of this CodeFilter.
 
         Main trait of the commits - the core of the filter.
@@ -59,7 +35,7 @@ class _FilterCommitsRequest(Model, sealed=False):
                 % ",".join('"%s"' % f.value for f in _FilterCommitsProperty),
             ) from None
 
-        self._property = property
+        return property
 
 
 FilterCommitsRequest = AllOf(

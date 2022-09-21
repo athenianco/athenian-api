@@ -54,16 +54,7 @@ class Granularity(Model):
 class GranularityMixin:
     """Implement `granularity` property."""
 
-    @property
-    def granularity(self) -> str:
-        """Gets the granularity of this model.
-
-        :return: The granularity of this model.
-        """
-        return self._granularity
-
-    @granularity.setter
-    def granularity(self, granularity: str):
+    def validate_granularity(self, granularity: str) -> str:
         """Sets the granularity of this model.
 
         :param granularity: The granularity of this model.
@@ -76,4 +67,4 @@ class GranularityMixin:
                 Granularity.format.pattern,
             )
 
-        self._granularity = granularity
+        return granularity

@@ -170,7 +170,9 @@ async def test_set_repository_set_same(client, headers, disable_default_user):
 
 
 async def test_set_repository_set_409(client, headers, disable_default_user):
-    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/go-git"]).to_dict()
+    body = RepositorySetCreateRequest(
+        account=1, name="xxx", items=["github.com/src-d/go-git"],
+    ).to_dict()
     await client.request(method="POST", path="/v1/reposet/create", headers=headers, json=body)
     body = RepositorySetWithName(name="xxx", items=["github.com/src-d/go-git"]).to_dict()
     response = await client.request(
@@ -199,7 +201,9 @@ async def test_set_repository_set_access_denied(client, headers, disable_default
 
 
 async def test_create_repository_set_smoke(client, headers, disable_default_user):
-    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/gitbase"]).to_dict()
+    body = RepositorySetCreateRequest(
+        account=1, name="xxx", items=["github.com/src-d/gitbase"],
+    ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -210,7 +214,9 @@ async def test_create_repository_set_smoke(client, headers, disable_default_user
 
 
 async def test_create_repository_set_default_user(client, headers):
-    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
+    body = RepositorySetCreateRequest(
+        account=1, name="xxx", items=["github.com/src-d/hercules"],
+    ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -220,13 +226,15 @@ async def test_create_repository_set_default_user(client, headers):
 
 async def test_create_repository_set_409(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
-        1, name="xxx", items=["github.com/src-d/go-git", "github.com/src-d/gitbase"],
+        account=1, name="xxx", items=["github.com/src-d/go-git", "github.com/src-d/gitbase"],
     ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
     assert response.status == 200
-    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/go-git"]).to_dict()
+    body = RepositorySetCreateRequest(
+        account=1, name="xxx", items=["github.com/src-d/go-git"],
+    ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -236,7 +244,7 @@ async def test_create_repository_set_409(client, headers, disable_default_user):
 @pytest.mark.parametrize("account", [2, 3, 10])
 async def test_create_repository_set_bad_account(client, account, headers, disable_default_user):
     body = RepositorySetCreateRequest(
-        account, name="xxx", items=["github.com/src-d/hercules"],
+        account=account, name="xxx", items=["github.com/src-d/hercules"],
     ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
@@ -247,7 +255,7 @@ async def test_create_repository_set_bad_account(client, account, headers, disab
 
 async def test_create_repository_set_access_denied(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
-        1, name="xxx", items=["github.com/athenianco/athenian-api"],
+        account=1, name="xxx", items=["github.com/athenianco/athenian-api"],
     ).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,

@@ -67,7 +67,7 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
                     detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err),
                 ),
             ) from None
-        return model_response(CreatedIdentifier(tid))
+        return model_response(CreatedIdentifier(id=tid))
 
 
 @disable_default_user

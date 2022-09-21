@@ -63,7 +63,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
             raise ResponseError(
                 DatabaseConflict(detail="there is an existing reposet with the same items"),
             )
-        return model_response(CreatedIdentifier(rid))
+        return model_response(CreatedIdentifier(id=rid))
 
 
 async def _fetch_reposet_with_owner(

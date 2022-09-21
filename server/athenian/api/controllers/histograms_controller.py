@@ -125,7 +125,10 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                                     scale=histogram.scale.name.lower(),
                                     ticks=histogram.ticks,
                                     frequencies=histogram.frequencies,
-                                    interquartile=Interquartile(*histogram.interquartile),
+                                    interquartile=Interquartile(
+                                        left=histogram.interquartile[0],
+                                        right=histogram.interquartile[1],
+                                    ),
                                 ),
                             )
 
@@ -221,7 +224,10 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                                         scale=histogram.scale.name.lower(),
                                         ticks=histogram.ticks,
                                         frequencies=histogram.frequencies,
-                                        interquartile=Interquartile(*histogram.interquartile),
+                                        interquartile=Interquartile(
+                                            left=histogram.interquartile[0],
+                                            right=histogram.interquartile[1],
+                                        ),
                                     ),
                                 )
 

@@ -480,7 +480,9 @@ def web_pr_from_struct(
                     participants[prefixer.user_node_to_prefixed_login[pid]].append(pkweb)
                 except KeyError:
                     log.error("Failed to resolve user %s", pid)
-        props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
+        props["participants"] = sorted(
+            PullRequestParticipant(id=id_, status=status) for id_, status in participants.items()
+        )
         if pr.labels is not None:
             props["labels"] = [PullRequestLabel(**dataclass_asdict(label)) for label in pr.labels]
         if pr.jira is not None:
@@ -613,12 +615,14 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
                     name=author_name,
                     email=author_email,
                     timestamp=authored_date.replace(tzinfo=utc),
+                    timezone=0,
                 ),
                 committer=CommitSignature(
                     login=(user_login_map[committer_login]) if committer_login else None,
                     name=committer_name,
                     email=committer_email,
                     timestamp=committed_date.replace(tzinfo=utc),
+                    timezone=0,
                 ),
             )
             try:
@@ -634,7 +638,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             if obj.author.login and obj.author.login not in users:
                 users[obj.author.login] = IncludedNativeUser(avatar=author_avatar_url)
             if obj.committer.login and obj.committer.login not in users:
-                users[obj.committer.login] = IncludedNativeUser(committer_avatar_url)
+                users[obj.committer.login] = IncludedNativeUser(avatar=committer_avatar_url)
             model.data.append(obj)
     return model_response(model)
 

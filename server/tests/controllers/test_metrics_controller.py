@@ -128,7 +128,7 @@ class TestCalcMetricsPRs(Requester):
         response = await self.client.request(
             method="POST", path="/v1/metrics/pull_requests", headers=self.headers, **kwargs,
         )
-        assert response.status == assert_status
+        assert response.status == assert_status, (await response.read()).decode()
         return await response.json()
 
     # TODO: fix response validation against the schema
@@ -2253,7 +2253,6 @@ async def test_code_check_metrics_smoke(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2298,7 +2297,6 @@ async def test_code_check_metrics_jira(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2368,7 +2366,6 @@ async def test_code_check_metrics_labels(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2490,7 +2487,6 @@ async def test_code_check_metrics_repogroups(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2541,7 +2537,6 @@ async def test_code_check_metrics_authorgroups(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2586,7 +2581,6 @@ async def test_code_check_metrics_lines(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 
@@ -2661,7 +2655,6 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "split_by_check_runs": None,
         "timezone": None,
     }
 

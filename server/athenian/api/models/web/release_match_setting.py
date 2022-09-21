@@ -6,57 +6,13 @@ from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 
 
 class _ReleaseMatchSetting(Model, sealed=False):
-    attribute_types = {
-        "branches": str,
-        "tags": str,
-        "events": Optional[str],
-        "match": str,
-        "default_branch": Optional[str],
-    }
+    branches: str
+    tags: str
+    events: Optional[str]
+    match: str
+    default_branch: Optional[str]
 
-    attribute_map = {
-        "branches": "branches",
-        "tags": "tags",
-        "events": "events",
-        "match": "match",
-        "default_branch": "default_branch",
-    }
-
-    def __init__(
-        self,
-        branches: Optional[str] = None,
-        tags: Optional[str] = None,
-        events: Optional[str] = None,
-        match: Optional[str] = None,
-        default_branch: Optional[str] = None,
-    ):
-        """ReleaseMatchSetting - a model defined in OpenAPI
-
-        :param branches: The branches of this ReleaseMatchSetting.
-        :param tags: The tags of this ReleaseMatchSetting.
-        :param events: The events of this ReleaseMatchSetting.
-        :param match: The match of this ReleaseMatchSetting.
-        :param default_branch: The default_branch of this ReleaseMatchSetting.
-        """
-        self._branches = branches
-        self._tags = tags
-        self._events = events
-        self._match = match
-        self._default_branch = default_branch
-
-    @property
-    def branches(self) -> str:
-        """Gets the branches of this ReleaseMatchSetting.
-
-        Regular expression to match branch names.
-        Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP
-
-        :return: The branches of this ReleaseMatchSetting.
-        """  # noqa
-        return self._branches
-
-    @branches.setter
-    def branches(self, branches: str):
+    def validate_branches(self, branches: str) -> str:
         """Sets the branches of this ReleaseMatchSetting.
 
         Regular expression to match branch names.
@@ -71,21 +27,9 @@ class _ReleaseMatchSetting(Model, sealed=False):
         except re.error:
             raise ValueError("Invalid value for `branches`, must be a valid regular expression")
 
-        self._branches = branches
+        return branches
 
-    @property
-    def tags(self) -> str:
-        """Gets the tags of this ReleaseMatchSetting.
-
-        Regular expression to match tag names.
-        Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP
-
-        :return: The tags of this ReleaseMatchSetting.
-        """  # noqa
-        return self._tags
-
-    @tags.setter
-    def tags(self, tags: str):
+    def validate_tags(self, tags: str) -> str:
         """Sets the tags of this ReleaseMatchSetting.
 
         Regular expression to match tag names.
@@ -100,21 +44,9 @@ class _ReleaseMatchSetting(Model, sealed=False):
         except re.error:
             raise ValueError("Invalid value for `tags`, must be a valid regular expression")
 
-        self._tags = tags
+        return tags
 
-    @property
-    def events(self) -> str:
-        """Gets the events of this ReleaseMatchSetting.
-
-        Regular expression to match release event names.
-        Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP
-
-        :return: The events of this ReleaseMatchSetting.
-        """  # noqa
-        return self._events
-
-    @events.setter
-    def events(self, events: str):
+    def validate_events(self, events: str) -> str:
         """Sets the events of this ReleaseMatchSetting.
 
         Regular expression to match release event names.
@@ -128,18 +60,9 @@ class _ReleaseMatchSetting(Model, sealed=False):
             except re.error:
                 raise ValueError("Invalid value for `events`, must be a valid regular expression")
 
-        self._events = events
+        return events
 
-    @property
-    def match(self) -> str:
-        """Gets the match of this ReleaseMatchSetting.
-
-        :return: The match of this ReleaseMatchSetting.
-        """
-        return self._match
-
-    @match.setter
-    def match(self, match: str):
+    def validate_match(self, match: str) -> str:
         """Sets the match of this ReleaseMatchSetting.
 
         :param match: The match of this ReleaseMatchSetting.
@@ -152,27 +75,7 @@ class _ReleaseMatchSetting(Model, sealed=False):
                 % (match, list(ReleaseMatchStrategy)),
             )
 
-        self._match = match
-
-    @property
-    def default_branch(self) -> Optional[str]:
-        """Gets the default_branch of this ReleaseMatchSetting.
-
-        Name of the default branch of this repository.
-
-        :return: The default_branch of this ReleaseMatchSetting.
-        """  # noqa
-        return self._default_branch
-
-    @default_branch.setter
-    def default_branch(self, default_branch: Optional[str]):
-        """Sets the default_branch of this ReleaseMatchSetting.
-
-        Name of the default branch of this repository.
-
-        :param default_branch: The default_branch of this ReleaseMatchSetting.
-        """  # noqa
-        self._default_branch = default_branch
+        return match
 
 
 class ReleaseMatchSetting(_ReleaseMatchSetting):

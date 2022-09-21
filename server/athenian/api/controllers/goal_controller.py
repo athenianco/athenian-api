@@ -105,7 +105,7 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
                 detail=f"Goal template named '{create_request.name}' already exists.",
             ),
         ) from None
-    return model_response(CreatedIdentifier(template_id))
+    return model_response(CreatedIdentifier(id=template_id))
 
 
 async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Response:
