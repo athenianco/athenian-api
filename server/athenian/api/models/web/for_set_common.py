@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import List, Optional, Type, TypeVar
+from typing import Optional, Type, TypeVar
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_filter import JIRAFilter
@@ -11,16 +9,7 @@ ForSetLike = TypeVar("ForSetLike", bound=Model)
 class RepositoryGroupsMixin:
     """Mixin to add support for `repositories` and `repogroups`."""
 
-    @property
-    def repositories(self) -> List[str]:
-        """Gets the repositories of this ForSetPullRequests.
-
-        :return: The repositories of this ForSetPullRequests.
-        """
-        return self._repositories
-
-    @repositories.setter
-    def repositories(self, repositories: List[str]):
+    def validate_repositories(self, repositories: list[str]) -> list[str]:
         """Sets the repositories of this ForSetPullRequests.
 
         :param repositories: The repositories of this ForSetPullRequests.
@@ -38,18 +27,12 @@ class RepositoryGroupsMixin:
                             "repositories (%d)" % (i, j, v, len(repositories)),
                         )
 
-        self._repositories = repositories
+        return repositories
 
-    @property
-    def repogroups(self) -> Optional[List[List[int]]]:
-        """Gets the repogroups of this ForSetPullRequests.
-
-        :return: The repogroups of this ForSetPullRequests.
-        """
-        return self._repogroups
-
-    @repogroups.setter
-    def repogroups(self, repogroups: Optional[List[List[int]]]):
+    def validate_repogroups(
+        self,
+        repogroups: Optional[list[list[int]]],
+    ) -> Optional[list[list[int]]]:
         """Sets the repogroups of this ForSetPullRequests.
 
         :param repogroups: The repogroups of this ForSetPullRequests.
@@ -73,7 +56,7 @@ class RepositoryGroupsMixin:
                 if len(set(group)) < len(group):
                     raise ValueError("`repogroups[%d]` has duplicate items" % i)
 
-        self._repogroups = repogroups
+        return repogroups
 
     def select_repogroup(self: ForSetLike, index: int) -> ForSetLike:
         """Change `repositories` to point at the specified group and clear `repogroups`."""
@@ -96,66 +79,10 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
         """A few filters that are specific to filtering PR-related entities."""
 
         attribute_types = {
-            prefix_labels + "labels_include": Optional[List[str]],
-            prefix_labels + "labels_exclude": Optional[List[str]],
+            prefix_labels + "labels_include": Optional[list[str]],
+            prefix_labels + "labels_exclude": Optional[list[str]],
             "jira": Optional[JIRAFilter],
         }
-
-        attribute_map = {
-            prefix_labels + "labels_include": prefix_labels + "labels_include",
-            prefix_labels + "labels_exclude": prefix_labels + "labels_exclude",
-            "jira": "jira",
-        }
-
-        def __init__(self, **kwargs):
-            """Will be overwritten later."""
-            setattr(self, li_name := f"_{prefix_labels}labels_include", kwargs.get(li_name[1:]))
-            setattr(self, le_name := f"_{prefix_labels}labels_exclude", kwargs.get(le_name[1:]))
-            self._jira = kwargs.get("jira")
-
-        def _get_labels_include(self) -> Optional[List[str]]:
-            """Gets the labels_include of this CommonPullRequestFilters.
-
-            :return: The labels_include of this CommonPullRequestFilters.
-            """
-            return getattr(self, f"_{prefix_labels}labels_include")
-
-        def _set_labels_include(self, labels_include: Optional[List[str]]) -> None:
-            """Sets the labels_include of this CommonPullRequestFilters.
-
-            :param labels_include: The labels_include of this CommonPullRequestFilters.
-            """
-            setattr(self, f"_{prefix_labels}labels_include", labels_include)
-
-        def _get_labels_exclude(self) -> Optional[List[str]]:
-            """Gets the labels_exclude of this CommonPullRequestFilters.
-
-            :return: The labels_exclude of this CommonPullRequestFilters.
-            """
-            return getattr(self, f"_{prefix_labels}labels_exclude")
-
-        def _set_labels_exclude(self, labels_exclude: Optional[List[str]]) -> None:
-            """Sets the labels_exclude of this CommonPullRequestFilters.
-
-            :param labels_exclude: The labels_exclude of this CommonPullRequestFilters.
-            """
-            setattr(self, f"_{prefix_labels}labels_exclude", labels_exclude)
-
-        @property
-        def jira(self) -> Optional[JIRAFilter]:
-            """Gets the jira of this CommonPullRequestFilters.
-
-            :return: The jira of this CommonPullRequestFilters.
-            """
-            return self._jira
-
-        @jira.setter
-        def jira(self, jira: Optional[JIRAFilter]) -> None:
-            """Sets the jira of this CommonPullRequestFilters.
-
-            :param jira: The jira of this CommonPullRequestFilters.
-            """
-            self._jira = jira
 
     # we cannot do this at once because it crashes the ast module
     CommonPullRequestFilters.__init__.__doc__ = f"""
@@ -166,23 +93,6 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
     :param jira: The jira of this CommonPullRequestFilters.
     """
 
-    setattr(
-        CommonPullRequestFilters,
-        prefix_labels + "labels_include",
-        property(
-            CommonPullRequestFilters._get_labels_include,
-            CommonPullRequestFilters._set_labels_include,
-        ),
-    )
-    setattr(
-        CommonPullRequestFilters,
-        prefix_labels + "labels_exclude",
-        property(
-            CommonPullRequestFilters._get_labels_exclude,
-            CommonPullRequestFilters._set_labels_exclude,
-        ),
-    )
-
     return CommonPullRequestFilters
 
 
@@ -192,44 +102,11 @@ CommonPullRequestFilters = make_common_pull_request_filters("")
 class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
     """Support for splitting metrics by the number of changed lines."""
 
-    attribute_types = {
-        "repositories": List[str],
-        "repogroups": Optional[List[List[int]]],
-        "lines": Optional[List[int]],
-    }
+    repositories: list[str]
+    repogroups: Optional[list[list[int]]]
+    lines: Optional[list[int]]
 
-    attribute_map = {
-        "repositories": "repositories",
-        "repogroups": "repogroups",
-        "lines": "lines",
-    }
-
-    def __init__(
-        self,
-        repositories: Optional[List[str]] = None,
-        repogroups: Optional[List[List[int]]] = None,
-        lines: Optional[List[int]] = None,
-    ):
-        """ForSetLines - support for splitting metrics by the number of changed lines.
-
-        :param repositories: The repositories of this ForSetPullRequests.
-        :param repogroups: The repogroups of this ForSetPullRequests.
-        :param lines: The lines of this ForSetPullRequests.
-        """
-        self._repositories = repositories
-        self._repogroups = repogroups
-        self._lines = lines
-
-    @property
-    def lines(self) -> Optional[List[int]]:
-        """Gets the lines of this ForSetPullRequests.
-
-        :return: The lines of this ForSetPullRequests.
-        """
-        return self._lines
-
-    @lines.setter
-    def lines(self, lines: Optional[List[int]]):
+    def validate_lines(self, lines: Optional[list[int]]) -> Optional[list[int]]:
         """Sets the lines of this ForSetPullRequests.
 
         :param lines: The lines of this ForSetPullRequests.
@@ -242,9 +119,9 @@ class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
             for i, val in enumerate(lines[:-1]):
                 if val >= lines[i + 1]:
                     raise ValueError("`lines` must monotonically increase")
-        self._lines = lines
+        return lines
 
-    def select_lines(self, index: int) -> ForSetLines:
+    def select_lines(self, index: int) -> "ForSetLines":
         """Change `lines` to point at the specified line range."""
         fs = self.copy()
         if self.lines is None:

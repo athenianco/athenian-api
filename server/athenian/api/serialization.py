@@ -161,17 +161,18 @@ def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
     :param path: request body path.
     :return: model object.
     """
-    instance = klass()
-
-    if not instance.attribute_types:
+    if not getattr(klass, "attribute_types", False):
         return data
 
+    instance = klass.__new__(klass)
     if data is not None and isinstance(data, dict):
-        for attr, attr_type in instance.attribute_types.items():
-            attr_key = instance.attribute_map.get(attr, attr)
+        for attr, attr_type in klass.attribute_types.items():
+            attr_key = klass.attribute_map.get(attr, attr)
             if attr_key in data:
-                value = data[attr_key]
-                setattr(instance, attr, _deserialize(value, attr_type, f"{path}.{attr}"))
+                value = _deserialize(data[attr_key], attr_type, f"{path}.{attr}")
+            else:
+                value = None
+            setattr(instance, attr, value)
 
     return instance
 

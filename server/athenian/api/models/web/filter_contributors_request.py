@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 from athenian.api.models.web import CommonFilterProperties
 from athenian.api.models.web.base_model_ import AllOf, Model
@@ -7,65 +7,16 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 class _FilterContributorsRequest(Model, sealed=False):
     """Filters for `/filter/contributors`."""
 
-    attribute_types = {
-        "in_": List[str],
-        "as_": List[str],
-    }
+    in_: (Optional[list[str]], "in")
+    as_: (Optional[list[str]], "as")
 
-    attribute_map = {
-        "in_": "in",
-        "as_": "as",
-    }
-
-    def __init__(
-        self,
-        in_: Optional[List[str]] = None,
-        as_: List[str] = None,
-    ):
-        """FilterContributorsRequest - a model defined in OpenAPI
-
-        :param in_: The in_ of this FilterContributorsRequest.
-        :param as_: The as_ of this FilterContributorsRequest.
-        """
-        self._in_ = in_
-        self._as_ = as_
-
-    @property
-    def in_(self) -> List[str]:
-        """Gets the in_ of this FilterContributorsRequest.
-
-        A set of repositories. An empty list results an empty response in contrary to DeveloperSet.
-        Duplicates are automatically ignored.
-
-        :return: The in_ of this FilterContributorsRequest.
-        """
-        return self._in_
-
-    @in_.setter
-    def in_(self, in_: List[str]):
-        """Sets the in_ of this FilterContributorsRequest.
-
-        A set of repositories. An empty list results an empty response in contrary to DeveloperSet.
-        Duplicates are automatically ignored.
-
-        :param in_: The in_ of this FilterContributorsRequest.
-        """
-        self._in_ = in_
-
-    @property
-    def as_(self) -> List[str]:
-        """Gets the as_ of this FilterContributorsRequest.
-
-        :return: The as_ of this FilterContributorsRequest.
-        """
-        return self._as_
-
-    @as_.setter
-    def as_(self, as_: List[str]):
+    def validate_as_(self, as_: Optional[list[str]]) -> Optional[list[str]]:
         """Sets the as_ of this FilterContributorsRequest.
 
         :param as_: The as_ of this FilterContributorsRequest.
         """
+        if as_ is None:
+            return None
         allowed_values = {
             "author",
             "reviewer",
@@ -81,7 +32,7 @@ class _FilterContributorsRequest(Model, sealed=False):
                 % (", ".join(set(as_) - allowed_values), ", ".join(allowed_values)),
             )
 
-        self._as_ = as_
+        return as_
 
 
 FilterContributorsRequest = AllOf(

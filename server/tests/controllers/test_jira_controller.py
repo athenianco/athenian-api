@@ -182,7 +182,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             ),
         ]
     else:
-        assert model.labels is None
+        assert model.labels == []
     if "epics" in checked:
         true_epics = [
             JIRAEpic(
@@ -336,7 +336,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
         ]
         assert model.epics == true_epics
     else:
-        assert model.epics is None
+        assert model.epics == []
     if "issue_types" in checked:
         assert model.issue_types == [
             JIRAIssueType(
@@ -422,7 +422,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             ),
         ]
     else:
-        assert model.issue_types is None
+        assert model.issue_types == []
     if "users" in checked:
         assert model.users == [
             JIRAUser(
@@ -492,7 +492,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             ),
         ]
     else:
-        assert model.users is None
+        assert model.users == []
     if "priorities" in checked:
         true_priorities = [
             JIRAPriority(
@@ -527,7 +527,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             true_priorities.pop(0)
         assert model.priorities == true_priorities
     else:
-        assert model.priorities is None
+        assert model.priorities == []
     if "statuses" in checked:
         true_statuses = [
             JIRAStatus(name="Backlog", stage="To Do", project="10009"),
@@ -539,7 +539,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             true_statuses.pop(0)
         assert model.statuses == true_statuses
     else:
-        assert model.statuses is None
+        assert model.statuses == []
     if "issue_bodies" in checked:
         assert len(model.issues) == 168
         work_begans = resolveds = assignees = comments = 0

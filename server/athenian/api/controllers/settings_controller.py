@@ -432,7 +432,7 @@ async def get_work_type(request: AthenianWebRequest, body: dict) -> web.Response
     model = WebWorkType(
         name=row[WorkType.name.name],
         color=row[WorkType.color.name],
-        rules=[WorkTypeRule(name, args) for name, args in row[WorkType.rules.name]],
+        rules=[WorkTypeRule(name=name, body=args) for name, args in row[WorkType.rules.name]],
     )
     return model_response(model)
 
@@ -497,7 +497,7 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
         WebWorkType(
             name=row[WorkType.name.name],
             color=row[WorkType.color.name],
-            rules=[WorkTypeRule(name, args) for name, args in row[WorkType.rules.name]],
+            rules=[WorkTypeRule(name=name, body=args) for name, args in row[WorkType.rules.name]],
         )
         for row in rows
     ]

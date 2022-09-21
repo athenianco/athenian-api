@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -9,69 +9,6 @@ class RepositorySetWithName(Model):
     Do not edit the class manually.
     """
 
-    attribute_types = {"name": Optional[str], "items": List[str], "precomputed": Optional[bool]}
-    attribute_map = {"name": "name", "items": "items", "precomputed": "precomputed"}
-
-    def __init__(
-        self,
-        name: Optional[str] = None,
-        items: Optional[List[str]] = None,
-        precomputed: Optional[bool] = None,
-    ):
-        """RepositorySetWithName - a model defined in OpenAPI
-
-        :param name: The name of this RepositorySetWithName.
-        :param items: The items of this RepositorySetWithName.
-        :param precomputed: The precomputed of this RepositorySetWithName.
-        """
-        self._name = name
-        self._items = items
-        self._precomputed = precomputed
-
-    @property
-    def name(self) -> str:
-        """Gets the name of this RepositorySetWithName.
-
-        :return: The name of this RepositorySetWithName.
-        """
-        return self._name
-
-    @name.setter
-    def name(self, name: str):
-        """Sets the name of this RepositorySetWithName.
-
-        :param name: The name of this RepositorySetWithName.
-        """
-        self._name = name
-
-    @property
-    def items(self) -> List[str]:
-        """Gets the items of this RepositorySetWithName.
-
-        :return: The items of this RepositorySetWithName.
-        """
-        return self._items
-
-    @items.setter
-    def items(self, items: List[str]):
-        """Sets the items of this RepositorySetWithName.
-
-        :param items: The items of this RepositorySetWithName.
-        """
-        self._items = items
-
-    @property
-    def precomputed(self) -> bool:
-        """Gets the precomputed of this RepositorySetWithName.
-
-        :return: The precomputed of this RepositorySetWithName.
-        """
-        return self._precomputed
-
-    @precomputed.setter
-    def precomputed(self, precomputed: bool):
-        """Sets the precomputed of this RepositorySetWithName.
-
-        :param precomputed: The precomputed of this RepositorySetWithName.
-        """
-        self._precomputed = precomputed
+    name: Optional[str]
+    items: Optional[list[str]]
+    precomputed: Optional[bool]

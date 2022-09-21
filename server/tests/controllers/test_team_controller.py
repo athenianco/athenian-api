@@ -36,7 +36,9 @@ class TestCreateTeam(Requester):
             ),
         )
 
-        body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"], 1).to_dict()
+        body = TeamCreateRequest(
+            account=account, name="Engineering", members=["github.com/se7entyse7en"], parent=1,
+        ).to_dict()
         response = await self._request(body, 200)
         assert len(await sdb.fetch_all(select(Team))) == 2
 
@@ -80,7 +82,9 @@ class TestCreateTeam(Requester):
             .values({AccountGitHubAccount.account_id: 1}),
         )
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
-        body = TeamCreateRequest(1, "Engineering", ["github.com/apps/dependabot"], 100).to_dict()
+        body = TeamCreateRequest(
+            account=1, name="Engineering", members=["github.com/apps/dependabot"], parent=100,
+        ).to_dict()
         response = await self._request(body, 200)
         assert len(await sdb.fetch_all(select(Team))) == 2
         eng_team_id = (await response.json())["id"]
@@ -100,7 +104,9 @@ class TestCreateTeam(Requester):
     @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
     async def test_wrong_account(self, headers, sdb, account, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, owner_id=3, parent_id=None)))
-        body = TeamCreateRequest(account, "Engin", ["github.com/se7entyse7en"], 100).to_dict()
+        body = TeamCreateRequest(
+            account=account, name="Engin", members=["github.com/se7entyse7en"], parent=100,
+        ).to_dict()
         response = await self._request(body, 404)
         parsed = await response.json()
         assert parsed == {
@@ -117,17 +123,23 @@ class TestCreateTeam(Requester):
 
     async def test_default_user(self, headers, sdb):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
-        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], 100).to_dict()
+        body = TeamCreateRequest(
+            account=1, name="Engineering", members=["github.com/se7entyse7en"], parent=100,
+        ).to_dict()
         await self._request(body, 403)
         assert len(await sdb.fetch_all(select(Team))) == 1
 
     async def test_wrong_member(self, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
         body = TeamCreateRequest(
-            1,
-            "Engineering",
-            ["github.com/se7entyse7en/foo", "github.com/vmarkovtsev/bar", "github.com/warenlg"],
-            100,
+            account=1,
+            name="Engineering",
+            members=[
+                "github.com/se7entyse7en/foo",
+                "github.com/vmarkovtsev/bar",
+                "github.com/warenlg",
+            ],
+            parent=100,
         ).to_dict()
         response = await self._request(body, 400)
         parsed = await response.json()
@@ -145,7 +157,10 @@ class TestCreateTeam(Requester):
 
     async def test_wrong_parent(self, headers, sdb, disable_default_user):
         body = TeamCreateRequest(
-            1, "Engineering", ["github.com/se7entyse7en", "github.com/warenlg"], 1,
+            account=1,
+            name="Engineering",
+            members=["github.com/se7entyse7en", "github.com/warenlg"],
+            parent=1,
         ).to_dict()
         await self._request(body, 400)
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, name="Test", owner_id=3)))
@@ -154,12 +169,18 @@ class TestCreateTeam(Requester):
     async def test_same_members(self, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, name="Root", parent_id=None)))
         body = TeamCreateRequest(
-            1, "Engineering 1", ["github.com/se7entyse7en", "github.com/vmarkovtsev"], 100,
+            account=1,
+            name="Engineering 1",
+            members=["github.com/se7entyse7en", "github.com/vmarkovtsev"],
+            parent=100,
         ).to_dict()
         await self._request(body, 200)
 
         body = TeamCreateRequest(
-            1, "Engineering 2", ["github.com/vmarkovtsev", "github.com/se7entyse7en"], 100,
+            account=1,
+            name="Engineering 2",
+            members=["github.com/vmarkovtsev", "github.com/se7entyse7en"],
+            parent=100,
         ).to_dict()
         await self._request(body, 200)
         teams = await sdb.fetch_all(select(Team).order_by(Team.name))
@@ -169,11 +190,15 @@ class TestCreateTeam(Requester):
 
     async def test_same_name(self, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=10, parent_id=None, name="Root")))
-        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], 10).to_dict()
+        body = TeamCreateRequest(
+            account=1, name="Engineering", members=["github.com/se7entyse7en"], parent=10,
+        ).to_dict()
         response = await self._request(body, 200)
         eng_team_id = (await response.json())["id"]
 
-        body = TeamCreateRequest(1, "Engineering", ["github.com/vmarkovtsev"], 10).to_dict()
+        body = TeamCreateRequest(
+            account=1, name="Engineering", members=["github.com/vmarkovtsev"], parent=10,
+        ).to_dict()
         response = await self._request(body, 409)
         parsed = await response.json()
         detail = parsed["detail"]
@@ -201,7 +226,9 @@ class TestCreateTeam(Requester):
 
     async def test_no_parent(self, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=10)))
-        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        body = TeamCreateRequest(
+            account=1, name="Engineering", members=["github.com/se7entyse7en"], parent=None,
+        ).to_dict()
         await self._request(body, 200)
         t = await assert_existing_row(sdb, Team, name="Engineering")
         assert t[Team.parent_id.name] == 10
@@ -425,7 +452,7 @@ class TestUpdateTeam(Requester):
             TeamFactory(id=11, name="Test", members=[40020], parent_id=10, created_at=created_at),
         ):
             await sdb.execute(model_insert_stmt(model))
-        body = TeamUpdateRequest("Dream", ["github.com/warenlg"], 10).to_dict()
+        body = TeamUpdateRequest(name="Dream", members=["github.com/warenlg"], parent=10).to_dict()
 
         await self._request(11, body, 200)
         team = await sdb.fetch_one(select([Team]).where(Team.id == 11))
@@ -443,7 +470,9 @@ class TestUpdateTeam(Requester):
                 Team(id=1, owner_id=1, name="Test", members=[40020]).create_defaults().explode(),
             ),
         )
-        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        body = TeamUpdateRequest(
+            name="Engineering", members=["github.com/se7entyse7en"], parent=None,
+        ).to_dict()
         await self._request(1, body, 403)
 
     @pytest.mark.parametrize(
@@ -487,7 +516,7 @@ class TestUpdateTeam(Requester):
         ):
             await sdb.execute(model_insert_stmt(model))
 
-        body = TeamUpdateRequest(name, members, parent).to_dict()
+        body = TeamUpdateRequest(name=name, members=members, parent=parent).to_dict()
         await self._request(id, body, status)
 
     async def test_parent_cycle(self, sdb, disable_default_user):
@@ -497,7 +526,9 @@ class TestUpdateTeam(Requester):
             TeamFactory(id=2, parent_id=1),
             TeamFactory(id=3, parent_id=2),
         )
-        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 3).to_dict()
+        body = TeamUpdateRequest(
+            name="Engineering", members=["github.com/se7entyse7en"], parent=3,
+        ).to_dict()
         rbody = await self._request(2, body, 400)
         assert "cycle" in rbody
 
@@ -508,13 +539,17 @@ class TestUpdateTeam(Requester):
             TeamFactory(id=2, parent_id=1),
             TeamFactory(id=3, parent_id=2),
         )
-        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        body = TeamUpdateRequest(
+            name="Engineering", members=["github.com/se7entyse7en"], parent=None,
+        ).to_dict()
         await self._request(3, body)
         await assert_existing_row(sdb, Team, id=3, parent_id=1)
 
     async def test_parent_stays_null(self, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
-        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        body = TeamUpdateRequest(
+            name="Engineering", members=["github.com/se7entyse7en"], parent=None,
+        ).to_dict()
         await self._request(1, body, 200)
         team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
         assert team[Team.name.name] == "Engineering"
@@ -523,7 +558,7 @@ class TestUpdateTeam(Requester):
         await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
         await sdb.execute(model_insert_stmt(TeamFactory(id=2)))
 
-        body = TeamUpdateRequest("Engineering", [], 2).to_dict()
+        body = TeamUpdateRequest(name="Engineering", members=[], parent=2).to_dict()
         res = await self._request(1, body, 400)
         res_data = json.loads(res)
         assert res_data["detail"] == "Cannot set parent for root team."
@@ -536,7 +571,9 @@ class TestUpdateTeam(Requester):
         ):
             await sdb.execute(model_insert_stmt(model))
 
-        body = TeamUpdateRequest("New Name", ["github.com/se7entyse7en"], 2).to_dict()
+        body = TeamUpdateRequest(
+            name="New Name", members=["github.com/se7entyse7en"], parent=2,
+        ).to_dict()
         await self._request(3, body, 200)
         await assert_existing_row(sdb, Team, name="New Name", parent_id=2, id=3)
 

@@ -8,56 +8,5 @@ class InvitedUser(Model):
     Do not edit the class manually.
     """
 
-    attribute_types = {"account": int, "user": User}
-    attribute_map = {"account": "account", "user": "user"}
-
-    def __init__(self, account: int = None, user: User = None):
-        """InvitedUser - a model defined in OpenAPI
-
-        :param account: The account of this InvitedUser.
-        :param user: The user of this InvitedUser.
-        """
-        self._account = account
-        self._user = user
-
-    @property
-    def account(self) -> int:
-        """Gets the account of this InvitedUser.
-
-        Joined account ID.
-
-        :return: The account of this InvitedUser.
-        """
-        return self._account
-
-    @account.setter
-    def account(self, account: int):
-        """Sets the account of this InvitedUser.
-
-        Joined account ID.
-
-        :param account: The account of this InvitedUser.
-        """
-        if account is None:
-            raise ValueError("Invalid value for `account`, must not be `None`")
-
-        self._account = account
-
-    @property
-    def user(self) -> User:
-        """Gets the user of this InvitedUser.
-
-        :return: The user of this InvitedUser.
-        """
-        return self._user
-
-    @user.setter
-    def user(self, user: User):
-        """Sets the user of this InvitedUser.
-
-        :param user: The user of this InvitedUser.
-        """
-        if user is None:
-            raise ValueError("Invalid value for `user`, must not be `None`")
-
-        self._user = user
+    account: int
+    user: User

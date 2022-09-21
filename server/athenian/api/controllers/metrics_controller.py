@@ -161,15 +161,16 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     then setting individual attributes. So we crash somewhere in from_dict() or to_dict() if we
     make something required.
     """
-    met = CalculatedPullRequestMetrics()
-    met.date_from = filt.date_from
-    met.date_to = filt.date_to
-    met.timezone = filt.timezone
-    met.granularities = filt.granularities
-    met.quantiles = filt.quantiles
-    met.metrics = filt.metrics
-    met.exclude_inactive = filt.exclude_inactive
-    met.calculated = []
+    met = CalculatedPullRequestMetrics(
+        date_from=filt.date_from,
+        date_to=filt.date_to,
+        timezone=filt.timezone,
+        granularities=filt.granularities,
+        quantiles=filt.quantiles,
+        metrics=filt.metrics,
+        exclude_inactive=filt.exclude_inactive,
+        calculated=[],
+    )
 
     settings = Settings.from_request(request, filt.account)
     release_settings, (branches, default_branches), account_bots = await gather(
@@ -630,13 +631,14 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     settings = Settings.from_request(request, filt.account)
     release_settings = await settings.list_release_matches(all_repos)
 
-    met = CalculatedDeveloperMetrics()
-    met.date_from = filt.date_from
-    met.date_to = filt.date_to
-    met.timezone = filt.timezone
-    met.metrics = filt.metrics
-    met.granularities = filt.granularities
-    met.calculated = []
+    met = CalculatedDeveloperMetrics(
+        date_from=filt.date_from,
+        date_to=filt.date_to,
+        timezone=filt.timezone,
+        metrics=filt.metrics,
+        granularities=filt.granularities,
+        calculated=[],
+    )
     topics = {DeveloperTopic(t) for t in filt.metrics}
     tasks = []
     for_sets = []
@@ -858,15 +860,16 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone,
     )
-    met = CalculatedCodeCheckMetrics()
-    met.date_from = filt.date_from
-    met.date_to = filt.date_to
-    met.timezone = filt.timezone
-    met.granularities = filt.granularities
-    met.quantiles = filt.quantiles
-    met.metrics = filt.metrics
-    met.split_by_check_runs = filt.split_by_check_runs
-    met.calculated = []
+    met = CalculatedCodeCheckMetrics(
+        date_from=filt.date_from,
+        date_to=filt.date_to,
+        timezone=filt.timezone,
+        granularities=filt.granularities,
+        quantiles=filt.quantiles,
+        metrics=filt.metrics,
+        split_by_check_runs=filt.split_by_check_runs,
+        calculated=[],
+    )
 
     @sentry_span
     async def calculate_for_set_metrics(filter_checks: FilterChecks):

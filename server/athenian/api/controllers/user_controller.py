@@ -214,7 +214,10 @@ async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response
                     fk[1][pk] = pv
             else:
                 fk[1] = v
-    models = [ProductFeature(*v) for k, v in sorted(features.items())]
+    models = [
+        ProductFeature(name=name, parameters=parameters)
+        for k, (name, parameters) in sorted(features.items())
+    ]
     return model_response(models)
 
 

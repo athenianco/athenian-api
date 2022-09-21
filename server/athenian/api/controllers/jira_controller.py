@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Dict, List, Mapping, Optional, Set, Tuple, Type, Union
+from typing import Any, Collection, Mapping, Optional, Type, Union
 
 from aiohttp import web
 import aiomcache
@@ -144,7 +144,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
     sdb, mdb, pdb, rdb = request.sdb, request.mdb, request.pdb, request.rdb
     cache = request.cache
-    tasks = [
+    (
+        (epics, epic_priorities, epic_statuses),
+        (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses, deps),
+    ) = await gather(
         _epic_flow(
             return_,
             jira_ids,
@@ -190,11 +193,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             rdb,
             cache,
         ),
-    ]
-    (
-        (epics, epic_priorities, epic_statuses),
-        (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses, deps),
-    ) = await gather(*tasks, op="forked flows")
+        op="forked flows",
+    )
     if epic_priorities is None:
         priorities = issue_priorities
     elif issue_priorities is None:
@@ -244,7 +244,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ),
 )
 async def _epic_flow(
-    return_: Set[str],
+    return_: set[str],
     jira_ids: JIRAConfig,
     time_from: Optional[datetime],
     time_to: Optional[datetime],
@@ -254,18 +254,18 @@ async def _epic_flow(
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Optional[List[JIRAEpic]], Optional[List[JIRAPriority]], Optional[List[JIRAStatus]]]:
+) -> tuple[list[JIRAEpic], list[JIRAPriority], list[JIRAStatus]]:
     """Fetch various information related to JIRA epics."""
     if JIRAFilterReturn.EPICS not in return_:
-        return None, None, None
+        return [], [], []
     log = logging.getLogger("%s.filter_jira_stuff/epic" % metadata.__package__)
     extra_columns = [
         Issue.key,
@@ -380,6 +380,7 @@ async def _epic_flow(
                 type=epic_type,
                 prs=epic_prs,
                 url=epic_url,
+                life_time=timedelta(0),
             ),
         )
         epics_by_type[(project_id, epic_type)].append(epic)
@@ -572,7 +573,7 @@ async def _epic_flow(
     ),
 )
 async def _issue_flow(
-    return_: Set[str],
+    return_: set[str],
     account: int,
     jira_ids: JIRAConfig,
     time_from: Optional[datetime],
@@ -585,28 +586,28 @@ async def _issue_flow(
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     sdb: Database,
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[
-    Optional[JIRAIssue],
-    Optional[JIRALabel],
-    Optional[JIRAUser],
-    Optional[JIRAIssueType],
-    Optional[JIRAPriority],
-    Optional[JIRAStatus],
-    Optional[Dict[str, WebDeploymentNotification]],
+) -> tuple[
+    list[JIRAIssue],
+    list[JIRALabel],
+    list[JIRAUser],
+    list[JIRAIssueType],
+    list[JIRAPriority],
+    list[JIRAStatus],
+    Optional[dict[str, WebDeploymentNotification]],
 ]:
     """Fetch various information related to JIRA issues."""
     if JIRAFilterReturn.ISSUES not in return_:
-        return (None,) * 7
+        return [], [], [], [], [], [], None
     log = logging.getLogger("%s.filter_jira_stuff/issue" % metadata.__package__)
     extra_columns = [
         Issue.epic_id,
@@ -666,7 +667,7 @@ async def _issue_flow(
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name].values)))
     else:
-        components = None
+        components = []
     if JIRAFilterReturn.USERS in return_:
         people = np.unique(
             np.concatenate(
@@ -679,7 +680,7 @@ async def _issue_flow(
         )
         # we can leave None because `IN (null)` is always false
     else:
-        people = None
+        people = []
     if JIRAFilterReturn.PRIORITIES in return_:
         priorities = issues[Issue.priority_id.name].unique()
     else:
@@ -705,14 +706,14 @@ async def _issue_flow(
             issue_type_projects[project_id].add(issue_type_id)
             issue_type_counts[(project_id, issue_type_id)] += 1
     else:
-        issue_type_counts = issue_type_projects = None
+        issue_type_counts = issue_type_projects = []
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         if not issues.empty:
             pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
         else:
             pr_ids = []
     else:
-        pr_ids = None
+        pr_ids = []
 
     @sentry_span
     async def fetch_components():
@@ -758,31 +759,29 @@ async def _issue_flow(
             labels = Counter(chain.from_iterable(labels_column))
             if None in labels:
                 del labels[None]
-            labels = {
-                k: JIRALabel(title=k, kind="regular", issues_count=v) for k, v in labels.items()
-            }
+            last_useds = {}
             for updated, issue_labels in zip(
                 issues[Issue.updated.name],
                 issues[Issue.labels.name].values,
             ):
                 for label in issue_labels or ():
-                    try:
-                        label = labels[label]  # type: JIRALabel
-                    except KeyError:
-                        continue
-                    if label.last_used is None or label.last_used < updated:
-                        label.last_used = updated
+                    if last_useds.setdefault(label, updated) < updated:
+                        last_useds[label] = updated
+            labels = {
+                k: JIRALabel(title=k, kind="regular", issues_count=v, last_used=last_useds[k])
+                for k, v in labels.items()
+            }
             if mdb.url.dialect == "sqlite":
                 for label in labels.values():
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
         else:
-            labels = None
+            labels = []
         return labels
 
     @sentry_span
-    async def _fetch_prs() -> Tuple[
-        Optional[Dict[str, WebPullRequest]],
-        Optional[Dict[str, Deployment]],
+    async def _fetch_prs() -> tuple[
+        Optional[dict[str, WebPullRequest]],
+        Optional[dict[str, Deployment]],
     ]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_:
             return None, None
@@ -909,10 +908,6 @@ async def _issue_flow(
         _fetch_types(issue_type_projects, jira_ids[0], return_, mdb),
         extract_labels(),
     )
-    components = {
-        row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
-        for row in component_names
-    }
     mapped_identities = {
         r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
         for r in mapped_identities
@@ -925,7 +920,7 @@ async def _issue_flow(
             developer=mapped_identities.get(row[User.id.name]),
         )
         for row in users
-    ] or None
+    ]
     if deps is not None:
         prefix_logical_repo = prefixer.prefix_logical_repo
         deps = {
@@ -962,20 +957,25 @@ async def _issue_flow(
             normalized_name=row[IssueType.normalized_name.name],
         )
         for row in issue_types
-    ] or None
+    ]
     if JIRAFilterReturn.LABELS in return_:
+        last_useds = {}
         for updated, issue_components in zip(
             issues[Issue.updated.name],
             issues[Issue.components.name].values,
         ):
             for component in issue_components or ():
-                try:
-                    label = components[component]  # type: JIRALabel
-                except KeyError:
-                    log.error("Missing JIRA component: %s", component)
-                    continue
-                if label.last_used is None or label.last_used < updated:
-                    label.last_used = updated
+                if last_useds.setdefault(component, updated) < updated:
+                    last_useds[component] = updated
+        components = {
+            row[0]: JIRALabel(
+                title=row[1],
+                kind="component",
+                issues_count=components[row[0]],
+                last_used=last_useds[row[0]],
+            )
+            for row in component_names
+        }
         if mdb.url.dialect == "sqlite":
             for label in components.values():
                 label.last_used = label.last_used.replace(tzinfo=timezone.utc)
@@ -1060,7 +1060,7 @@ async def _issue_flow(
                 ),
             )
     else:
-        issue_models = None
+        issue_models = []
     return issue_models, labels, users, issue_types, priorities, statuses, deps
 
 
@@ -1068,9 +1068,9 @@ async def _issue_flow(
 async def _fetch_priorities(
     priorities: npt.NDArray[bytes],
     acc_id: int,
-    return_: Set[str],
+    return_: set[str],
     mdb: Database,
-) -> Optional[List[JIRAPriority]]:
+) -> Optional[list[JIRAPriority]]:
     if JIRAFilterReturn.PRIORITIES not in return_:
         return None
     if len(priorities) == 0:
@@ -1094,11 +1094,11 @@ async def _fetch_priorities(
 @sentry_span
 async def _fetch_statuses(
     statuses: npt.NDArray[bytes],
-    status_project_map: Dict[bytes, Set[bytes]],
+    status_project_map: dict[bytes, set[bytes]],
     acc_id: int,
-    return_: Set[str],
+    return_: set[str],
     mdb: Database,
-) -> Optional[List[JIRAStatus]]:
+) -> Optional[list[JIRAStatus]]:
     if JIRAFilterReturn.STATUSES not in return_:
         return None
     if len(statuses) == 0:
@@ -1124,10 +1124,10 @@ async def _fetch_statuses(
 async def _fetch_types(
     issue_type_projects: Mapping[bytes, set[bytes]],
     acc_id: int,
-    return_: Set[str],
+    return_: set[str],
     mdb: Database,
-    columns: Optional[List[InstrumentedAttribute]] = None,
-) -> Optional[List[Mapping[str, Any]]]:
+    columns: Optional[list[InstrumentedAttribute]] = None,
+) -> Optional[list[Mapping[str, Any]]]:
     if (
         JIRAFilterReturn.ISSUE_TYPES not in return_
         and JIRAFilterReturn.ISSUE_BODIES not in return_
@@ -1169,11 +1169,11 @@ async def _collect_ids(
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[
-    Tuple[int, ...],
+) -> tuple[
+    tuple[int, ...],
     JIRAConfig,
     pd.DataFrame,
-    Dict[str, str],
+    dict[str, str],
     ReleaseSettings,
     LogicalRepositorySettings,
     Prefixer,
@@ -1209,16 +1209,16 @@ async def _calc_jira_entry(
     body: dict,
     model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
 ) -> Union[
-    Tuple[
+    tuple[
         JIRAMetricsRequest,
-        List[List[datetime]],
+        list[list[datetime]],
         timedelta,
         np.ndarray,
         np.ndarray,
     ],
-    Tuple[
+    tuple[
         JIRAHistogramsRequest,
-        Dict[HistogramParameters, List[str]],
+        dict[HistogramParameters, list[str]],
         np.ndarray,
     ],
 ]:
@@ -1338,12 +1338,12 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
 
 
 async def _dereference_teams(
-    with_: Optional[List[JIRAFilterWith]],
+    with_: Optional[list[JIRAFilterWith]],
     account: int,
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Optional[List[JIRAFilterWith]]:
+) -> Optional[list[JIRAFilterWith]]:
     if not with_:
         return with_
     teams = set()
@@ -1409,7 +1409,9 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
                         scale=histogram.scale.name.lower(),
                         ticks=histogram.ticks,
                         frequencies=histogram.frequencies,
-                        interquartile=Interquartile(*histogram.interquartile),
+                        interquartile=Interquartile(
+                            left=histogram.interquartile[0], right=histogram.interquartile[1],
+                        ),
                     ),
                 )
     return model_response(result)
