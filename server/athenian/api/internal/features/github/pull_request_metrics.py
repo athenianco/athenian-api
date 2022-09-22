@@ -162,9 +162,8 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         wip_end = np.full(len(facts), None, min_times.dtype)
         no_last_review = facts[PullRequestFacts.f.last_review].isnull().values
         has_last_review = ~no_last_review
-        wip_end[has_last_review] = facts[PullRequestFacts.f.first_review_request].values[
-            has_last_review
-        ]
+        frr = facts[PullRequestFacts.f.first_review_request].values
+        wip_end[has_last_review] = frr[has_last_review]
 
         # review was probably requested but never happened
         no_last_commit = facts[PullRequestFacts.f.last_commit].isnull().values
@@ -175,11 +174,12 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         # => review time = 0
         # => merge time = 0 (you cannot merge an empty PR)
         # => release time = 0
-        # This PR is 100% closed.
-        remaining = np.nonzero(np.isnat(wip_end))[0]
+        # This PR is either closed or not fully fetched.
+        remaining = np.flatnonzero(np.isnat(wip_end))
         closed = facts[PullRequestFacts.f.closed].values[remaining]
         wip_end[remaining] = closed
-        wip_end[remaining[closed != closed]] = None  # deal with NaNs
+        remaining = remaining[closed != closed]
+        wip_end[remaining] = frr[remaining]
 
         if override_event_time is not None:
             wip_end[override_event_indexes] = override_event_time
