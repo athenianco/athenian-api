@@ -15,7 +15,14 @@ class Slots(ABCMeta):
         """Insert __slots__ to the class' __dict__."""
         attribute_types = {}
         attribute_map = {}
+        default_values = {}
+
         for base in bases:
+            try:
+                default_values.update(base.default_values)
+            except AttributeError:
+                pass
+
             try:
                 attribute_types.update(base.attribute_types)
                 attribute_map.update(base.attribute_map)
@@ -26,6 +33,11 @@ class Slots(ABCMeta):
             attribute_map.update(dikt["attribute_map"])
         except KeyError:
             for k, v in dikt.get("__annotations__", {}).items():
+                try:
+                    default_values[k] = dikt[k]
+                except KeyError:
+                    pass
+
                 if k.upper() == k:
                     continue
                 assert not isinstance(v, str), f"Forget about __future__.annotations: {name}"
@@ -33,8 +45,14 @@ class Slots(ABCMeta):
                     attribute_types[k], attribute_map[k] = v
                 else:
                     attribute_types[k] = v
+        try:
+            default_values.update(dikt["default_values"])
+        except KeyError:
+            pass
+
         dikt["attribute_types"] = attribute_types
         dikt["attribute_map"] = attribute_map
+        dikt["default_values"] = default_values
         if sealed:
             dikt["__slots__"] = tuple("_" + k for k in attribute_types) + dikt.get(
                 "__extra_slots__", (),

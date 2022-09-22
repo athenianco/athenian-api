@@ -1,4 +1,4 @@
-from athenian.api.align.models import TeamTree
+from athenian.api.models.web.team_tree import TeamTree
 
 
 class TestTeamTree:

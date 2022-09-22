@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
-from itertools import chain
 from typing import Any, Optional, Union
 
 import numpy as np
 
-from athenian.api.models.web import Contributor
+from athenian.api.models.web import Contributor, TeamTree
 from athenian.api.models.web.base_model_ import Enum, Model
 
 
@@ -61,119 +60,26 @@ class MutateGoalResult(Model):
         return self._goal
 
 
-class TeamTree(Model):
-    """A team with the tree of child teams."""
+class GraphQLTeamTree(TeamTree):
+    """Wraps the generic TeamTree model to add camel case attribute map for GraphQL."""
 
-    attribute_types = {
-        "id": int,
-        "name": str,
-        "members_count": int,
-        "total_teams_count": int,
-        "total_members_count": int,
-        "children": list[Model],  # list[TeamTree],
-        "members": list[int],
-        "total_members": list[int],
-    }
-
+    attribute_types: dict = {}
     attribute_map = {
         "members_count": "membersCount",
         "total_teams_count": "totalTeamsCount",
         "total_members_count": "totalMembersCount",
     }
 
-    def __init__(
-        self,
-        id: int,
-        name: str,
-        children: list[TeamTree],
-        members: list[int],
-        members_count: Optional[int] = None,
-        total_members: Optional[list[int]] = None,
-        total_teams_count: Optional[int] = None,
-        total_members_count: Optional[int] = None,
-    ):
-        """Init the TeamTree."""
-        self._id = id
-        self._name = name
-        self._children = children
-        self._members = members
-
-        if members_count is None:
-            members_count = len(members)
-        self._members_count = members_count
-
-        if total_members is None:
-            total_members = sorted(
-                set(chain(members, *(child.total_members for child in children))),
-            )
-        self._total_members = total_members
-
-        if total_teams_count is None:
-            total_teams_count = sum(child.total_teams_count for child in children) + len(children)
-        self._total_teams_count = total_teams_count
-
-        if total_members_count is None:
-            total_members_count = len(total_members)
-        self._total_members_count = total_members_count
-
-    def with_children(self, children: list[TeamTree]) -> TeamTree:
-        """Return a copy of the object with children property replaced.
-
-        Properties depending from `children` retain the original value of the object.
-        """
-        copy = self.copy()
-        copy._children = children
-        return copy
-
-    @property
-    def id(self) -> int:
-        """Get the identifier of the team."""
-        return self._id
-
-    @property
-    def name(self) -> str:
-        """Get the name of the team."""
-        return self._name
-
-    @property
-    def members_count(self) -> int:
-        """Get the number of members directly included in the team."""
-        return self._members_count
-
-    @property
-    def total_teams_count(self) -> int:
-        """Get the number of teams included in the team tree."""
-        return self._total_teams_count
-
-    @property
-    def total_members_count(self) -> int:
-        """Get the number of team members included in the team tree."""
-        return self._total_members_count
-
-    @property
-    def children(self) -> list[TeamTree]:
-        """Get the direct child teams of the team."""
-        return self._children
-
-    @property
-    def total_members(self) -> list[int]:
-        """Get the team members recursively included in the team tree."""
-        return self._total_members
-
-    @property
-    def members(self) -> list[int]:
-        """Get the directly contained members of the team."""
-        return self._members
-
-    def flatten_team_ids(self) -> list[int]:
-        """Return the flatten team id list of this team and all descendants."""
-        return [
-            self.id,
-            *chain.from_iterable(child.flatten_team_ids() for child in self.children),
-        ]
-
-
-TeamTree.attribute_types["children"] = list[TeamTree]
+    @classmethod
+    def from_team_tree(cls, team_tree: TeamTree) -> GraphQLTeamTree:
+        """Build a GraphQLTeamTree from a base TeamTree."""
+        kwargs = {
+            name: getattr(team_tree, name)
+            for name in team_tree.attribute_types
+            if name != "children"
+        }
+        kwargs["children"] = [cls.from_team_tree(child) for child in team_tree.children]
+        return cls(**kwargs)
 
 
 class MetricValue(Model):

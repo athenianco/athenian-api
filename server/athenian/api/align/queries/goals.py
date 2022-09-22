@@ -14,7 +14,13 @@ from athenian.api.align.goals.dbaccess import (
     fetch_team_goals,
     resolve_goal_repositories,
 )
-from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
+from athenian.api.align.models import (
+    GoalTree,
+    GoalValue,
+    GraphQLTeamTree,
+    MetricValue,
+    TeamGoalTree,
+)
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
     TeamMetricsRequest,
@@ -64,7 +70,9 @@ async def resolve_goals(
             accountId, info.context.sdb, info.context.mdb, info.context.cache,
         ),
     )
-    team_tree = build_team_tree_from_rows(team_rows, None if teamId == 0 else teamId)
+    team_tree = GraphQLTeamTree.from_team_tree(
+        build_team_tree_from_rows(team_rows, None if teamId == 0 else teamId),
+    )
     team_member_map = flatten_teams(team_rows)
     team_ids = [row[Team.id.name] for row in team_rows]
     team_goal_rows, prefixer = await gather(
@@ -108,7 +116,7 @@ class _GoalToServe:
     def __init__(
         self,
         team_goal_rows: Sequence[Row],
-        team_tree: TeamTree,
+        team_tree: GraphQLTeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
         only_with_targets: bool,
@@ -140,12 +148,12 @@ class _GoalToServe:
     def _team_goal_rows_to_request(
         cls,
         team_goal_rows: Sequence[Row],
-        team_tree: TeamTree,
+        team_tree: GraphQLTeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
         unchecked_jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
-    ) -> tuple[TeamMetricsRequest, TeamTree]:
+    ) -> tuple[TeamMetricsRequest, GraphQLTeamTree]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
         metric = goal_row[Goal.metric.name]
 
@@ -234,7 +242,7 @@ class GoalMetricValues:
 
 @sentry_span
 def _team_tree_to_goal_tree(
-    team_tree: TeamTree,
+    team_tree: GraphQLTeamTree,
     goal_row: Row,
     team_goal_rows: Iterable[Row],
     metric_values: GoalMetricValues,
@@ -263,7 +271,7 @@ def _team_tree_to_goal_tree(
 
 
 def _team_tree_to_team_goal_tree(
-    team_tree: TeamTree,
+    team_tree: GraphQLTeamTree,
     team_goal_rows_map: Mapping[int, Row],
     metric_values: GoalMetricValues,
 ) -> TeamGoalTree:
@@ -292,9 +300,9 @@ def _team_tree_to_team_goal_tree(
 
 @sentry_span
 def _team_tree_prune_empty_branches(
-    team_tree: TeamTree,
+    team_tree: GraphQLTeamTree,
     keep_team_fn: Callable[[int], bool],
-) -> Optional[TeamTree]:
+) -> Optional[GraphQLTeamTree]:
     """Remove unwanted teams from a TeamTree.
 
     Empty branches are pruned.

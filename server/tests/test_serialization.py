@@ -1,4 +1,3 @@
-import dataclasses
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -82,24 +81,9 @@ class TestDeserializeDatetime:
 
 class TestDeserializeModel:
     def test_attribute_map(self) -> None:
-        @dataclasses.dataclass
         class T(Model):
             attribute_types = {"a": int, "b": str}
             attribute_map = {"b": "b_mapped"}
-
-            def __init__(self, a=None, b=None):
-                self._a = a
-                self._b = b
-
-            def _set_a(self, value):
-                self._a = value
-
-            a = property(lambda t: t._a, _set_a)
-
-            def _set_b(self, value):
-                self._b = value
-
-            b = property(lambda t: t._b, _set_b)
 
         data = {"a": 123, "b_mapped": "foo"}
 
@@ -108,17 +92,8 @@ class TestDeserializeModel:
         assert t.b == "foo"
 
     def test_union_field(self) -> None:
-        @dataclasses.dataclass
         class T(Model):
-            attribute_types = {"a": int | str}
-
-            def __init__(self, a=None):
-                self._a = a
-
-            def _set_a(self, value):
-                self._a = value
-
-            a = property(lambda t: t._a, _set_a)
+            a: int | str
 
         t: T = deserialize_model({"a": 42}, T)
         assert t.a == 42
@@ -127,22 +102,27 @@ class TestDeserializeModel:
         assert t.a == "foo"
 
     def test_optional_field(self) -> None:
-        @dataclasses.dataclass
         class T(Model):
-            attribute_types = {"a": Optional[date]}
-
-            def __init__(self, a=None):
-                self._a = a
-
-            def _set_a(self, value):
-                self._a = value
-
-            a = property(lambda t: t._a, _set_a)
+            a: Optional[date]
 
         t: T = deserialize_model({"a": "2001-01-01"}, T)
         assert t.a == date(2001, 1, 1)
         with pytest.raises(ParseError):
             deserialize_model({"a": "foo"}, T)
+
+    def test_default_value(self) -> None:
+        class T(Model):
+            a: str = "123"
+            b: int
+            c: bool = False
+
+        t = deserialize_model({"b": 1}, T)
+        assert t.a == "123"
+        assert t.b == 1
+        assert t.c is False
+
+        t = deserialize_model({"b": 1, "c": True}, T)
+        assert t.c is True
 
 
 class TestFriendlyJson:
