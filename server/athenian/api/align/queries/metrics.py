@@ -15,11 +15,11 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import (
+    GraphQLTeamTree,
     MetricParamsFields,
     MetricValue,
     MetricValues,
     TeamMetricValue,
-    TeamTree,
 )
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
@@ -121,7 +121,7 @@ async def resolve_metrics_current_values(
     )
     team_metrics = team_metrics_all_intervals[time_interval]
 
-    team_tree = build_team_tree_from_rows(team_rows, team_id)
+    team_tree = GraphQLTeamTree.from_team_tree(build_team_tree_from_rows(team_rows, team_id))
 
     models = _build_metrics_response(team_tree, params[MetricParamsFields.metrics], team_metrics)
     return [m.to_dict() for m in models]
@@ -539,7 +539,7 @@ class BatchCalcResultCollector:
 
 @sentry_span
 def _build_metrics_response(
-    team_tree: TeamTree,
+    team_tree: GraphQLTeamTree,
     metrics: Sequence[str],
     triaged: dict[str, dict[tuple[int, int], object]],
 ) -> list[MetricValues]:
@@ -550,7 +550,7 @@ def _build_metrics_response(
 
 
 def _build_team_metric_value(
-    team_tree: TeamTree,
+    team_tree: GraphQLTeamTree,
     metric_values: dict[tuple[int, int], object],
 ) -> TeamMetricValue:
     return TeamMetricValue(
