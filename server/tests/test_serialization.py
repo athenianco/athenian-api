@@ -110,6 +110,20 @@ class TestDeserializeModel:
         with pytest.raises(ParseError):
             deserialize_model({"a": "foo"}, T)
 
+    def test_default_value(self) -> None:
+        class T(Model):
+            a: str = "123"
+            b: int
+            c: bool = False
+
+        t = deserialize_model({"b": 1}, T)
+        assert t.a == "123"
+        assert t.b == 1
+        assert t.c is False
+
+        t = deserialize_model({"b": 1, "c": True}, T)
+        assert t.c is True
+
 
 class TestFriendlyJson:
     def test_serialize_date(self) -> None:

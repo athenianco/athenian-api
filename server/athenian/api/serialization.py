@@ -153,7 +153,7 @@ def deserialize_timedelta(string: str) -> timedelta:
     return td
 
 
-def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
+def deserialize_model(data: dict, klass: typing.Type[T], path: str = "") -> T:
     """Deserializes dict to model.
 
     :param data: dict that represents the serialized model.
@@ -171,7 +171,7 @@ def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
             if attr_key in data:
                 value = _deserialize(data[attr_key], attr_type, f"{path}.{attr}")
             else:
-                value = None
+                value = klass.default_values.get(attr, None)
             setattr(instance, attr, value)
 
     return instance
