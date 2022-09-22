@@ -41,10 +41,9 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         ]
         repos, meta_ids = await gather(*tasks)
         prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-        settings = Settings.from_request(request, account_id)
+        settings = Settings.from_request(request, account_id, prefixer)
         release_settings, logical_settings = await gather(
-            settings.list_release_matches(repos),
-            settings.list_logical_repositories(prefixer, repos),
+            settings.list_release_matches(repos), settings.list_logical_repositories(repos),
         )
         repos = logical_settings.append_logical_prs([r.split("/", 1)[1] for r in repos])
         users = await mine_contributors(

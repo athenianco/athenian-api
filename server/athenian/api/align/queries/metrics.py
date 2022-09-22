@@ -261,7 +261,8 @@ async def calculate_team_metrics(
     """
     requests = _simplify_requests(requests)
     QUANTILES = (0, 0.95)
-    settings = Settings.from_account(account, sdb, mdb, cache, slack)
+    prefixer = await Prefixer.load(meta_ids, mdb, cache)
+    settings = Settings.from_account(account, prefixer, sdb, mdb, cache, slack)
     jira_map_task = asyncio.create_task(
         load_mapped_jira_users(
             account,
@@ -271,15 +272,13 @@ async def calculate_team_metrics(
             cache,
         ),
     )
-    prefixer, account_bots, release_settings = await gather(
-        Prefixer.load(meta_ids, mdb, cache),
-        bots(account, meta_ids, mdb, sdb, cache),
-        settings.list_release_matches(),
+    account_bots, release_settings = await gather(
+        bots(account, meta_ids, mdb, sdb, cache), settings.list_release_matches(),
     )
     all_repos = tuple(release_settings.native.keys())
     (branches, default_branches), logical_settings, _ = await gather(
         BranchMiner.extract_branches(all_repos, prefixer, meta_ids, mdb, cache),
-        settings.list_logical_repositories(prefixer),
+        settings.list_logical_repositories(),
         jira_map_task,
     )
     jira_map = jira_map_task.result()

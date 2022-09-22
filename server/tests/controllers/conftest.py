@@ -11,20 +11,17 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github import deployment_light
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.types import PullRequestFacts
-from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedLabel
 from athenian.api.models.state.models import (
     AccountJiraInstallation,
     JIRAProjectSetting,
-    LogicalRepository,
     MappedJIRAIdentity,
     RepositorySet,
     Team,
 )
 from athenian.api.typing_utils import wraps
-from tests.testutils.db import models_insert
-from tests.testutils.factory.state import ReleaseSettingFactory
 
 
 @pytest.fixture(scope="function")
@@ -78,72 +75,6 @@ def logical_settings_labels():
             "src-d/go-git/beta": {"labels": ["bug", "windows"]},
         },
         {},
-    )
-
-
-@pytest.fixture(scope="function")
-async def logical_settings_db(sdb):
-    await sdb.execute(
-        insert(LogicalRepository).values(
-            LogicalRepository(
-                account_id=1,
-                name="alpha",
-                repository_id=40550,
-                prs={"title": ".*[Ff]ix"},
-            )
-            .create_defaults()
-            .explode(),
-        ),
-    )
-    await sdb.execute(
-        insert(LogicalRepository).values(
-            LogicalRepository(
-                account_id=1,
-                name="beta",
-                repository_id=40550,
-                prs={"title": ".*[Aa]dd"},
-            )
-            .create_defaults()
-            .explode(),
-        ),
-    )
-    await sdb.execute(
-        update(RepositorySet)
-        .where(RepositorySet.owner_id == 1)
-        .values(
-            {
-                RepositorySet.items: [
-                    ["github.com/src-d/gitbase", 39652769],
-                    ["github.com/src-d/go-git", 40550],
-                    ["github.com/src-d/go-git/alpha", 40550],
-                    ["github.com/src-d/go-git/beta", 40550],
-                ],
-                RepositorySet.updates_count: RepositorySet.updates_count + 1,
-                RepositorySet.updated_at: datetime.now(timezone.utc),
-            },
-        ),
-    )
-
-
-@pytest.fixture(scope="function")
-async def release_match_setting_tag_logical_db(sdb):
-    await models_insert(
-        sdb,
-        ReleaseSettingFactory(
-            repository="github.com/src-d/go-git/alpha",
-            logical_name="alpha",
-            repo_id=40550,
-            branches="master",
-            match=ReleaseMatch.tag,
-        ),
-        ReleaseSettingFactory(
-            repository="github.com/src-d/go-git/beta",
-            logical_name="beta",
-            repo_id=40550,
-            branches="master",
-            tags=r"v4\..*",
-            match=ReleaseMatch.tag,
-        ),
     )
 
 

@@ -238,10 +238,10 @@ async def precompute_reposet(
         len(reposet.items),
     )
     try:
-        settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
+        settings = Settings.from_account(reposet.owner_id, prefixer, sdb, mdb, cache, None)
         repos = {r.split("/", 1)[1] for r in reposet.items}
         logical_settings, release_settings, (branches, default_branches) = await gather(
-            settings.list_logical_repositories(prefixer, reposet.items),
+            settings.list_logical_repositories(reposet.items),
             settings.list_release_matches(reposet.items),
             BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
         )

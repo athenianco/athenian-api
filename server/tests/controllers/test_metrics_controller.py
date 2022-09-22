@@ -1018,23 +1018,16 @@ class TestCalcMetricsPRs(Requester):
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [counts]
 
+    # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_logical_dupes(self, logical_settings_db, sdb):
         await models_insert(
             sdb,
             ReleaseSettingFactory(
-                repository="github.com/src-d/go-git/alpha",
-                branches="master",
-                match=ReleaseMatch.tag,
-                repo_id=40550,
-                logical_name="alpha",
+                branches="master", match=ReleaseMatch.tag, repo_id=40550, logical_name="alpha",
             ),
             ReleaseSettingFactory(
-                repository="github.com/src-d/go-git/beta",
-                branches="master",
-                match=ReleaseMatch.tag,
-                repo_id=40550,
-                logical_name="beta",
+                branches="master", match=ReleaseMatch.tag, repo_id=40550, logical_name="beta",
             ),
         )
 

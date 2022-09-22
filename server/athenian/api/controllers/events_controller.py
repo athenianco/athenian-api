@@ -446,8 +446,8 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
 
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, model.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, model.account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     prefixed_repos, _ = await resolve_repos(
         model.repositories,
         model.account,

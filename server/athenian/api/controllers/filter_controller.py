@@ -154,7 +154,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         prefixer,
         logical_settings,
     ) = await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings = await settings.list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
@@ -217,7 +217,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         prefixer,
         logical_settings,
     ) = await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings = await settings.list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
@@ -275,8 +275,8 @@ async def _repos_preprocess(
 
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
+    settings = Settings.from_request(request, account, prefixer)
+    logical_settings = await settings.list_logical_repositories()
     repos, _ = await resolve_repos(
         repos,
         account,
@@ -340,7 +340,7 @@ async def resolve_filter_prs_parameters(
         group_type=set,
     )
     participants = participants[0] if participants else {}
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, jira, account_bots = await gather(
         settings.list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -672,7 +672,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     )
     participants = participants[0] if participants else {}
     stripped_repos = [r.split("/", 1)[1] for r in repos]
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, jira_ids, (branches, default_branches) = await gather(
         settings.list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -911,11 +911,11 @@ async def _check_github_repos(
             ) from None
         return meta_ids
 
-    settings = Settings.from_request(request, account)
+    settings = Settings.from_request(request, account, prefixer)
     meta_ids, release_settings, logical_settings, account_bots = await gather(
         check(),
         settings.list_release_matches(prefixed_repos),
-        settings.list_logical_repositories(prefixer, prefixed_repos, pointer=pointer),
+        settings.list_logical_repositories(prefixed_repos, pointer=pointer),
         bots(account, meta_ids, request.mdb, request.sdb, request.cache),
         op="_check_github_repos",
     )
@@ -1164,7 +1164,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         request.sdb,
     )
     participants = participants[0] if participants else {}
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, filt.account, prefixer)
     # all the repos, because we don't know what else is released in the matched deployments
     release_settings, (branches, default_branches) = await gather(
         settings.list_release_matches(),

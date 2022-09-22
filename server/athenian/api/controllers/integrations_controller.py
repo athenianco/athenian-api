@@ -151,10 +151,9 @@ async def get_everything(
         )
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
+    settings = Settings.from_request(request, account, prefixer)
     release_settings, logical_settings = await gather(
-        settings.list_release_matches(),
-        settings.list_logical_repositories(prefixer),
+        settings.list_release_matches(), settings.list_logical_repositories(),
     )
     data = await mine_everything(
         set(MineTopic),

@@ -20,6 +20,7 @@ import aiomcache
 import faker
 from filelock import FileLock
 import sentry_sdk
+import sqlalchemy as sa
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.internal.features.entries import MetricEntriesCalculator
@@ -112,7 +113,12 @@ from athenian.api.models.persistentdata.models import (
     DeploymentNotification,
 )
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
-from athenian.api.models.state.models import Base as StateBase, God
+from athenian.api.models.state.models import (
+    Base as StateBase,
+    God,
+    LogicalRepository,
+    RepositorySet,
+)
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
@@ -121,6 +127,8 @@ from tests.sample_db_data import (
     fill_persistentdata_session,
     fill_state_session,
 )
+from tests.testutils.db import models_insert
+from tests.testutils.factory.state import ReleaseSettingFactory
 
 if os.getenv("NEST_ASYNCIO"):
     nest_asyncio.apply()
@@ -1142,3 +1150,67 @@ def generate_pr_samples(n):
 @pytest.fixture(scope="session")
 def pr_samples():
     return generate_pr_samples
+
+
+@pytest.fixture(scope="function")
+async def logical_settings_db(sdb):
+    await sdb.execute(
+        insert(LogicalRepository).values(
+            LogicalRepository(
+                account_id=1,
+                name="alpha",
+                repository_id=40550,
+                prs={"title": ".*[Ff]ix"},
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
+    await sdb.execute(
+        insert(LogicalRepository).values(
+            LogicalRepository(
+                account_id=1,
+                name="beta",
+                repository_id=40550,
+                prs={"title": ".*[Aa]dd"},
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
+    await sdb.execute(
+        sa.update(RepositorySet)
+        .where(RepositorySet.owner_id == 1)
+        .values(
+            {
+                RepositorySet.items: [
+                    ["github.com/src-d/gitbase", 39652769],
+                    ["github.com/src-d/go-git", 40550],
+                    ["github.com/src-d/go-git/alpha", 40550],
+                    ["github.com/src-d/go-git/beta", 40550],
+                ],
+                RepositorySet.updates_count: RepositorySet.updates_count + 1,
+                RepositorySet.updated_at: datetime.now(timezone.utc),
+            },
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
+async def release_match_setting_tag_logical_db(sdb):
+    await models_insert(
+        sdb,
+        ReleaseSettingFactory(
+            logical_name="alpha",
+            repo_id=40550,
+            branches="master",
+            match=ReleaseMatch.tag,
+        ),
+        ReleaseSettingFactory(
+            logical_name="beta",
+            repo_id=40550,
+            branches="master",
+            tags=r"v4\..*",
+            match=ReleaseMatch.tag,
+        ),
+    )

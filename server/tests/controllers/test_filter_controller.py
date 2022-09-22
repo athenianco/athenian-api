@@ -51,12 +51,7 @@ from tests.testutils.factory.state import ReleaseSettingFactory
 async def with_event_releases(sdb, rdb):
     await models_insert(
         sdb,
-        ReleaseSettingFactory(
-            repo_id=40550,
-            branches="master",
-            match=ReleaseMatch.event.value,
-            repository="github.com/src-d/go-git",
-        ),
+        ReleaseSettingFactory(repo_id=40550, branches="master", match=ReleaseMatch.event.value),
     )
     await rdb.execute(
         insert(ReleaseNotification).values(
