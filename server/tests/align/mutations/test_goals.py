@@ -21,7 +21,7 @@ from tests.align.utils import (
     assert_extension_error,
     get_extension_error_obj,
 )
-from tests.testutils.auth import mock_auth0
+from tests.testutils.auth import force_request_auth
 from tests.testutils.db import (
     assert_existing_row,
     assert_missing_row,
@@ -57,10 +57,7 @@ class BaseGoalTest(Requester):
         assert await sdb.fetch_one(sa.select(TeamGoal)) is None
 
     async def _base_request(self, json, user_id: Optional[str]) -> dict:
-        headers = self.headers.copy()
-        if user_id is not None:
-            headers["Authorization"] = f"Bearer {user_id}"
-        with mock_auth0():
+        with force_request_auth(user_id, self.headers) as headers:
             return await align_graphql_request(self.client, headers=headers, json=json)
 
 

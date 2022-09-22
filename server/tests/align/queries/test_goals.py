@@ -1,4 +1,3 @@
-import contextlib
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import Optional, Sequence
@@ -15,7 +14,7 @@ from tests.align.utils import (
     build_fragment,
     build_recursive_fields_structure,
 )
-from tests.testutils.auth import mock_auth0
+from tests.testutils.auth import force_request_auth
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
@@ -138,15 +137,7 @@ class BaseGoalsTest(Requester):
                 **repositories_kwargs,
             },
         }
-        if user_id:
-            headers = self.headers.copy()
-            headers["Authorization"] = f"Bearer {user_id}"
-            auth_ctx = mock_auth0()
-        else:
-            headers = self.headers
-            auth_ctx = contextlib.nullcontext()
-
-        with auth_ctx:
+        with force_request_auth(user_id, self.headers) as headers:
             return await align_graphql_request(self.client, headers=headers, json=body)
 
 
