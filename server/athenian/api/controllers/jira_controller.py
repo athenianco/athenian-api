@@ -195,15 +195,15 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ),
         op="forked flows",
     )
-    if epic_priorities is None:
+    if not epic_priorities:
         priorities = issue_priorities
-    elif issue_priorities is None:
+    elif not issue_priorities:
         priorities = epic_priorities
     else:
         priorities = sorted(set(epic_priorities).union(issue_priorities))
-    if epic_statuses is None:
+    if not epic_statuses:
         statuses = issue_statuses
-    elif issue_statuses is None:
+    elif not issue_statuses:
         statuses = epic_statuses
     else:
         statuses = sorted(set(epic_statuses).union(issue_statuses))
@@ -780,12 +780,10 @@ async def _issue_flow(
 
     @sentry_span
     async def _fetch_prs() -> tuple[
-        Optional[dict[str, WebPullRequest]],
-        Optional[dict[str, Deployment]],
+        dict[str, WebPullRequest],
+        dict[str, Deployment],
     ]:
-        if JIRAFilterReturn.ISSUE_BODIES not in return_:
-            return None, None
-        if len(pr_ids) == 0:
+        if JIRAFilterReturn.ISSUE_BODIES not in return_ or len(pr_ids) == 0:
             return {}, {}
         prs_df, (facts, ambiguous), account_bots = await gather(
             read_sql_query(
@@ -1071,9 +1069,7 @@ async def _fetch_priorities(
     return_: set[str],
     mdb: Database,
 ) -> Optional[list[JIRAPriority]]:
-    if JIRAFilterReturn.PRIORITIES not in return_:
-        return None
-    if len(priorities) == 0:
+    if JIRAFilterReturn.PRIORITIES not in return_ or len(priorities) == 0:
         return []
     rows = await mdb.fetch_all(
         select(Priority.name, Priority.icon_url, Priority.rank, Priority.status_color)
@@ -1099,9 +1095,7 @@ async def _fetch_statuses(
     return_: set[str],
     mdb: Database,
 ) -> Optional[list[JIRAStatus]]:
-    if JIRAFilterReturn.STATUSES not in return_:
-        return None
-    if len(statuses) == 0:
+    if JIRAFilterReturn.STATUSES not in return_ or len(statuses) == 0:
         return []
     rows = await mdb.fetch_all(
         select(Status.id, Status.name, Status.category_name)
@@ -1132,9 +1126,7 @@ async def _fetch_types(
         JIRAFilterReturn.ISSUE_TYPES not in return_
         and JIRAFilterReturn.ISSUE_BODIES not in return_
         and JIRAFilterReturn.EPICS not in return_
-    ):
-        return None
-    if len(issue_type_projects) == 0:
+    ) or len(issue_type_projects) == 0:
         return []
     if columns is None:
         columns = [
