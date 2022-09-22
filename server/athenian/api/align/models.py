@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from datetime import date
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 
@@ -71,7 +69,7 @@ class GraphQLTeamTree(TeamTree):
     }
 
     @classmethod
-    def from_team_tree(cls, team_tree: TeamTree) -> GraphQLTeamTree:
+    def from_team_tree(cls, team_tree: TeamTree) -> "GraphQLTeamTree":
         """Build a GraphQLTeamTree from a base TeamTree."""
         kwargs = {
             name: getattr(team_tree, name)
@@ -107,21 +105,6 @@ class MetricValue(Model):
         else:
             self._str_ = value
 
-    @property
-    def int_(self) -> Optional[Union[int, np.integer]]:
-        """Return the metric value as an integer."""
-        return self._int_
-
-    @property
-    def str_(self) -> Optional[object]:
-        """Return the metric value as a string."""
-        return self._str_
-
-    @property
-    def float_(self) -> float:
-        """Return the metric value as a floating point number."""
-        return self._float_
-
 
 class TeamMetricValue(Model):
     """Team metric value tree node."""
@@ -136,27 +119,6 @@ class TeamMetricValue(Model):
         "team_id": "teamId",
     }
 
-    def __init__(self, team: TeamTree, value: MetricValue, children: list[TeamMetricValue]):
-        """Initialize a new instance of TeamMetricValue."""
-        self._team = team
-        self._value = value
-        self._children = children
-
-    @property
-    def team(self) -> TeamTree:
-        """Return the team relative to this metric value."""
-        return self._team
-
-    @property
-    def value(self) -> MetricValue:
-        """Return the metric value."""
-        return self._value
-
-    @property
-    def children(self) -> list[TeamMetricValue]:
-        """Return the list of child team metrics."""
-        return self._children
-
 
 TeamMetricValue.attribute_types["children"] = list[TeamMetricValue]
 
@@ -164,25 +126,8 @@ TeamMetricValue.attribute_types["children"] = list[TeamMetricValue]
 class MetricValues(Model):
     """Response from metricsCurrentValues(), a specific metric team tree."""
 
-    attribute_types = {
-        "metric": str,
-        "value": TeamMetricValue,
-    }
-
-    def __init__(self, metric: str, value: TeamMetricValue):
-        """Init the MetricValues."""
-        self._metric = metric
-        self._value = value
-
-    @property
-    def metric(self) -> str:
-        """Return the metric ID."""
-        return self._metric
-
-    @property
-    def value(self) -> TeamMetricValue:
-        """Return the team tree of metric values."""
-        return self._value
+    metric: str
+    value: TeamMetricValue
 
 
 class _GoalMetricFilters(metaclass=Enum):  # noqa: PIE795
@@ -246,66 +191,17 @@ class MetricParamsFields(_GoalMetricFilters):
 class GoalValue(Model):
     """The current metric values for the goal on a team."""
 
-    attribute_types = {
-        "current": MetricValue,
-        "initial": MetricValue,
-        "target": Optional[MetricValue],
-    }
-
-    def __init__(self, current: MetricValue, initial: MetricValue, target: Optional[MetricValue]):
-        """Init the GoalValue."""
-        self._current = current
-        self._initial = initial
-        self._target = target
-
-    @property
-    def current(self) -> MetricValue:
-        """Get current metric value."""
-        return self._current
-
-    @property
-    def initial(self) -> MetricValue:
-        """Get initial metric value."""
-        return self._initial
-
-    @property
-    def target(self) -> Optional[MetricValue]:
-        """Get target metric value."""
-        return self._target
+    current: MetricValue
+    initial: MetricValue
+    target: Optional[MetricValue]
 
 
 class TeamGoalTree(Model):
     """The team goal tree relative to a team and its descendants."""
 
-    attribute_types = {
-        "team": TeamTree,
-        "value": GoalValue,
-        "children": list[Model],  # list[TeamGoalTree]
-    }
-
-    def __init__(self, team: TeamTree, value: GoalValue, children: list[TeamGoalTree]):
-        """Init the TeamGoalTree."""
-        self._team = team
-        self._value = value
-        self._children = children
-
-    @property
-    def team(self) -> TeamTree:
-        """Get the team this node is applied to."""
-        return self._team
-
-    @property
-    def value(self) -> GoalValue:
-        """Get the GoalValue attached to the team, if any."""
-        return self._value
-
-    @property
-    def children(self) -> list[TeamGoalTree]:
-        """Get the list of TeamGoalTree for the Team children."""
-        return self._children
-
-
-TeamGoalTree.attribute_types["children"] = list[TeamGoalTree]
+    team: TeamTree
+    value: GoalValue
+    children: list["TeamGoalTree"]
 
 
 class GoalTree(Model):
@@ -332,81 +228,6 @@ class GoalTree(Model):
         "jira_priorities": "jiraPriorities",
         "jira_issue_types": "jiraIssueTypes",
     }
-
-    def __init__(
-        self,
-        id: int,
-        name: str,
-        metric: str,
-        valid_from: date,
-        expires_at: date,
-        team_goal: TeamGoalTree,
-        repositories: Optional[list[str]],
-        jira_projects: Optional[list[str]],
-        jira_priorities: Optional[list[str]],
-        jira_issue_types: Optional[list[str]],
-    ):
-        """Init the GoalTree."""
-        self._id = id
-        self._name = name
-        self._metric = metric
-        self._valid_from = valid_from
-        self._expires_at = expires_at
-        self._team_goal = team_goal
-        self._repositories = repositories
-        self._jira_projects = jira_projects
-        self._jira_priorities = jira_priorities
-        self._jira_issue_types = jira_issue_types
-
-    @property
-    def id(self) -> int:
-        """Get the identifier of the goal."""
-        return self._id
-
-    @property
-    def name(self) -> str:
-        """Get the name of the goal."""
-        return self._name
-
-    @property
-    def metric(self) -> str:
-        """Get the metric of the goal."""
-        return self._metric
-
-    @property
-    def valid_from(self) -> date:
-        """Get the valid from date of the goal."""
-        return self._valid_from
-
-    @property
-    def expires_at(self) -> date:
-        """Get the epxire date of the goal."""
-        return self._expires_at
-
-    @property
-    def team_goal(self) -> TeamGoalTree:
-        """Get the root of the `TeamGoalTree` attached to the goal."""
-        return self._team_goal
-
-    @property
-    def repositories(self) -> Optional[list[str]]:
-        """Get the repositories defining the goal scope."""
-        return self._repositories
-
-    @property
-    def jira_projects(self) -> Optional[list[str]]:
-        """Get the JIRA projects defining the goal scope."""
-        return self._jira_projects
-
-    @property
-    def jira_priorities(self) -> Optional[list[str]]:
-        """Get the JIRA priorities defining the goal scope."""
-        return self._jira_priorities
-
-    @property
-    def jira_issue_types(self) -> Optional[list[str]]:
-        """Get the JIRA issue types defining the goal scope."""
-        return self._jira_issue_types
 
 
 class Member(Contributor):

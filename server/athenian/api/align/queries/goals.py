@@ -257,16 +257,16 @@ def _team_tree_to_goal_tree(
         repos = [str(repo_name) for repo_name in resolve_goal_repositories(repos, prefixer)]
 
     return GoalTree(
-        goal_row[Goal.id.name],
-        goal_row[Goal.name.name],
-        goal_row[Goal.metric.name],
-        valid_from,
-        expires_at,
-        _team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
-        repos,
-        goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
-        goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
-        goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
+        id=goal_row[Goal.id.name],
+        name=goal_row[Goal.name.name],
+        metric=goal_row[Goal.metric.name],
+        valid_from=valid_from,
+        expires_at=expires_at,
+        team_goal=_team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values),
+        repositories=repos,
+        jira_projects=goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
+        jira_priorities=goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
+        jira_issue_types=goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
     )
 
 
@@ -295,7 +295,7 @@ def _team_tree_to_team_goal_tree(
         _team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
         for child in team_tree.children
     ]
-    return TeamGoalTree(team_tree, goal_value, children)
+    return TeamGoalTree(team=team_tree, value=goal_value, children=children)
 
 
 @sentry_span

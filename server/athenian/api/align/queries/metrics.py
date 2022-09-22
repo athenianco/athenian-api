@@ -544,7 +544,7 @@ def _build_metrics_response(
     triaged: dict[str, dict[tuple[int, int], object]],
 ) -> list[MetricValues]:
     return [
-        MetricValues(metric, _build_team_metric_value(team_tree, triaged[metric]))
+        MetricValues(metric=metric, value=_build_team_metric_value(team_tree, triaged[metric]))
         for metric in metrics
     ]
 
