@@ -507,6 +507,7 @@ class DonePRFactsLoader:
         utc = timezone.utc
         force_push_dropped = set()
         user_node_to_login_get = prefixer.user_node_to_login.get
+        alternative_matched = []
         for row in rows:
             repo = row[ghprt.repository_full_name.name]
             node_id = row[ghprt.pr_node_id.name]
@@ -535,7 +536,7 @@ class DonePRFactsLoader:
             except KeyError:
                 # pdb thinks this PR was released but our current release matching settings
                 # disagree
-                log.warning("Alternative release matching detected: %s", dict(row))
+                alternative_matched.append((node_id, repo, release_match))
                 continue
             if not release_setting.compatible_with_db(
                 release_match, default_branches[drop_logical_repo(repo)],
@@ -552,6 +553,12 @@ class DonePRFactsLoader:
                     row[ghprt.repository_full_name.name],
                     release_setting.match,
                 ),
+            )
+        if alternative_matched:
+            log.warning(
+                "Alternative release matching detected in %d PRs: %s",
+                len(alternative_matched),
+                alternative_matched,
             )
         return new_released_prs_df(records)
 
