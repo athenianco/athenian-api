@@ -6,6 +6,7 @@ from typing import Any, Collection, Dict, Iterable, List, Optional, Tuple, Union
 
 import aiomcache
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, func, join, literal_column, or_, select, sql, union_all
@@ -543,16 +544,26 @@ class ReleaseToPullRequestMapper:
             cache,
         )
 
-        rpak = Release.published_at.name
-        rrfnk = Release.repository_full_name.name
         all_observed_repos = []
         all_observed_commits = []
+        time_from64 = pd.Timestamp(time_from).to_numpy()
         # find the released commit hashes by two DAG traversals
         with sentry_sdk.start_span(op="all_observed_*"):
-            for repo, repo_releases in releases.groupby(rrfnk, sort=False):
-                if (repo_releases[rpak] >= time_from).any():
+            repos_col = releases[Release.repository_full_name.name].values
+            publisheds_col = releases[Release.published_at.name].values
+            shas_col = releases[Release.sha.name].values
+            repos_order = np.argsort(repos_col, kind="stable")
+            pos = 0
+            for repo, group_count in zip(*np.unique(repos_col[repos_order], return_counts=True)):
+                indexes = repos_order[pos : pos + group_count]
+                pos += group_count
+                repo_publisheds = publisheds_col[indexes]
+                if (repo_publisheds >= time_from64).any():
                     observed_commits = cls._extract_released_commits(
-                        repo_releases, dags[drop_logical_repo(repo)][1], time_from,
+                        repo_publisheds,
+                        shas_col[indexes],
+                        dags[drop_logical_repo(repo)][1],
+                        time_from64,
                     )
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
@@ -1280,18 +1291,18 @@ class ReleaseToPullRequestMapper:
     @classmethod
     def _extract_released_commits(
         cls,
-        releases: pd.DataFrame,
+        published_ats: npt.NDArray[np.datetime64],
+        shas: npt.NDArray[bytes],
         dag: DAG,
-        time_boundary: datetime,
+        time_boundary: np.datetime64,
     ) -> np.ndarray:
-        time_mask = (releases[Release.published_at.name] >= time_boundary).values
-        all_shas = releases[Release.sha.name].values
-        new_shas = all_shas if (everything := time_mask.all()) else all_shas[time_mask]
+        time_mask = published_ats >= time_boundary
+        new_shas = shas if (everything := time_mask.all()) else shas[time_mask]
         assert len(new_shas), "you must check this before calling me"
         visited_hashes, _, _ = extract_subdag(*dag, new_shas)
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not everything:
-            boundary_release_hashes = all_shas[~time_mask]
+            boundary_release_hashes = shas[~time_mask]
         else:
             return visited_hashes
         ignored_hashes, _, _ = extract_subdag(*dag, boundary_release_hashes)

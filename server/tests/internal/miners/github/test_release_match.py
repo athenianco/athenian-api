@@ -541,9 +541,20 @@ async def test__extract_released_commits_4_0_0(
         None,
     )
     assert len(releases) == 29
-    hashes1 = ReleaseToPullRequestMapper._extract_released_commits(releases, dag, time_boundary)
+    time_boundary = pd.Timestamp(time_boundary).to_numpy()
+    hashes1 = ReleaseToPullRequestMapper._extract_released_commits(
+        releases[Release.published_at.name].values,
+        releases[Release.sha.name].values,
+        dag,
+        time_boundary,
+    )
     releases = releases.iloc[:2]
-    hashes2 = ReleaseToPullRequestMapper._extract_released_commits(releases, dag, time_boundary)
+    hashes2 = ReleaseToPullRequestMapper._extract_released_commits(
+        releases[Release.published_at.name].values,
+        releases[Release.sha.name].values,
+        dag,
+        time_boundary,
+    )
     assert_array_equal(hashes1, hashes2)
     assert len(hashes1) == 181
 

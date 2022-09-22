@@ -629,8 +629,10 @@ class DonePRFactsLoader:
             postgres,
         )
         queries = queries_undeployed + queries_deployed
+        batch_size = 10
         batches = [
-            pdb.fetch_all(union_all(*queries[i : i + 20])) for i in range(0, len(queries), 20)
+            pdb.fetch_all(union_all(*queries[i : i + batch_size]))
+            for i in range(0, len(queries), batch_size)
         ]
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
             rows = list(chain.from_iterable(await gather(*batches)))
