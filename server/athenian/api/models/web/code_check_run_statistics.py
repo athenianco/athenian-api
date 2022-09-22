@@ -20,22 +20,6 @@ class CodeCheckRunStatistics(Model):
     mean_execution_time_timeline: list[timedelta]
     median_execution_time_timeline: list[timedelta]
 
-    def validate_count(self, count: int) -> int:
-        """Sets the count of this CodeCheckRunStatistics.
-
-        Number of executions with respect to `date_from` and `date_to`.
-
-        :param count: The count of this CodeCheckRunStatistics.
-        """
-        if count is None:
-            raise ValueError("Invalid value for `count`, must not be `None`")
-        if count < 1:
-            raise ValueError(
-                "Invalid value for `count`, must be a value greater than or equal to `1`",
-            )
-
-        return count
-
     def validate_successes(self, successes: int) -> int:
         """Sets the successes of this CodeCheckRunStatistics.
 
