@@ -2069,7 +2069,6 @@ async def hide_first_releases(
                     ghdprf.repository_full_name.name: repo,
                     ghdprf.pr_node_id.name: row[ghdprf.pr_node_id.name],
                     ghdprf.data.name: PullRequestFacts.from_fields(**args).data,
-                    ghdprf.pr_done_at.name: args[PullRequestFacts.f.merged].item(),
                     ghdprf.updated_at.name: now,
                     **{k.name: row[k.name] for k in extra_cols},
                 },
@@ -2079,7 +2078,7 @@ async def hide_first_releases(
             index_elements=ghdprf.__table__.primary_key.columns,
             set_={
                 col.name: getattr(sql.excluded, col.name)
-                for col in (ghdprf.pr_done_at, ghdprf.updated_at, ghdprf.data)
+                for col in (ghdprf.updated_at, ghdprf.data)
             },
         )
         if pdb.url.dialect == "sqlite":
