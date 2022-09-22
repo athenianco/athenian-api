@@ -228,8 +228,6 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
 
     __tablename__ = "release_settings"
 
-    repository = Column(String())
-
     repo_id = Column(BigInteger(), primary_key=True)
     """The identifier of the repository the release setting is about.
 
