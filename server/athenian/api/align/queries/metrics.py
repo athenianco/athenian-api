@@ -15,11 +15,11 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import (
+    GraphQLMetricValue,
+    GraphQLMetricValues,
+    GraphQLTeamMetricValue,
     GraphQLTeamTree,
     MetricParamsFields,
-    MetricValue,
-    MetricValues,
-    TeamMetricValue,
 )
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
@@ -542,9 +542,11 @@ def _build_metrics_response(
     team_tree: GraphQLTeamTree,
     metrics: Sequence[str],
     triaged: dict[str, dict[tuple[int, int], object]],
-) -> list[MetricValues]:
+) -> list[GraphQLMetricValues]:
     return [
-        MetricValues(metric=metric, value=_build_team_metric_value(team_tree, triaged[metric]))
+        GraphQLMetricValues(
+            metric=metric, value=_build_team_metric_value(team_tree, triaged[metric]),
+        )
         for metric in metrics
     ]
 
@@ -552,9 +554,9 @@ def _build_metrics_response(
 def _build_team_metric_value(
     team_tree: GraphQLTeamTree,
     metric_values: dict[tuple[int, int], object],
-) -> TeamMetricValue:
-    return TeamMetricValue(
+) -> GraphQLTeamMetricValue:
+    return GraphQLTeamMetricValue(
         team=team_tree,
-        value=MetricValue(metric_values[(team_tree.id, 0)]),
+        value=GraphQLMetricValue(metric_values[(team_tree.id, 0)]),
         children=[_build_team_metric_value(child, metric_values) for child in team_tree.children],
     )

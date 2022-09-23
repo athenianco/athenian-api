@@ -1,10 +1,10 @@
-from datetime import date
 from typing import Any, Optional
 
 import numpy as np
 
 from athenian.api.models.web import Contributor, TeamTree
 from athenian.api.models.web.base_model_ import Enum, Model
+from athenian.api.models.web.goal import GoalTree, TeamGoalTree
 
 
 class GoalRemoveStatus(Model):
@@ -58,6 +58,40 @@ class MutateGoalResult(Model):
         return self._goal
 
 
+class GraphQLMetricValue(Model):
+    """The value for a given team and metric."""
+
+    attribute_types = {
+        "int_": Optional[int],
+        "str_": Optional[object],
+        "float_": Optional[float],
+    }
+
+    attribute_map = {
+        "int_": "int",
+        "str_": "str",
+        "float_": "float",
+    }
+
+    def __init__(self, value: Any):
+        """Initialize a new instance of GraphQLMetricValue."""
+        self._int_ = self._str_ = self._float_ = None
+        if isinstance(value, (int, np.integer)):
+            self._int_ = value
+        elif isinstance(value, float):
+            self._float_ = value
+        else:
+            self._str_ = value
+
+
+class GraphQLGoalValue(Model):
+    """The current metric values for the goal on a team."""
+
+    current: GraphQLMetricValue
+    initial: GraphQLMetricValue
+    target: Optional[GraphQLMetricValue]
+
+
 class GraphQLTeamTree(TeamTree):
     """Wraps the generic TeamTree model to add camel case attribute map for GraphQL."""
 
@@ -80,39 +114,13 @@ class GraphQLTeamTree(TeamTree):
         return cls(**kwargs)
 
 
-class MetricValue(Model):
-    """The value for a given team and metric."""
-
-    attribute_types = {
-        "int_": Optional[int],
-        "str_": Optional[object],
-        "float_": Optional[float],
-    }
-
-    attribute_map = {
-        "int_": "int",
-        "str_": "str",
-        "float_": "float",
-    }
-
-    def __init__(self, value: Any):
-        """Initialize a new instance of MetricValue."""
-        self._int_ = self._str_ = self._float_ = None
-        if isinstance(value, (int, np.integer)):
-            self._int_ = value
-        elif isinstance(value, float):
-            self._float_ = value
-        else:
-            self._str_ = value
-
-
-class TeamMetricValue(Model):
+class GraphQLTeamMetricValue(Model):
     """Team metric value tree node."""
 
     attribute_types = {
         "team": TeamTree,
-        "value": MetricValue,
-        "children": list[Model],  # list[TeamMetricValue],
+        "value": GraphQLMetricValue,
+        "children": list[Model],  # list[GraphQLTeamMetricValue],
     }
 
     attribute_map = {
@@ -120,14 +128,14 @@ class TeamMetricValue(Model):
     }
 
 
-TeamMetricValue.attribute_types["children"] = list[TeamMetricValue]
+GraphQLTeamMetricValue.attribute_types["children"] = list[GraphQLTeamMetricValue]
 
 
-class MetricValues(Model):
+class GraphQLMetricValues(Model):
     """Response from metricsCurrentValues(), a specific metric team tree."""
 
     metric: str
-    value: TeamMetricValue
+    value: GraphQLTeamMetricValue
 
 
 class _GoalMetricFilters(metaclass=Enum):  # noqa: PIE795
@@ -188,38 +196,30 @@ class MetricParamsFields(_GoalMetricFilters):
     expiresAt = "expiresAt"
 
 
-class GoalValue(Model):
-    """The current metric values for the goal on a team."""
+class GraphQLTeamGoalTree(TeamGoalTree):
+    """Wraps the generic TeamGoalTree model to change the type of the team field."""
 
-    current: MetricValue
-    initial: MetricValue
-    target: Optional[MetricValue]
+    team: GraphQLTeamTree
+    value: GraphQLGoalValue
+
+    @classmethod
+    def from_team_goal_tree(cls, team_goal_tree: TeamGoalTree) -> "GraphQLTeamGoalTree":
+        """Build a GraphQLTeamGoalTree from a base TeamGoalTree."""
+        kwargs = {
+            name: getattr(team_goal_tree, name)
+            for name in team_goal_tree.attribute_types
+            if name != "team"
+        }
+        kwargs["team"] = GraphQLTeamTree.from_team_tree(team_goal_tree["team"])
+        return cls(**kwargs)
 
 
-class TeamGoalTree(Model):
-    """The team goal tree relative to a team and its descendants."""
+class GraphQLGoalTree(GoalTree):
+    """Wraps the generic GoalTree model to add camel case attribute map for GraphQL."""
 
-    team: TeamTree
-    value: GoalValue
-    children: list["TeamGoalTree"]
-
-
-class GoalTree(Model):
-    """A goal attached to a tree of teams."""
-
-    attribute_types = {
-        "id": int,
-        "name": str,
-        "metric": str,
-        "valid_from": date,
-        "expires_at": date,
-        "team_goal": TeamGoalTree,
-        "repositories": Optional[list[str]],
-        "jira_projects": Optional[list[str]],
-        "jira_priorities": Optional[list[str]],
-        "jira_issue_types": Optional[list[str]],
+    attribute_types: dict = {
+        "team_goal": GraphQLTeamGoalTree,
     }
-
     attribute_map = {
         "valid_from": "validFrom",
         "expires_at": "expiresAt",
@@ -228,6 +228,17 @@ class GoalTree(Model):
         "jira_priorities": "jiraPriorities",
         "jira_issue_types": "jiraIssueTypes",
     }
+
+    @classmethod
+    def from_goal_tree(cls, goal_tree: GoalTree) -> "GraphQLGoalTree":
+        """Build a GraphQLGoalTree from a base GoalTree."""
+        kwargs = {
+            name: getattr(goal_tree, name)
+            for name in goal_tree.attribute_types
+            if name != "team_goal"
+        }
+        kwargs["team_goal"] = GraphQLTeamGoalTree.from_team_goal_tree(goal_tree.team_goal)
+        return cls(**kwargs)
 
 
 class Member(Contributor):

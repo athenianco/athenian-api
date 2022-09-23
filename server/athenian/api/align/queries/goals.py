@@ -15,11 +15,11 @@ from athenian.api.align.goals.dbaccess import (
     resolve_goal_repositories,
 )
 from athenian.api.align.models import (
-    GoalTree,
-    GoalValue,
+    GraphQLGoalTree,
+    GraphQLGoalValue,
+    GraphQLMetricValue,
+    GraphQLTeamGoalTree,
     GraphQLTeamTree,
-    MetricValue,
-    TeamGoalTree,
 )
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
@@ -132,7 +132,7 @@ class _GoalToServe:
     def request(self) -> TeamMetricsRequest:
         return self._request
 
-    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
+    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GraphQLGoalTree:
         initial_metrics = metric_values[self._request.time_intervals[0]][self._request.metrics[0]]
         current_metrics = metric_values[self._request.time_intervals[1]][self._request.metrics[0]]
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
@@ -247,7 +247,7 @@ def _team_tree_to_goal_tree(
     team_goal_rows: Iterable[Row],
     metric_values: GoalMetricValues,
     prefixer: Prefixer,
-) -> GoalTree:
+) -> GraphQLGoalTree:
     valid_from, expires_at = goal_datetimes_to_dates(
         goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
     )
@@ -256,7 +256,7 @@ def _team_tree_to_goal_tree(
     if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
         repos = [str(repo_name) for repo_name in resolve_goal_repositories(repos, prefixer)]
 
-    return GoalTree(
+    return GraphQLGoalTree(
         id=goal_row[Goal.id.name],
         name=goal_row[Goal.name.name],
         metric=goal_row[Goal.metric.name],
@@ -274,7 +274,7 @@ def _team_tree_to_team_goal_tree(
     team_tree: GraphQLTeamTree,
     team_goal_rows_map: Mapping[int, Row],
     metric_values: GoalMetricValues,
-) -> TeamGoalTree:
+) -> GraphQLTeamGoalTree:
     team_id = team_tree.id
     try:
         team_goal_row = team_goal_rows_map[team_id]
@@ -284,18 +284,18 @@ def _team_tree_to_team_goal_tree(
         goal_id = 0
     else:
         goal_id = team_goal_row[TeamGoal.goal_id.name]
-        target = MetricValue(team_goal_row[TeamGoal.target.name])
+        target = GraphQLMetricValue(team_goal_row[TeamGoal.target.name])
 
-    goal_value = GoalValue(
-        current=MetricValue(metric_values.current.get((team_id, goal_id))),
-        initial=MetricValue(metric_values.initial.get((team_id, goal_id))),
+    goal_value = GraphQLGoalValue(
+        current=GraphQLMetricValue(metric_values.current.get((team_id, goal_id))),
+        initial=GraphQLMetricValue(metric_values.initial.get((team_id, goal_id))),
         target=target,
     )
     children = [
         _team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
         for child in team_tree.children
     ]
-    return TeamGoalTree(team=team_tree, value=goal_value, children=children)
+    return GraphQLTeamGoalTree(team=team_tree, value=goal_value, children=children)
 
 
 @sentry_span
