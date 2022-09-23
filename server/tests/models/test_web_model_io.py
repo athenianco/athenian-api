@@ -1,6 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
-from athenian.api.models.web import JIRAEpic, JIRAEpicChild, MappedJIRAIdentity, PullRequestNumbers
+from athenian.api.models.web import (
+    InvitationCheckResult,
+    JIRAEpic,
+    JIRAEpicChild,
+    MappedJIRAIdentity,
+    PullRequestNumbers,
+)
 from athenian.api.models.web_model_io import deserialize_models, serialize_models
 
 
@@ -87,6 +93,9 @@ def test_serialize_models_smoke():
         {"a": 111},
         [
             PullRequestNumbers(repository="athenian", numbers=[1, 2, 7, 4]),
+        ],
+        [
+            InvitationCheckResult(active=False, type="admin", valid=True),
         ],
     )
     new_models = deserialize_models(serialize_models(models))
