@@ -3,7 +3,6 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
-import pickle
 from typing import Any, Collection, Mapping, Optional, Type, Union
 
 from aiohttp import web
@@ -91,6 +90,7 @@ from athenian.api.models.web import (
     JIRAUser,
     PullRequest as WebPullRequest,
 )
+from athenian.api.models.web_model_io import deserialize_models, serialize_models
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
@@ -224,8 +224,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_models,
+    deserialize=deserialize_models,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
         JIRAFilterReturn.EPICS in return_,
         JIRAFilterReturn.PRIORITIES in return_,
@@ -242,6 +242,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         release_settings,
         logical_settings,
     ),
+    version=2,
 )
 async def _epic_flow(
     return_: set[str],
@@ -548,8 +549,8 @@ async def _epic_flow(
 @sentry_span
 @cached(
     exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
+    serialize=serialize_models,
+    deserialize=deserialize_models,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
         JIRAFilterReturn.ISSUES in return_,
         JIRAFilterReturn.ISSUE_BODIES in return_,
@@ -571,6 +572,7 @@ async def _epic_flow(
         release_settings,
         logical_settings,
     ),
+    version=2,
 )
 async def _issue_flow(
     return_: set[str],
