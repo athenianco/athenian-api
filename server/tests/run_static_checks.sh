@@ -17,7 +17,8 @@ if ! [ -z "$(git diff HEAD)" ]; then
     exit 1
 fi
 
-(find . -name '*.py' | xargs add-trailing-comma --py36-plus)
+find . -path './athenian/api/sentry_native' -prune -o \( -name '*.py' -print \) |
+    xargs add-trailing-comma --py36-plus
 
 (chorny .)
 

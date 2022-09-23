@@ -23,3 +23,4 @@ skip = ["athenian/api/sentry_native"]
 [tool.black]
 line-length = 99
 preview = true
+extend-exclude = "athenian/api/sentry_native"
