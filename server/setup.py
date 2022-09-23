@@ -49,6 +49,7 @@ setup(
                 code_root / "pandas_io.pyx",
                 code_root / "sentry_native.pyx",
                 code_root / "models" / "sql_builders.pyx",
+                code_root / "models" / "web_model_io.pyx",
             )
             # fmt: on
         ],
