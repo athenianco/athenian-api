@@ -4,14 +4,19 @@ from typing import Optional
 from athenian.api.models.web.base_model_ import Model
 
 
-class TeamTree(Model):
-    """A team with the tree of child teams."""
+class TeamTreeLeaf(Model):
+    """A team with extended information, leaf of a `TeamTree` tree."""
 
     id: int
     name: str
     members_count: int
     total_teams_count: int
     total_members_count: int
+
+
+class TeamTree(TeamTreeLeaf):
+    """A team with the tree of child teams."""
+
     children: list["TeamTree"]
     members: list[int]
     total_members: list[int]
@@ -66,3 +71,12 @@ class TeamTree(Model):
             self.id,
             *chain.from_iterable(child.flatten_team_ids() for child in self.children),
         ]
+
+    def as_leaf(self) -> TeamTreeLeaf:
+        """Return the TeamTreeLeaf correspoding to this object."""
+        kwargs = {
+            name: getattr(self, name)
+            for name in self.attribute_types
+            if name in TeamTreeLeaf.attribute_types
+        }
+        return TeamTreeLeaf(**kwargs)

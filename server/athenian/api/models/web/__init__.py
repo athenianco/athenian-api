@@ -113,6 +113,7 @@ from athenian.api.models.web.generic_error import (
 )
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
+from athenian.api.models.web.goal import AlignGoalsRequest, GoalTree, GoalValue, TeamGoalTree
 from athenian.api.models.web.goal_template import GoalTemplate, GoalTemplateCommon
 from athenian.api.models.web.goal_template_create_request import GoalTemplateCreateRequest
 from athenian.api.models.web.goal_template_update_request import GoalTemplateUpdateRequest
@@ -207,7 +208,7 @@ from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.models.web.team import Team
 from athenian.api.models.web.team_create_request import TeamCreateRequest
-from athenian.api.models.web.team_tree import TeamTree
+from athenian.api.models.web.team_tree import TeamTree, TeamTreeLeaf
 from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.models.web.user import User
 from athenian.api.models.web.versions import Versions

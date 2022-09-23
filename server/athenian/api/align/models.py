@@ -1,12 +1,10 @@
-from __future__ import annotations
-
-from datetime import date
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 
 from athenian.api.models.web import Contributor, TeamTree
 from athenian.api.models.web.base_model_ import Enum, Model
+from athenian.api.models.web.goal import GoalTree, TeamGoalTree
 
 
 class GoalRemoveStatus(Model):
@@ -60,29 +58,7 @@ class MutateGoalResult(Model):
         return self._goal
 
 
-class GraphQLTeamTree(TeamTree):
-    """Wraps the generic TeamTree model to add camel case attribute map for GraphQL."""
-
-    attribute_types: dict = {}
-    attribute_map = {
-        "members_count": "membersCount",
-        "total_teams_count": "totalTeamsCount",
-        "total_members_count": "totalMembersCount",
-    }
-
-    @classmethod
-    def from_team_tree(cls, team_tree: TeamTree) -> GraphQLTeamTree:
-        """Build a GraphQLTeamTree from a base TeamTree."""
-        kwargs = {
-            name: getattr(team_tree, name)
-            for name in team_tree.attribute_types
-            if name != "children"
-        }
-        kwargs["children"] = [cls.from_team_tree(child) for child in team_tree.children]
-        return cls(**kwargs)
-
-
-class MetricValue(Model):
+class GraphQLMetricValue(Model):
     """The value for a given team and metric."""
 
     attribute_types = {
@@ -98,7 +74,7 @@ class MetricValue(Model):
     }
 
     def __init__(self, value: Any):
-        """Initialize a new instance of MetricValue."""
+        """Initialize a new instance of GraphQLMetricValue."""
         self._int_ = self._str_ = self._float_ = None
         if isinstance(value, (int, np.integer)):
             self._int_ = value
@@ -107,82 +83,59 @@ class MetricValue(Model):
         else:
             self._str_ = value
 
-    @property
-    def int_(self) -> Optional[Union[int, np.integer]]:
-        """Return the metric value as an integer."""
-        return self._int_
 
-    @property
-    def str_(self) -> Optional[object]:
-        """Return the metric value as a string."""
-        return self._str_
+class GraphQLGoalValue(Model):
+    """The current metric values for the goal on a team."""
 
-    @property
-    def float_(self) -> float:
-        """Return the metric value as a floating point number."""
-        return self._float_
+    current: GraphQLMetricValue
+    initial: GraphQLMetricValue
+    target: Optional[GraphQLMetricValue]
 
 
-class TeamMetricValue(Model):
+class GraphQLTeamTree(TeamTree):
+    """Wraps the generic TeamTree model to add camel case attribute map for GraphQL."""
+
+    attribute_types: dict = {}
+    attribute_map = {
+        "members_count": "membersCount",
+        "total_teams_count": "totalTeamsCount",
+        "total_members_count": "totalMembersCount",
+    }
+
+    @classmethod
+    def from_team_tree(cls, team_tree: TeamTree) -> "GraphQLTeamTree":
+        """Build a GraphQLTeamTree from a base TeamTree."""
+        kwargs = {
+            name: getattr(team_tree, name)
+            for name in team_tree.attribute_types
+            if name != "children"
+        }
+        kwargs["children"] = [cls.from_team_tree(child) for child in team_tree.children]
+        return cls(**kwargs)
+
+
+class GraphQLTeamMetricValue(Model):
     """Team metric value tree node."""
 
     attribute_types = {
         "team": TeamTree,
-        "value": MetricValue,
-        "children": list[Model],  # list[TeamMetricValue],
+        "value": GraphQLMetricValue,
+        "children": list[Model],  # list[GraphQLTeamMetricValue],
     }
 
     attribute_map = {
         "team_id": "teamId",
     }
 
-    def __init__(self, team: TeamTree, value: MetricValue, children: list[TeamMetricValue]):
-        """Initialize a new instance of TeamMetricValue."""
-        self._team = team
-        self._value = value
-        self._children = children
 
-    @property
-    def team(self) -> TeamTree:
-        """Return the team relative to this metric value."""
-        return self._team
-
-    @property
-    def value(self) -> MetricValue:
-        """Return the metric value."""
-        return self._value
-
-    @property
-    def children(self) -> list[TeamMetricValue]:
-        """Return the list of child team metrics."""
-        return self._children
+GraphQLTeamMetricValue.attribute_types["children"] = list[GraphQLTeamMetricValue]
 
 
-TeamMetricValue.attribute_types["children"] = list[TeamMetricValue]
-
-
-class MetricValues(Model):
+class GraphQLMetricValues(Model):
     """Response from metricsCurrentValues(), a specific metric team tree."""
 
-    attribute_types = {
-        "metric": str,
-        "value": TeamMetricValue,
-    }
-
-    def __init__(self, metric: str, value: TeamMetricValue):
-        """Init the MetricValues."""
-        self._metric = metric
-        self._value = value
-
-    @property
-    def metric(self) -> str:
-        """Return the metric ID."""
-        return self._metric
-
-    @property
-    def value(self) -> TeamMetricValue:
-        """Return the team tree of metric values."""
-        return self._value
+    metric: str
+    value: GraphQLTeamMetricValue
 
 
 class _GoalMetricFilters(metaclass=Enum):  # noqa: PIE795
@@ -243,87 +196,30 @@ class MetricParamsFields(_GoalMetricFilters):
     expiresAt = "expiresAt"
 
 
-class GoalValue(Model):
-    """The current metric values for the goal on a team."""
+class GraphQLTeamGoalTree(TeamGoalTree):
+    """Wraps the generic TeamGoalTree model to change the type of the team field."""
 
-    attribute_types = {
-        "current": MetricValue,
-        "initial": MetricValue,
-        "target": Optional[MetricValue],
+    team: GraphQLTeamTree
+    value: GraphQLGoalValue
+
+    @classmethod
+    def from_team_goal_tree(cls, team_goal_tree: TeamGoalTree) -> "GraphQLTeamGoalTree":
+        """Build a GraphQLTeamGoalTree from a base TeamGoalTree."""
+        kwargs = {
+            name: getattr(team_goal_tree, name)
+            for name in team_goal_tree.attribute_types
+            if name != "team"
+        }
+        kwargs["team"] = GraphQLTeamTree.from_team_tree(team_goal_tree["team"])
+        return cls(**kwargs)
+
+
+class GraphQLGoalTree(GoalTree):
+    """Wraps the generic GoalTree model to add camel case attribute map for GraphQL."""
+
+    attribute_types: dict = {
+        "team_goal": GraphQLTeamGoalTree,
     }
-
-    def __init__(self, current: MetricValue, initial: MetricValue, target: Optional[MetricValue]):
-        """Init the GoalValue."""
-        self._current = current
-        self._initial = initial
-        self._target = target
-
-    @property
-    def current(self) -> MetricValue:
-        """Get current metric value."""
-        return self._current
-
-    @property
-    def initial(self) -> MetricValue:
-        """Get initial metric value."""
-        return self._initial
-
-    @property
-    def target(self) -> Optional[MetricValue]:
-        """Get target metric value."""
-        return self._target
-
-
-class TeamGoalTree(Model):
-    """The team goal tree relative to a team and its descendants."""
-
-    attribute_types = {
-        "team": TeamTree,
-        "value": GoalValue,
-        "children": list[Model],  # list[TeamGoalTree]
-    }
-
-    def __init__(self, team: TeamTree, value: GoalValue, children: list[TeamGoalTree]):
-        """Init the TeamGoalTree."""
-        self._team = team
-        self._value = value
-        self._children = children
-
-    @property
-    def team(self) -> TeamTree:
-        """Get the team this node is applied to."""
-        return self._team
-
-    @property
-    def value(self) -> GoalValue:
-        """Get the GoalValue attached to the team, if any."""
-        return self._value
-
-    @property
-    def children(self) -> list[TeamGoalTree]:
-        """Get the list of TeamGoalTree for the Team children."""
-        return self._children
-
-
-TeamGoalTree.attribute_types["children"] = list[TeamGoalTree]
-
-
-class GoalTree(Model):
-    """A goal attached to a tree of teams."""
-
-    attribute_types = {
-        "id": int,
-        "name": str,
-        "metric": str,
-        "valid_from": date,
-        "expires_at": date,
-        "team_goal": TeamGoalTree,
-        "repositories": Optional[list[str]],
-        "jira_projects": Optional[list[str]],
-        "jira_priorities": Optional[list[str]],
-        "jira_issue_types": Optional[list[str]],
-    }
-
     attribute_map = {
         "valid_from": "validFrom",
         "expires_at": "expiresAt",
@@ -333,80 +229,16 @@ class GoalTree(Model):
         "jira_issue_types": "jiraIssueTypes",
     }
 
-    def __init__(
-        self,
-        id: int,
-        name: str,
-        metric: str,
-        valid_from: date,
-        expires_at: date,
-        team_goal: TeamGoalTree,
-        repositories: Optional[list[str]],
-        jira_projects: Optional[list[str]],
-        jira_priorities: Optional[list[str]],
-        jira_issue_types: Optional[list[str]],
-    ):
-        """Init the GoalTree."""
-        self._id = id
-        self._name = name
-        self._metric = metric
-        self._valid_from = valid_from
-        self._expires_at = expires_at
-        self._team_goal = team_goal
-        self._repositories = repositories
-        self._jira_projects = jira_projects
-        self._jira_priorities = jira_priorities
-        self._jira_issue_types = jira_issue_types
-
-    @property
-    def id(self) -> int:
-        """Get the identifier of the goal."""
-        return self._id
-
-    @property
-    def name(self) -> str:
-        """Get the name of the goal."""
-        return self._name
-
-    @property
-    def metric(self) -> str:
-        """Get the metric of the goal."""
-        return self._metric
-
-    @property
-    def valid_from(self) -> date:
-        """Get the valid from date of the goal."""
-        return self._valid_from
-
-    @property
-    def expires_at(self) -> date:
-        """Get the epxire date of the goal."""
-        return self._expires_at
-
-    @property
-    def team_goal(self) -> TeamGoalTree:
-        """Get the root of the `TeamGoalTree` attached to the goal."""
-        return self._team_goal
-
-    @property
-    def repositories(self) -> Optional[list[str]]:
-        """Get the repositories defining the goal scope."""
-        return self._repositories
-
-    @property
-    def jira_projects(self) -> Optional[list[str]]:
-        """Get the JIRA projects defining the goal scope."""
-        return self._jira_projects
-
-    @property
-    def jira_priorities(self) -> Optional[list[str]]:
-        """Get the JIRA priorities defining the goal scope."""
-        return self._jira_priorities
-
-    @property
-    def jira_issue_types(self) -> Optional[list[str]]:
-        """Get the JIRA issue types defining the goal scope."""
-        return self._jira_issue_types
+    @classmethod
+    def from_goal_tree(cls, goal_tree: GoalTree) -> "GraphQLGoalTree":
+        """Build a GraphQLGoalTree from a base GoalTree."""
+        kwargs = {
+            name: getattr(goal_tree, name)
+            for name in goal_tree.attribute_types
+            if name != "team_goal"
+        }
+        kwargs["team_goal"] = GraphQLTeamGoalTree.from_team_goal_tree(goal_tree.team_goal)
+        return cls(**kwargs)
 
 
 class Member(Contributor):
