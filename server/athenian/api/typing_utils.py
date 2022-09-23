@@ -89,6 +89,8 @@ def is_union(klass: object) -> bool:
 
 def is_optional(klass: type):
     """Determine whether klass is an Optional."""
+    # this only supports Optional[T] and not Optional[T, K] but currently
+    # web_model_io.pyx requires this behavior
     return (
         is_union(klass) and len(klass.__args__) == 2 and issubclass(klass.__args__[1], type(None))
     )

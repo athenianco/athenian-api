@@ -1,10 +1,17 @@
 import dataclasses
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
+import pytest
 
-from athenian.api.typing_utils import dataclass_asdict, df_from_structs, is_union, numpy_struct
+from athenian.api.typing_utils import (
+    dataclass_asdict,
+    df_from_structs,
+    is_optional,
+    is_union,
+    numpy_struct,
+)
 
 
 class TestIsUnion:
@@ -17,6 +24,18 @@ class TestIsUnion:
     def test_negative(self) -> None:
         for obj in (1, None, int, type("_SimpleStruct", (), {})):
             assert not is_union(obj)
+
+
+class TestIsOptional:
+    @pytest.mark.xfail
+    def test_optional_new_style_union(self) -> None:
+        assert is_optional(Optional[str | int])
+        assert is_optional(Optional[str | int | list])
+
+    @pytest.mark.xfail
+    def test_optional_union(self) -> None:
+        assert is_optional(Optional[Union[str, int]])
+        assert is_optional(Optional[Union[str, int, list]])
 
 
 class TestDataclassAsDict:
