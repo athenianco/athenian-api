@@ -66,9 +66,12 @@ cdef extern from "Python.h":
     unsigned int PyUnicode_4BYTE_KIND
 
     PyObject *Py_None
+    PyObject *Py_True
+    PyObject *Py_False
     PyTypeObject PyLong_Type
     PyTypeObject PyFloat_Type
     PyTypeObject PyUnicode_Type
+    PyTypeObject PyBool_Type
 
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
     PyObject *PyObject_GetAttr(PyObject *o, object attr_name)
@@ -105,6 +108,7 @@ cdef enum DataType:
     DT_STRING = 5
     DT_DT = 6
     DT_TD = 7
+    DT_BOOL = 8
 
 
 ctypedef struct ModelFields:
@@ -131,6 +135,8 @@ cdef inline DataType _discover_data_type(PyObject *obj, PyTypeObject **deref) ex
         return DT_DT
     elif as_type == PyDateTimeAPI.DeltaType:
         return DT_TD
+    elif as_type == &PyBool_Type:
+        return DT_BOOL
     elif is_generic(<object> obj):
         args = (<object> obj).__args__
         as_type = <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> args, 0)
@@ -184,7 +190,7 @@ cdef ModelFields _discover_fields(PyTypeObject *model, DataType dtype, Py_ssize_
 
 cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nogil:
     cdef:
-        char dtype = spec.type
+        char dtype = spec.type, bool
         long val_long
         double val_double
         uint32_t str_length, val32, i
@@ -243,6 +249,11 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         val16[0] = var_long & 0xFFFF
         fwrite(&val32, 4, 1, stream)
         fwrite(val16, 2, 1, stream)
+    elif dtype == DT_BOOL:
+        bool = obj == Py_True
+        if not bool and obj != Py_False:
+            return obj
+        fwrite(&bool, 1, 1, stream)
     elif dtype == DT_LIST:
         if not PyList_CheckExact(obj):
             return obj
@@ -367,7 +378,7 @@ def deserialize_models(bytes buffer not None) -> tuple[list[object], ...]:
 
 cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str corrupted_msg):
     cdef:
-        char dtype = 0
+        char dtype = 0, bool = 0
         long long_val = 0
         double double_val = 0
         uint32_t aux32 = 0, i
@@ -421,6 +432,12 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         day = aux32 >> 1
         second = aux16[0] + ((aux32 & 1) << 16)
         return PyDateTimeAPI.Delta_FromDelta(day, second, 0, 1, PyDateTimeAPI.DeltaType)
+    elif dtype == DT_BOOL:
+        if fread(&bool, 1, 1, stream) != 1:
+            raise ValueError(corrupted_msg % (ftell(stream), "bool"))
+        if bool:
+            return True
+        return False
     elif dtype == DT_MODEL:
         obj = <object> spec.model
         if fread(&aux32, 4, 1, stream) != 1:
