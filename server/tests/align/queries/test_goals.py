@@ -541,6 +541,32 @@ class TestGoals(BaseGoalsTest):
         assert (tg := goal_21["teamGoal"])["team"]["id"] == 1
         assert tg["value"]["initial"]["int"] == 0
 
+    @pytest.mark.xfail
+    async def test_team_unassigned_multiple_goals(self, sdb: Database) -> None:
+        # TODO: goal_id 0 passed to calculate_team_metrics conflicts for
+        # the two goals with different filters so test fails
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2022, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            TeamFactory(id=10, parent_id=1, members=[40020]),
+            GoalFactory(id=20, metric=PullRequestMetricID.PR_ALL_COUNT, **dates),
+            GoalFactory(
+                id=21, metric=PullRequestMetricID.PR_ALL_COUNT, jira_projects=["INVALID"], **dates,
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10),
+            TeamGoalFactory(goal_id=21, team_id=10),
+        )
+        res = await self._request(1, 0, only_with_targets=True)
+        goal_20 = res["data"]["goals"][0]
+        assert (tg := goal_20["teamGoal"])["team"]["id"] == 1
+        assert tg["value"]["initial"]["int"] == 93
+
+        goal_21 = res["data"]["goals"][1]
+        assert (tg := goal_21["teamGoal"])["team"]["id"] == 1
+        # value from goal 20 overwites the value for goal 21
+        assert tg["value"]["initial"]["int"] == 0
+
     async def test_jira_fields(self, sdb: Database) -> None:
         await models_insert(
             sdb,
