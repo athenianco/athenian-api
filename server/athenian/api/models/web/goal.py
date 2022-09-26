@@ -1,4 +1,5 @@
 from datetime import date
+from enum import Enum
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -15,6 +16,13 @@ class AlignGoalsRequest(Model):
 
 
 MetricValue = float | int | str
+
+
+class GoalSeriesGranularity(Enum):
+    """The granularity of a timeseries for goal metrics."""
+
+    WEEK = "week"
+    MONTH = "month"
 
 
 class GoalValue(Model):
