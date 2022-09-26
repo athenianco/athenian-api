@@ -152,7 +152,7 @@ async def extract_commits(
                 continue
         sql_filters.append(PushCommit.committer_user_id.in_(committer_ids))
     if columns is None:
-        cols_query, cols_df = [PushCommit], PushCommit
+        cols_query = cols_df = PushCommit
     else:
         for col in (PushCommit.node_id, PushCommit.repository_full_name, PushCommit.sha):
             if col not in columns:
@@ -834,3 +834,8 @@ async def _fetch_commits_for_dags(
         for repo, nodes in commits.items()
     ]
     return await read_sql_query(union_all(*queries), mdb, COMMIT_FETCH_COMMITS_COLUMNS)
+
+
+def compose_commit_url(prefix: str, repo: str, sha: str) -> str:
+    """Return GitHub URL for the commit credentials."""
+    return f"{prefix}/{repo}/commit/{sha}"

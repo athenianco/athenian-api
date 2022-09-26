@@ -14,6 +14,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, false, func, or_, select, true, union_all, update
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -38,6 +39,7 @@ from athenian.api.internal.logical_repos import (
 from athenian.api.internal.miners.github.branches import load_branch_commit_dates
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
+    compose_commit_url,
     fetch_precomputed_commit_history_dags,
     fetch_repository_commits,
 )
@@ -141,6 +143,7 @@ class ReleaseLoader:
                 prefixer,
                 mdb,
                 rdb,
+                cache,
                 index=index,
             ),
         )
@@ -536,26 +539,22 @@ class ReleaseLoader:
         or_items, _ = match_groups_to_sql(match_groups, prel)
         if pdb.url.dialect == "sqlite":
             query = (
-                select([prel])
+                select(prel)
                 .where(
-                    and_(
-                        or_(*or_items) if or_items else false(),
-                        prel.published_at.between(time_from, time_to),
-                        prel.acc_id == account,
-                    ),
+                    or_(*or_items) if or_items else false(),
+                    prel.published_at.between(time_from, time_to),
+                    prel.acc_id == account,
                 )
                 .order_by(desc(prel.published_at))
             )
         else:
             query = union_all(
                 *(
-                    select([prel])
+                    select(prel)
                     .where(
-                        and_(
-                            item,
-                            prel.published_at.between(time_from, time_to),
-                            prel.acc_id == account,
-                        ),
+                        item,
+                        prel.published_at.between(time_from, time_to),
+                        prel.acc_id == account,
                     )
                     .order_by(desc(prel.published_at))
                     for item in or_items
@@ -590,6 +589,7 @@ class ReleaseLoader:
         prefixer: Prefixer,
         mdb: Database,
         rdb: Database,
+        cache: Optional[aiomcache.Client],
         index: Optional[str | Sequence[str]] = None,
     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
@@ -607,11 +607,9 @@ class ReleaseLoader:
         release_rows = await rdb.fetch_all(
             select(ReleaseNotification)
             .where(
-                and_(
-                    ReleaseNotification.account_id == account,
-                    ReleaseNotification.published_at.between(time_from, time_to),
-                    ReleaseNotification.repository_node_id.in_(repo_ids),
-                ),
+                ReleaseNotification.account_id == account,
+                ReleaseNotification.published_at.between(time_from, time_to),
+                ReleaseNotification.repository_node_id.in_(repo_ids),
             )
             .order_by(desc(ReleaseNotification.published_at)),
         )
@@ -628,24 +626,26 @@ class ReleaseLoader:
         author_node_ids = {r[ReleaseNotification.author_node_id.name] for r in release_rows} - {
             None,
         }
+        commit_cols = [
+            NodeCommit.repository_id,
+            NodeCommit.node_id,
+            NodeCommit.sha,
+            NodeCommit.acc_id,
+        ]
         queries = []
         queries.extend(
-            select([NodeCommit.repository_id, NodeCommit.node_id, NodeCommit.sha]).where(
-                and_(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.repository_id == repo,
-                    func.substr(NodeCommit.sha, 1, 7).in_(commits),
-                ),
+            select(*commit_cols).where(
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.repository_id == repo,
+                func.substr(NodeCommit.sha, 1, 7).in_(commits),
             )
             for repo, commits in unresolved_commits_short.items()
         )
         queries.extend(
-            select([NodeCommit.repository_id, NodeCommit.node_id, NodeCommit.sha]).where(
-                and_(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.repository_id == repo,
-                    NodeCommit.sha.in_(commits),
-                ),
+            select(*commit_cols).where(
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.repository_id == repo,
+                NodeCommit.sha.in_(commits),
             )
             for repo, commits in unresolved_commits_long.items()
         )
@@ -661,41 +661,54 @@ class ReleaseLoader:
         if sql is not None:
 
             async def resolve_commits():
-                commit_rows = await mdb.fetch_all(sql)
-                for row in commit_rows:
-                    repo = row[NodeCommit.repository_id.name]
-                    node_id = row[NodeCommit.node_id.name]
-                    sha = row[NodeCommit.sha.name]
-                    resolved_commits[(repo, sha)] = node_id, sha
-                    resolved_commits[(repo, sha[:7])] = node_id, sha
+                commit_df, *url_prefixes = await gather(
+                    read_sql_query(sql, mdb, commit_cols),
+                    *(get_installation_url_prefix(meta_id, mdb, cache) for meta_id in meta_ids),
+                )
+                url_prefixes = dict(zip(meta_ids, url_prefixes))
+                for repo, node_id, sha, acc_id in zip(
+                    commit_df[NodeCommit.repository_id.name].values,
+                    commit_df[NodeCommit.node_id.name].values,
+                    commit_df[NodeCommit.sha.name].values,
+                    commit_df[NodeCommit.acc_id.name].values,
+                ):
+                    resolved_commits[(repo, sha)] = resolved_commits[(repo, sha[:7])] = (
+                        node_id,
+                        sha,
+                        compose_commit_url(url_prefixes[acc_id], repo_ids[repo], sha.decode()),
+                    )
 
             tasks.append(resolve_commits())
         if author_node_ids:
 
             async def resolve_users():
                 user_rows = await mdb.fetch_all(
-                    select([User.node_id, User.login]).where(
-                        and_(User.acc_id.in_(meta_ids), User.node_id.in_(author_node_ids)),
+                    select(User.node_id, User.login).where(
+                        User.acc_id.in_(meta_ids), User.node_id.in_(author_node_ids),
                     ),
                 )
                 nonlocal user_map
-                user_map = {r[User.node_id.name]: r[User.login.name] for r in user_rows}
+                user_map = dict(user_rows)
 
             tasks.append(resolve_users())
         await gather(*tasks)
 
         releases = []
         updated = []
+        empty_resolved = None, None, None
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
             repo_name = repo_ids[repo]
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
-                commit_node_id, commit_hash = resolved_commits.get(
-                    (repo, commit_prefix := row[ReleaseNotification.commit_hash_prefix.name]),
-                    (None, None),
+                commit_node_id, commit_hash, commit_url = resolved_commits.get(
+                    (
+                        repo,
+                        commit_prefix := row[ReleaseNotification.commit_hash_prefix.name].encode(),
+                    ),
+                    empty_resolved,
                 )
                 if commit_node_id is not None:
-                    updated.append((repo, commit_prefix, commit_node_id, commit_hash))
+                    updated.append((repo, commit_prefix, commit_node_id, commit_hash, commit_url))
                 else:
                     continue
             else:
@@ -729,7 +742,7 @@ class ReleaseLoader:
                         Release.repository_node_id.name: repo,
                         Release.sha.name: commit_hash,
                         Release.tag.name: None,
-                        Release.url.name: row[ReleaseNotification.url.name],
+                        Release.url.name: row[ReleaseNotification.url.name] or commit_url,
                         matched_by_column: ReleaseMatch.event.value,
                     },
                 )
@@ -737,20 +750,21 @@ class ReleaseLoader:
 
             async def update_pushed_release_commits():
                 now = datetime.now(timezone.utc)
-                for repo, prefix, node_id, full_hash in updated:
+                for repo, prefix, node_id, full_hash, url in updated:
                     await rdb.execute(
                         update(ReleaseNotification)
                         .where(
                             ReleaseNotification.account_id == account,
                             ReleaseNotification.repository_node_id == repo,
-                            ReleaseNotification.commit_hash_prefix == prefix,
+                            ReleaseNotification.commit_hash_prefix == prefix.decode(),
                         )
                         .values(
                             {
                                 ReleaseNotification.updated_at: datetime.now(timezone.utc),
                                 ReleaseNotification.resolved_commit_node_id: node_id,
                                 ReleaseNotification.resolved_at: now,
-                                ReleaseNotification.resolved_commit_hash: full_hash,
+                                ReleaseNotification.resolved_commit_hash: full_hash.decode(),
+                                ReleaseNotification.url: coalesce(ReleaseNotification.url, url),
                             },
                         ),
                     )
@@ -1339,7 +1353,7 @@ class ReleaseMatcher:
                         Release.sha.name: commits[PushCommit.sha.name],
                         Release.tag.name: None,
                         Release.url.name: [
-                            f"{url_prefixes[acc_id]}/{repo}/commit/{sha}"
+                            compose_commit_url(url_prefixes[acc_id], repo, sha)
                             for acc_id, repo, sha in zip(
                                 commits[PushCommit.acc_id.name].values,
                                 commits[PushCommit.repository_full_name.name].values,
@@ -1413,9 +1427,7 @@ class ReleaseMatcher:
             filters.append(PushCommit.sha.in_(commit_shas))
         else:
             filters.append(PushCommit.sha.in_any_values(commit_shas))
-        query = (
-            select([PushCommit]).where(and_(*filters)).order_by(desc(PushCommit.committed_date))
-        )
+        query = select(PushCommit).where(*filters).order_by(desc(PushCommit.committed_date))
         if small_scale:
             query = query.with_statement_hint(
                 "IndexScan(cmm github_node_commit_sha)",

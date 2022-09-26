@@ -55,8 +55,9 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     response = await client.request(
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
-    assert response.status == 200
-    statuses = json.loads((await response.read()).decode("utf-8"))
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    statuses = json.loads(text)
     assert isinstance(statuses, list)
     assert len(statuses) == 1
     assert statuses[0] == ReleaseNotificationStatus.ACCEPTED_RESOLVED
@@ -86,20 +87,25 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     }
 
     # check updates and when published_at and author are empty
-    del body[0]["published_at"]
+    for col in ("published_at", "url"):
+        del body[0][col]
     body[0]["author"] = "github.com/vmarkovtsev"
     body[0]["commit"] = "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
     response = await client.request(
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
     assert response.status == 200
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     yesterday = datetime.now() - timedelta(days=1)
     if rdb.url.dialect != "sqlite":
         yesterday = published_at.replace(tzinfo=timezone.utc)
     assert rows[0][ReleaseNotification.published_at.name] > yesterday
     assert rows[0][ReleaseNotification.author_node_id.name] == 40020
+    assert (
+        rows[0][ReleaseNotification.url.name]
+        == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+    )
 
     del body[0]["author"]
     response = await client.request(
@@ -125,6 +131,31 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     rows = await rdb.fetch_all(select([ReleaseNotification]))
     assert len(rows) == 1
     assert rows[0][ReleaseNotification.author_node_id.name] == 39936
+
+
+async def test_notify_release_url(client, headers, sdb, rdb, token, disable_default_user):
+    body = [
+        {
+            "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
+            "repository": "github.com/src-d/go-git",
+            "name": "xxx",
+            "author": "github.com/yyy",
+            "published_at": "2021-01-12T00:00:00Z",
+        },
+    ]
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/releases", headers=headers, json=body,
+    )
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    rows = await rdb.fetch_all(select(ReleaseNotification))
+    assert len(rows) == 1
+    assert (
+        rows[0][ReleaseNotification.url.name]
+        == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+    )
 
 
 @pytest.mark.parametrize(
