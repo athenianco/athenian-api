@@ -699,6 +699,7 @@ class ReleaseLoader:
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
             repo_name = repo_ids[repo]
+            commit_url = row[ReleaseNotification.url.name]
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
                 commit_node_id, commit_hash, commit_url = resolved_commits.get(
                     (
