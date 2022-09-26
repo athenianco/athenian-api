@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import chain
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, cast
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
 
 import aiomcache
 from ariadne import ObjectType
@@ -13,7 +13,7 @@ from morcilla import Database
 import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
-from athenian.api.align.goals.dates import goal_dates_to_datetimes
+from athenian.api.align.goals.dates import Intervals, goal_dates_to_datetimes
 from athenian.api.align.models import (
     GraphQLMetricValue,
     GraphQLMetricValues,
@@ -183,7 +183,7 @@ def _parse_jira_filter(
         return JIRAFilter.empty()
 
 
-def _parse_time_interval(params: Mapping[str, Any]) -> Interval:
+def _parse_time_interval(params: Mapping[str, Any]) -> Intervals:
     date_from, date_to = params[MetricParamsFields.validFrom], params[MetricParamsFields.expiresAt]
     if date_from > date_to:
         raise ResponseError(
@@ -205,9 +205,6 @@ def _parse_time_interval(params: Mapping[str, Any]) -> Interval:
     return goal_dates_to_datetimes(date_from, date_to)
 
 
-Interval = tuple[datetime, datetime]
-
-
 @dataclass(frozen=True, slots=True)
 class RequestedTeamDetails:
     """Team/goal IDs with resolved team members and all TeamGoal-specific filters."""
@@ -224,12 +221,14 @@ class RequestedTeamDetails:
         """Implement hash() on team ID + goal ID."""
         return hash((self.team_id, self.goal_id))
 
-    def __eq__(self, other: RequestedTeamDetails) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Implement ==. The filters are defined by the goal ID."""
+        if not isinstance(other, RequestedTeamDetails):
+            return False
         return self.team_id == other.team_id and self.goal_id == other.goal_id
 
 
-TeamMetricsResult = dict[Interval, dict[str, dict[tuple[int, int], object]]]
+TeamMetricsResult = dict[Intervals, dict[str, dict[tuple[int, int], list[Any]]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,7 +236,7 @@ class TeamMetricsRequest:
     """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
 
     metrics: Sequence[str]
-    time_intervals: Sequence[Interval]
+    time_intervals: Sequence[Intervals]
     teams: Collection[RequestedTeamDetails]
 
 
@@ -256,8 +255,32 @@ async def calculate_team_metrics(
 ) -> TeamMetricsResult:
     """Calculate a set of metrics for each team and time interval.
 
-    The result will be a nested dict structure indexed first by interval, then by metric and
-    finally by team id.
+    The result will be a nested dict structure indexed first by intervals, then by metric and
+    finally by (team_id, goal_id).
+    Terminal values in the dict structure will be lists of metric values: a metric value will be
+    found for each granularity requested in the given interval - for each list of metric
+    values its length will equal len(intervals) - 1.
+
+    For example, given the single request:
+    TeamMetricsRequest(
+       metrics=["pr-all-count"],
+       time_intervals=[dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)],
+       teams=[RequestedTeamDetails(team_id=10, goal_id=20, ...)]
+    )
+
+    The response will have this shape:
+
+    {
+        (dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)): {
+          "pr-all-count": {
+            (10, 20): [20, 30],
+           }
+        }
+    }
+    Where 20 is the metric value in the first granularity of the interval
+    (dt(2010, 1, 1) - dt(2010, 2, 1)) and 30 in the second granularity
+    (dt(2010, 2, 1), dt(2010, 3, 1)).
+
     """
     requests = _simplify_requests(requests)
     QUANTILES = (0, 0.95)
@@ -466,7 +489,7 @@ def _jirafy_team(team: Collection[int], jira_map: Mapping[int, str]) -> JIRAPart
 def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
     # intervals => team and other filters => metrics
-    requests_tree: dict[tuple[Interval, ...], dict[RequestedTeamDetails, set[str]]] = {}
+    requests_tree: dict[tuple[Intervals, ...], dict[RequestedTeamDetails, set[str]]] = {}
     for req in requests:
         req_time_intervals = tuple(req.time_intervals)
         requests_tree.setdefault(req_time_intervals, {})
@@ -476,7 +499,7 @@ def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetri
 
     # intervals => metrics => team-specific
     simplified_tree: dict[
-        Sequence[Interval],
+        Sequence[Intervals],
         dict[tuple[str, ...], set[RequestedTeamDetails]],
     ] = {}
     for intervals, intervals_tree in requests_tree.items():
@@ -521,15 +544,16 @@ class BatchCalcResultCollector:
         for request, goal_ids, calc_result in zip(
             self._requests, self._goal_ids, batch_calc_results,
         ):
-            for interval_i, interval in enumerate(request.time_intervals):
-                int_ = cast(Interval, interval)
-                team_metrics_res.setdefault(int_, {})
+            for intervals_i, intervals in enumerate(request.time_intervals):
+                team_metrics_res.setdefault(intervals, {})
                 for metric_i, metric in enumerate(request.metrics):
-                    team_metrics_res[int_].setdefault(metric, {})
+                    team_metrics_res[intervals].setdefault(metric, {})
                     for team_i, (team_filters, goal_id) in enumerate(zip(request.teams, goal_ids)):
-                        team_metrics_res[int_][metric][
+                        # collect a value for each granularity
+                        values = [ar[metric_i].value for ar in calc_result[team_i][intervals_i]]
+                        team_metrics_res[intervals][metric][
                             (team_filters.team_id, goal_id)
-                        ] = calc_result[team_i][interval_i][0][metric_i].value
+                        ] = values
 
     @property
     def requests(self) -> list[MetricsLineRequest]:
@@ -541,7 +565,7 @@ class BatchCalcResultCollector:
 def _build_metrics_response(
     team_tree: GraphQLTeamTree,
     metrics: Sequence[str],
-    triaged: dict[str, dict[tuple[int, int], object]],
+    triaged: dict[str, dict[tuple[int, int], list[Any]]],
 ) -> list[GraphQLMetricValues]:
     return [
         GraphQLMetricValues(
@@ -553,10 +577,12 @@ def _build_metrics_response(
 
 def _build_team_metric_value(
     team_tree: GraphQLTeamTree,
-    metric_values: dict[tuple[int, int], object],
+    metric_values: dict[tuple[int, int], list[Any]],
 ) -> GraphQLTeamMetricValue:
     return GraphQLTeamMetricValue(
         team=team_tree,
-        value=GraphQLMetricValue(metric_values[(team_tree.id, 0)]),
+        # intervals used in the metric computation are of length 2, so metric_values dict
+        # will include just one value
+        value=GraphQLMetricValue(metric_values[(team_tree.id, 0)][0]),
         children=[_build_team_metric_value(child, metric_values) for child in team_tree.children],
     )

@@ -427,7 +427,6 @@ class TestMeasureGoalsErrors(BaseMeasureGoalsTest):
 
 
 class TestMeasureGoals(BaseMeasureGoalsTest):
-    # @pytest.mark.app_validate_responses(False)
     async def test_no_goals_for_team(self, sdb: Database) -> None:
         await models_insert(
             sdb,

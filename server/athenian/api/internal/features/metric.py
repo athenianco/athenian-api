@@ -7,7 +7,7 @@ import numpy as np
 
 from athenian.api.typing_utils import numpy_struct
 
-T = TypeVar("T", float, int, timedelta, type(None))
+T = TypeVar("T", float, int, timedelta, None)
 np.seterr(divide="raise")
 
 

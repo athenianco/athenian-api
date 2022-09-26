@@ -145,8 +145,16 @@ class GoalToServe:
         generator: GoalTreeGenerator,
     ) -> GoalTree:
         """Build the GoalTree combining the teams structure and the metric values."""
-        initial_metrics = metric_values[self._request.time_intervals[0]][self._request.metrics[0]]
-        current_metrics = metric_values[self._request.time_intervals[1]][self._request.metrics[0]]
+        intervals = self._request.time_intervals
+        metric = self._request.metrics[0]
+
+        # for initial and current metrics the interval is a pair,
+        # we produce and need only one value from TeamMetricsResult
+        initial_metrics_base = metric_values[intervals[0]][metric]
+        initial_metrics = {k: values[0] for k, values in initial_metrics_base.items()}
+        current_metrics_values = metric_values[intervals[1]][metric]
+        current_metrics = {k: values[0] for k, values in current_metrics_values.items()}
+
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
         return generator(
             self._goal_team_tree,
