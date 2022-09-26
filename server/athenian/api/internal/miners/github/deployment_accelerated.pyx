@@ -65,10 +65,15 @@ cdef extern from "<string_view>" namespace "std" nogil:
         size_t size()
 
 
-ctypedef struct PullRequestAddr:
-    uint32_t di
-    uint32_t ri
-    uint64_t pri
+cdef extern from "deployment_accelerated.h" nogil:
+    ctypedef struct PullRequestAddr:
+        uint32_t di
+        uint32_t ri
+        uint64_t pri
+
+    ctypedef struct ReleaseAddr:
+        uint32_t di
+        uint32_t ri
 
 
 import_array()
@@ -208,16 +213,21 @@ def pr_to_ix_to_node_id_array(pr_to_ix_obj not None) -> ndarray:
 def apply_jira_rows(list rows not None, deployments not None, pr_to_ix_obj not None) -> dict:
     cdef:
         unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = <unordered_map[long, vector[PullRequestAddr]] *> PyCapsule_GetPointer(pr_to_ix_obj, NULL)
+        PullRequestAddr pr_addr
+        ReleaseAddr rel_addr
         dict issues = {}
-        unordered_map[long, unordered_map[long, unordered_map[long, vector[string_view]]]] release_keys
-        pair[long, unordered_map[long, unordered_map[long, vector[string_view]]]] pair3
-        pair[long, unordered_map[long, vector[string_view]]] pair2
+        unordered_map[PullRequestAddr, vector[string_view]] release_keys
+        unordered_map[uint32_t, PyObject *] release_cols
+        pair[PullRequestAddr, vector[string_view]] release_pair
+        PyObject **aux_ptr
         pair[long, vector[string_view]] pair1
-        unordered_map[long, unordered_map[long, vector[string_view]]] overall_keys
+        unordered_map[ReleaseAddr, vector[string_view]] overall_keys
+        pair[ReleaseAddr, vector[string_view]] overall_pair
         str key
         string_view key_view
         tuple tr
-        ndarray overall_col
+        PyObject **overall_col
+        PyObject **releases_col
         ndarray aux
         list prs
 
@@ -233,12 +243,12 @@ def apply_jira_rows(list rows not None, deployments not None, pr_to_ix_obj not N
                     labels=<object> ApgRecord_GET_ITEM(<PyObject *> r, 3),
                     type=<object> ApgRecord_GET_ITEM(<PyObject *> r, 4),
                 )
-                for addr in dereference(pr_to_ix)[<long><object> ApgRecord_GET_ITEM(<PyObject *> r, 0)]:
+                for pr_addr in dereference(pr_to_ix)[<long><object> ApgRecord_GET_ITEM(<PyObject *> r, 0)]:
                     # we know tha the kind is always 1-byte
-                    if addr.pri != ~0ull:
-                        release_keys[addr.di][addr.ri][addr.pri].push_back(key_view)
+                    if pr_addr.pri != ~0ull:
+                        release_keys[pr_addr].push_back(key_view)
                     else:
-                        overall_keys[addr.di][addr.ri].push_back(key_view)
+                        overall_keys[ReleaseAddr(pr_addr.di, pr_addr.ri)].push_back(key_view)
         else:
             for r in rows:
                 tr = tuple(r)
@@ -247,24 +257,25 @@ def apply_jira_rows(list rows not None, deployments not None, pr_to_ix_obj not N
                 issues[key] = PullRequestJIRAIssueItem(
                     id=key, title=tr[2], epic=tr[5], labels=tr[3], type=tr[4],
                 )
-                for addr in dereference(pr_to_ix)[<long> tr[0]]:
+                for pr_addr in dereference(pr_to_ix)[<long> tr[0]]:
                     # we know tha the kind is always 1-byte
-                    if addr.pri != ~0ull:
-                        release_keys[addr.di][addr.ri][addr.pri].push_back(key_view)
+                    if pr_addr.pri != ~0ull:
+                        release_keys[pr_addr].push_back(key_view)
                     else:
-                        overall_keys[addr.di][addr.ri].push_back(key_view)
-    overall_col = deployments["jira"].values
-    for pair2 in overall_keys:
-        aux = overall_col[pair2.first]
-        for pair1 in pair2.second:
-            aux[pair1.first] = vec_to_arr(&pair1.second)
-    releases_col = deployments["releases"].values
-    for pair3 in release_keys:
-        aux = releases_col[pair3.first]["jira_ids"].values
-        for pair2 in pair3.second:
-            prs = aux[pair2.first]
-            for pair1 in pair2.second:
-                prs[pair1.first] = vec_to_arr(&pair1.second)
+                        overall_keys[ReleaseAddr(pr_addr.di, pr_addr.ri)].push_back(key_view)
+    overall_col = <PyObject **> PyArray_DATA(deployments["jira"].values)
+    for overall_pair in overall_keys:
+        rel_addr = overall_pair.first
+        aux = <list> overall_col[rel_addr.di]
+        aux[rel_addr.ri] = vec_to_arr(&overall_pair.second)
+    releases_col = <PyObject **> PyArray_DATA(deployments["releases"].values)
+    for release_pair in release_keys:
+        pr_addr = release_pair.first
+        aux_ptr = &release_cols[pr_addr.di]
+        if dereference(aux_ptr) == NULL:
+            aux_ptr[0] = <PyObject *> (<object> releases_col[pr_addr.di])["jira_ids"].values
+        prs = (<ndarray> dereference(aux_ptr))[pr_addr.ri]
+        prs[pr_addr.pri] = vec_to_arr(&release_pair.second)
     return issues
 
 

@@ -31,12 +31,13 @@ from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import Connection, Database, dialect_specific_insert
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
-from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.account import get_installation_url_prefix, get_metadata_account_ids
 from athenian.api.internal.features.entries import MetricEntriesCalculator
 from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.commit import compose_commit_url
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.prefixer import Prefixer
@@ -139,34 +140,38 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             )
 
         # the commit may not exist yet in the metadata, but let's try to resolve what we can
-        commit_rows, user_rows = await gather(
+        commit_rows, user_rows, *url_prefixes = await gather(
             mdb.fetch_all(
                 union(
                     select(
-                        [PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name],
-                    ).where(
-                        and_(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits)),
-                    ),
+                        PushCommit.acc_id,
+                        PushCommit.sha,
+                        PushCommit.node_id,
+                        PushCommit.repository_full_name,
+                    ).where(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits)),
                     *(
                         select(
-                            [PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name],
+                            PushCommit.acc_id,
+                            PushCommit.sha,
+                            PushCommit.node_id,
+                            PushCommit.repository_full_name,
                         ).where(
-                            and_(
-                                PushCommit.acc_id.in_(meta_ids),
-                                PushCommit.repository_full_name == repo,
-                                func.substr(PushCommit.sha, 1, 7).in_(prefixes),
-                            ),
+                            PushCommit.acc_id.in_(meta_ids),
+                            PushCommit.repository_full_name == repo,
+                            func.substr(PushCommit.sha, 1, 7).in_(prefixes),
                         )
                         for repo, prefixes in prefixed_commits.items()
                     ),
                 ),
             ),
             mdb.fetch_all(
-                select([User.login, User.node_id]).where(
-                    and_(User.acc_id.in_(meta_ids), User.login.in_(unique_authors)),
+                select(User.login, User.node_id).where(
+                    User.acc_id.in_(meta_ids), User.login.in_(unique_authors),
                 ),
             ),
+            *(get_installation_url_prefix(meta_id, mdb, request.cache) for meta_id in meta_ids),
         )
+        url_prefixes = dict(zip(meta_ids, url_prefixes))
         resolved_prefixed_commits = {}
         resolved_full_commits = {}
         for row in commit_rows:
@@ -182,6 +187,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             resolved_prefixed_commits,
             checker.installed_repos,
             resolved_users,
+            url_prefixes,
             meta_ids,
         )
 
@@ -190,18 +196,22 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         resolved_prefixed_commits,
         installed_repos,
         resolved_users,
+        url_prefixes,
         meta_ids,
     ) = await gather(request.user(), main_flow())
 
     if None in authors:
         resolved_users[None] = await mdb.fetch_val(
-            select([User.node_id]).where(
-                and_(User.acc_id.in_(meta_ids), User.login == user.login),
-            ),
+            select(User.node_id).where(User.acc_id.in_(meta_ids), User.login == user.login),
         )
     inserted = []
     repos = set()
     now = datetime.now(timezone.utc)
+    empty_resolved = {
+        PushCommit.acc_id.name: None,
+        PushCommit.sha.name: None,
+        PushCommit.node_id.name: None,
+    }
     for i, (n, author, status) in enumerate(zip(notifications, authors, statuses)):
         if status == ReleaseNotificationStatus.IGNORED_DUPLICATE:
             continue
@@ -212,19 +222,26 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             )[(n.commit, repo)]
             statuses[i] = ReleaseNotificationStatus.ACCEPTED_RESOLVED
         except KeyError:
-            resolved_commits = {PushCommit.sha.name: None, PushCommit.node_id.name: None}
+            resolved_commits = empty_resolved
             statuses[i] = ReleaseNotificationStatus.ACCEPTED_PENDING
         inserted.append(
             ReleaseNotification(
                 account_id=account,
                 repository_node_id=installed_repos[repo],
                 commit_hash_prefix=resolved_commits[PushCommit.sha.name] or n.commit,
-                resolved_commit_hash=resolved_commits[PushCommit.sha.name],
+                resolved_commit_hash=(sha := resolved_commits[PushCommit.sha.name]),
                 resolved_commit_node_id=(cid := resolved_commits[PushCommit.node_id.name]),
                 resolved_at=now if cid is not None else None,
                 name=n.name,
                 author_node_id=resolved_users.get(author),
-                url=n.url,
+                url=n.url
+                or (
+                    compose_commit_url(
+                        url_prefixes[resolved_commits[PushCommit.acc_id.name]], repo, sha,
+                    )
+                    if sha is not None
+                    else None
+                ),
                 published_at=n.published_at,
             )
             .create_defaults()
@@ -272,45 +289,35 @@ async def _drop_precomputed_deployments(
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_node_ids = [repo_name_to_node(r, 0) for r in repos]
     deployments_to_kill = await rdb.fetch_all(
-        select([distinct(DeployedComponent.deployment_name)]).where(
-            and_(
-                DeployedComponent.account_id == account,
-                DeployedComponent.repository_node_id.in_(repo_node_ids),
-            ),
+        select(distinct(DeployedComponent.deployment_name)).where(
+            DeployedComponent.account_id == account,
+            DeployedComponent.repository_node_id.in_(repo_node_ids),
         ),
     )
     deployments_to_kill = [r[0] for r in deployments_to_kill]
     await gather(
         pdb.execute(
             delete(GitHubDeploymentFacts).where(
-                and_(
-                    GitHubDeploymentFacts.acc_id == account,
-                    GitHubDeploymentFacts.deployment_name.in_(deployments_to_kill),
-                ),
+                GitHubDeploymentFacts.acc_id == account,
+                GitHubDeploymentFacts.deployment_name.in_(deployments_to_kill),
             ),
         ),
         pdb.execute(
             delete(GitHubReleaseDeployment).where(
-                and_(
-                    GitHubReleaseDeployment.acc_id == account,
-                    GitHubReleaseDeployment.deployment_name.in_(deployments_to_kill),
-                ),
+                GitHubReleaseDeployment.acc_id == account,
+                GitHubReleaseDeployment.deployment_name.in_(deployments_to_kill),
             ),
         ),
         pdb.execute(
             delete(GitHubPullRequestDeployment).where(
-                and_(
-                    GitHubPullRequestDeployment.acc_id == account,
-                    GitHubPullRequestDeployment.deployment_name.in_(deployments_to_kill),
-                ),
+                GitHubPullRequestDeployment.acc_id == account,
+                GitHubPullRequestDeployment.deployment_name.in_(deployments_to_kill),
             ),
         ),
         pdb.execute(
             delete(GitHubCommitDeployment).where(
-                and_(
-                    GitHubCommitDeployment.acc_id == account,
-                    GitHubCommitDeployment.deployment_name.in_(deployments_to_kill),
-                ),
+                GitHubCommitDeployment.acc_id == account,
+                GitHubCommitDeployment.deployment_name.in_(deployments_to_kill),
             ),
         ),
         op="remove %d deployments from pdb" % len(deployments_to_kill),
@@ -604,7 +611,7 @@ async def _resolve_references(
     queries = [
         select(
             [text("'commit_f'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)],
-        ).where(and_(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits))),
+        ).where(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits)),
         *(
             select(
                 [text("'commit_p'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)],
@@ -732,7 +739,7 @@ async def _resolve_deployed_component_references(
         ),
     )
     discarded_notifications = await rdb.fetch_all(
-        select([DeploymentNotification.account_id, DeploymentNotification.name]).where(
+        select(DeploymentNotification.account_id, DeploymentNotification.name).where(
             not_(
                 exists().where(
                     and_(

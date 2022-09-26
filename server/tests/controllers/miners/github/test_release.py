@@ -763,6 +763,63 @@ async def test_load_releases_events_settings(
 
 
 @with_defer
+async def test_load_releases_events_url_none(
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    release_loader,
+    prefixer,
+):
+    await rdb.execute(
+        insert(ReleaseNotification).values(
+            ReleaseNotification(
+                account_id=1,
+                repository_node_id=40550,
+                commit_hash_prefix="8d20cc5",
+                name="Pushed!",
+                author_node_id=40020,
+                url=None,
+                published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
+    releases, _ = await release_loader.load_releases(
+        ["src-d/go-git"],
+        branches,
+        default_branches,
+        datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(events=".*")}),
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        index=Release.node_id.name,
+    )
+    await wait_deferred()
+    assert len(releases) == 1
+    assert releases.index[0] == 2756775
+    assert (
+        releases.iloc[0]["url"]
+        == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+    )
+    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    assert len(rows) == 1
+    assert (
+        rows[0]["url"]
+        == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+    )
+
+
+@with_defer
 async def test_load_releases_events_unresolved(
     branches,
     default_branches,
@@ -780,7 +837,7 @@ async def test_load_releases_events_unresolved(
                 commit_hash_prefix="whatever",
                 name="Pushed!",
                 author_node_id=40020,
-                url="www",
+                url=None,
                 published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
             )
             .create_defaults()
