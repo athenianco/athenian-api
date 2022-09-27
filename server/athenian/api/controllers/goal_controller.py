@@ -216,8 +216,9 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
             team_tree,
             team_member_map,
             prefixer,
-            goals_request.only_with_targets,
             jira_config,
+            goals_request.only_with_targets,
+            goals_request.include_series,
         )
         goals_to_serve.append(goal_to_serve)
 
