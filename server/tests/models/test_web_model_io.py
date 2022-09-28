@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
+
 from athenian.api.models.web import (
     InvitationCheckResult,
     JIRAEpic,
@@ -22,7 +24,7 @@ def test_serialize_models_smoke():
                 title="title",
                 created=now.replace(tzinfo=None),
                 updated=now,
-                work_began=now,
+                work_began=np.datetime64(now, "s"),
                 resolved=None,
                 lead_time=timedelta(seconds=10),
                 life_time=timedelta(seconds=20),
@@ -41,7 +43,7 @@ def test_serialize_models_smoke():
                         id="child_id",
                         title=b"child_title",
                         created=now,
-                        updated=now,
+                        updated=np.datetime64(now, "ns"),
                         work_began=None,
                         resolved=now,
                         lead_time=None,
@@ -54,21 +56,21 @@ def test_serialize_models_smoke():
                         type="child_type",
                         url="child_url",
                         subtasks=100,
-                        prs=123,
+                        prs=np.int8(123),
                     ),
                 ],
-                prs=10,
+                prs=np.int64(10),
                 id="id",
                 title="title",
                 created=now,
                 updated=now,
                 work_began=now,
                 resolved=None,
-                lead_time=timedelta(seconds=10),
-                life_time=timedelta(seconds=20),
+                lead_time=np.timedelta64(-20_000_000_000, "ns"),
+                life_time=np.timedelta64(20, "s"),
                 reporter="reporter",
                 assignee=None,
-                comments=7,
+                comments=np.int32(7),
                 priority="priority",
                 status="status",
                 type="type",
@@ -101,5 +103,7 @@ def test_serialize_models_smoke():
     new_models = deserialize_models(serialize_models(models))
     models[0][0].created = models[0][0].created.replace(tzinfo=timezone.utc)
     models[0][1].children[0].title = models[0][1].children[0].title.decode()
+    models[0][1].children[0].updated = np.datetime64(now, "s")
+    models[0][1].lead_time = np.timedelta64(-20, "s")
     models[2][1].confidence = 0.0
     assert models == new_models

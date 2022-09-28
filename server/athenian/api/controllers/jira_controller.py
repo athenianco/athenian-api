@@ -242,7 +242,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         release_settings,
         logical_settings,
     ),
-    version=2,
 )
 async def _epic_flow(
     return_: set[str],
