@@ -3,6 +3,7 @@
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
+cimport cython
 from cpython cimport (
     Py_DECREF,
     Py_INCREF,
@@ -17,10 +18,12 @@ from cpython cimport (
 )
 from cpython.datetime cimport PyDateTimeAPI, import_datetime
 from cpython.dict cimport PyDict_GetItemString
-from libc.stdint cimport uint16_t, uint32_t
+from libc.stdint cimport int32_t, uint16_t, uint32_t
 from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell, fwrite
 from libc.stdlib cimport free
+from libc.string cimport memcpy
 from libcpp.vector cimport vector
+from numpy cimport import_array, npy_int64
 
 import pickle
 
@@ -42,7 +45,10 @@ cdef extern from "structmember.h":
 
 
 cdef extern from "Python.h":
+    ctypedef PyObject *(*allocfunc)(PyTypeObject *cls, Py_ssize_t nitems)
+
     ctypedef struct PyTypeObject:
+        allocfunc tp_alloc
         PyMemberDef *tp_members
 
     char *PyBytes_AS_STRING(PyObject *) nogil
@@ -60,6 +66,7 @@ cdef extern from "Python.h":
     long PyLong_AsLong(PyObject *) nogil
     double PyFloat_AS_DOUBLE(PyObject *) nogil
     bint PyFloat_CheckExact(PyObject *) nogil
+    bint PyObject_TypeCheck(PyObject *, PyTypeObject *) nogil
 
     unsigned int PyUnicode_1BYTE_KIND
     unsigned int PyUnicode_2BYTE_KIND
@@ -78,8 +85,8 @@ cdef extern from "Python.h":
 
 
 cdef extern from "datetime.h" nogil:
-    bint PyDateTime_CheckExact(PyObject *)
-    bint PyDelta_CheckExact(PyObject *)
+    bint PyDateTime_Check(PyObject *)
+    bint PyDelta_Check(PyObject *)
 
     int PyDateTime_GET_YEAR(PyObject *)
     int PyDateTime_GET_MONTH(PyObject *)
@@ -96,7 +103,40 @@ cdef extern from "datetime.h" nogil:
         PyObject *TimeZone_UTC
 
 
+cdef extern from "numpy/arrayobject.h" nogil:
+    PyTypeObject PyDatetimeArrType_Type
+    PyTypeObject PyTimedeltaArrType_Type
+
+    ctypedef enum NPY_DATETIMEUNIT:
+        NPY_FR_ERROR = -1
+        NPY_FR_M = 1
+        NPY_FR_W = 2
+        NPY_FR_D = 4
+        NPY_FR_h = 5
+        NPY_FR_m = 6
+        NPY_FR_s = 7
+        NPY_FR_ms = 8
+        NPY_FR_us = 9
+        NPY_FR_ns = 10
+        NPY_FR_ps = 11
+        NPY_FR_fs = 12
+        NPY_FR_as = 13
+        NPY_FR_GENERIC = 14
+
+    ctypedef struct PyArray_DatetimeMetaData:
+        NPY_DATETIMEUNIT base
+        int num
+
+    ctypedef struct PyDatetimeScalarObject:
+        npy_int64 obval
+        PyArray_DatetimeMetaData obmeta
+
+    void PyArray_ScalarAsCtype(PyObject *scalar, void *ctypeptr)
+    bint PyArray_IsIntegerScalar(PyObject *)
+
+
 import_datetime()
+import_array()
 
 
 cdef enum DataType:
@@ -188,15 +228,19 @@ cdef ModelFields _discover_fields(PyTypeObject *model, DataType dtype, Py_ssize_
     return fields
 
 
+@cython.cdivision(True)
 cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nogil:
     cdef:
         char dtype = spec.type, bool
-        long val_long
+        long val_long = 0
         double val_double
-        uint32_t str_length, val32, i
-        uint16_t val16[3]
+        uint32_t str_length, val32 = 0, i
+        uint16_t val16[4]
+        int32_t vali32
         PyObject *exc
         bint is_unicode, is_float
+        NPY_DATETIMEUNIT npy_unit
+        npy_int64 obval
     if obj == Py_None:
         dtype = 0
         fwrite(&dtype, 1, 1, stream)
@@ -204,8 +248,12 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
     fwrite(&dtype, 1, 1, stream)
     if dtype == DT_LONG:
         if not PyLong_CheckExact(obj):
-            return obj
-        val_long = PyLong_AsLong(obj)
+            if PyArray_IsIntegerScalar(obj):
+                PyArray_ScalarAsCtype(obj, &val_long)
+            else:
+                return obj
+        else:
+            val_long = PyLong_AsLong(obj)
         fwrite(&val_long, sizeof(long), 1, stream)
     elif dtype == DT_FLOAT:
         is_float = PyFloat_CheckExact(obj)
@@ -230,24 +278,54 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
             fwrite(&val32, 4, 1, stream)
             fwrite(PyBytes_AS_STRING(obj), 1, val32, stream)
     elif dtype == DT_DT:
-        if not PyDateTime_CheckExact(obj):
-            return obj
-        val16[0] = PyDateTime_GET_YEAR(obj) << 4
-        val16[0] |= PyDateTime_GET_MONTH(obj)
-        val16[1] = PyDateTime_GET_DAY(obj) << 7
-        val16[1] |= PyDateTime_DATE_GET_HOUR(obj)
-        val16[2] = PyDateTime_DATE_GET_MINUTE(obj) << 8
-        val16[2] |= PyDateTime_DATE_GET_SECOND(obj)
+        if not PyDateTime_Check(obj):
+            if PyObject_TypeCheck(obj, &PyDatetimeArrType_Type):
+                npy_unit = (<PyDatetimeScalarObject *> obj).obmeta.base
+                obval = (<PyDatetimeScalarObject *> obj).obval
+                if npy_unit == NPY_FR_ns:
+                    obval //= 1000000000
+                elif npy_unit == NPY_FR_us:
+                    obval //= 1000000
+                elif npy_unit != NPY_FR_s:
+                    return obj
+                memcpy(val16, &obval, 8)   # little-endian
+            else:
+                return obj
+        else:
+            val16[0] = PyDateTime_GET_YEAR(obj) << 4
+            val16[0] |= PyDateTime_GET_MONTH(obj)
+            val16[1] = PyDateTime_GET_DAY(obj) << 7
+            val16[1] |= PyDateTime_DATE_GET_HOUR(obj)
+            val16[2] = (PyDateTime_DATE_GET_MINUTE(obj) << 8) | 0x8000
+            val16[2] |= PyDateTime_DATE_GET_SECOND(obj)
         fwrite(val16, 2, 3, stream)
     elif dtype == DT_TD:
-        if not PyDelta_CheckExact(obj):
-            return obj
-        val32 = PyDateTime_DELTA_GET_DAYS(obj) << 1
-        var_long = PyDateTime_DELTA_GET_SECONDS(obj)
+        if not PyDelta_Check(obj):
+            if PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type):
+                npy_unit = (<PyDatetimeScalarObject *> obj).obmeta.base
+                obval = (<PyDatetimeScalarObject *> obj).obval
+                if npy_unit == NPY_FR_ns:
+                    obval //= 1000000000
+                elif npy_unit == NPY_FR_us:
+                    obval //= 1000000
+                elif npy_unit != NPY_FR_s:
+                    return obj
+                if obval >= 0:
+                    vali32 = obval // (24 * 3600)
+                    var_long = obval % (24 * 3600)
+                else:
+                    vali32 = -1 -(obval // (24 * 3600))
+                    var_long = 24 * 3600 + obval % (24 * 3600)
+            else:
+                return obj
+        else:
+            vali32 = PyDateTime_DELTA_GET_DAYS(obj)
+            var_long = PyDateTime_DELTA_GET_SECONDS(obj)
+        vali32 <<= 1
         if var_long >= 1 << 16:
-            val32 |= 1
+            vali32 |= 1
         val16[0] = var_long & 0xFFFF
-        fwrite(&val32, 4, 1, stream)
+        fwrite(&vali32, 4, 1, stream)
         fwrite(val16, 2, 1, stream)
     elif dtype == DT_BOOL:
         bool = obj == Py_True
@@ -303,7 +381,7 @@ cdef void _serialize_list_of_models(list models, FILE *stream) except *:
         fwrite(PyBytes_AS_STRING(<PyObject *> result), 1, size, stream)
         exc = _write_object(<PyObject *> models, &spec, stream)
     if exc != NULL:
-        raise ValueError(f"Could not serialize {<object> exc}")
+        raise ValueError(f"Could not serialize {<object> exc} of type {type(<object> exc)}")
 
 
 cdef void _serialize_generic(model, FILE *stream) except *:
@@ -382,7 +460,8 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         long long_val = 0
         double double_val = 0
         uint32_t aux32 = 0, i
-        uint16_t aux16[3]
+        int32_t auxi32 = 0
+        uint16_t aux16[4]
         unsigned int kind
         int year, month, day, hour, minute, second
         PyObject *utctz = (<PyDateTime_CAPI *> PyDateTimeAPI).TimeZone_UTC
@@ -415,22 +494,30 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
     elif dtype == DT_DT:
         if fread(aux16, 2, 3, stream) != 3:
             raise ValueError(corrupted_msg % (ftell(stream), "dt"))
-        year = aux16[0] >> 4
-        month = aux16[0] & 0xF
-        day = aux16[1] >> 7
-        hour = aux16[1] & 0x7F
-        minute = aux16[2] >> 8
-        second = aux16[2] & 0xFF
+        if aux16[2] & 0x8000:
+            year = aux16[0] >> 4
+            month = aux16[0] & 0xF
+            day = aux16[1] >> 7
+            hour = aux16[1] & 0x7F
+            minute = (aux16[2] >> 8) & 0x7F
+            second = aux16[2] & 0xFF
+        else:
+            aux16[3] = 0
+            obj_val = PyDatetimeArrType_Type.tp_alloc(&PyDatetimeArrType_Type, 0)
+            memcpy(&(<PyDatetimeScalarObject *>obj_val).obval, aux16, 8)
+            (<PyDatetimeScalarObject *> obj_val).obmeta.base = NPY_FR_s
+            (<PyDatetimeScalarObject *> obj_val).obmeta.num = 1
+            return <object> obj_val
         return PyDateTimeAPI.DateTime_FromDateAndTime(
             year, month, day, hour, minute, second, 0, <object> utctz, PyDateTimeAPI.DateTimeType,
         )
     elif dtype == DT_TD:
-        if fread(&aux32, 4, 1, stream) != 1:
+        if fread(&auxi32, 4, 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "td"))
         if fread(aux16, 2, 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "td"))
-        day = aux32 >> 1
-        second = aux16[0] + ((aux32 & 1) << 16)
+        day = auxi32 >> 1
+        second = aux16[0] + ((auxi32 & 1) << 16)
         return PyDateTimeAPI.Delta_FromDelta(day, second, 0, 1, PyDateTimeAPI.DeltaType)
     elif dtype == DT_BOOL:
         if fread(&bool, 1, 1, stream) != 1:
