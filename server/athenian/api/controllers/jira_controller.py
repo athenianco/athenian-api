@@ -911,12 +911,13 @@ async def _issue_flow(
         r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
         for r in mapped_identities
     }
+    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login.get
     users = [
         JIRAUser(
             avatar=row[User.avatar_url.name],
             name=row[User.display_name.name],
             type=normalize_user_type(row[User.type.name]),
-            developer=mapped_identities.get(row[User.id.name]),
+            developer=user_node_to_prefixed_login(mapped_identities.get(row[User.id.name])),
         )
         for row in users
     ]

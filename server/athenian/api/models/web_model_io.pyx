@@ -381,7 +381,7 @@ cdef void _serialize_list_of_models(list models, FILE *stream) except *:
         fwrite(PyBytes_AS_STRING(<PyObject *> result), 1, size, stream)
         exc = _write_object(<PyObject *> models, &spec, stream)
     if exc != NULL:
-        raise ValueError(f"Could not serialize {<object> exc} of type {type(<object> exc)}")
+        raise ValueError(f"Could not serialize {<object> exc} of type {type(<object> exc)} in {item_type.__name__}")
 
 
 cdef void _serialize_generic(model, FILE *stream) except *:
