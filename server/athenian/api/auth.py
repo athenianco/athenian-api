@@ -515,7 +515,7 @@ class Auth0:
             if user_info is None:
                 raise ResponseError(
                     GenericError(
-                        "/errors/Auth0",
+                        type="/errors/Auth0",
                         title="Failed to retrieve user details from Auth0",
                         status=HTTPStatus.SERVICE_UNAVAILABLE,
                         detail=key,
