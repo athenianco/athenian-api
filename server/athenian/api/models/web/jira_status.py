@@ -23,10 +23,10 @@ class JIRAStatus(Model):
 
         :param stage: The stage of this JIRAStatus.
         """
-        allowed_values = {"To Do", "In Progress", "Done"}
+        allowed_values = ("To Do", "In Progress", "Done", "No Category")
         if stage not in allowed_values:
             raise ValueError(
-                "Invalid value for `stage` (%s), must be one of %s" % (stage, allowed_values),
+                f"Invalid value for `stage` ({stage}), must be one of {allowed_values}",
             )
 
         return stage
