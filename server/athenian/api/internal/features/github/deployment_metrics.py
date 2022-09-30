@@ -23,6 +23,7 @@ from athenian.api.internal.miners.types import (
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
 from athenian.api.to_object_arrays import nested_lengths
+from athenian.api.unordered_unique import unordered_unique
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
@@ -427,21 +428,25 @@ class DeployedCommitsCounter(SumCalculator):
 class DeployedIssuesCounter(SumCalculator):
     """Calculate the number of deployed JIRA issues."""
 
-    dimension = "jira"
+    dimension = "jira_ids"
 
     def agg(self, values: np.ndarray) -> int:
         """Calculate the number of unique issues."""
-        return len(np.unique(np.concatenate(values)))
+        if len(values) == 0:
+            return 0
+        return len(unordered_unique(np.concatenate(values)))
 
 
 @register_metric(DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT)
 class DeployedBugFixesCounter(SumCalculator):
     """Calculate the number of deployed bug fixes according to mapped JIRA issues."""
 
-    dimension = "jira"
+    dimension = "jira_ids"
 
     def agg(self, values: np.ndarray) -> int:
         """Calculate the number of unique issues with lower(type) == "bug"."""
-        deployed = np.unique(np.concatenate(values))
+        if len(values) == 0:
+            return 0
+        deployed = unordered_unique(np.concatenate(values))
         jira = self.jira
-        return sum(jira[i.decode()].type.lower() == "bug" for i in deployed)
+        return sum(jira[i].type.lower() == "bug" for i in deployed)

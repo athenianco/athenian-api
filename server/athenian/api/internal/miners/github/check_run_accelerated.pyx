@@ -9,12 +9,9 @@ from libcpp.string cimport string
 from libcpp.unordered_map cimport unordered_map
 from numpy cimport PyArray_DATA
 
+from athenian.api.native.cpython cimport PyUnicode_DATA
+
 import numpy as np
-
-
-cdef extern from "Python.h":
-    # nogil
-    void *PyUnicode_DATA(PyObject *) nogil
 
 
 def split_duplicate_check_runs(suite_ids: np.ndarray,

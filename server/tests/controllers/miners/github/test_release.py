@@ -1861,7 +1861,7 @@ async def test_mine_releases_labels(mdb, pdb, rdb, release_match_setting_tag, pr
         rdb,
         cache,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     await wait_deferred()
@@ -1885,7 +1885,7 @@ async def test_mine_releases_labels(mdb, pdb, rdb, release_match_setting_tag, pr
         rdb,
         cache,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     assert len(releases2) == 3
@@ -1908,7 +1908,7 @@ async def test_mine_releases_labels(mdb, pdb, rdb, release_match_setting_tag, pr
         rdb,
         cache,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     assert len(releases3) == 22
@@ -1949,7 +1949,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
         rdb,
         cache,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     await wait_deferred()
@@ -1972,7 +1972,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
         None,
         cache,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     assert_frame_equal(releases1, releases2)
@@ -1995,7 +1995,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
             None,
             None,
             cache,
-            with_pr_titles=True,
+            with_extended_pr_details=True,
         )
     releases3, _, _, _ = await mine_releases(
         ["src-d/go-git"],
@@ -2015,7 +2015,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
         pdb,
         rdb,
         cache,
-        with_pr_titles=True,
+        with_extended_pr_details=True,
         with_avatars=False,
         with_deployments=False,
     )
@@ -2038,7 +2038,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
         None,
         None,
         cache,
-        with_pr_titles=True,
+        with_extended_pr_details=True,
         with_avatars=False,
         with_deployments=False,
     )
@@ -2061,7 +2061,7 @@ async def test_mine_releases_cache(mdb, pdb, rdb, release_match_setting_tag, pre
         None,
         None,
         cache,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_avatars=False,
         with_deployments=False,
     )
@@ -2099,7 +2099,7 @@ async def test_mine_releases_logical_title(
             rdb,
             None,
             with_avatars=False,
-            with_pr_titles=False,
+            with_extended_pr_details=False,
             with_deployments=False,
         )
         await wait_deferred()
@@ -2152,7 +2152,7 @@ async def test_mine_releases_logical_label(
             rdb,
             None,
             with_avatars=False,
-            with_pr_titles=False,
+            with_extended_pr_details=False,
             with_deployments=False,
         )
         await wait_deferred()
@@ -2315,9 +2315,9 @@ async def test_override_first_releases_smoke(
     for key in ReleaseFacts.f:
         if key.startswith("prs_"):
             checked += 1
-            if key != "prs_title":
+            if key not in ("prs_title", "prs_created_at"):
                 assert len(facts[key] if facts[key] is not None else []) > 0, key
-    assert checked == 6
+    assert checked == 7
     rows = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.data]).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,
@@ -2341,7 +2341,7 @@ async def test_override_first_releases_smoke(
         if key.startswith("prs_"):
             checked += 1
             assert facts[key] is None or len(facts[key]) == 0, key
-    assert checked == 6
+    assert checked == 7
     rows = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.data]).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,
@@ -2677,7 +2677,7 @@ async def test_mine_releases_by_name(
         rdb,
         None,
         with_avatars=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
         with_deployments=False,
     )
     await wait_deferred()

@@ -90,6 +90,7 @@ from athenian.api.models.web import (
     CommitsListInclude,
     CommonFilterProperties,
     DeployedComponent as WebDeployedComponent,
+    DeployedRelease,
     DeploymentAnalysisCode,
     DeploymentNotification as WebDeploymentNotification,
     DeveloperSummary,
@@ -698,7 +699,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         pdb=request.pdb,
         rdb=request.rdb,
         cache=request.cache,
-        with_pr_titles=True,
+        with_extended_pr_details=True,
         with_jira=JIRAEntityToFetch.ISSUES,
     )
     return await _build_release_set_response(
@@ -715,11 +716,7 @@ async def _load_jira_issues_for_releases(
         return {}
     issue_keys = unordered_unique(np.concatenate(releases["jira_ids"].values))
     rows = await fetch_jira_issues_by_keys(issue_keys, jira_ids, mdb)
-    issues = {}
-    for r in rows:
-        kwargs = dict(r)
-        key = kwargs.pop("key")
-        issues[key] = LinkedJIRAIssue(id=key, **kwargs)
+    issues = {row["id"]: LinkedJIRAIssue(**row) for row in rows}
     return issues
 
 
@@ -803,6 +800,7 @@ def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[Fil
             df[ReleaseFacts.f.commit_authors].values,
             df["prs_" + PullRequest.number.name].values,
             df["prs_" + PullRequest.title.name].values,
+            df["prs_" + PullRequest.created_at.name].values,
             df["prs_" + PullRequest.additions.name].values,
             df["prs_" + PullRequest.deletions.name].values,
             df["prs_" + PullRequest.user_node_id.name].values,
@@ -823,6 +821,7 @@ def _extract_released_prs(
         ReleasedPullRequest(
             number=number,
             title=title,
+            created=created,
             additions=adds,
             deletions=dels,
             author=user_node_to_prefixed_login.get(author),
@@ -830,7 +829,7 @@ def _extract_released_prs(
             if jira_offset_end > jira_offset_beg
             else None,
         )
-        for number, title, adds, dels, author, jira_offset_beg, jira_offset_end in zip(
+        for number, title, created, adds, dels, author, jira_offset_beg, jira_offset_end in zip(
             *pr_columns, jira_pr_offsets[:-1], jira_pr_offsets[1:],
         )
     ]
@@ -1187,18 +1186,21 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         default_branches=default_branches,
         prefixer=prefixer,
         account=filt.account,
+        jira_ids=jira_ids,
         meta_ids=meta_ids,
         mdb=request.mdb,
         pdb=request.pdb,
         rdb=request.rdb,
         cache=request.cache,
+        with_extended_prs=True,
+        with_jira=True,
     )
     people = deployment_facts_extract_mentioned_people(deployments)
     avatars, issues = await gather(
         mine_user_avatars(
             UserAvatarKeys.PREFIXED_LOGIN, meta_ids, request.mdb, request.cache, nodes=people,
         ),
-        load_jira_issues_for_deployments(deployments, jira_ids, meta_ids, request.mdb),
+        load_jira_issues_for_deployments(deployments, jira_ids, request.mdb),
     )
     model = await _build_deployments_response(deployments, avatars, issues, prefixer)
     return model_response(model)
@@ -1251,13 +1253,41 @@ async def _build_deployments_response(
                     commits_prs=dict(zip(resolved_repos, commits_prs)),
                     commits_overall=dict(zip(resolved_repos, commits_overall)),
                     jira={
-                        r: keys.astype("U")
-                        for r, keys in zip(resolved_repos, jira)
+                        r: keys
+                        for r, keys in zip(resolved_repos, jira_by_repo)
                         if keys is not None
                     },
                 ),
+                prs=[
+                    ReleasedPullRequest(
+                        number=pr_number,
+                        title=pr_title,
+                        created=pr_created,
+                        additions=pr_adds,
+                        deletions=pr_dels,
+                        author=user_node_to_prefixed_login[pr_author] if pr_author else None,
+                        jira=pr_jira if len(pr_jira) else None,
+                    )
+                    for (
+                        pr_number,
+                        pr_title,
+                        pr_created,
+                        pr_adds,
+                        pr_dels,
+                        pr_author,
+                        pr_jira,
+                    ) in zip(
+                        pr_numbers,
+                        pr_titles,
+                        pr_createds,
+                        pr_additions,
+                        pr_deletions,
+                        pr_user_node_ids,
+                        pr_jiras,
+                    )
+                ],
                 releases=[
-                    FilteredRelease(
+                    DeployedRelease(
                         name=rel_name,
                         sha=rel_sha,
                         repository=rel_repo,
@@ -1271,30 +1301,22 @@ async def _build_deployments_response(
                         commit_authors=[
                             user_node_to_prefixed_login[u] for u in rel_commit_authors
                         ],
-                        prs=[
-                            ReleasedPullRequest(
-                                number=pr_number,
-                                title=pr_title,
-                                additions=pr_adds,
-                                deletions=pr_dels,
-                                author=user_node_to_prefixed_login[pr_author]
-                                if pr_author
-                                else None,
-                                jira=pr_jira.astype("U")
-                                if pr_jira is not None and len(pr_jira)
-                                else None,
-                            )
-                            for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
-                                pr_numbers,
-                                pr_titles,
-                                pr_additions,
-                                pr_deletions,
-                                pr_user_node_ids,
-                                pr_jiras,
-                            )
-                        ],
+                        prs=len(rel_pr_numbers),
                     )
-                    for rel_name, rel_sha, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions, rel_deletions, rel_commits_count, rel_commit_authors, pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids, pr_jiras in zip(  # noqa: E501
+                    for (
+                        rel_name,
+                        rel_sha,
+                        rel_repo,
+                        rel_url,
+                        rel_author,
+                        rel_date,
+                        rel_age,
+                        rel_additions,
+                        rel_deletions,
+                        rel_commits_count,
+                        rel_commit_authors,
+                        rel_pr_numbers,
+                    ) in zip(
                         releases_df[Release.name.name].values,
                         releases_df[Release.sha.name].values,
                         releases_df.index.get_level_values(1).values,
@@ -1307,17 +1329,37 @@ async def _build_deployments_response(
                         releases_df[ReleaseFacts.f.commits_count].values,
                         releases_df[ReleaseFacts.f.commit_authors].values,
                         releases_df["prs_" + PullRequest.number.name].values,
-                        releases_df["prs_" + PullRequest.title.name].values,
-                        releases_df["prs_" + PullRequest.additions.name].values,
-                        releases_df["prs_" + PullRequest.deletions.name].values,
-                        releases_df["prs_" + PullRequest.user_node_id.name].values,
-                        releases_df["jira_ids"].values,
                     )
                 ]
                 if not releases_df.empty
                 else None,
             )
-            for name, environment, components_df, url, started_at, finished_at, conclusion, labels_df, releases_df, repos, prs, prs_offsets, lines_prs, lines_overall, commits_prs, commits_overall, jira in zip(  # noqa: E501
+            for (
+                name,
+                environment,
+                components_df,
+                url,
+                started_at,
+                finished_at,
+                conclusion,
+                labels_df,
+                releases_df,
+                repos,
+                prs,
+                prs_offsets,
+                lines_prs,
+                lines_overall,
+                commits_prs,
+                commits_overall,
+                pr_numbers,
+                pr_titles,
+                pr_createds,
+                pr_additions,
+                pr_deletions,
+                pr_user_node_ids,
+                pr_jiras,
+                jira_by_repo,
+            ) in zip(
                 df.index.values,
                 df[DeploymentNotification.environment.name].values,
                 df["components"].values,
@@ -1334,7 +1376,14 @@ async def _build_deployments_response(
                 df[DeploymentFacts.f.lines_overall].values,
                 df[DeploymentFacts.f.commits_prs].values,
                 df[DeploymentFacts.f.commits_overall].values,
-                df["jira"].values,
+                df[DeploymentFacts.f.prs_number].values,
+                df[DeploymentFacts.f.prs_title].values,
+                df[DeploymentFacts.f.prs_created_at].values,
+                df[DeploymentFacts.f.prs_additions].values,
+                df[DeploymentFacts.f.prs_deletions].values,
+                df[DeploymentFacts.f.prs_user_node_id].values,
+                df[DeploymentFacts.f.prs_jira_ids].values,
+                df[DeploymentFacts.f.jira_ids].values,
             )
         ],
         include=ReleaseSetInclude(

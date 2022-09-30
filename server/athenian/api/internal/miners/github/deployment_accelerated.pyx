@@ -1,108 +1,205 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
-# distutils: extra_compile_args = -mavx2 -ftree-vectorize
+# distutils: extra_compile_args = -std=c++17
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
 
-from cpython cimport Py_INCREF, PyObject, PyTypeObject
-from cpython.pycapsule cimport PyCapsule_GetPointer, PyCapsule_New
-from cython.operator cimport dereference
-from libc.stdint cimport uint32_t, uint64_t
-from libc.string cimport memcpy, memset
-from libcpp.algorithm cimport sort as std_sort
-from libcpp.unordered_map cimport pair, unordered_map
-from libcpp.vector cimport vector
+from cpython cimport PyObject
+from cython.operator cimport dereference as deref
+from libcpp.utility cimport move, pair
 from numpy cimport (
     NPY_ARRAY_DEFAULT,
-    NPY_STRING,
-    PyArray_DATA,
-    PyArray_Descr,
-    PyArray_DESCR,
+    NPY_LONG,
+    NPY_OBJECT,
+    NPY_UINT,
     PyArray_DescrFromType,
-    PyArray_DIM,
+    PyArray_ISOBJECT,
     dtype as npdtype,
     import_array,
     ndarray,
     npy_intp,
+    npy_uint32,
 )
 
-import asyncpg
+from athenian.api.native.cpython cimport (
+    Py_INCREF,
+    PyList_New,
+    PyList_SET_ITEM,
+    PyObjectPtr,
+    PyUnicode_DATA,
+    PyUnicode_GET_LENGTH,
+)
+from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_stl_allocator,
+    mi_unordered_map,
+    mi_vector,
+)
+from athenian.api.native.numpy cimport (
+    PyArray_DATA,
+    PyArray_Descr,
+    PyArray_DESCR,
+    PyArray_DescrNew,
+    PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
+    PyArray_NDIM,
+    PyArray_NewFromDescr,
+    PyArray_Type,
+)
+from athenian.api.native.optional cimport optional
+from athenian.api.native.string_view cimport string_view
+
 import numpy as np
-
-from athenian.api.internal.miners.types import PullRequestJIRAIssueItem
-
-
-cdef extern from "Python.h":
-    PyObject *PyList_New(Py_ssize_t len)
-    void PyList_SET_ITEM(PyObject *list, Py_ssize_t i, PyObject *o)
-    Py_ssize_t PyUnicode_GET_LENGTH(str)
-    void *PyUnicode_DATA(str)
-
-
-cdef extern from "numpy/arrayobject.h":
-    PyTypeObject PyArray_Type
-    ndarray PyArray_NewFromDescr(
-        PyTypeObject *subtype,
-        PyArray_Descr *descr,
-        int nd,
-        const npy_intp *dims,
-        const npy_intp *strides,
-        void *data,
-        int flags,
-        PyObject *obj,
-    )
-    npdtype PyArray_DescrNew(npdtype)
-
-
-cdef extern from "../../../asyncpg_recordobj.h":
-    PyObject *ApgRecord_GET_ITEM(PyObject *, int)
-
-
-cdef extern from "<string_view>" namespace "std" nogil:
-    cppclass string_view:
-        string_view() except +
-        string_view(const char *, size_t) except +
-        const char *data()
-        size_t size()
-
-
-cdef extern from "deployment_accelerated.h" nogil:
-    ctypedef struct PullRequestAddr:
-        uint32_t di
-        uint32_t ri
-        uint64_t pri
-
-    ctypedef struct ReleaseAddr:
-        uint32_t di
-        uint32_t ri
-
 
 import_array()
 
 
-cdef void delete_ptr_in_capsule(obj):
-    cdef unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = <unordered_map[long, vector[PullRequestAddr]] *> PyCapsule_GetPointer(obj, NULL)
-    del pr_to_ix
+cdef extern from "deployment_accelerated.h" nogil:
+    # IDK how to painlessly define this in Cython
+    void argsort_bodies[T, I](mi_vector[T] &bodies, mi_vector[I] &indexes)
 
 
-def calc_pr_to_ix_prs(ndarray prs not None, ndarray prs_offsets not None) -> tuple[ndarray, object]:
+def split_prs_to_jira_ids(
+    ndarray pr_node_ids not None,
+    ndarray pr_offsets not None,
+    ndarray map_prs not None,
+    ndarray map_jira not None,
+) -> tuple[ndarray, ndarray]:
+    cdef ndarray arr
+    for arr in (pr_node_ids, pr_offsets, map_prs, map_jira):
+        assert PyArray_NDIM(<PyObject *> arr) == 1
+        assert PyArray_IS_C_CONTIGUOUS(<PyObject *> arr)
+    assert PyArray_DESCR(<PyObject *> map_prs).type_num == NPY_LONG
+    assert PyArray_ISOBJECT(pr_node_ids)
+    assert PyArray_ISOBJECT(pr_offsets)
+    assert PyArray_ISOBJECT(map_jira)
+
+    cdef npy_intp deps_count = PyArray_DIM(<PyObject *> pr_node_ids, 0)
+    if deps_count == 0:
+        return np.array([], dtype=object), np.array([], dtype=object)
+
     cdef:
-        unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = new unordered_map[long, vector[PullRequestAddr]]()
-        npdtype objdtype = np.dtype(object)
-        npy_intp deps_count = PyArray_DIM(prs, 0), di, ri, j, dep_prs_count, dep_prs_offsets_count
-        PyObject **jira_col_data
-        PyObject **prs_data = <PyObject **> PyArray_DATA(prs)
-        PyObject **prs_offsets_data = <PyObject **> PyArray_DATA(prs_offsets)
-        PyObject **dep_jira_col_data
-        uint32_t *dep_prs_offsets_data
-        long *dep_prs_data
-        PyObject *dep_prs
-        PyObject *dep_prs_offsets
-        ndarray empty = np.array([], dtype="S")
-        uint32_t beg, end
-        object capsule
+        mi_heap_stl_allocator[char] alloc = mi_heap_stl_allocator[char]()
+        optional[mi_unordered_map[long, mi_vector[string_view]]] id_map
+        mi_unordered_map[long, mi_vector[string_view]].iterator id_map_iter
+        optional[mi_unordered_map[string_view, PyObjectPtr]] origin_map
+        long *map_prs_data = <long *> PyArray_DATA(<PyObject *> map_prs)
+        PyObject **map_jira_data = <PyObject **> PyArray_DATA(<PyObject *> map_jira)
+        PyObject **pr_node_ids_data = <PyObject **> PyArray_DATA(<PyObject *> pr_node_ids)
+        PyObject **pr_offsets_data = <PyObject **> PyArray_DATA(<PyObject *> pr_offsets)
+        npy_uint32 *local_pr_offsets_data
+        long *dep_pr_node_ids_data
+        bint invalid_dtype_pr_offsets = False
+        bint invalid_dtype_pr_node_ids = False
+        npy_intp i, j, k, dep_pos, dep_len, sub_len, repo_idx, local_pr_offsets_count
+        long node_id
+        size_t v, issues_count
+        size_t empty_arr_refs_count = 0, empty_list_refs_count = 0, extra_objdtype_refs_count = 0
+        char *strptr
+        Py_ssize_t strlength
+        PyObject *str_obj
+        PyObject *list_obj
+        optional[mi_vector[string_view]] strvec
+        ndarray result_repo, result_pr
+        PyObject *dep_repo_issues
+        PyObject *dep_pr_issues
+        PyObject *empty_arr
+        PyObject *empty_list
+        PyObject *repo_issues
+        PyObject *aux
+        optional[mi_vector[mi_vector[mi_unordered_map[string_view, PyObjectPtr]]]] resolved
+        optional[mi_vector[mi_vector[mi_vector[PyObjectPtr]]]] resolved_by_pr
+        string_view issue
+        string_view *id_map_vec_data
+        mi_unordered_map[string_view, PyObjectPtr] *issues = NULL
+        mi_unordered_map[string_view, PyObjectPtr] *resolved_data = NULL
+        mi_vector[mi_vector[PyObjectPtr]] *resolved_by_pr_data
+        mi_vector[mi_vector[PyObjectPtr]] *resolved_by_pr_dep = NULL
+        PyObject **resolved_by_pr_dep_issues
+        npdtype objdtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_OBJECT))
+        PyObject **result_repo_data
+        PyObject **result_pr_data
+        PyObject **dep_repo_issues_data
+        PyObject **repo_issues_data
+        PyObject **dep_pr_issues_data
+        PyObject **pr_issues
+        pair[string_view, PyObjectPtr] origin_pair
+        optional[mi_vector[npy_intp]] boilerplate_indexes
+        optional[mi_vector[string_view]] boilerplate_bodies
+        optional[mi_vector[PyObjectPtr]] boilerplate_ptrs
 
-    (<PyObject *> objdtype).ob_refcnt += deps_count + 1
-    jira_col = PyArray_NewFromDescr(
+    with nogil:
+        id_map.emplace(alloc)
+        origin_map.emplace(alloc)
+        for i in range(PyArray_DIM(<PyObject *> map_prs, 0)):
+            str_obj = map_jira_data[i]
+            node_id = map_prs_data[i]
+            strptr = <char *> PyUnicode_DATA(str_obj)
+            strlength = PyUnicode_GET_LENGTH(str_obj)
+            deref(origin_map)[string_view(strptr, strlength)] = str_obj
+            id_map_iter = deref(id_map).find(node_id)
+            if id_map_iter == deref(id_map).end():
+                strvec.emplace(alloc)
+                deref(strvec).emplace_back(strptr, strlength)
+                deref(id_map)[node_id] = move(deref(strvec))
+            else:
+                deref(id_map_iter).second.emplace_back(strptr, strlength)
+
+        resolved.emplace(alloc)
+        deref(resolved).resize(deps_count)
+        resolved_by_pr.emplace(alloc)
+        deref(resolved_by_pr).resize(deps_count)
+        resolved_by_pr_data = deref(resolved_by_pr).data()
+        for dep_pos in range(deps_count):
+            aux = pr_node_ids_data[dep_pos]
+            if (
+                PyArray_DESCR(aux).type_num != NPY_LONG
+                or not PyArray_IS_C_CONTIGUOUS(aux)
+                or PyArray_NDIM(aux) != 1
+            ):
+                invalid_dtype_pr_node_ids = True
+                break
+            dep_pr_node_ids_data = <long *> PyArray_DATA(aux)
+            dep_len = PyArray_DIM(aux, 0)
+            repo_idx = 0
+            aux = pr_offsets_data[dep_pos]
+            if (
+                PyArray_DESCR(aux).type_num != NPY_UINT
+                or not PyArray_IS_C_CONTIGUOUS(aux)
+                or PyArray_NDIM(aux) != 1
+            ):
+                invalid_dtype_pr_offsets = True
+                break
+            local_pr_offsets_data = <npy_uint32 *> PyArray_DATA(aux)
+            local_pr_offsets_count = PyArray_DIM(aux, 0)
+            deref(resolved)[dep_pos].resize(local_pr_offsets_count + (dep_len > 0))
+            resolved_data = deref(resolved)[dep_pos].data()
+            resolved_by_pr_dep = resolved_by_pr_data + dep_pos
+            resolved_by_pr_dep.resize(dep_len)
+
+            for i in range(dep_len):
+                while repo_idx < local_pr_offsets_count and i >= local_pr_offsets_data[repo_idx]:
+                    repo_idx += 1
+                id_map_iter = deref(id_map).find(dep_pr_node_ids_data[i])
+                if id_map_iter != deref(id_map).end():
+                    issues = &resolved_data[repo_idx]
+                    issues_count = deref(id_map_iter).second.size()
+                    deref(resolved_by_pr_dep)[i].resize(issues_count)
+                    resolved_by_pr_dep_issues = deref(resolved_by_pr_dep)[i].data()
+                    id_map_vec_data = deref(id_map_iter).second.data()
+                    for v in range(issues_count):
+                        issue = id_map_vec_data[v]
+                        str_obj = deref(origin_map)[issue]
+                        resolved_by_pr_dep_issues[v] = str_obj
+                        deref(issues)[issue] = str_obj
+        boilerplate_indexes.emplace(alloc)
+        boilerplate_bodies.emplace(alloc)
+        boilerplate_ptrs.emplace(alloc)
+
+    assert not invalid_dtype_pr_node_ids
+    assert not invalid_dtype_pr_offsets
+    (<PyObject *> objdtype).ob_refcnt += 2 * deps_count + 3
+    result_repo = <ndarray> PyArray_NewFromDescr(
         &PyArray_Type,
         <PyArray_Descr *> objdtype,
         1,
@@ -112,201 +209,108 @@ def calc_pr_to_ix_prs(ndarray prs not None, ndarray prs_offsets not None) -> tup
         NPY_ARRAY_DEFAULT,
         NULL,
     )
-    jira_col_data = <PyObject **> PyArray_DATA(jira_col)
-    for di in range(deps_count):
-        dep_prs = prs_data[di]
-        dep_prs_count = PyArray_DIM(<ndarray> dep_prs, 0)
-        dep_prs_data = <long *> PyArray_DATA(<ndarray> dep_prs)
-        dep_prs_offsets = prs_offsets_data[di]
-        assert (<npdtype> PyArray_DESCR(<ndarray> dep_prs_offsets)).itemsize == 4
-        dep_prs_offsets_count = PyArray_DIM(<ndarray> dep_prs_offsets, 0) + 1
-        dep_prs_offsets_data = <uint32_t *> PyArray_DATA(<ndarray> dep_prs_offsets)
-        dep_jira_col = PyArray_NewFromDescr(
-            &PyArray_Type,
-            <PyArray_Descr *> objdtype,
-            1,
-            &dep_prs_offsets_count,
-            NULL,
-            NULL,
-            NPY_ARRAY_DEFAULT,
-            NULL,
-        )
-        dep_jira_col_data = <PyObject **> PyArray_DATA(dep_jira_col)
-        for j in range(dep_prs_offsets_count):
-            dep_jira_col_data[j] = <PyObject *> empty
-        (<PyObject *> empty).ob_refcnt += dep_prs_offsets_count
-        jira_col_data[di] = <PyObject *> dep_jira_col
-        Py_INCREF(dep_jira_col)
-        for ri in range(dep_prs_offsets_count):
-            if ri == 0:
-                beg = 0
-            else:
-                beg = dep_prs_offsets_data[ri - 1]
-            if ri == dep_prs_offsets_count - 1:
-                end = dep_prs_count
-            else:
-                end = dep_prs_offsets_data[ri]
-            for j in range(beg, end):
-                dereference(pr_to_ix)[dep_prs_data[j]].push_back(PullRequestAddr(di, ri, ~0ull))
-    capsule = PyCapsule_New(pr_to_ix, NULL, delete_ptr_in_capsule)
-    return jira_col, capsule
+    result_repo_data = <PyObject **> PyArray_DATA(<PyObject *> result_repo)
 
-
-def calc_pr_to_ix_releases(ndarray releases not None, pr_to_ix_obj not None) -> None:
-    cdef:
-        npy_intp di, ri, pri, releases_count = PyArray_DIM(releases, 0), dep_releases_count
-        PyObject **releases_data = <PyObject **> PyArray_DATA(releases)
-        ndarray prs_jira_arr
-        npdtype objdtype = np.dtype(object)
-        unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = <unordered_map[long, vector[PullRequestAddr]] *> PyCapsule_GetPointer(pr_to_ix_obj, NULL)
-        PyObject **node_ids_data
-        long released_prs_count
-        PyObject *node_ids
-        PyObject *prs_jira_list
-        long *release_node_ids_data
-
-    for di in range(releases_count):
-        dep_releases = <object> releases_data[di]
-        if dep_releases.empty:
-            continue
-        dep_releases_count = len(dep_releases)
-        Py_INCREF(objdtype)
-        prs_jira_arr = PyArray_NewFromDescr(
-            &PyArray_Type,
-            <PyArray_Descr *> objdtype,
-            1,
-            &dep_releases_count,
-            NULL,
-            NULL,
-            NPY_ARRAY_DEFAULT,
-            NULL,
-        )
-        prs_jira_arr_data = <PyObject **> PyArray_DATA(prs_jira_arr)
-        node_ids_data = <PyObject **> PyArray_DATA(dep_releases["prs_node_id"].values)
-        for ri in range(dep_releases_count):
-            node_ids = node_ids_data[ri]
-            release_node_ids_data = <long *> PyArray_DATA(<ndarray> node_ids)
-            released_prs_count = PyArray_DIM(<ndarray> node_ids, 0)
-            prs_jira_arr_data[ri] = prs_jira_list = PyList_New(released_prs_count)
-            for pri in range(released_prs_count):
-                PyList_SET_ITEM(prs_jira_list, pri, PyList_New(0))
-                dereference(pr_to_ix)[release_node_ids_data[pri]].push_back(PullRequestAddr(di, ri, pri))
-        dep_releases["jira_ids"] = prs_jira_arr
-
-
-def pr_to_ix_to_node_id_array(pr_to_ix_obj not None) -> ndarray:
-    cdef:
-        unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = <unordered_map[long, vector[PullRequestAddr]] *> PyCapsule_GetPointer(pr_to_ix_obj, NULL)
-        pair[long, vector[PullRequestAddr]] it
-        ndarray arr
-        long *arr_data
-        long i = 0
-
-    arr = np.empty(pr_to_ix.size(), dtype=int)
-    arr_data = <long *> PyArray_DATA(arr)
-    for it in dereference(pr_to_ix):
-        arr_data[i] = it.first
-        i += 1
-    return arr
-
-
-def apply_jira_rows(list rows not None, deployments not None, pr_to_ix_obj not None) -> dict:
-    cdef:
-        unordered_map[long, vector[PullRequestAddr]] *pr_to_ix = <unordered_map[long, vector[PullRequestAddr]] *> PyCapsule_GetPointer(pr_to_ix_obj, NULL)
-        PullRequestAddr pr_addr
-        ReleaseAddr rel_addr
-        dict issues = {}
-        unordered_map[PullRequestAddr, vector[string_view]] release_keys
-        unordered_map[uint32_t, PyObject *] release_cols
-        pair[PullRequestAddr, vector[string_view]] release_pair
-        PyObject **aux_ptr
-        pair[long, vector[string_view]] pair1
-        unordered_map[ReleaseAddr, vector[string_view]] overall_keys
-        pair[ReleaseAddr, vector[string_view]] overall_pair
-        str key
-        string_view key_view
-        tuple tr
-        PyObject **overall_col
-        PyObject **releases_col
-        ndarray aux
-        list prs
-
-    if rows:
-        if isinstance(rows[0], asyncpg.Record):
-            for r in rows:
-                key = <object> ApgRecord_GET_ITEM(<PyObject *> r, 1)
-                key_view = string_view(<char *> PyUnicode_DATA(key), PyUnicode_GET_LENGTH(key))
-                issues[key] = PullRequestJIRAIssueItem(
-                    id=key,
-                    title=<object> ApgRecord_GET_ITEM(<PyObject *> r, 2),
-                    epic=<object> ApgRecord_GET_ITEM(<PyObject *> r, 5),
-                    labels=<object> ApgRecord_GET_ITEM(<PyObject *> r, 3),
-                    type=<object> ApgRecord_GET_ITEM(<PyObject *> r, 4),
-                )
-                for pr_addr in dereference(pr_to_ix)[<long><object> ApgRecord_GET_ITEM(<PyObject *> r, 0)]:
-                    # we know tha the kind is always 1-byte
-                    if pr_addr.pri != ~0ull:
-                        release_keys[pr_addr].push_back(key_view)
-                    else:
-                        overall_keys[ReleaseAddr(pr_addr.di, pr_addr.ri)].push_back(key_view)
-        else:
-            for r in rows:
-                tr = tuple(r)
-                key = tr[1]
-                key_view = string_view(<char *> PyUnicode_DATA(key), PyUnicode_GET_LENGTH(key))
-                issues[key] = PullRequestJIRAIssueItem(
-                    id=key, title=tr[2], epic=tr[5], labels=tr[3], type=tr[4],
-                )
-                for pr_addr in dereference(pr_to_ix)[<long> tr[0]]:
-                    # we know tha the kind is always 1-byte
-                    if pr_addr.pri != ~0ull:
-                        release_keys[pr_addr].push_back(key_view)
-                    else:
-                        overall_keys[ReleaseAddr(pr_addr.di, pr_addr.ri)].push_back(key_view)
-    overall_col = <PyObject **> PyArray_DATA(deployments["jira"].values)
-    for overall_pair in overall_keys:
-        rel_addr = overall_pair.first
-        aux = <list> overall_col[rel_addr.di]
-        aux[rel_addr.ri] = vec_to_arr(&overall_pair.second)
-    releases_col = <PyObject **> PyArray_DATA(deployments["releases"].values)
-    for release_pair in release_keys:
-        pr_addr = release_pair.first
-        aux_ptr = &release_cols[pr_addr.di]
-        if dereference(aux_ptr) == NULL:
-            aux_ptr[0] = <PyObject *> (<object> releases_col[pr_addr.di])["jira_ids"].values
-        prs = (<ndarray> dereference(aux_ptr))[pr_addr.ri]
-        prs[pr_addr.pri] = vec_to_arr(&release_pair.second)
-    return issues
-
-
-cdef inline ndarray vec_to_arr(vector[string_view] *vec):
-    cdef:
-        size_t max_size = 0, pos = 0
-        npy_intp count = vec.size()
-        ndarray arr
-        npdtype dtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_STRING))
-        char *arr_data
-
-    std_sort(vec.begin(), vec.end())
-    for key_view in dereference(vec):
-        if key_view.size() > max_size:
-            max_size = key_view.size()
-
-    Py_INCREF(dtype)
-    dtype.itemsize = max_size
-    arr = PyArray_NewFromDescr(
+    result_pr = <ndarray> PyArray_NewFromDescr(
         &PyArray_Type,
-        <PyArray_Descr *> dtype,
+        <PyArray_Descr *> objdtype,
         1,
-        &count,
+        &deps_count,
         NULL,
         NULL,
         NPY_ARRAY_DEFAULT,
         NULL,
     )
-    arr_data = <char *> PyArray_DATA(arr)
-    memset(arr_data, 0, count * max_size)
-    for key_view in dereference(vec):
-        memcpy(arr_data + pos * max_size, key_view.data(), key_view.size())
-        pos += 1
-    return arr
+    result_pr_data = <PyObject **> PyArray_DATA(<PyObject *> result_pr)
+
+    dep_len = 0
+    empty_arr = PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> objdtype,
+        1,
+        &dep_len,
+        NULL,
+        NULL,
+        NPY_ARRAY_DEFAULT,
+        NULL,
+    )
+    empty_list = PyList_New(0)
+    for i in range(deps_count):
+        dep_len = deref(resolved_by_pr)[i].size()
+        result_pr_data[i] = dep_pr_issues = PyArray_NewFromDescr(
+            &PyArray_Type,
+            <PyArray_Descr *> objdtype,
+            1,
+            &dep_len,
+            NULL,
+            NULL,
+            NPY_ARRAY_DEFAULT,
+            NULL,
+        )
+        dep_pr_issues_data = <PyObject **> PyArray_DATA(dep_pr_issues)
+        resolved_by_pr_dep = resolved_by_pr_data + i
+        for j in range(dep_len):
+            sub_len = deref(resolved_by_pr_dep)[j].size()
+            if sub_len == 0:
+                dep_pr_issues_data[j] = empty_list
+                empty_list_refs_count += 1
+                continue
+            pr_issues = deref(resolved_by_pr_dep)[j].data()
+            dep_pr_issues_data[j] = list_obj = PyList_New(sub_len)
+            for k in range(sub_len):
+                str_obj = pr_issues[k]
+                PyList_SET_ITEM(list_obj, k, str_obj)
+                Py_INCREF(str_obj)
+
+        dep_len = deref(resolved)[i].size()
+        dep_repo_issues = PyArray_NewFromDescr(
+            &PyArray_Type,
+            <PyArray_Descr *> objdtype,
+            1,
+            &dep_len,
+            NULL,
+            NULL,
+            NPY_ARRAY_DEFAULT,
+            NULL,
+        )
+        result_repo_data[i] = dep_repo_issues
+        dep_repo_issues_data = <PyObject **> PyArray_DATA(dep_repo_issues)
+
+        resolved_data = deref(resolved)[i].data()
+        for j in range(dep_len):
+            sub_len = resolved_data[j].size()
+            if sub_len == 0:
+                dep_repo_issues_data[j] = empty_arr
+                empty_arr_refs_count += 1
+                continue
+            dep_repo_issues_data[j] = repo_issues = PyArray_NewFromDescr(
+                &PyArray_Type,
+                <PyArray_Descr *> objdtype,
+                1,
+                &sub_len,
+                NULL,
+                NULL,
+                NPY_ARRAY_DEFAULT,
+                NULL,
+            )
+            extra_objdtype_refs_count += 1
+            repo_issues_data = <PyObject **> PyArray_DATA(repo_issues)
+            deref(boilerplate_indexes).resize(0)
+            deref(boilerplate_bodies).resize(0)
+            deref(boilerplate_ptrs).resize(0)
+            k = 0
+            for origin_pair in resolved_data[j]:
+                deref(boilerplate_indexes).push_back(k)
+                deref(boilerplate_bodies).emplace_back(origin_pair.first)
+                deref(boilerplate_ptrs).push_back(origin_pair.second)
+                k += 1
+            argsort_bodies(deref(boilerplate_bodies), deref(boilerplate_indexes))
+            for v in range(deref(boilerplate_indexes).size()):
+                str_obj = deref(boilerplate_ptrs)[deref(boilerplate_indexes)[v]]
+                repo_issues_data[v] = str_obj
+                Py_INCREF(str_obj)
+
+    empty_arr.ob_refcnt += empty_arr_refs_count
+    empty_list.ob_refcnt += empty_list_refs_count
+    (<PyObject *> objdtype).ob_refcnt += extra_objdtype_refs_count
+    return result_repo, result_pr

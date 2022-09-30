@@ -34,6 +34,45 @@ from numpy cimport (
     npy_intp,
 )
 
+from athenian.api.native.cpython cimport (
+    Py_False,
+    Py_None,
+    Py_True,
+    PyBytes_AS_STRING,
+    PyBytes_Check,
+    PyBytes_GET_SIZE,
+    PyDict_CheckExact,
+    PyDict_Next,
+    PyFloat_AS_DOUBLE,
+    PyFloat_CheckExact,
+    PyList_CheckExact,
+    PyList_GET_ITEM,
+    PyList_GET_SIZE,
+    PyLong_AsLong,
+    PyLong_CheckExact,
+    PyTuple_GET_ITEM,
+    PyUnicode_1BYTE_KIND,
+    PyUnicode_2BYTE_KIND,
+    PyUnicode_4BYTE_KIND,
+    PyUnicode_Check,
+    PyUnicode_DATA,
+    PyUnicode_FromKindAndData,
+    PyUnicode_GET_LENGTH,
+    PyUnicode_KIND,
+)
+from athenian.api.native.numpy cimport (
+    PyArray_BYTES,
+    PyArray_CheckExact,
+    PyArray_DESCR,
+    PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
+    PyArray_IS_F_CONTIGUOUS,
+    PyArray_ITEMSIZE,
+    PyArray_NDIM,
+    PyArray_STRIDE,
+    PyArray_TYPE,
+)
+
 import numpy as np
 from pandas import DataFrame, DatetimeTZDtype
 from pandas.core.arrays import DatetimeArray
@@ -48,48 +87,6 @@ cdef extern from "<stdlib.h>" nogil:
 
 cdef extern from "<string.h>" nogil:
     size_t strnlen(const char *, size_t)
-
-
-cdef extern from "Python.h":
-    # added nogil -> from cpython cimport ...
-    char *PyBytes_AS_STRING(PyObject *) nogil
-    Py_ssize_t PyBytes_GET_SIZE(PyObject *) nogil
-    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
-    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    bint PyUnicode_Check(PyObject *) nogil
-    bint PyBytes_Check(PyObject *) nogil
-    bint PyList_CheckExact(PyObject *) nogil
-    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    void *PyUnicode_DATA(PyObject *) nogil
-    unsigned int PyUnicode_KIND(PyObject *) nogil
-    bint PyLong_CheckExact(PyObject *) nogil
-    long PyLong_AsLong(PyObject *) nogil
-    bint PyDict_CheckExact(PyObject *) nogil
-    int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue) nogil
-    double PyFloat_AS_DOUBLE(PyObject *) nogil
-    bint PyFloat_CheckExact(PyObject *) nogil
-    unsigned int PyUnicode_1BYTE_KIND
-    unsigned int PyUnicode_2BYTE_KIND
-    unsigned int PyUnicode_4BYTE_KIND
-    PyObject *Py_None
-    PyObject *Py_True
-    PyObject *Py_False
-
-    str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
-
-
-cdef extern from "numpy/arrayobject.h":
-    char *PyArray_BYTES(PyObject *) nogil
-    npy_intp PyArray_DIM(PyObject *, size_t) nogil
-    npy_intp PyArray_STRIDE(PyObject *, size_t) nogil
-    int PyArray_NDIM(PyObject *) nogil
-    npy_intp PyArray_ITEMSIZE(PyObject *) nogil
-    bint PyArray_CheckExact(PyObject *) nogil
-    PyArray_Descr *PyArray_DESCR(PyObject *) nogil
-    int PyArray_TYPE(PyObject *) nogil
-    bint PyArray_IS_C_CONTIGUOUS(PyObject *) nogil
-    bint PyArray_IS_F_CONTIGUOUS(PyObject *) nogil
 
 
 def serialize_args(tuple args) -> bytes:

@@ -8,3 +8,7 @@
 	path = server/athenian/api/sentry_native
 	url = https://github.com/getsentry/sentry-native
 	ignore = dirty
+[submodule "server/athenian/api/mimalloc"]
+	path = server/athenian/api/mimalloc
+	url = https://github.com/microsoft/mimalloc
+	ignore = dirty

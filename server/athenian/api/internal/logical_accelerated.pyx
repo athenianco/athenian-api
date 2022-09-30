@@ -9,22 +9,22 @@ from libc.stddef cimport wchar_t
 from libc.string cimport memchr, memset
 from numpy cimport PyArray_DATA, PyArray_DIM, PyArray_ISOBJECT, PyArray_ISSTRING, ndarray
 
+from athenian.api.native.cpython cimport (
+    Py_None,
+    PyList_GET_ITEM,
+    PyList_GET_SIZE,
+    PyUnicode_1BYTE_KIND,
+    PyUnicode_DATA,
+    PyUnicode_FromKindAndData,
+    PyUnicode_GET_LENGTH,
+    PyUnicode_KIND,
+)
+
 import numpy as np
 
 
 cdef extern from "<wchar.h>" nogil:
     wchar_t *wmemchr(const wchar_t *s, wchar_t c, size_t n)
-
-cdef extern from "Python.h":
-    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    void *PyUnicode_DATA(PyObject *) nogil
-    unsigned int PyUnicode_KIND(PyObject *) nogil
-    unsigned int PyUnicode_1BYTE_KIND
-    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
-
-    str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
-    PyObject *Py_None
 
 
 # performance: do not check that repo is a str, downstream functions will do that anyway

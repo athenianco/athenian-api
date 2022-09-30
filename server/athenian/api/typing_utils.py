@@ -354,10 +354,14 @@ def numpy_struct(cls: type) -> Type[NumpyStruct]:
         optional = cls.Optional.__annotations__
     except AttributeError:
         optional = {}
+    try:
+        virtual = cls.Virtual.__annotations__
+    except AttributeError:
+        virtual = {}
     field_names = NamedTuple(
         f"{cls.__name__}FieldNames",
-        [(k, str) for k in chain(dtype, optional)],
-    )(*chain(dtype, optional))
+        [(k, str) for k in chain(dtype, optional, virtual)],
+    )(*chain(dtype, optional, virtual))
     base = type(
         cls.__name__ + "Base",
         (NumpyStruct,),
@@ -368,6 +372,7 @@ def numpy_struct(cls: type) -> Type[NumpyStruct]:
         "dtype": np.dtype(dtype_tuples),
         "nested_dtypes": nested_dtypes,
         "f": field_names,
+        "fnv": field_names[: -len(virtual)] if len(virtual) else field_names,
     }
     struct_cls = type(cls.__name__, (cls, base), body)
     struct_cls.__module__ = cls.__module__

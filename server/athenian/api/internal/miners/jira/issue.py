@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Iterable, Mapping, Optional
+from typing import Collection, Iterable, Optional
 
 import aiomcache
 import numpy as np
@@ -17,7 +17,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Database, DatabaseLike, Row
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
@@ -944,75 +944,18 @@ def resolve_work_began_and_resolved(
 
 
 @sentry_span
-async def fetch_jira_issues_for_prs(
-    pr_nodes: Collection[int],
-    meta_ids: tuple[int, ...],
-    jira_ids: JIRAConfig,
-    mdb: DatabaseLike,
-) -> list[Mapping[str, Any]]:
-    """Load brief information about JIRA issues mapped to the given PRs."""
-    regiss = aliased(Issue, name="regular")
-    epiciss = aliased(Issue, name="epic")
-    prmap = aliased(NodePullRequestJiraIssues, name="m")
-    in_any_values = len(pr_nodes) > 100
-    query = (
-        sql.select(
-            prmap.node_id.label("node_id"),
-            regiss.key.label("key"),
-            regiss.title.label("title"),
-            regiss.labels.label("labels"),
-            regiss.type.label("type"),
-            epiciss.key.label("epic"),
-        )
-        .select_from(
-            sql.outerjoin(
-                sql.join(
-                    regiss,
-                    prmap,
-                    sql.and_(
-                        regiss.id == prmap.jira_id,
-                        regiss.acc_id == prmap.jira_acc,
-                    ),
-                ),
-                epiciss,
-                sql.and_(
-                    epiciss.id == regiss.epic_id,
-                    epiciss.acc_id == regiss.acc_id,
-                ),
-            ),
-        )
-        .where(
-            prmap.node_id.in_any_values(pr_nodes)
-            if in_any_values
-            else prmap.node_id.in_(pr_nodes),
-            prmap.node_acc.in_(meta_ids),
-            prmap.jira_acc == jira_ids[0],
-            regiss.project_id.in_(jira_ids[1]),
-            regiss.is_deleted.is_(False),
-        )
-    )
-    if in_any_values:
-        (
-            query.with_statement_hint("Leading((((m *VALUES*) regular) epic))")
-            .with_statement_hint(f"Rows(m *VALUES* #{len(pr_nodes)})")
-            .with_statement_hint(f"Rows(m *VALUES* regular #{len(pr_nodes)})")
-        )
-    return await mdb.fetch_all(query)
-
-
-@sentry_span
 async def fetch_jira_issues_by_keys(
     keys: Collection[str],
     jira_ids: JIRAConfig,
     mdb: DatabaseLike,
-) -> list[Mapping[str, Any]]:
+) -> list[Row]:
     """Load brief information about JIRA issues mapped to the given issue keys."""
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Issue, name="epic")
     in_any_values = len(keys) > 100
     query = (
         sql.select(
-            regiss.key.label("key"),
+            regiss.key.label("id"),
             regiss.title.label("title"),
             regiss.labels.label("labels"),
             regiss.type.label("type"),
@@ -1042,6 +985,58 @@ async def fetch_jira_issues_by_keys(
             .with_statement_hint(f"Rows(*VALUES* regular epic #{len(keys)})")
         )
     return await mdb.fetch_all(query)
+
+
+@sentry_span
+async def fetch_jira_issues_by_prs(
+    pr_nodes: Collection[int],
+    jira_ids: JIRAConfig,
+    meta_ids: tuple[int, ...],
+    mdb: DatabaseLike,
+) -> pd.DataFrame:
+    """Load brief information about JIRA issues mapped to the given PRs."""
+    regiss = aliased(Issue, name="regular")
+    epiciss = aliased(Issue, name="epic")
+    prmap = aliased(NodePullRequestJiraIssues, name="m")
+    in_any_values = len(pr_nodes) > 100
+    selected = [prmap.node_id.label("node_id"), regiss.key.label("jira_id")]
+    query = (
+        sql.select(*selected)
+        .select_from(
+            sql.outerjoin(
+                sql.join(
+                    regiss,
+                    prmap,
+                    sql.and_(
+                        regiss.id == prmap.jira_id,
+                        regiss.acc_id == prmap.jira_acc,
+                    ),
+                ),
+                epiciss,
+                sql.and_(
+                    epiciss.id == regiss.epic_id,
+                    epiciss.acc_id == regiss.acc_id,
+                ),
+            ),
+        )
+        .where(
+            prmap.node_id.in_any_values(pr_nodes)
+            if in_any_values
+            else prmap.node_id.in_(pr_nodes),
+            prmap.node_acc.in_(meta_ids),
+            prmap.jira_acc == jira_ids[0],
+            regiss.project_id.in_(jira_ids[1]),
+            regiss.is_deleted.is_(False),
+        )
+        .order_by(prmap.node_id)
+    )
+    if in_any_values:
+        (
+            query.with_statement_hint("Leading((((m *VALUES*) regular) epic))")
+            .with_statement_hint(f"Rows(m *VALUES* #{len(pr_nodes)})")
+            .with_statement_hint(f"Rows(m *VALUES* regular #{len(pr_nodes)})")
+        )
+    return await read_sql_query(query, mdb, selected)
 
 
 participant_columns = (

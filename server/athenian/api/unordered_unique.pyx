@@ -21,26 +21,20 @@ from numpy cimport (
     ndarray,
 )
 
+from athenian.api.native.cpython cimport (
+    Py_INCREF,
+    Py_None,
+    PyUnicode_DATA,
+    PyUnicode_GET_LENGTH,
+    PyUnicode_KIND,
+)
+from athenian.api.native.string_view cimport string_view
+
 import numpy as np
-
-
-cdef extern from "<string_view>" namespace "std" nogil:
-    cppclass string_view:
-        string_view() except +
-        string_view(const char *, size_t) except +
-        const char *data()
 
 
 cdef extern from "wchar.h" nogil:
     wchar_t *wmemchr(const wchar_t *, wchar_t, size_t)
-
-
-cdef extern from "Python.h":
-    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    void *PyUnicode_DATA(PyObject *) nogil
-    unsigned int PyUnicode_KIND(PyObject *) nogil
-    void Py_INCREF(PyObject *)
-    PyObject *Py_None
 
 
 def unordered_unique(ndarray arr not None) -> np.ndarray:

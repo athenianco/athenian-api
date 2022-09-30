@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-  pull_request_target:
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -113,25 +113,23 @@ jobs:
         restore-keys: ubuntu-22.04-pip-custom-checks-
     - name: chown /usr/local
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
-    - name: cache libsentry
-      id: cache-libsentry
+    - name: cache libs
+      id: cache-native-libs
       uses: actions/cache@v3
       with:
         path: |
-          /usr/local/lib/libsentry.so
+          /usr/local/lib/libsentry.so*
+          /usr/local/lib/libmimalloc.so*
+          /usr/local/include/mimalloc.h
           /usr/local/include/sentry.h
-        key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
-    - name: sentry-native
-      if: steps.cache-libsentry.outputs.cache-hit != 'true'
+        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
+    - name: build-native-libs
+      if: steps.cache-native-libs.outputs.cache-hit != 'true'
       run: |
         set -x
         sudo apt-get update
         sudo apt-get install -y libcurl4-gnutls-dev
-        cd server/athenian/api/sentry_native
-        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build --parallel
-        sudo cmake --install build
-        cd -
+        make install-native
     - name: pip
       run: |
         set -x
@@ -230,25 +228,23 @@ jobs:
         restore-keys: ubuntu-22.04-pip-main-
     - name: chown /usr/local
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
-    - name: cache libsentry
-      id: cache-libsentry
+    - name: cache libs
+      id: cache-native-libs
       uses: actions/cache@v3
       with:
         path: |
-          /usr/local/lib/libsentry.so
+          /usr/local/lib/libsentry.so*
+          /usr/local/lib/libmimalloc.so*
+          /usr/local/include/mimalloc.h
           /usr/local/include/sentry.h
-        key: ubuntu-22.04-libsentry-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master') }}
-    - name: sentry-native
-      if: steps.cache-libsentry.outputs.cache-hit != 'true'
+        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
+    - name: build-native-libs
+      if: steps.cache-native-libs.outputs.cache-hit != 'true'
       run: |
         set -x
         sudo apt-get update
         sudo apt-get install -y libcurl4-gnutls-dev
-        cd server/athenian/api/sentry_native
-        cmake -B build -D SENTRY_BACKEND=crashpad -D CMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build --parallel
-        sudo cmake --install build
-        cd -
+        make install-native
     - name: godotenv
       run: |
         set -x

@@ -119,7 +119,7 @@ async def mine_releases(
     *,
     force_fresh: bool = False,
     with_avatars: bool = True,
-    with_pr_titles: bool = False,
+    with_extended_pr_details: bool = False,
     with_deployments: bool = True,
     with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     releases_in_time_range: Optional[pd.DataFrame] = None,
@@ -137,7 +137,8 @@ async def mine_releases(
                         the pdb is.
     :param with_avatars: Indicates whether to return the fetched user avatars or just an array of \
                          unique mentioned user node IDs.
-    :param with_pr_titles: Indicates whether released PR titles must be fetched.
+    :param with_extended_pr_details: Indicates whether released PR titles and creation timestamps \
+                                     must be fetched.
     :param with_deployments: Indicates whether we must load the deployments to which the filtered
                              releases belong.
     :param with_jira: Indicates which JIRA information to load for each release from \
@@ -169,7 +170,7 @@ async def mine_releases(
         cache,
         force_fresh,
         with_avatars,
-        with_pr_titles,
+        with_extended_pr_details,
         with_deployments,
         with_jira,
         releases_in_time_range,
@@ -189,7 +190,7 @@ def _triage_flags(
         JIRAEntityToFetch,
     ],
     with_avatars: bool = True,
-    with_pr_titles: bool = False,
+    with_extended_pr_details: bool = False,
     with_deployments: bool = True,
     with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     **_,
@@ -209,11 +210,11 @@ def _triage_flags(
         matches,
         deps,
         cached_with_avatars,
-        cached_with_pr_titles,
+        cached_with_extended_pr_details,
         cached_with_deployments,
         cached_with_jira,
     ) = result
-    if with_pr_titles and not cached_with_pr_titles:
+    if with_extended_pr_details and not cached_with_extended_pr_details:
         raise CancelCache()
     if with_avatars and not cached_with_avatars:
         raise CancelCache()
@@ -223,7 +224,16 @@ def _triage_flags(
         raise CancelCache()
     if with_jira & cached_with_jira != with_jira:
         raise CancelCache()
-    return main, avatars, matches, deps, with_avatars, with_pr_titles, with_deployments, with_jira
+    return (
+        main,
+        avatars,
+        matches,
+        deps,
+        with_avatars,
+        with_extended_pr_details,
+        with_deployments,
+        with_jira,
+    )
 
 
 @sentry_span
@@ -266,7 +276,7 @@ async def _mine_releases(
     cache: Optional[aiomcache.Client],
     force_fresh: bool,
     with_avatars: bool,
-    with_pr_titles: bool,
+    with_extended_pr_details: bool,
     with_deployments: bool,
     with_jira: JIRAEntityToFetch,
     releases_in_time_range: Optional[pd.DataFrame],
@@ -314,7 +324,7 @@ async def _mine_releases(
             {r: v.match for r, v in release_settings.prefixed.items()},
             {},
             with_avatars,
-            with_pr_titles,
+            with_extended_pr_details,
             with_deployments,
             with_jira,
         )
@@ -343,7 +353,7 @@ async def _mine_releases(
     )
     # uncomment this line to compute releases from scratch:
     # precomputed_facts = {}
-    if with_pr_titles or labels:
+    if with_extended_pr_details or labels:
         all_pr_node_ids = [
             f["prs_" + PullRequest.node_id.name] for f in precomputed_facts.values()
         ]
@@ -566,7 +576,7 @@ async def _mine_releases(
         original_prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         prs_authors, prs_authors_nz = _null_to_zero_int(prs_df, PullRequest.user_node_id.name)
         prs_node_ids = prs_df[PullRequest.node_id.name].values
-        if with_pr_titles or labels:
+        if with_extended_pr_details or labels:
             all_pr_node_ids.append(prs_node_ids)
         if with_jira != JIRAEntityToFetch.NOTHING:
             new_jira_entities_coro = PullRequestJiraMapper.load(
@@ -764,16 +774,20 @@ async def _mine_releases(
         )
     else:
         tasks.insert(0, None)
-    if (with_pr_titles or labels) and all_pr_node_ids:
+    if (with_extended_pr_details or labels) and all_pr_node_ids:
         all_pr_node_ids = np.concatenate(all_pr_node_ids)
-    if with_pr_titles:
+    if with_extended_pr_details:
         tasks.insert(
             0,
-            mdb.fetch_all(
-                select(NodePullRequest.id, NodePullRequest.title).where(
+            read_sql_query(
+                select(NodePullRequest.id, NodePullRequest.title, NodePullRequest.created_at)
+                .where(
                     NodePullRequest.acc_id.in_(meta_ids),
                     NodePullRequest.id.in_any_values(all_pr_node_ids),
-                ),
+                )
+                .order_by(NodePullRequest.id),
+                mdb,
+                [NodePullRequest.id, NodePullRequest.title, NodePullRequest.created_at],
             ),
         )
     else:
@@ -802,7 +816,7 @@ async def _mine_releases(
     mentioned_authors = set(mentioned_authors)
     (
         labels_result,
-        pr_titles_result,
+        pr_extended_details_result,
         avatars_result,
         _,
         new_pr_jira_map,
@@ -830,12 +844,18 @@ async def _mine_releases(
         result = _filter_by_participants(result, participants)
     if labels:
         result = _filter_by_labels(result, labels_result, labels)
-    if with_pr_titles:
-        pr_title_map = {row[0]: row[1] for row in pr_titles_result}
+    if with_extended_pr_details:
+        pr_extended_node_ids = pr_extended_details_result[NodePullRequest.id.name].values
+        pr_extended_titles = pr_extended_details_result[NodePullRequest.title.name].values
+        pr_extended_createds = pr_extended_details_result[NodePullRequest.created_at.name].values
         for facts in result:
-            facts["prs_" + PullRequest.title.name] = [
-                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
-            ]
+            node_ids = facts["prs_" + PullRequest.node_id.name]
+            indexes = searchsorted_inrange(pr_extended_node_ids, node_ids)
+            none_mask = pr_extended_node_ids[indexes] != node_ids
+            facts["prs_" + PullRequest.title.name] = titles = pr_extended_titles[indexes]
+            facts["prs_" + PullRequest.created_at.name] = createds = pr_extended_createds[indexes]
+            titles[none_mask] = None
+            createds[none_mask] = None
     empty_jira = LoadedJIRAReleaseDetails.empty()
     for facts in result:
         facts.jira = release_jira_map.get((facts.node_id, facts.repository_full_name), empty_jira)
@@ -851,7 +871,7 @@ async def _mine_releases(
         {r: v.match for r, v in release_settings.prefixed.items()},
         deployments,
         with_avatars,
-        with_pr_titles,
+        with_extended_pr_details,
         with_deployments,
         with_jira,
     )
@@ -1408,7 +1428,7 @@ async def mine_releases_by_name(
                 rdb,
                 cache,
                 with_avatars=True,
-                with_pr_titles=True,
+                with_extended_pr_details=True,
                 with_jira=JIRAEntityToFetch.ISSUES,
             ),
             _load_release_deployments(
@@ -1447,7 +1467,7 @@ async def mine_releases_by_name(
                 rdb,
                 cache,
                 with_avatars=True,
-                with_pr_titles=True,
+                with_extended_pr_details=True,
                 with_jira=JIRAEntityToFetch.ISSUES,
             ),
             mine_releases_by_ids(
@@ -1470,7 +1490,7 @@ async def mine_releases_by_name(
                 rdb,
                 cache,
                 with_avatars=True,
-                with_pr_titles=True,
+                with_extended_pr_details=True,
                 with_jira=JIRAEntityToFetch.ISSUES,
             ),
             mine_releases_by_ids(
@@ -1489,7 +1509,7 @@ async def mine_releases_by_name(
                 rdb,
                 cache,
                 with_avatars=True,
-                with_pr_titles=True,
+                with_extended_pr_details=True,
                 with_jira=JIRAEntityToFetch.ISSUES,
             ),
             _load_release_deployments(
@@ -1573,7 +1593,7 @@ async def mine_releases_by_ids(
     cache: Optional[aiomcache.Client],
     *,
     with_avatars: bool,
-    with_pr_titles: bool,
+    with_extended_pr_details: bool,
     with_jira: JIRAEntityToFetch,
 ) -> tuple[pd.DataFrame, list[tuple[int, str]]] | pd.DataFrame:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
@@ -1597,7 +1617,7 @@ async def mine_releases_by_ids(
         cache,
         force_fresh=True,
         with_avatars=with_avatars,
-        with_pr_titles=with_pr_titles,
+        with_extended_pr_details=with_extended_pr_details,
         with_deployments=False,
         with_jira=with_jira,
         releases_in_time_range=releases,
@@ -1838,7 +1858,7 @@ async def diff_releases(
             rdb,
             cache,
             force_fresh=True,
-            with_pr_titles=True,
+            with_extended_pr_details=True,
             with_jira=JIRAEntityToFetch.ISSUES,
         ),
         fetch_dags(),

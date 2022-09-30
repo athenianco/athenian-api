@@ -1703,6 +1703,7 @@ async def test_pull_request_count_logical_alpha_beta(
         default_branches,
         prefixer,
         1,
+        None,
         (6366825,),
         mdb,
         pdb,

@@ -267,7 +267,7 @@ async def precompute_reposet(
                 rdb,
                 None,
                 force_fresh=True,
-                with_pr_titles=False,
+                with_extended_pr_details=False,
                 with_deployments=False,
             )
             releases_by_tag = (
@@ -359,6 +359,7 @@ async def precompute_reposet(
                 default_branches,
                 prefixer,
                 reposet.owner_id,
+                None,
                 meta_ids,
                 mdb,
                 pdb,

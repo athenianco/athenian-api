@@ -805,7 +805,7 @@ class MetricEntriesCalculator:
             self._rdb,
             self._cache,
             with_avatars=False,
-            with_pr_titles=False,
+            with_extended_pr_details=False,
         )
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
@@ -919,7 +919,7 @@ class MetricEntriesCalculator:
             self._rdb,
             self._cache,
             with_avatars=False,
-            with_pr_titles=False,
+            with_extended_pr_details=False,
             with_jira=self._get_jira_entities_to_fetch(jira_filters, ()),
         )
 
@@ -1156,13 +1156,15 @@ class MetricEntriesCalculator:
             default_branches,
             prefixer,
             self._account,
+            jira_ids,
             self._meta_ids,
             self._mdb,
             self._pdb,
             self._rdb,
             self._cache,
+            with_jira=True,
         )
-        issues = await load_jira_issues_for_deployments(deps, jira_ids, self._meta_ids, self._mdb)
+        issues = await load_jira_issues_for_deployments(deps, jira_ids, self._mdb)
         calc = DeploymentBinnedMetricCalculator(
             metrics, quantiles, self._quantile_stride, jira=issues,
         )

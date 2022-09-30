@@ -12,16 +12,8 @@ from libc.string cimport memchr, memcmp, memcpy
 from libcpp.memory cimport allocator, unique_ptr
 from libcpp.unordered_map cimport unordered_map
 
-
-cdef extern from "Python.h":
-    void *PyUnicode_DATA(object)
-
-
-cdef extern from "<string_view>" namespace "std" nogil:
-    cppclass string_view:
-        string_view() except +
-        string_view(const char *, size_t) except +
-        const char *data()
+from athenian.api.native.cpython cimport PyUnicode_DATA
+from athenian.api.native.string_view cimport string_view
 
 
 cdef extern from "string.h" nogil:
@@ -32,23 +24,23 @@ cdef extern from "string.h" nogil:
 
 
 cdef:
-    const char *default_branch_alias_data = <const char *>PyUnicode_DATA(default_branch_alias)
+    const char *default_branch_alias_data = <const char *>PyUnicode_DATA(<PyObject *> default_branch_alias)
     Py_ssize_t default_branch_alias_len = len(default_branch_alias)
     long branch = ReleaseMatch.branch
     long tag = ReleaseMatch.tag
     long tag_or_branch = ReleaseMatch.tag_or_branch
     long event = ReleaseMatch.event
-    const char *tag_or_branch_data = <const char *>PyUnicode_DATA(ReleaseMatch.tag_or_branch.name)
+    const char *tag_or_branch_data = <const char *>PyUnicode_DATA(<PyObject *> ReleaseMatch.tag_or_branch.name)
     Py_ssize_t tag_or_branch_name_len = len(ReleaseMatch.tag_or_branch.name)
-    const char *rejected_data = <const char *>PyUnicode_DATA(ReleaseMatch.rejected.name)
+    const char *rejected_data = <const char *>PyUnicode_DATA(<PyObject *> ReleaseMatch.rejected.name)
     Py_ssize_t rejected_name_len = len(ReleaseMatch.rejected.name)
-    const char *force_push_drop_data = <const char *>PyUnicode_DATA(ReleaseMatch.force_push_drop.name)
+    const char *force_push_drop_data = <const char *>PyUnicode_DATA(<PyObject *> ReleaseMatch.force_push_drop.name)
     Py_ssize_t force_push_drop_name_len = len(ReleaseMatch.force_push_drop.name)
     unordered_map[string_view, long] release_match_name_to_enum
 
 
 for obj in ReleaseMatch:
-    release_match_name_to_enum[string_view(<char *>PyUnicode_DATA(obj.name), PyUnicode_GET_LENGTH(obj.name))] = obj
+    release_match_name_to_enum[string_view(<char *>PyUnicode_DATA(<PyObject *> obj.name), PyUnicode_GET_LENGTH(obj.name))] = obj
 
 
 ctypedef void (*free_type)(void *)
@@ -66,7 +58,7 @@ def triage_by_release_match(
     according to `release_settings`, or decide between `result` and `ambiguous`."""
     cdef:
         Py_ssize_t release_match_len = PyUnicode_GET_LENGTH(release_match)
-        const char *release_match_data = <const char *>PyUnicode_DATA(release_match)
+        const char *release_match_data = <const char *>PyUnicode_DATA(<PyObject *> release_match)
         PyObject *required_release_match
         const char *match_name
         int match_name_len
@@ -129,7 +121,7 @@ def triage_by_release_match(
         target = (<object>required_release_match).events
     else:
         raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
-    target_data = <const char *> PyUnicode_DATA(target)
+    target_data = <const char *> PyUnicode_DATA(<PyObject *> target)
     target_len = PyUnicode_GET_LENGTH(target)
     if match == branch:
         found = <const char *>memmem(
@@ -141,7 +133,7 @@ def triage_by_release_match(
             target_len += default_branch_len - default_branch_alias_len
             if target_len != match_by_len:
                 return None
-            default_branch_data = <const char *> PyUnicode_DATA(<object> default_branch)
+            default_branch_data = <const char *> PyUnicode_DATA(default_branch)
             resolved_branch.reset(allocator[char]().allocate(target_len))
             pos = found - target_data
             memcpy(resolved_branch.get(), target_data, pos)

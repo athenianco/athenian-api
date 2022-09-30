@@ -26,6 +26,62 @@ from libc.string cimport memcpy
 from libcpp.vector cimport vector
 from numpy cimport import_array, npy_int64, npy_intp
 
+from athenian.api.native.cpython cimport (
+    Py_False,
+    Py_None,
+    Py_True,
+    PyBool_Type,
+    PyBytes_AS_STRING,
+    PyBytes_Check,
+    PyBytes_GET_SIZE,
+    PyDateTime_CAPI,
+    PyDateTime_Check,
+    PyDateTime_DATE_GET_HOUR,
+    PyDateTime_DATE_GET_MINUTE,
+    PyDateTime_DATE_GET_SECOND,
+    PyDateTime_DELTA_GET_DAYS,
+    PyDateTime_DELTA_GET_SECONDS,
+    PyDateTime_GET_DAY,
+    PyDateTime_GET_MONTH,
+    PyDateTime_GET_YEAR,
+    PyDelta_Check,
+    PyDict_CheckExact,
+    PyDict_Next,
+    PyDict_Size,
+    PyDict_Type,
+    PyFloat_AS_DOUBLE,
+    PyFloat_CheckExact,
+    PyFloat_Type,
+    PyList_CheckExact,
+    PyList_GET_ITEM,
+    PyList_GET_SIZE,
+    PyList_Type,
+    PyLong_AsLong,
+    PyLong_CheckExact,
+    PyLong_Type,
+    PyMemberDef,
+    PyObject_TypeCheck,
+    PyTuple_GET_ITEM,
+    PyTypeObject,
+    PyUnicode_Check,
+    PyUnicode_DATA,
+    PyUnicode_FromKindAndData,
+    PyUnicode_GET_LENGTH,
+    PyUnicode_KIND,
+    PyUnicode_Type,
+)
+from athenian.api.native.numpy cimport (
+    PyArray_CheckExact,
+    PyArray_DATA,
+    PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
+    PyArray_IsIntegerScalar,
+    PyArray_NDIM,
+    PyArray_ScalarAsCtype,
+    PyDatetimeArrType_Type,
+    PyTimedeltaArrType_Type,
+)
+
 import pickle
 from types import GenericAlias
 
@@ -37,82 +93,7 @@ cdef extern from "stdio.h" nogil:
     FILE *fmemopen(void *buf, size_t size, const char *mode)
 
 
-cdef extern from "structmember.h":
-    ctypedef struct PyMemberDef:
-        const char *name
-        int type
-        Py_ssize_t offset
-        int flags
-        const char *doc
-
-
-cdef extern from "Python.h":
-    ctypedef PyObject *(*allocfunc)(PyTypeObject *cls, Py_ssize_t nitems)
-
-    ctypedef struct PyTypeObject:
-        allocfunc tp_alloc
-        PyMemberDef *tp_members
-
-    char *PyBytes_AS_STRING(PyObject *) nogil
-    Py_ssize_t PyBytes_GET_SIZE(PyObject *) nogil
-    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
-    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    bint PyUnicode_Check(PyObject *) nogil
-    bint PyBytes_Check(PyObject *) nogil
-    bint PyList_CheckExact(PyObject *) nogil
-    bint PyDict_CheckExact(PyObject *) nogil
-    int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject ** pkey, PyObject ** pvalue) nogil
-    Py_ssize_t PyDict_Size(PyObject *p) nogil
-    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    void *PyUnicode_DATA(PyObject *) nogil
-    unsigned int PyUnicode_KIND(PyObject *) nogil
-    bint PyLong_CheckExact(PyObject *) nogil
-    long PyLong_AsLong(PyObject *) nogil
-    double PyFloat_AS_DOUBLE(PyObject *) nogil
-    bint PyFloat_CheckExact(PyObject *) nogil
-    bint PyObject_TypeCheck(PyObject *, PyTypeObject *) nogil
-
-    unsigned int PyUnicode_1BYTE_KIND
-    unsigned int PyUnicode_2BYTE_KIND
-    unsigned int PyUnicode_4BYTE_KIND
-
-    PyObject *Py_None
-    PyObject *Py_True
-    PyObject *Py_False
-    PyTypeObject PyLong_Type
-    PyTypeObject PyFloat_Type
-    PyTypeObject PyUnicode_Type
-    PyTypeObject PyBool_Type
-    PyTypeObject PyList_Type
-    PyTypeObject PyDict_Type
-
-    str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
-
-
-cdef extern from "datetime.h" nogil:
-    bint PyDateTime_Check(PyObject *)
-    bint PyDelta_Check(PyObject *)
-
-    int PyDateTime_GET_YEAR(PyObject *)
-    int PyDateTime_GET_MONTH(PyObject *)
-    int PyDateTime_GET_DAY(PyObject *)
-
-    int PyDateTime_DATE_GET_HOUR(PyObject *)
-    int PyDateTime_DATE_GET_MINUTE(PyObject *)
-    int PyDateTime_DATE_GET_SECOND(PyObject *)
-
-    int PyDateTime_DELTA_GET_DAYS(PyObject *)
-    int PyDateTime_DELTA_GET_SECONDS(PyObject *)
-
-    ctypedef struct PyDateTime_CAPI:
-        PyObject *TimeZone_UTC
-
-
 cdef extern from "numpy/arrayobject.h" nogil:
-    PyTypeObject PyDatetimeArrType_Type
-    PyTypeObject PyTimedeltaArrType_Type
-
     ctypedef enum NPY_DATETIMEUNIT:
         NPY_FR_ERROR = -1
         NPY_FR_M = 1
@@ -136,14 +117,6 @@ cdef extern from "numpy/arrayobject.h" nogil:
     ctypedef struct PyDatetimeScalarObject:
         npy_int64 obval
         PyArray_DatetimeMetaData obmeta
-
-    void PyArray_ScalarAsCtype(PyObject *scalar, void *ctypeptr)
-    bint PyArray_IsIntegerScalar(PyObject *)
-    bint PyArray_CheckExact(PyObject *)
-    bint PyArray_IS_C_CONTIGUOUS(PyObject *)
-    npy_intp PyArray_NDIM(PyObject *)
-    npy_intp PyArray_DIM(PyObject *, size_t)
-    void *PyArray_DATA(PyObject *)
 
 
 import_datetime()

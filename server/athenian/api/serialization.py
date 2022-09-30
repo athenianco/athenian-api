@@ -241,6 +241,11 @@ class FriendlyJson:
             tz = obj.tzinfo
             assert tz == timezone.utc or tz == tzutc(), "all timestamps must be UTC: %s" % obj
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
+        if isinstance(obj, np.datetime64):
+            if obj != obj:
+                # NaT
+                return None
+            return np.datetime_as_string(obj, unit="s", timezone="UTC")
         if isinstance(obj, date):
             return serialize_date(obj)
         if isinstance(obj, np.integer):

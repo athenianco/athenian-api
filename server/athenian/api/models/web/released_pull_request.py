@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -9,6 +10,7 @@ class ReleasedPullRequest(Model):
 
     number: int
     title: str
+    created: datetime
     additions: int
     deletions: int
     author: VerbatimOptional[str]
