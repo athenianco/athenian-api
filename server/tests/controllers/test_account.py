@@ -59,7 +59,9 @@ async def test_match_metadata_installation(sdb, mdb, slack):
 @with_defer
 async def test_get_user_account_status_slack(sdb, mdb, slack):
     async def user():
-        return User(login="gkwillie", email="bot@athenian.co")
+        return User(
+            id="github||60340680", native_id="i", login="gkwillie", email="bot@athenian.co",
+        )
 
     with pytest.raises(ResponseError):
         await get_user_account_status("github|60340680", 1, sdb, mdb, user, slack, None)
