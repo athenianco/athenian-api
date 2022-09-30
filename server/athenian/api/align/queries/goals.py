@@ -8,7 +8,11 @@ from typing import Any, Callable, Generic, Iterable, Mapping, Optional, Sequence
 from ariadne import ObjectType
 from graphql import GraphQLResolveInfo
 
-from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial_query_interval
+from athenian.api.align.goals.dates import (
+    GoalTimeseriesSpec,
+    goal_datetimes_to_dates,
+    goal_initial_query_interval,
+)
 from athenian.api.align.goals.dbaccess import (
     AliasedGoalColumns,
     GoalColumnAlias,
@@ -43,7 +47,14 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Goal, Team, TeamGoal
-from athenian.api.models.web.goal import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
+from athenian.api.models.web.goal import (
+    GoalMetricSeriesPoint,
+    GoalTree,
+    GoalValue,
+    MetricValue,
+    TeamGoalTree,
+    TeamTree,
+)
 from athenian.api.tracing import sentry_span
 
 query = ObjectType("Query")
@@ -91,8 +102,9 @@ async def resolve_goals(
             team_tree,
             team_member_map,
             prefixer,
-            onlyWithTargets,
             jira_config,
+            onlyWithTargets,
+            False,
         )
         goals_to_serve.append(goal_to_serve)
 
@@ -124,14 +136,21 @@ class GoalToServe:
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
-        only_with_targets: bool,
         jira_config: Optional[JIRAConfig],
+        only_with_targets: bool,
+        include_series: bool,
     ):
         """Init the GoalToServe object."""
         self._team_goal_rows = team_goal_rows
         self._prefixer = prefixer
-        self._request, self._goal_team_tree = self._team_goal_rows_to_request(
-            team_goal_rows, team_tree, team_member_map, prefixer, jira_config, only_with_targets,
+        self._request, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
+            team_goal_rows,
+            team_tree,
+            team_member_map,
+            prefixer,
+            jira_config,
+            only_with_targets,
+            include_series,
         )
 
     @property
@@ -155,7 +174,15 @@ class GoalToServe:
         current_metrics_values = metric_values[intervals[1]][metric]
         current_metrics = {k: values[0] for k, values in current_metrics_values.items()}
 
-        metric_values = GoalMetricValues(initial_metrics, current_metrics)
+        if self._timeseries_spec is None:
+            series = None
+        else:
+            series = metric_values[self._timeseries_spec.intervals][metric]
+
+        metric_values = GoalMetricValues(
+            initial_metrics, current_metrics, series, self._timeseries_spec,
+        )
+
         return generator(
             self._goal_team_tree,
             self._team_goal_rows[0],
@@ -165,7 +192,7 @@ class GoalToServe:
         )
 
     @classmethod
-    def _team_goal_rows_to_request(
+    def _parse_team_goal_rows(
         cls,
         team_goal_rows: Sequence[Row],
         team_tree: TeamTree,
@@ -173,7 +200,8 @@ class GoalToServe:
         prefixer: Prefixer,
         unchecked_jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
-    ) -> tuple[TeamMetricsRequest, TeamTree]:
+        include_series: bool,
+    ) -> tuple[TeamMetricsRequest, TeamTree, Optional[GoalTimeseriesSpec]]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
         metric = goal_row[Goal.metric.name]
 
@@ -244,20 +272,27 @@ class GoalToServe:
                 ),
             )
 
+        time_intervals = [initial_interval, (valid_from, expires_at)]
+        if include_series:
+            timeseries_spec = GoalTimeseriesSpec.from_timespan(valid_from, expires_at)
+            time_intervals.append(timeseries_spec.intervals)
+        else:
+            timeseries_spec = None
+
         team_metrics_request = TeamMetricsRequest(
-            metrics=[metric],
-            time_intervals=(initial_interval, (valid_from, expires_at)),
-            teams=requested_teams,
+            metrics=[metric], time_intervals=time_intervals, teams=requested_teams,
         )
-        return team_metrics_request, pruned_tree
+        return team_metrics_request, pruned_tree, timeseries_spec
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class GoalMetricValues:
     """The metric values for a Goal across all teams."""
 
     initial: Mapping[tuple[int, int], Any]
     current: Mapping[tuple[int, int], Any]
+    series: Optional[Mapping[tuple[int, int], list[Any]]]
+    series_spec: Optional[GoalTimeseriesSpec]
 
 
 GoalTreeType = TypeVar("GoalTreeType", bound=GoalTree)
@@ -325,7 +360,14 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
 
         current = metric_values.current.get((team_id, goal_id))
         initial = metric_values.initial.get((team_id, goal_id))
-        return cls._compose_team_goal_tree(team_tree, initial, current, target, children)
+        if metric_values.series is None:
+            series = None
+        else:
+            series = metric_values.series.get((team_id, goal_id))
+
+        return cls._compose_team_goal_tree(
+            team_tree, initial, current, target, series, metric_values.series_spec, children,
+        )
 
     @classmethod
     def _compose_team_goal_tree(
@@ -334,10 +376,26 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
         initial: MetricValue,
         current: MetricValue,
         target: MetricValue,
+        series: Optional[list[MetricValue]],
+        series_spec: Optional[GoalTimeseriesSpec],
         children: Sequence[TeamGoalTree],
     ) -> TeamGoalTree:
         team = team_tree.as_leaf()
-        goal_value = GoalValue(current=current, initial=initial, target=target)
+        if series is None or series_spec is None:
+            series = None
+            series_granularity = None
+        else:
+            series_dates = [d.date() for d in series_spec.intervals[:-1]]
+            series = [GoalMetricSeriesPoint(date=d, value=v) for d, v in zip(series_dates, series)]
+            series_granularity = series_spec.granularity
+
+        goal_value = GoalValue(
+            current=current,
+            initial=initial,
+            target=target,
+            series=series,
+            series_granularity=series_granularity,
+        )
         return TeamGoalTree(team=team, value=goal_value, children=children)
 
 
@@ -353,6 +411,8 @@ class GraphQLGoalTreeGenerator(GoalTreeGenerator[GraphQLTeamGoalTree]):
         initial: MetricValue,
         current: MetricValue,
         target: MetricValue,
+        series: Optional[list[MetricValue]],
+        series_spec: Optional[GoalTimeseriesSpec],
         children: Sequence[TeamGoalTree],
     ) -> GraphQLTeamGoalTree:
         team = GraphQLTeamTree.from_team_tree(team_tree)

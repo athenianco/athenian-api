@@ -88,13 +88,13 @@ class TestGoalTimeseriesSpec:
     def test_from_timespan_year(self) -> None:
         spec = GoalTimeseriesSpec.from_timespan(dt(2021, 1, 1), dt(2022, 1, 1))
 
-        assert spec.granularity == GoalSeriesGranularity.MONTH
+        assert spec.granularity == GoalSeriesGranularity.MONTH.value
         assert spec.intervals == (*(dt(2021, i, 1) for i in range(1, 13)), dt(2022, 1, 1))
 
     def test_from_timespan_quarter(self) -> None:
         spec = GoalTimeseriesSpec.from_timespan(dt(2021, 4, 1), dt(2021, 7, 1))
 
-        assert spec.granularity == GoalSeriesGranularity.WEEK
+        assert spec.granularity == GoalSeriesGranularity.WEEK.value
         assert len(spec.intervals) == 14
         assert spec.intervals[:3] == (dt(2021, 4, 1), dt(2021, 4, 8), dt(2021, 4, 15))
         assert spec.intervals[-3:] == (dt(2021, 6, 17), dt(2021, 6, 24), dt(2021, 7, 1))
@@ -102,7 +102,7 @@ class TestGoalTimeseriesSpec:
     def test_from_timespan_not_regular(self) -> None:
         spec = GoalTimeseriesSpec.from_timespan(dt(2022, 6, 23), dt(2022, 8, 12))
 
-        assert spec.granularity == GoalSeriesGranularity.WEEK
+        assert spec.granularity == GoalSeriesGranularity.WEEK.value
         assert len(spec.intervals) == 9
         assert spec.intervals[:3] == (dt(2022, 6, 23), dt(2022, 6, 30), dt(2022, 7, 7))
         assert spec.intervals[-3:] == (dt(2022, 8, 4), dt(2022, 8, 11), dt(2022, 8, 12))

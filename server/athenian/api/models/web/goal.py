@@ -13,6 +13,7 @@ class AlignGoalsRequest(Model):
     account: int
     team: int
     only_with_targets: bool = False
+    include_series: bool = False
 
 
 MetricValue = float | int | str
@@ -25,14 +26,23 @@ class GoalSeriesGranularity(Enum):
     MONTH = "month"
 
 
+class GoalMetricSeriesPoint(Model):
+    """A point in the goal metric values timeseries."""
+
+    date: date
+    value: VerbatimOptional["MetricValue"]
+
+
 class GoalValue(Model):
     """The current metric values for the goal on a team."""
 
-    # do NOT change the wrapped types for Optional fields, base Model doesn't support
-    # wrapping an union with an optional format
+    # do NOT change the wrapped type "MetricValue" to a direct reference,
+    # base Model doesn't support wrapping a union with an optional form
     current: VerbatimOptional["MetricValue"]
     initial: VerbatimOptional["MetricValue"]
     target: Optional["MetricValue"]
+    series: Optional[list[GoalMetricSeriesPoint]]
+    series_granularity: Optional[str]  # valid values are from GoalSeriesGranularity
 
 
 class TeamGoalTree(Model):

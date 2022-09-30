@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from typing import Any, Optional
 
@@ -376,14 +376,37 @@ class BaseMeasureGoalsTest(Requester):
         assert response.status == assert_status
         return await response.json()
 
-    def _body(self, team: int, account: int = 1, only_with_targets: Optional[int] = None) -> dict:
+    def _body(
+        self,
+        team: int,
+        account: int = 1,
+        only_with_targets: Optional[bool] = None,
+        include_series: Optional[bool] = None,
+    ) -> dict:
         req = AlignGoalsRequest(
-            account=account, team=team, only_with_targets=only_with_targets or False,
+            account=account,
+            team=team,
+            only_with_targets=only_with_targets or False,
+            include_series=include_series or False,
         )
         body = req.to_dict()
         if only_with_targets is None:
             body.pop("only_with_targets")
+        if include_series is None:
+            body.pop("include_series")
         return body
+
+    @classmethod
+    def _assert_team_goal_values(
+        cls,
+        team_goal: dict,
+        initial: Any,
+        current: Any,
+        target: Any,
+    ) -> None:
+        assert team_goal["value"]["target"] == target
+        assert team_goal["value"]["current"] == current
+        assert team_goal["value"]["initial"] == initial
 
 
 class TestMeasureGoalsErrors(BaseMeasureGoalsTest):
@@ -457,13 +480,13 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
         for field in ("repositories", "jira_projects", "jira_priorities", "jira_issue_types"):
             assert field not in goal
 
-        team_goal = goal["team_goal"]
-        assert team_goal["team"]["id"] == 10
-        assert team_goal["team"]["name"] == "A-Team"
-        assert team_goal["children"] == []
-        assert team_goal["value"]["target"] == 1.23
-        assert team_goal["value"]["current"] == pytest.approx(3.7, 0.1)
-        assert team_goal["value"]["initial"] == pytest.approx(11.5, 0.1)
+        tg = goal["team_goal"]
+        assert tg["team"]["id"] == 10
+        assert tg["team"]["name"] == "A-Team"
+        assert tg["children"] == []
+        self._assert_team_goal_values(tg, pytest.approx(11.5, 0.1), pytest.approx(3.7, 0.1), 1.23)
+        assert "series" not in tg["value"]
+        assert "series_granularity" not in tg["value"]
 
     async def test_two_teams_jira_metric(self, sdb: Database) -> None:
         await models_insert(
@@ -501,29 +524,21 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
 
         assert (team_goal_10 := goal_20["team_goal"])["team"]["id"] == 10
         assert team_goal_10["team"]["members_count"] == 1
-        assert team_goal_10["value"]["target"] == 1
-        assert team_goal_10["value"]["initial"] == 171
-        assert team_goal_10["value"]["current"] == 64
+        self._assert_team_goal_values(team_goal_10, 171, 64, 1)
 
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
         assert team_goal_11["team"]["members_count"] == 1
         assert team_goal_11["team"]["total_members_count"] == 1
-        assert team_goal_11["value"]["target"] == 4
-        assert team_goal_11["value"]["initial"] == 507
-        assert team_goal_11["value"]["current"] == 47
+        self._assert_team_goal_values(team_goal_11, 507, 47, 4)
 
         goal_21 = res[1]
         assert goal_21["id"] == 21
 
         assert (team_goal_10 := goal_21["team_goal"])["team"]["id"] == 10
-        assert team_goal_10["value"]["target"] == 20
-        assert team_goal_10["value"]["initial"] == 3
-        assert team_goal_10["value"]["current"] == 572
+        self._assert_team_goal_values(team_goal_10, 3, 572, 20)
 
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
-        assert team_goal_11["value"]["target"] == 40
-        assert team_goal_11["value"]["initial"] == 3
-        assert team_goal_11["value"]["current"] == 528
+        self._assert_team_goal_values(team_goal_11, 3, 528, 40)
 
     async def test_child_team_with_no_goal(self, sdb: Database) -> None:
         metric = PullRequestMetricID.PR_REVIEW_COMMENTS_PER
@@ -670,9 +685,7 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
         goal = res[0]
         assert goal["team_goal"]["team"]["id"] == 10
 
-        assert goal["team_goal"]["value"]["target"] == "20001s"
-        assert goal["team_goal"]["value"]["current"] == "4731059s"
-        assert goal["team_goal"]["value"]["initial"] == "689712s"
+        self._assert_team_goal_values(goal["team_goal"], "689712s", "4731059s", "20001s")
 
     async def test_only_with_targets_param(self, sdb: Database) -> None:
         await models_insert(
@@ -1117,3 +1130,89 @@ class TestMeasureGoalsJIRAFiltering(BaseMeasureGoalsTest):
             .where(TeamGoal.team_id == team_id, TeamGoal.goal_id == goal_id)
             .values(values),
         )
+
+
+class TestMeasureGoalsTimeseries(BaseMeasureGoalsTest):
+    async def test_year_goal(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_CLOSED
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2020, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, target=200),
+        )
+        res = await self._request(json=self._body(10, include_series=True))
+        assert len(res) == 1
+        goal = res[0]
+
+        assert goal["id"] == 20
+        assert goal["valid_from"] == "2019-01-01"
+        assert goal["expires_at"] == "2019-12-31"
+
+        team_goal = goal["team_goal"]
+        assert team_goal["team"]["id"] == 10
+        self._assert_team_goal_values(team_goal, 9, 7, 200)
+
+        # the series include a point for every month
+        assert team_goal["value"]["series_granularity"] == "month"
+        assert len(team_goal["value"]["series"]) == 12
+        expected_dates = [date(2019, i, 1).isoformat() for i in range(1, 13)]
+        expected_values = [0, 2, 1, 2, 0, 0, 2, 0, 0, 0, 0, 0]
+        assert team_goal["value"]["series"] == [
+            {"date": date, "value": value} for date, value in zip(expected_dates, expected_values)
+        ]
+
+    async def test_quarter_goal(self, sdb: Database) -> None:
+        metric = ReleaseMetricID.RELEASE_AGE
+        dates = {"valid_from": dt(2018, 4, 1), "expires_at": dt(2018, 7, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            TeamFactory(id=11, members=[39789, 40020, 40191], parent_id=10),
+            GoalFactory(id=20, metric=metric, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, target="10s"),
+            TeamGoalFactory(goal_id=20, team_id=11, target="12s", jira_issue_types=["bug"]),
+        )
+        res = await self._request(json=self._body(10, include_series=True))
+        assert len(res) == 1
+        goal = res[0]
+        assert goal["valid_from"] == "2018-04-01"
+        assert goal["expires_at"] == "2018-06-30"
+
+        assert (tg_10 := goal["team_goal"])["team"]["id"] == 10
+        self._assert_team_goal_values(tg_10, "4075735s", "1518598s", "10s")
+
+        assert tg_10["value"]["series_granularity"] == "week"
+        series = tg_10["value"]["series"]
+        assert len(series) == 13
+        expected_values = [
+            "1892185s",
+            "692688s",
+            "536640s",
+            *([None] * 3),
+            "2494701s",
+            *([None] * 2),
+            "1976780s",
+            *([None] * 3),
+        ]
+        assert [point["value"] for point in series] == expected_values
+
+        assert [point["date"] for point in series[:2]] == [
+            date(2018, 4, 1).isoformat(),
+            date(2018, 4, 8).isoformat(),
+        ]
+        assert [point["date"] for point in series[-2:]] == [
+            date(2018, 6, 17).isoformat(),
+            date(2018, 6, 24).isoformat(),
+        ]
+
+        assert (tg_11 := goal["team_goal"]["children"][0])["team"]["id"] == 11
+        self._assert_team_goal_values(tg_11, "2370238s", "1468535s", "12s")
+
+        assert [p["date"] for p in tg_10["value"]["series"]] == [
+            p["date"] for p in tg_11["value"]["series"]
+        ]
+
+        expected_values = ["1892185s", None, "536640s", *([None] * 6), "1976780s", *([None] * 3)]
+        assert [point["value"] for point in tg_11["value"]["series"]] == expected_values

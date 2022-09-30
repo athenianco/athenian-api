@@ -65,7 +65,7 @@ class GoalTimeseriesSpec:
         dt_intervals = tuple(
             datetime.combine(d, time.min, tzinfo=timezone.utc) for d in date_intervals
         )
-        return GoalTimeseriesSpec(dt_intervals, granularity)
+        return GoalTimeseriesSpec(dt_intervals, granularity.value)
 
     @classmethod
     def _granularity(cls, valid_from: datetime, expires_at: datetime) -> GoalSeriesGranularity:
