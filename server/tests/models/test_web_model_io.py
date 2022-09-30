@@ -7,7 +7,9 @@ from athenian.api.models.web import (
     JIRAEpic,
     JIRAEpicChild,
     MappedJIRAIdentity,
+    PullRequest,
     PullRequestNumbers,
+    StageTimings,
 )
 from athenian.api.models.web_model_io import deserialize_models, serialize_models
 
@@ -98,6 +100,41 @@ def test_serialize_models_smoke():
         ],
         [
             InvitationCheckResult(active=False, type="admin", valid=True),
+        ],
+        [
+            PullRequest(
+                repository="repo",
+                number=1234,
+                title="title",
+                size_added=1,
+                size_removed=0,
+                files_changed=7,
+                created=now,
+                updated=now,
+                closed=None,
+                comments=1,
+                commits=2,
+                review_requested=now,
+                first_review=None,
+                approved=None,
+                review_comments=45,
+                reviews=None,
+                merged=None,
+                merged_with_failed_check_runs=None,
+                released=None,
+                release_url=None,
+                stage_timings=StageTimings(
+                    wip=timedelta(days=12), deploy={"prod": timedelta(days=12)},
+                ),
+                events_time_machine=["merged"],
+                stages_time_machine=None,
+                events_now=[],
+                stages_now=[],
+                participants=[],
+                labels=None,
+                jira=None,
+                deployments=None,
+            ),
         ],
     )
     new_models = deserialize_models(serialize_models(models))
