@@ -30,6 +30,7 @@ import aiomcache
 import ariadne
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
 from especifico.apis import aiohttp_api
+from especifico.decorators import validation
 from especifico.exceptions import EspecificoException
 import especifico.lifecycle
 import especifico.security
@@ -78,6 +79,9 @@ from athenian.precomputer.db import dereference_schemas as dereference_precomput
 flogging.trailing_dot_exceptions.update(
     ("asyncio", "especifico.api.security", "especifico.apis.aiohttp_api"),
 )
+
+# demote especifico validation errors so that they are not sent to Sentry
+validation.logger.error = validation.logger.warning
 
 
 class AthenianOperation(especifico.spec.OpenAPIOperation):
