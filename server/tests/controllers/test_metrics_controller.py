@@ -2246,7 +2246,6 @@ async def test_code_check_metrics_smoke(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2290,7 +2289,6 @@ async def test_code_check_metrics_jira(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2359,7 +2357,6 @@ async def test_code_check_metrics_labels(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2436,7 +2433,6 @@ async def test_code_check_metrics_split_by_check_runs(client, headers):
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
         "split_by_check_runs": True,
-        "timezone": None,
     }
 
 
@@ -2480,7 +2476,6 @@ async def test_code_check_metrics_repogroups(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2530,7 +2525,6 @@ async def test_code_check_metrics_authorgroups(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2574,7 +2568,6 @@ async def test_code_check_metrics_lines(client, headers):
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 
@@ -2648,7 +2641,6 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
         "metrics": ["chk-suites-count"],
-        "timezone": None,
     }
 
 

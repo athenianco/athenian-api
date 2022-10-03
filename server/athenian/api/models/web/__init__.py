@@ -39,7 +39,10 @@ from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList, CommitsListInclude
 from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
-from athenian.api.models.web.common_filter_properties import CommonFilterProperties
+from athenian.api.models.web.common_filter_properties import (
+    CommonFilterProperties,
+    TimeFilterProperties,
+)
 from athenian.api.models.web.common_metrics_properties import (
     CommonMetricsProperties,
     GranularitiesMixin,
