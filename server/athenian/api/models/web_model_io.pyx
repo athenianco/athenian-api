@@ -24,7 +24,7 @@ from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell, fwrite
 from libc.stdlib cimport free
 from libc.string cimport memcpy
 from libcpp.vector cimport vector
-from numpy cimport import_array, npy_int64
+from numpy cimport import_array, npy_int64, npy_intp
 
 import pickle
 from types import GenericAlias
@@ -139,6 +139,11 @@ cdef extern from "numpy/arrayobject.h" nogil:
 
     void PyArray_ScalarAsCtype(PyObject *scalar, void *ctypeptr)
     bint PyArray_IsIntegerScalar(PyObject *)
+    bint PyArray_CheckExact(PyObject *)
+    bint PyArray_IS_C_CONTIGUOUS(PyObject *)
+    npy_intp PyArray_NDIM(PyObject *)
+    npy_intp PyArray_DIM(PyObject *, size_t)
+    void *PyArray_DATA(PyObject *)
 
 
 import_datetime()
@@ -254,6 +259,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         Py_ssize_t dict_pos = 0
         PyObject *dict_key = NULL
         PyObject *dict_val = NULL
+        PyObject **npdata
     if obj == Py_None:
         dtype = 0
         fwrite(&dtype, 1, 1, stream)
@@ -347,13 +353,22 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         fwrite(&bool, 1, 1, stream)
     elif dtype == DT_LIST:
         if not PyList_CheckExact(obj):
-            return obj
-        val32 = PyList_GET_SIZE(obj)
-        fwrite(&val32, 4, 1, stream)
-        for i in range(val32):
-            exc = _write_object(PyList_GET_ITEM(obj, i), &spec.nested[0], stream)
-            if exc != NULL:
-                return exc
+            if not PyArray_CheckExact(obj) or not PyArray_IS_C_CONTIGUOUS(obj) or PyArray_NDIM(obj) != 1:
+                return obj
+            val32 = PyArray_DIM(obj, 0)
+            fwrite(&val32, 4, 1, stream)
+            npdata = <PyObject **> PyArray_DATA(obj)
+            for i in range(val32):
+                exc = _write_object(npdata[i], &spec.nested[0], stream)
+                if exc != NULL:
+                    return exc
+        else:
+            val32 = PyList_GET_SIZE(obj)
+            fwrite(&val32, 4, 1, stream)
+            for i in range(val32):
+                exc = _write_object(PyList_GET_ITEM(obj, i), &spec.nested[0], stream)
+                if exc != NULL:
+                    return exc
     elif dtype == DT_DICT:
         if not PyDict_CheckExact(obj):
             return obj
