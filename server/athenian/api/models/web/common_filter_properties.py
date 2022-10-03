@@ -1,27 +1,26 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Tuple
+from typing import Optional, Tuple
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.response import ResponseError
 
 
-class CommonFilterProperties(Model, sealed=False):
-    """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
+class TimeFilterProperties(Model, sealed=False):
+    """Define `date_from`, `date_to`, and `timezone` properties."""
 
     date_from: date
     date_to: date
-    timezone: int
-    account: int
+    timezone: Optional[int]
 
-    def validate_timezone(self, timezone: int) -> int:
+    def validate_timezone(self, timezone: Optional[int]) -> Optional[int]:
         """Sets the timezone of this Model.
 
         Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
 
         :param timezone: The timezone of this Model.
         """
-        if timezone is not None and timezone > 720:
+        if timezone is not None and timezone > 780:
             raise ValueError(
                 "Invalid value for `timezone`, must be a value less than or equal to `720`",
             )
@@ -31,6 +30,12 @@ class CommonFilterProperties(Model, sealed=False):
             )
 
         return timezone
+
+
+class CommonFilterProperties(TimeFilterProperties, sealed=False):
+    """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
+
+    account: int
 
     def resolve_time_from_and_to(self) -> Tuple[datetime, datetime]:
         """Extract the time window from the request model: the timestamps of `from` and `to`."""
