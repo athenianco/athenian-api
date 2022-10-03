@@ -126,7 +126,7 @@ def test_serialize_models_smoke():
                 stage_timings=StageTimings(
                     wip=timedelta(days=12), deploy={"prod": timedelta(days=12)},
                 ),
-                events_time_machine=["merged"],
+                events_time_machine=np.array(["merged"], dtype=object),
                 stages_time_machine=None,
                 events_now=[],
                 stages_now=[],
