@@ -23,7 +23,6 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 import aiomonitor
-from especifico.decorators import validation
 from flogging import flogging
 import jinja2
 import morcilla
@@ -217,7 +216,6 @@ def setup_context(log: logging.Logger) -> None:
     numpy.set_printoptions(threshold=10, edgeitems=1)
     if (level := log.getEffectiveLevel()) >= logging.INFO:
         morcilla.core.logger.setLevel(level + 10)
-    validation.logger.error = validation.logger.warning
 
     _init_sentry(log, app_env)
 
