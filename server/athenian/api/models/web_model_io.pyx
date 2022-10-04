@@ -291,7 +291,8 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
             str_length = PyUnicode_GET_LENGTH(obj)
             val32 = str_length | ((PyUnicode_KIND(obj) - 1) << 30)
             fwrite(&val32, 4, 1, stream)
-            fwrite(PyUnicode_DATA(obj), 1, str_length, stream)
+            # each code point in PyUnicode_DATA buffer has PyUnicode_KIND(obj) bytes
+            fwrite(PyUnicode_DATA(obj), PyUnicode_KIND(obj), str_length, stream)
         else:
             val32 = PyBytes_GET_SIZE(obj)
             fwrite(&val32, 4, 1, stream)
@@ -520,7 +521,8 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         kind = (aux32 >> 30) + 1
         aux32 &= 0x3FFFFFFF
         long_val = ftell(stream)
-        if fseek(stream, aux32, SEEK_CUR):
+        # move stream forward of the number of bytes we are about to read from raw
+        if fseek(stream, aux32 * kind, SEEK_CUR):
             raise ValueError(corrupted_msg % (ftell(stream), "str/body"))
         return PyUnicode_FromKindAndData(kind, raw + long_val, aux32)
     elif dtype == DT_DT:

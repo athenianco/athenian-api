@@ -6,11 +6,13 @@ from athenian.api.models.web import (
     InvitationCheckResult,
     JIRAEpic,
     JIRAEpicChild,
+    JIRAUser,
     MappedJIRAIdentity,
     PullRequest,
     PullRequestNumbers,
     StageTimings,
 )
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web_model_io import deserialize_models, serialize_models
 
 
@@ -144,3 +146,46 @@ def test_serialize_models_smoke():
     models[0][1].lead_time = np.timedelta64(-20, "s")
     models[2][1].confidence = 0.0
     assert models == new_models
+
+
+class TestSerializeModelsUnicode:
+    class _M(Model):
+        f: str
+        g: int
+
+    def test_not_nested_model(self) -> None:
+        u = self._M(f="İbZZ KK yök", g=2)
+        res = deserialize_models(serialize_models((u,)))
+        assert res == (u,)
+
+    def test_single_model(self) -> None:
+        u = self._M(f="İbZZ KK yök", g=2)  # multibyte
+        res = deserialize_models(serialize_models(([u],)))
+        assert res == ([u],)
+
+        u = self._M(f="KK yök", g=2)  # singlebyte unicode repr
+        res = deserialize_models(serialize_models(([u],)))
+        assert res == ([u],)
+
+    def test_two_models(self) -> None:
+        m0 = self._M(f="İbZZ KK yök", g=3)
+        m1 = self._M(f="a~~xèí", g=4)
+        res = deserialize_models(serialize_models(([m0], [m1])))
+        assert res == ([m0], [m1])
+
+        res = deserialize_models(serialize_models(([m0, m1],)))
+        assert res == ([m0, m1],)
+
+    def test_jira_user_model(self) -> None:
+        u = JIRAUser(name="İbZZ KK yök", avatar="a", type="atlassian", developer=None)
+        u2 = JIRAUser(name="a~~xèí", avatar="a", type="atlassian", developer=None)
+        res = deserialize_models(serialize_models((u, u2)))
+        assert res == (u, u2)
+
+    def test_jira_user_model_nested(self) -> None:
+        u0 = JIRAUser(name="İbZZ KK yök", avatar="𝞈𝝖", type="atlassian", developer=None)
+        u1 = JIRAUser(name="İbZàök", avatar="a", type="atlassian", developer="a")
+        res = deserialize_models(serialize_models(([], [u0, u1])))
+        assert res == ([], [u0, u1])
+        assert res[1][0].name == "İbZZ KK yök"
+        assert res[1][0].avatar == "𝞈𝝖"
