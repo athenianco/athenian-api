@@ -571,7 +571,6 @@ async def _epic_flow(
         release_settings,
         logical_settings,
     ),
-    version=2,
 )
 async def _issue_flow(
     return_: set[str],
