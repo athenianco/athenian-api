@@ -126,3 +126,19 @@ prodfiler-symbols: upload-symbols.sh
 	    ./upload-symbols.sh -u vadim@athenian.co -d $$f -g $$dbg; \
 	  fi \
 	done
+
+.PHONY: build-native
+build-native:
+	make -C server build-native
+
+.PHONY: install-native
+install-native:
+	make -C server install-native
+
+PHONY: install-native-user
+install-native-user:
+	make -C server install-native-user
+
+PHONY: clean-native
+clean-native:
+	make -C server clean-native

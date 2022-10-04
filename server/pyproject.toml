@@ -24,3 +24,30 @@ skip = ["athenian/api/sentry_native"]
 line-length = 99
 preview = true
 extend-exclude = "athenian/api/sentry_native"
+
+[tool.flake8]
+ignore = [
+    "SFS101", "SFS301", "D100", "D104", "D301", "W503", "W504", "E203", "B023", "B024",
+    "A002", "A003", "PIE781", "PIE786", "PIE787", "PIE793", "PIE798", "PIE806", "F722",
+]
+max-line-length = 99
+inline-quotes = '"'
+exclude = "athenian/api/sentry_native"
+per-file-ignores = [
+    "athenian/api/sentry_native:",
+    "athenian/api/mimalloc:",
+    "tests/*:D",
+    "**/__init__.py:F401",
+    "athenian/api/models/web/__init__.py:F401",
+    "athenian/api/models/*.py:D400,D401,D403",
+    "athenian/api/models/metadata/github.py:D101",
+    "athenian/api/models/metadata/jira.py:D101",
+    "athenian/api/models/*/versions/*.py:D103,D400",
+    "tests/conftest.py:E402,D",
+    "athenian/api/internal/pentest.py:F405",
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+plugins = ["sqlmypy"]
+exclude = ["athenian/api/sentry_native.*"]

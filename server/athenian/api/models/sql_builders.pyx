@@ -3,8 +3,8 @@
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
+from cpython cimport PyObject
 from libc.stdint cimport int64_t
-from libc.stdio cimport printf
 from libc.stdlib cimport lldiv, lldiv_t
 from libc.string cimport memchr, memcpy
 from numpy cimport (
@@ -16,11 +16,7 @@ from numpy cimport (
     ndarray,
 )
 
-
-cdef extern from "Python.h":
-    object PyUnicode_New(Py_ssize_t, Py_UCS4)
-    void *PyUnicode_DATA(object)
-
+from athenian.api.native.cpython cimport PyUnicode_DATA, PyUnicode_New
 
 
 def in_any_values_inline(ndarray values) -> str:
@@ -40,7 +36,7 @@ def in_any_values_inline(ndarray values) -> str:
             else len(str(values.max()))
         Py_ssize_t size = (7 + (effective_itemsize + 3) * length - 1)
         result = PyUnicode_New(size, 255)
-        char *buf = <char *> PyUnicode_DATA(result)
+        char *buf = <char *> PyUnicode_DATA(<PyObject *> result)
         char *data = <char *> PyArray_DATA(values)
 
     with nogil:
@@ -178,7 +174,7 @@ def in_inline(ndarray values) -> str:
             else len(str(values.max()))
         Py_ssize_t size = (effective_itemsize + 1) * length - 1
         result = PyUnicode_New(size, 255)
-        char *buf = <char *> PyUnicode_DATA(result)
+        char *buf = <char *> PyUnicode_DATA(<PyObject *> result)
         char *data = <char *> PyArray_DATA(values)
 
     with nogil:

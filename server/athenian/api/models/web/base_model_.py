@@ -137,7 +137,7 @@ class Model(typing.Mapping, metaclass=Slots):
             setattr(self, slot, kwargs.pop(slot, None))
         if kwargs:
             raise TypeError(
-                "%s does not support these keyword arguments: %s" % (type(self).__name__, kwargs),
+                f"{type(self).__name__} does not support these keyword arguments: {list(kwargs)}",
             )
 
     @classmethod

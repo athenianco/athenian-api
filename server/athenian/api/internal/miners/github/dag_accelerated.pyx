@@ -17,6 +17,19 @@ from libcpp.utility cimport pair
 from libcpp.vector cimport vector
 from numpy cimport PyArray_BYTES, ndarray
 
+from athenian.api.native.cpython cimport (
+    Py_None,
+    PyBytes_FromStringAndSize,
+    PyList_GET_ITEM,
+    PyList_New,
+    PyList_SET_ITEM,
+    PyLong_AsLong,
+    PyTuple_GET_ITEM,
+    PyUnicode_DATA,
+    PyUnicode_FromStringAndSize,
+)
+from athenian.api.native.string_view cimport string_view
+
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import asyncpg
@@ -27,28 +40,6 @@ cdef extern from "../../../asyncpg_recordobj.h":
     PyObject *ApgRecord_GET_ITEM(PyObject *, int) nogil
     void ApgRecord_SET_ITEM(object, int, object) nogil
     PyObject *ApgRecord_GET_DESC(PyObject *) nogil
-
-
-cdef extern from "Python.h":
-    # Cython defines `long PyLong_AsLong(object)` that increases the refcount
-    long PyLong_AsLong(PyObject *) nogil
-    # likewise, avoid refcounting
-    void *PyUnicode_DATA(PyObject *) nogil
-    object PyUnicode_FromStringAndSize(const char *, Py_ssize_t)
-    # nogil!
-    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    PyObject *PyList_New(Py_ssize_t len)
-    void PyList_SET_ITEM(PyObject *list, Py_ssize_t i, PyObject *o)
-    PyObject *PyBytes_FromStringAndSize(char *v, Py_ssize_t len)
-    PyObject *Py_None
-
-
-cdef extern from "<string_view>" namespace "std" nogil:
-    cppclass string_view:
-        string_view() except +
-        string_view(const char *, size_t) except +
-        const char *data()
 
 
 # ApgRecord_New is not exported from the Python interface of asyncpg

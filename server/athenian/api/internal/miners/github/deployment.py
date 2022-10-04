@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from itertools import chain, groupby, product
+from itertools import chain, groupby, product, repeat
 import json
 import logging
 from operator import attrgetter
@@ -33,7 +33,7 @@ from sqlalchemy.sql.elements import UnaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import CancelCache, cached, short_term_exptime
 from athenian.api.db import (
     Database,
     DatabaseLike,
@@ -59,12 +59,7 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     mark_dag_parents,
     searchsorted_inrange,
 )
-from athenian.api.internal.miners.github.deployment_accelerated import (
-    apply_jira_rows,
-    calc_pr_to_ix_prs,
-    calc_pr_to_ix_releases,
-    pr_to_ix_to_node_id_array,
-)
+from athenian.api.internal.miners.github.deployment_accelerated import split_prs_to_jira_ids
 from athenian.api.internal.miners.github.deployment_light import (
     fetch_components_and_prune_unresolved,
     fetch_deployment_candidates,
@@ -94,7 +89,8 @@ from athenian.api.internal.miners.github.release_mine import (
     mine_releases_by_ids,
 )
 from athenian.api.internal.miners.jira.issue import (
-    fetch_jira_issues_for_prs,
+    fetch_jira_issues_by_keys,
+    fetch_jira_issues_by_prs,
     generate_jira_prs_query,
 )
 from athenian.api.internal.miners.types import (
@@ -161,21 +157,33 @@ async def mine_deployments(
     default_branches: dict[str, str],
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
+    with_extended_prs: bool = False,
+    with_jira: bool = False,
 ) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
 
     This is a join()-ing wrapper around _mine_deployments(). The reason why we split the code
-    is because serialization of independent DataFrame-s is much more efficient than the final
+    is that serialization of independent DataFrame-s is much more efficient than the final
     DataFrame with nested DataFrame-s.
 
     :return: Deployment stats with deployed components and releases sub-dataframes.
     """
-    notifications, components, facts, labels, releases = await _mine_deployments(
+    (
+        notifications,
+        components,
+        facts,
+        labels,
+        releases,
+        extended_prs,
+        jira_df,
+        *_,
+    ) = await _mine_deployments(
         repositories,
         participants,
         time_from,
@@ -192,18 +200,27 @@ async def mine_deployments(
         default_branches,
         prefixer,
         account,
+        jira_ids,
         meta_ids,
         mdb,
         pdb,
         rdb,
         cache,
+        with_extended_prs,
+        with_jira,
     )
     if notifications.empty:
         return pd.DataFrame()
     components = _group_components(components)
     labels = _group_labels(labels)
     releases = [_group_releases(releases)] if not releases.empty else []
-    joined = notifications.join([components, facts], how="inner").join([labels] + releases)
+    # fmt: off
+    joined = (
+        notifications
+        .join([components, facts], how="inner")  # critical info
+        .join([labels, extended_prs, jira_df] + releases)
+    )
+    # fmt: on
     joined = _adjust_empty_df(joined, "releases")
     joined["labels"] = joined["labels"].astype(object, copy=False)
     no_labels = joined["labels"].isnull().values  # can be NaN-s
@@ -212,6 +229,40 @@ async def mine_deployments(
     joined["labels"].values[no_labels] = subst
 
     return joined
+
+
+def _postprocess_deployments(
+    result: tuple[
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        bool,
+        bool,
+    ],
+    with_extended_prs: bool = False,
+    with_jira: bool = False,
+    **_,
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    bool,
+    bool,
+]:
+    *dfs, cached_with_extended_prs, cached_with_jira = result
+    if with_extended_prs and not cached_with_extended_prs:
+        raise CancelCache()
+    if with_jira and not cached_with_jira:
+        raise CancelCache()
+    return (*dfs, with_extended_prs, with_jira)
 
 
 @sentry_span
@@ -237,6 +288,7 @@ async def mine_deployments(
         logical_settings,
         ",".join("%s: %s" % p for p in sorted(default_branches.items())),
     ),
+    postprocess=_postprocess_deployments,
 )
 async def _mine_deployments(
     repositories: Collection[str],
@@ -255,12 +307,25 @@ async def _mine_deployments(
     default_branches: dict[str, str],
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    with_extended_prs: bool,
+    with_jira: bool,
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    bool,
+    bool,
+]:
     if not isinstance(repositories, (set, frozenset, KeysView)):
         repositories = set(repositories)
     if repositories:
@@ -269,7 +334,7 @@ async def _mine_deployments(
         if repo_node_ids[0] == 0:
             repo_node_ids = repo_node_ids[1:]
         if not repo_node_ids:
-            return (pd.DataFrame(),) * 5
+            return (*repeat(pd.DataFrame(), 7), with_extended_prs, with_jira)
     else:
         repo_node_ids = []
     notifications = await fetch_deployment_candidates(
@@ -289,7 +354,7 @@ async def _mine_deployments(
         fetch_labels(notifications.index.values, account, rdb),
     )
     if notifications.empty:
-        return (pd.DataFrame(),) * 5
+        return (*repeat(pd.DataFrame(), 7), with_extended_prs, with_jira)
 
     # we must load all logical repositories at once to unambiguously process the residuals
     # (the root repository minus all the logicals)
@@ -338,6 +403,21 @@ async def _mine_deployments(
         notifications.index.values, default_branches, release_settings, account, pdb,
     )
     # facts = facts.iloc[:0]  # uncomment to disable pdb
+    if with_extended_prs:
+        extended_prs_task = asyncio.create_task(
+            _fetch_extended_prs_for_facts(facts, meta_ids, mdb),
+            name="mine_deployments/_fetch_extended_prs_for_facts",
+        )
+    else:
+        extended_prs_task = None
+    if with_jira:
+        assert jira_ids is not None
+        jira_task = asyncio.create_task(
+            _fetch_deployed_jira(facts, jira_ids, meta_ids, mdb),
+            name="mine_deployments/_fetch_deployed_jira",
+        )
+    else:
+        jira_task = None
     hits = len(facts)
     misses = len(notifications) - hits
     if misses > 0:
@@ -389,15 +469,23 @@ async def _mine_deployments(
         full_notifications = _reduce_to_missed_notifications_if_possible(
             full_notifications, missed_mask,
         )
-        missed_facts, missed_releases = await _compute_deployment_facts(
+        (
+            missed_facts,
+            missed_releases,
+            missed_extended_prs,
+            missed_jira_df,
+        ) = await _compute_deployment_facts(
             full_notifications,
             full_components,
+            with_extended_prs,
+            with_jira,
             release_settings,
             logical_settings,
             branches,
             default_branches,
             prefixer,
             account,
+            jira_ids,
             meta_ids,
             mdb,
             pdb,
@@ -408,7 +496,7 @@ async def _mine_deployments(
             facts = pd.concat([facts, missed_facts])
     else:
         invalidated = np.array([], dtype="U")
-        missed_releases = pd.DataFrame()
+        missed_releases = missed_extended_prs = missed_jira_df = pd.DataFrame()
         add_pdb_hits(pdb, "deployments", hits)
         add_pdb_misses(pdb, "deployments", misses)
 
@@ -416,7 +504,7 @@ async def _mine_deployments(
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
 
-    await releases
+    _, extended_prs, jira_df = await gather(releases, extended_prs_task, jira_task)
     releases = releases.result()
     # releases = releases.iloc[:0]  # uncomment to disable pdb
     # invalidate release facts with previously computed  invalid deploy names
@@ -435,7 +523,34 @@ async def _mine_deployments(
             releases = pd.concat([releases, missed_releases])
         else:
             releases = missed_releases
-    return notifications, components, facts, labels, releases
+    if with_extended_prs:
+        if not missed_extended_prs.empty:
+            if not extended_prs.empty:
+                extended_prs = pd.concat([extended_prs, missed_extended_prs])
+            else:
+                extended_prs = missed_extended_prs
+        extended_prs.columns = [f"prs_{name}" for name in extended_prs.columns]
+    else:
+        extended_prs = pd.DataFrame()
+    if with_jira:
+        if not missed_jira_df.empty:
+            if not jira_df.empty:
+                jira_df = pd.concat([jira_df, missed_jira_df])
+            else:
+                jira_df = missed_jira_df
+    else:
+        jira_df = pd.DataFrame()
+    return (
+        notifications,
+        components,
+        facts,
+        labels,
+        releases,
+        extended_prs,
+        jira_df,
+        with_extended_prs,
+        with_jira,
+    )
 
 
 async def _invalidate_precomputed_on_out_of_order_notifications(
@@ -746,7 +861,7 @@ async def _postprocess_deployed_releases(
         rdb,
         cache,
         with_avatars=False,
-        with_pr_titles=True,
+        with_extended_pr_details=False,
         with_jira=JIRAEntityToFetch.NOTHING,
     )
     releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
@@ -932,18 +1047,21 @@ async def _filter_by_prs(
 async def _compute_deployment_facts(
     notifications: pd.DataFrame,
     components: pd.DataFrame,
+    with_extended_prs: bool,
+    with_jira: bool,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     branches: pd.DataFrame,
     default_branches: dict[str, str],
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     components = components.take(
         np.flatnonzero(
             np.in1d(components.index.values.astype("U"), notifications.index.values.astype("U")),
@@ -977,7 +1095,7 @@ async def _compute_deployment_facts(
             ),
         )
     if notifications.empty:
-        return pd.DataFrame(), pd.DataFrame()
+        return (pd.DataFrame(),) * 4
     with sentry_sdk.start_span(op=f"_extract_deployed_commits({len(components)})"):
         deployed_commits_per_repo_per_env, all_mentioned_hashes = await _extract_deployed_commits(
             notifications, components, deployed_commits_df, commit_relationship, dags,
@@ -987,14 +1105,17 @@ async def _compute_deployment_facts(
         "_submit_deployed_commits",
     )
     max_release_time_to = notifications[DeploymentNotification.finished_at.name].max()
-    commit_stats, releases = await gather(
+    (commit_stats, *jira_map_tasks), releases = await gather(
         _fetch_commit_stats(
             all_mentioned_hashes,
             components[DeployedComponent.repository_node_id.name].unique(),
             dags,
+            with_extended_prs,
+            with_jira,
             prefixer,
             logical_settings,
             account,
+            jira_ids,
             meta_ids,
             mdb,
             pdb,
@@ -1017,22 +1138,33 @@ async def _compute_deployment_facts(
             cache,
         ),
     )
-    facts = await _generate_deployment_facts(
-        notifications,
-        deployed_commits_per_repo_per_env,
-        all_mentioned_hashes,
-        commit_stats,
-        releases,
-        account,
-        pdb,
+    (facts, extended_prs), *jira_maps = await gather(
+        _generate_deployment_facts(
+            notifications,
+            deployed_commits_per_repo_per_env,
+            all_mentioned_hashes,
+            commit_stats,
+            releases,
+            account,
+            pdb,
+        ),
+        *jira_map_tasks,
     )
+    if with_jira:
+        if jira_maps[1] is not None:
+            df_jira_map = pd.concat(jira_maps, ignore_index=True)
+        else:
+            df_jira_map = jira_maps[0]
+        jira = _apply_jira_to_deployment_facts(facts, df_jira_map)
+    else:
+        jira = pd.DataFrame()
     await defer(
         _submit_deployment_facts(
             facts, components, default_branches, release_settings, account, pdb,
         ),
         "_submit_deployment_facts",
     )
-    return facts, releases
+    return facts, releases, extended_prs, jira
 
 
 def _adjust_empty_df(joined: pd.DataFrame, name: str) -> pd.DataFrame:
@@ -1123,6 +1255,7 @@ class _DeployedCommitStats(NamedTuple):
     pr_repository_full_names: npt.NDArray[str]
     ambiguous_prs: dict[str, list[int]]
     already_deployed_rebased_by_env_by_repo: dict[str, dict[str, npt.NDArray[int]]]
+    extended_prs: dict[str, np.ndarray]
 
 
 class _RepositoryDeploymentFacts(NamedTuple):
@@ -1134,6 +1267,7 @@ class _RepositoryDeploymentFacts(NamedTuple):
     lines_overall: int
     commits_prs: int
     commits_overall: int
+    extended_prs: dict[str, np.ndarray]
 
 
 async def _generate_deployment_facts(
@@ -1144,7 +1278,7 @@ async def _generate_deployment_facts(
     releases: pd.DataFrame,
     account: int,
     pdb: Database,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     name_to_finished = dict(
         zip(
             notifications.index.values,
@@ -1234,6 +1368,10 @@ async def _generate_deployment_facts(
                 pr_deployed_lines = commit_stats.pr_lines[pr_indexes]
                 commit_authors = np.unique(commit_stats.commit_authors[indexes])
                 pr_authors = commit_stats.pr_authors[pr_indexes]
+                if extended_prs := {
+                    k: v[pr_indexes] for k, v in commit_stats.extended_prs.items()
+                }:
+                    extended_prs[PullRequest.user_node_id.name] = pr_authors
                 facts_per_repo_per_deployment[deployment_name][
                     repo_name
                 ] = _RepositoryDeploymentFacts(
@@ -1245,6 +1383,7 @@ async def _generate_deployment_facts(
                     commits_prs=commit_stats.pr_commit_counts[pr_indexes].sum(),
                     commits_overall=len(indexes),
                     prs=prs,
+                    extended_prs=extended_prs,
                 )
                 pr_inserts[(deployment_name, repo_name)] = [
                     (deployment_name, finished, repo_name, pr) for pr in prs
@@ -1271,6 +1410,18 @@ async def _generate_deployment_facts(
                     )
     pr_inserts = list(chain.from_iterable(pr_inserts.values()))
     facts = []
+    extended_prs = {
+        k.name: []
+        for k in (
+            PullRequest.number,
+            PullRequest.title,
+            PullRequest.created_at,
+            PullRequest.additions,
+            PullRequest.deletions,
+            PullRequest.user_node_id,
+        )
+    }
+    extended_prs["deployment_name"] = []
     for deployment_name, repos in facts_per_repo_per_deployment.items():
         repo_index = []
         pr_authors = []
@@ -1281,6 +1432,7 @@ async def _generate_deployment_facts(
         commits_prs = []
         commits_overall = []
         prs = []
+        local_extended_prs = {k: [] for k in extended_prs}
         for repo, rf in sorted(repos.items()):
             repo_index.append(repo)
             pr_authors.append(rf.pr_authors)
@@ -1291,6 +1443,14 @@ async def _generate_deployment_facts(
             commits_prs.append(rf.commits_prs)
             commits_overall.append(rf.commits_overall)
             prs.append(rf.prs)
+            for k, v in rf.extended_prs.items():
+                local_extended_prs[k].append(v)
+        if len(local_extended_prs[PullRequest.number.name]):
+            for k, v in local_extended_prs.items():
+                if k != "deployment_name":
+                    extended_prs[k].append(np.concatenate(v))
+                else:
+                    extended_prs[k].append(deployment_name)
         prs_offsets = np.cumsum(nested_lengths(prs), dtype=np.uint32)[:-1]
         pr_authors = np.unique(np.concatenate(pr_authors))
         commit_authors = np.unique(np.concatenate(commit_authors))
@@ -1313,7 +1473,9 @@ async def _generate_deployment_facts(
     await defer(_submit_deployed_prs(pr_inserts, account, pdb), "_submit_deployed_prs")
     facts = df_from_structs(facts)
     facts.index = facts[DeploymentNotification.name.name].values
-    return facts
+    extended_prs = pd.DataFrame(extended_prs)
+    extended_prs.set_index("deployment_name", inplace=True)
+    return facts, extended_prs
 
 
 @sentry_span
@@ -1602,14 +1764,18 @@ async def _fetch_commit_stats(
     all_mentioned_hashes: np.ndarray,
     repo_ids: Collection[int],
     dags: dict[str, tuple[bool, DAG]],
+    with_extended_prs: bool,
+    with_jira: bool,
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
-) -> _DeployedCommitStats:
+) -> tuple[_DeployedCommitStats, Optional[asyncio.Task], Optional[asyncio.Task]]:
+    has_logical = logical_settings.has_logical_deployments()
     selected = [
         NodeCommit.id,
         NodeCommit.sha,
@@ -1618,10 +1784,21 @@ async def _fetch_commit_stats(
         NodeRepository.name_with_owner.label(PullRequest.repository_full_name.name),
         (NodeCommit.additions + NodeCommit.deletions).label("lines"),
         NodePullRequest.author_id.label("pr_author"),
-        (NodePullRequest.additions + NodePullRequest.deletions).label("pr_lines"),
     ]
-    if has_logical := logical_settings.has_logical_deployments():
-        selected.append(NodePullRequest.title)
+    if with_extended_prs:
+        selected.extend(
+            [
+                NodePullRequest.title,
+                NodePullRequest.created_at,
+                NodePullRequest.additions,
+                NodePullRequest.deletions,
+                NodePullRequest.number,
+            ],
+        )
+    else:
+        selected.append((NodePullRequest.additions + NodePullRequest.deletions).label("pr_lines"))
+        if has_logical:
+            selected.append(NodePullRequest.title)
     commit_rows, rebased_prs = await gather(
         mdb.fetch_all(
             select(selected)
@@ -1690,9 +1867,13 @@ async def _fetch_commit_stats(
     commit_authors = np.zeros_like(lines)
     merge_shas = []
     pr_ids = []
+    pr_numbers = []
     pr_authors = []
     pr_lines = []
     pr_titles = []
+    pr_createds = []
+    pr_additions = []
+    pr_deletions = []
     pr_repo_names = []
     prs_by_repo = defaultdict(list)
     ambiguous_prs = defaultdict(list)
@@ -1707,11 +1888,19 @@ async def _fetch_commit_stats(
             merge_shas.append(sha)
             pr_ids.append(pr)
             pr_authors.append(row["pr_author"] or 0)
-            pr_lines.append(row["pr_lines"])
+            if with_extended_prs:
+                pr_numbers.append(row[NodePullRequest.number.name])
+                pr_titles.append(row[NodePullRequest.title.name])
+                pr_createds.append(row[NodePullRequest.created_at.name])
+                pr_additions.append(additions := row[NodePullRequest.additions.name])
+                pr_deletions.append(deletions := row[NodePullRequest.deletions.name])
+                pr_lines.append(additions + deletions)
+            else:
+                if has_logical:
+                    pr_titles.append(row[NodePullRequest.title.name])
+                pr_lines.append(row["pr_lines"])
             prs_by_repo[repo].append(sha)
             pr_repo_names.append(repo)
-            if has_logical:
-                pr_titles.append(row[NodePullRequest.title.name])
     if has_logical:
         pr_labels = await fetch_labels_to_filter(pr_ids, meta_ids, mdb)
     else:
@@ -1725,6 +1914,20 @@ async def _fetch_commit_stats(
     pr_authors = np.array(pr_authors, dtype=int)
     pr_lines = np.array(pr_lines, dtype=int)
     pr_repo_names = np.array(pr_repo_names, dtype="U")
+    if with_extended_prs:
+        pr_numbers = np.array(pr_numbers, dtype=int)
+        pr_titles = np.array(pr_titles, dtype=object)
+        pr_additions = np.array(pr_additions, dtype=int)
+        pr_deletions = np.array(pr_deletions, dtype=int)
+        pr_createds = np.array(pr_createds, dtype="datetime64[s]")
+    if with_jira:
+        jira_task = asyncio.create_task(
+            fetch_jira_issues_by_prs(pr_ids, jira_ids, meta_ids, mdb),
+            name="mine_deployments/_fetch_commit_stats/jira",
+        )
+    else:
+        jira_task = None
+    extra_jira_task = None
 
     if has_logical:
         prs_df = pd.DataFrame(
@@ -1740,7 +1943,7 @@ async def _fetch_commit_stats(
         prs_df = split_logical_prs(
             prs_df,
             pr_labels,
-            logical_settings.with_logical_prs(np.unique(pr_repo_names)),
+            logical_settings.with_logical_prs(unordered_unique(pr_repo_names)),
             logical_settings,
             reindex=False,
             reset_index=False,
@@ -1757,6 +1960,12 @@ async def _fetch_commit_stats(
     pr_authors = pr_authors[sha_order]
     pr_lines = pr_lines[sha_order]
     pr_repo_names = pr_repo_names[sha_order]
+    if with_extended_prs:
+        pr_numbers = pr_numbers[sha_order]
+        pr_titles = pr_titles[sha_order]
+        pr_additions = pr_additions[sha_order]
+        pr_deletions = pr_deletions[sha_order]
+        pr_createds = pr_createds[sha_order]
     pr_commits = np.zeros_like(pr_lines)
     for repo, hashes in prs_by_repo.items():
         dag = dags[repo][1]
@@ -1775,10 +1984,21 @@ async def _fetch_commit_stats(
         NodePullRequest.repository_id,
         NodePullRequest.number,
         NodePullRequest.author_id,
-        (NodePullRequest.additions + NodePullRequest.deletions).label("lines"),
     ]
-    if has_logical:
-        selected.append(NodePullRequest.title)
+    if with_extended_prs:
+        selected.extend(
+            [
+                NodePullRequest.title,
+                NodePullRequest.created_at,
+                NodePullRequest.additions,
+                NodePullRequest.deletions,
+                NodePullRequest.number,
+            ],
+        )
+    else:
+        selected.append((NodePullRequest.additions + NodePullRequest.deletions).label("lines"))
+        if has_logical:
+            selected.append(NodePullRequest.title)
     if rebased_map:
 
         @sentry_span
@@ -1828,7 +2048,7 @@ async def _fetch_commit_stats(
                     continue
             for repos in result.values():
                 for repo, prs in repos.items():
-                    repos[repo] = np.sort(np.array(prs))
+                    repos[repo] = np.sort(prs)
             return result
 
         rebased_pr_rows, already_deployed_rebased = await gather(
@@ -1857,7 +2077,11 @@ async def _fetch_commit_stats(
     extra_pr_lines = []
     extra_pr_commits = []
     extra_pr_repo_names = []
+    extra_pr_numbers = []
     extra_pr_titles = []
+    extra_pr_createds = []
+    extra_pr_additions = []
+    extra_pr_deletions = []
     for repo_id, pr_rows in rebased_prs_by_repo.items():
         dag = dags[(repo_name := repo_node_to_name(repo_id))][1]
         rebased_merge_shas = np.array(
@@ -1868,28 +2092,52 @@ async def _fetch_commit_stats(
             extra_merges.append(merge_sha)
             extra_pr_ids.append(pr[NodePullRequest.id.name])
             extra_pr_authors.append(pr[NodePullRequest.author_id.name] or 0)
-            extra_pr_lines.append(pr["lines"])
             extra_pr_commits.append(len(shas))
             extra_pr_repo_names.append(repo_name)
-            if has_logical:
+            if with_extended_prs:
+                extra_pr_numbers.append(pr[NodePullRequest.number.name])
                 extra_pr_titles.append(pr[NodePullRequest.title.name])
+                extra_pr_createds.append(pr[NodePullRequest.created_at.name])
+                extra_pr_additions.append(additions := pr[NodePullRequest.additions.name])
+                extra_pr_deletions.append(deletions := pr[NodePullRequest.deletions.name])
+                extra_pr_lines.append(additions + deletions)
+            else:
+                extra_pr_lines.append(pr["lines"])
+                if has_logical:
+                    extra_pr_titles.append(pr[NodePullRequest.title.name])
+    if with_extended_prs:
+        extra_pr_numbers = np.array(extra_pr_numbers, dtype=int)
+        extra_pr_titles = np.array(extra_pr_titles, dtype=object)
+        extra_pr_additions = np.array(extra_pr_additions, dtype=int)
+        extra_pr_deletions = np.array(extra_pr_deletions, dtype=int)
+        extra_pr_createds = np.array(extra_pr_createds, dtype="datetime64[s]")
     if extra_merges:
-        if has_logical:
-            prs_df = pd.DataFrame(
-                {
-                    PullRequest.node_id.name: extra_pr_ids,
-                    PullRequest.repository_full_name.name: extra_pr_repo_names,
-                    PullRequest.title.name: extra_pr_titles,
-                    PullRequest.merge_commit_sha.name: extra_merges,
-                    PullRequest.user_node_id.name: extra_pr_authors,
-                    "lines": extra_pr_lines,
-                    "commits": extra_pr_commits,
-                },
+        if with_jira:
+            extra_jira_task = asyncio.create_task(
+                fetch_jira_issues_by_prs(extra_pr_ids, jira_ids, meta_ids, mdb),
+                name="mine_deployments/_fetch_commit_stats/extra_jira",
             )
+            await asyncio.sleep(0)
+        if has_logical:
+            extra_columns = {
+                PullRequest.node_id.name: extra_pr_ids,
+                PullRequest.repository_full_name.name: extra_pr_repo_names,
+                PullRequest.title.name: extra_pr_titles,
+                PullRequest.merge_commit_sha.name: extra_merges,
+                PullRequest.user_node_id.name: extra_pr_authors,
+                "lines": extra_pr_lines,
+                "commits": extra_pr_commits,
+            }
+            if with_extended_prs:
+                extra_columns[PullRequest.number.name] = extra_pr_numbers
+                extra_columns[PullRequest.created_at.name] = extra_pr_createds
+                extra_columns[PullRequest.additions.name] = extra_pr_additions
+                extra_columns[PullRequest.deletions.name] = extra_pr_deletions
+            prs_df = pd.DataFrame(extra_columns)
             prs_df = split_logical_prs(
                 prs_df,
                 pr_labels,
-                logical_settings.with_logical_prs(set(extra_pr_repo_names)),
+                logical_settings.with_logical_prs(extra_pr_repo_names),
                 logical_settings,
                 reindex=False,
                 reset_index=False,
@@ -1900,6 +2148,12 @@ async def _fetch_commit_stats(
             extra_pr_lines = prs_df["lines"].values
             extra_pr_repo_names = prs_df[PullRequest.repository_full_name.name].values
             extra_pr_commits = prs_df["commits"].values
+            if with_extended_prs:
+                extra_pr_numbers = prs_df[PullRequest.number.name].values
+                extra_pr_titles = prs_df[PullRequest.title.name].values
+                extra_pr_createds = prs_df[PullRequest.created_at.name].values
+                extra_pr_additions = prs_df[PullRequest.additions.name].values
+                extra_pr_deletions = prs_df[PullRequest.deletions.name].values
 
         merge_shas = np.concatenate([merge_shas, extra_merges])
         pr_ids = np.concatenate([pr_ids, extra_pr_ids])
@@ -1907,6 +2161,12 @@ async def _fetch_commit_stats(
         pr_lines = np.concatenate([pr_lines, extra_pr_lines])
         pr_commits = np.concatenate([pr_commits, extra_pr_commits])
         pr_repo_names = np.concatenate([pr_repo_names, extra_pr_repo_names])
+        if with_extended_prs:
+            pr_numbers = np.concatenate([pr_numbers, extra_pr_numbers])
+            pr_titles = np.concatenate([pr_titles, extra_pr_titles])
+            pr_additions = np.concatenate([pr_additions, extra_pr_additions])
+            pr_deletions = np.concatenate([pr_deletions, extra_pr_deletions])
+            pr_createds = np.concatenate([pr_createds, extra_pr_createds])
         order = np.argsort(merge_shas)
         merge_shas = merge_shas[order]
         pr_ids = pr_ids[order]
@@ -1914,17 +2174,38 @@ async def _fetch_commit_stats(
         pr_lines = pr_lines[order]
         pr_commits = pr_commits[order]
         pr_repo_names = pr_repo_names[order]
-    return _DeployedCommitStats(
-        commit_authors=commit_authors,
-        lines=lines,
-        merge_shas=merge_shas,
-        pull_requests=pr_ids,
-        pr_authors=pr_authors,
-        pr_lines=pr_lines,
-        pr_commit_counts=pr_commits,
-        pr_repository_full_names=pr_repo_names,
-        ambiguous_prs=ambiguous_prs,
-        already_deployed_rebased_by_env_by_repo=already_deployed_rebased,
+        if with_extended_prs:
+            pr_numbers = pr_numbers[order]
+            pr_titles = pr_titles[order]
+            pr_additions = pr_additions[order]
+            pr_deletions = pr_deletions[order]
+            pr_createds = pr_createds[order]
+    if with_extended_prs:
+        extended_prs = {
+            PullRequest.number.name: pr_numbers,
+            PullRequest.title.name: pr_titles,
+            PullRequest.additions.name: pr_additions,
+            PullRequest.deletions.name: pr_deletions,
+            PullRequest.created_at.name: pr_createds,
+        }
+    else:
+        extended_prs = {}
+    return (
+        _DeployedCommitStats(
+            commit_authors=commit_authors,
+            lines=lines,
+            merge_shas=merge_shas,
+            pull_requests=pr_ids,
+            pr_authors=pr_authors,
+            pr_lines=pr_lines,
+            pr_commit_counts=pr_commits,
+            pr_repository_full_names=pr_repo_names,
+            ambiguous_prs=ambiguous_prs,
+            already_deployed_rebased_by_env_by_repo=already_deployed_rebased,
+            extended_prs=extended_prs,
+        ),
+        jira_task,
+        extra_jira_task,
     )
 
 
@@ -2616,7 +2897,7 @@ async def _fetch_precomputed_deployment_facts(
         ),
     )
     if not dep_rows:
-        return pd.DataFrame(columns=DeploymentFacts.f)
+        return pd.DataFrame(columns=DeploymentFacts.fnv)
     structs = []
     for row in dep_rows:
         if not _settings_are_compatible(
@@ -2666,31 +2947,17 @@ def _group_labels(df: pd.DataFrame) -> pd.DataFrame:
 async def load_jira_issues_for_deployments(
     deployments: pd.DataFrame,
     jira_ids: Optional[JIRAConfig],
-    meta_ids: tuple[int, ...],
     mdb: Database,
 ) -> dict[str, PullRequestJIRAIssueItem]:
     """Fetch JIRA issues mentioned by deployed PRs."""
     if jira_ids is None or deployments.empty:
-        if not deployments.empty:
-            empty_jira = np.empty(len(deployments), dtype=object)
-            for i, repos in enumerate(deployments[DeploymentFacts.f.repositories].values):
-                empty_jira[i] = [[]] * len(repos)
-            deployments["jira"] = empty_jira
-            for releases in deployments["releases"].values:
-                releases["jira_ids"] = np.empty(len(releases), dtype=object)
         return {}
 
-    jira_col, pr_to_ix = calc_pr_to_ix_prs(
-        deployments[DeploymentFacts.f.prs].values,
-        deployments[DeploymentFacts.f.prs_offsets].values,
+    unique_jira_keys = unordered_unique(
+        np.concatenate(np.concatenate(deployments[DeploymentFacts.f.jira_ids].values)),
     )
-    deployments["jira"] = jira_col
-    calc_pr_to_ix_releases(deployments["releases"].values, pr_to_ix)
-    rows = await fetch_jira_issues_for_prs(
-        pr_to_ix_to_node_id_array(pr_to_ix), meta_ids, jira_ids, mdb,
-    )
-    issues = apply_jira_rows(rows, deployments, pr_to_ix)
-    return issues
+    rows = await fetch_jira_issues_by_keys(unique_jira_keys, jira_ids, mdb)
+    return {row["id"]: PullRequestJIRAIssueItem(**row) for row in rows}
 
 
 async def hide_outlier_first_deployments(
@@ -2852,3 +3119,99 @@ async def _search_outlier_first_deployments(
                 result.add(deploy)
 
     return tuple(result)
+
+
+async def _fetch_extended_prs_for_facts(
+    facts: pd.DataFrame,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> pd.DataFrame:
+    if facts.empty:
+        return pd.DataFrame()
+    pr_node_ids = np.concatenate(facts[DeploymentFacts.f.prs].values, dtype=int, casting="unsafe")
+    unique_pr_node_ids = np.unique(pr_node_ids)
+    selected = [
+        PullRequest.node_id,
+        PullRequest.number,
+        PullRequest.title,
+        PullRequest.created_at,
+        PullRequest.additions,
+        PullRequest.deletions,
+        PullRequest.user_node_id,
+    ]
+    any_values = len(unique_pr_node_ids) > 100
+    query = (
+        select(*selected)
+        .where(
+            PullRequest.acc_id.in_(meta_ids),
+            PullRequest.node_id.in_any_values(unique_pr_node_ids)
+            if any_values
+            else PullRequest.node_id.in_(unique_pr_node_ids),
+        )
+        .order_by(PullRequest.node_id)
+    )
+    if any_values:
+        query = (
+            query.with_statement_hint("Leading(((pr *VALUES*) repo))")
+            .with_statement_hint(f"Rows(pr *VALUES* #{len(unique_pr_node_ids)})")
+            .with_statement_hint(f"Rows(pr *VALUES* repo #{len(unique_pr_node_ids)})")
+        )
+    prs_df = await read_sql_query(query, mdb, selected)
+    dep_lengths = nested_lengths(facts[DeploymentFacts.f.prs].values)
+    indexes = searchsorted_inrange(prs_df[PullRequest.node_id.name].values, pr_node_ids)
+    found_mask = prs_df[PullRequest.node_id.name].values[indexes] == pr_node_ids
+    assert found_mask.all()
+    # we could support this but will have to carry a separate `prs_offsets` column
+    # in reality, this never happens
+    """
+    indexes = indexes[found_mask]
+    not_found_counts = np.sum(~found_mask, where=np.repeat(np.arange(len(facts), dep_lengths)))
+    dep_lengths -= not_found_counts
+    """
+    dep_splits = np.cumsum(dep_lengths)[:-1]
+    df = {}
+    for col in (
+        PullRequest.number,
+        PullRequest.title,
+        PullRequest.created_at,
+        PullRequest.additions,
+        PullRequest.deletions,
+        PullRequest.user_node_id,
+    ):
+        col = col.name
+        df[col] = np.split(prs_df[col].values[indexes], dep_splits)
+    df = pd.DataFrame(df)
+    df.index = facts.index
+    return df
+
+
+async def _fetch_deployed_jira(
+    facts: pd.DataFrame,
+    jira_ids: JIRAConfig,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> pd.DataFrame:
+    if facts.empty:
+        return pd.DataFrame()
+    unique_pr_node_ids = np.unique(
+        np.concatenate(facts[DeploymentFacts.f.prs].values, dtype=int, casting="unsafe"),
+    )
+    df_map = await fetch_jira_issues_by_prs(unique_pr_node_ids, jira_ids, meta_ids, mdb)
+    return _apply_jira_to_deployment_facts(facts, df_map)
+
+
+def _apply_jira_to_deployment_facts(facts: pd.DataFrame, df_map: pd.DataFrame) -> pd.DataFrame:
+    repo_jira_ids, pr_jira_ids = split_prs_to_jira_ids(
+        facts[DeploymentFacts.f.prs].values,
+        facts[DeploymentFacts.f.prs_offsets].values,
+        df_map["node_id"].values,
+        df_map["jira_id"].values,
+    )
+    df = pd.DataFrame(
+        {
+            DeploymentFacts.f.jira_ids: repo_jira_ids,
+            DeploymentFacts.f.prs_jira_ids: pr_jira_ids,
+        },
+    )
+    df.index = facts.index
+    return df

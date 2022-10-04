@@ -1643,6 +1643,7 @@ async def test_discover_update_unreleased_prs_deployments(
         default_branches,
         prefixer,
         1,
+        None,
         (6366825,),
         mdb,
         pdb,

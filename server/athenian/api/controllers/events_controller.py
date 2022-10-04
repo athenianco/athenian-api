@@ -340,6 +340,7 @@ async def _drop_precomputed_deployments(
         default_branches,
         prefixer,
         account,
+        None,
         meta_ids,
         request.mdb,
         pdb,
@@ -413,7 +414,7 @@ async def _drop_precomputed_event_releases(
         force_fresh=True,
         with_avatars=False,
         with_deployments=False,
-        with_pr_titles=False,
+        with_extended_pr_details=False,
     )
     await gather(wait_deferred(), bots_task)
     await MetricEntriesCalculator(

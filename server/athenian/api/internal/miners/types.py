@@ -508,7 +508,8 @@ class ReleaseFacts:
         name: str
         url: str
         repository_full_name: str
-        prs_title: list[str]
+        prs_title: npt.NDArray[str]
+        prs_created_at: npt.NDArray["datetime64[s]"]
         jira: LoadedJIRAReleaseDetails
         deployments: Optional[np.ndarray]
 
@@ -607,7 +608,7 @@ class DeploymentFacts:
         release_authors: [int]  # do not remove
         repositories: [str]
         prs: [int]
-        prs_offsets: [np.int32]
+        prs_offsets: [np.uint32]
         lines_prs: [int]
         lines_overall: [int]
         commits_prs: [np.int32]
@@ -618,11 +619,22 @@ class DeploymentFacts:
 
         name: str
 
+    class Virtual:
+        """Related fields that do not actually exist anywhere except the constructed dataframe."""
+
+        prs_number: npt.NDArray[int]
+        prs_title: npt.NDArray[object]
+        prs_created_at: npt.NDArray["datetime64[s]"]
+        prs_additions: npt.NDArray[int]
+        prs_deletions: npt.NDArray[int]
+        prs_user_node_id: npt.NDArray[int]
+        prs_jira_ids: npt.NDArray[int]
+        jira_ids: npt.NDArray[int]
+
     def with_nothing_deployed(self):
         """Return a copy of this DeploymentFacts with no deployed entities.
 
         The returned DeploymentFacts will have no commits, prs, releases.
-
         """
         return DeploymentFacts.from_fields(
             pr_authors=[],

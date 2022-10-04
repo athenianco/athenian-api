@@ -28,6 +28,18 @@ from numpy cimport (
     npy_intp,
 )
 
+from athenian.api.native.cpython cimport (
+    Py_None,
+    Py_True,
+    PyBytes_GET_SIZE,
+    PyList_CheckExact,
+    PyList_GET_ITEM,
+    PyList_GET_SIZE,
+    PyTuple_GET_ITEM,
+    PyUnicode_GET_LENGTH,
+)
+from athenian.api.native.numpy cimport PyArray_NewFromDescr, PyArray_Type
+
 import asyncpg
 import numpy as np
 
@@ -35,34 +47,6 @@ import_array()
 
 cdef extern from "asyncpg_recordobj.h":
     PyObject *ApgRecord_GET_ITEM(PyObject *, int)
-
-
-cdef extern from "Python.h":
-    # added nogil -> from cpython cimport ...
-    # these are the macros that read directly from the internal ob_items
-    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
-    bint PyList_CheckExact(PyObject *) nogil
-    Py_ssize_t PyList_GET_SIZE(PyObject *) nogil
-    Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
-    Py_ssize_t PyBytes_GET_SIZE(PyObject *) nogil
-
-    PyObject *Py_None
-    PyObject *Py_True
-
-
-cdef extern from "numpy/arrayobject.h":
-    PyTypeObject PyArray_Type
-    ndarray PyArray_NewFromDescr(
-        PyTypeObject *subtype,
-        PyArray_Descr *descr,
-        int nd,
-        const npy_intp *dims,
-        const npy_intp *strides,
-        void *data,
-        int flags,
-        PyObject *obj,
-    )
 
 
 @cython.boundscheck(False)
@@ -298,6 +282,7 @@ cdef ndarray _nested_lengths_list(PyObject *arr, long size, ndarray result):
 def array_from_buffer(buffer not None, npdtype dtype, npy_intp count, npy_intp offset=0) -> ndarray:
     cdef:
         void *data
+        ndarray arr
     if PyBytes_Check(buffer):
         data = PyBytes_AS_STRING(buffer) + offset
     elif PyByteArray_Check(buffer):
@@ -308,7 +293,7 @@ def array_from_buffer(buffer not None, npdtype dtype, npy_intp count, npy_intp o
         raise ValueError(f"Unsupported buffer type: {type(buffer).__name__}")
     Py_INCREF(dtype)
     Py_INCREF(buffer)
-    arr = PyArray_NewFromDescr(
+    arr = <ndarray> PyArray_NewFromDescr(
         &PyArray_Type,
         <PyArray_Descr *> dtype,
         1,

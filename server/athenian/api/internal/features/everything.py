@@ -6,7 +6,7 @@ from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
 import pandas as pd
-from sqlalchemy import and_, distinct, select
+from sqlalchemy import distinct, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -15,7 +15,11 @@ from athenian.api.internal.features.github.pull_request_filter import PullReques
 from athenian.api.internal.features.github.unfresh_pull_request_metrics import (
     UnfreshPullRequestFactsFetcher,
 )
-from athenian.api.internal.jira import get_jira_installation, load_mapped_jira_users
+from athenian.api.internal.jira import (
+    JIRAConfig,
+    get_jira_installation_or_none,
+    load_mapped_jira_users,
+)
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.check_run import mine_check_runs
@@ -42,7 +46,6 @@ from athenian.api.models.metadata.github import PullRequest, Release, User
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
-from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -67,6 +70,7 @@ async def mine_all_prs(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -101,11 +105,9 @@ async def mine_all_prs(
     del done_facts
     tasks = [
         read_sql_query(
-            select([PullRequest]).where(
-                and_(
-                    PullRequest.acc_id.in_(meta_ids),
-                    PullRequest.node_id.in_(node_ids),
-                ),
+            select(PullRequest).where(
+                PullRequest.acc_id.in_(meta_ids),
+                PullRequest.node_id.in_(node_ids),
             ),
             mdb,
             PullRequest,
@@ -154,6 +156,7 @@ async def mine_all_developers(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -222,6 +225,7 @@ async def mine_all_releases(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -250,7 +254,7 @@ async def mine_all_releases(
             rdb,
             cache,
             with_avatars=False,
-            with_pr_titles=True,
+            with_extended_pr_details=True,
         )
     )[0]
     result.set_index(Release.node_id.name, inplace=True)
@@ -269,6 +273,7 @@ async def mine_all_check_runs(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -301,6 +306,7 @@ async def mine_all_jira_issues(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -309,9 +315,7 @@ async def mine_all_jira_issues(
     cache: Optional[aiomcache.Client],
 ) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about JIRA issues."""
-    try:
-        jira_ids = await get_jira_installation(account, sdb, mdb, cache)
-    except ResponseError:  # no JIRA installed
+    if jira_ids is None:
         return {}
     issues = await fetch_jira_issues(
         datetime(1970, 1, 1, tzinfo=timezone.utc),
@@ -345,6 +349,7 @@ async def mine_all_deployments(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: Tuple[int, ...],
     sdb: Database,
     mdb: Database,
@@ -355,7 +360,7 @@ async def mine_all_deployments(
     """Extract everything we know about deployments."""
     now = datetime.now(timezone.utc)
     envs = await rdb.fetch_all(
-        select([distinct(DeploymentNotification.environment)]).where(
+        select(distinct(DeploymentNotification.environment)).where(
             DeploymentNotification.account_id == account,
         ),
     )
@@ -377,11 +382,14 @@ async def mine_all_deployments(
         default_branches,
         prefixer,
         account,
+        jira_ids,
         meta_ids,
         mdb,
         pdb,
         rdb,
         cache,
+        with_extended_prs=True,
+        with_jira=True,
     )
     if deps.empty:
         return {}
@@ -432,8 +440,9 @@ async def mine_everything(
 ) -> Dict[MineTopic, Dict[str, pd.DataFrame]]:
     """Mine all the specified data topics."""
     repos = release_settings.native.keys()
-    branches, default_branches = await BranchMiner.extract_branches(
-        repos, prefixer, meta_ids, mdb, cache,
+    (branches, default_branches), jira_ids = await gather(
+        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
+        get_jira_installation_or_none(account, sdb, mdb, cache),
     )
     tasks = [
         miners[t](
@@ -444,6 +453,7 @@ async def mine_everything(
             logical_settings,
             prefixer,
             account,
+            jira_ids,
             meta_ids,
             sdb,
             mdb,
