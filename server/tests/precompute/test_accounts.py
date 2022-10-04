@@ -22,7 +22,13 @@ from athenian.api.precompute.accounts import (
     main,
     precompute_reposet,
 )
-from tests.testutils.db import DBCleaner, assert_existing_row, model_insert_stmt, models_insert
+from tests.testutils.db import (
+    DBCleaner,
+    assert_existing_row,
+    model_insert_stmt,
+    models_insert,
+    models_insert_auto_pk,
+)
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
@@ -316,13 +322,15 @@ class TestSyncBotsTeamMembers:
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
-            await models_insert(sdb, TeamFactory(name=Team.ROOT, id=97))
+            (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
 
             local_bots = {"u0", "u1", "u2"}
 
             prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb_rw, None)
-            await _ensure_bot_team(1, local_bots, 97, prefixer, sdb, mdb_rw, logging.getLogger())
+            await _ensure_bot_team(
+                1, local_bots, root_team_id, prefixer, sdb, mdb_rw, logging.getLogger(),
+            )
 
             team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
             assert team_row[Team.members.name] == [100, 101, 102]
