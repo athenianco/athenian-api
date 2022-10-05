@@ -108,6 +108,11 @@ def split_logical_deployed_components(
         missed_mask[inspected_indexes] = False
         if len(missed_indexes := np.flatnonzero(missed_mask)):
             chunks.append(components.take(missed_indexes))
+    else:
+        # this happens when all physical repositories have logical settings,
+        # but none of their logical repos matches any notification
+        chunks.append(components)
+
     if len(chunks):
         components = pd.concat(chunks, copy=False)
     else:

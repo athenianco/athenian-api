@@ -511,7 +511,7 @@ async def mine_environments(
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_node_ids = {repo_name_to_node(drop_logical_repo(r)) for r in repos} - {None}
     else:
-        repo_node_ids = []
+        repo_node_ids = set()
     notifications, has_any_notifications = await gather(
         fetch_deployment_candidates(
             repo_node_ids,
@@ -565,7 +565,7 @@ async def mine_environments(
     envs_col = components[DeploymentNotification.environment.name].values
     order = np.argsort(envs_col)
     repo_unique_envs, repo_group_counts = np.unique(envs_col[order], return_counts=True)
-    assert (repo_unique_envs == unique_envs).all()
+    assert list(repo_unique_envs) == list(unique_envs)
     repo_name_col = components[DeployedComponent.repository_full_name].values
     repo_pos = 0
     result = []
