@@ -434,7 +434,7 @@ class DeployedIssuesCounter(SumCalculator):
         """Calculate the number of unique issues."""
         if len(values) == 0:
             return 0
-        return len(unordered_unique(np.concatenate(values)))
+        return len(unordered_unique(values))
 
 
 @register_metric(DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT)
@@ -447,6 +447,6 @@ class DeployedBugFixesCounter(SumCalculator):
         """Calculate the number of unique issues with lower(type) == "bug"."""
         if len(values) == 0:
             return 0
-        deployed = unordered_unique(np.concatenate(values))
+        deployed = unordered_unique(values)
         jira = self.jira
         return sum(jira[i].type.lower() == "bug" for i in deployed)

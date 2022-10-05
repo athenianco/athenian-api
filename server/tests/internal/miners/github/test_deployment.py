@@ -112,6 +112,127 @@ async def test_mine_deployments_from_scratch(
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
 
+    # test the cache
+    deps = await mine_deployments(
+        ["src-d/go-git"],
+        {},
+        time_from,
+        time_to,
+        ["production", "staging"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        None,
+        (6366825,),
+        None,
+        None,
+        None,
+        cache,
+    )
+    _validate_deployments(deps, 9, True)
+
+
+@with_defer
+async def test_mine_deployments_addons_cache(
+    sample_deployments,
+    release_match_setting_tag_or_branch,
+    branches,
+    default_branches,
+    prefixer,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    await mine_releases(
+        ["src-d/go-git"],
+        {},
+        branches,
+        default_branches,
+        time_from,
+        time_to,
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        with_avatars=False,
+        with_extended_pr_details=False,
+        with_deployments=False,
+    )
+    await wait_deferred()
+    deps = await mine_deployments(
+        ["src-d/go-git"],
+        {},
+        time_from,
+        time_to,
+        ["production", "staging"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        JIRAConfig(1, {}, {}),
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        cache,
+        with_extended_prs=True,
+        with_jira=True,
+    )
+    _validate_deployments(deps, 9, True)
+    deployment_facts_extract_mentioned_people(deps)
+    await wait_deferred()
+
+    deps = await mine_deployments(
+        ["src-d/go-git"],
+        {},
+        time_from,
+        time_to,
+        ["production", "staging"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        JIRAConfig(1, {}, {}),
+        (6366825,),
+        None,
+        None,
+        None,
+        cache,
+    )
+    _validate_deployments(deps, 9, True)
+
 
 @with_defer
 async def test_mine_deployments_middle(

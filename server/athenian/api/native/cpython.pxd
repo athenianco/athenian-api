@@ -62,6 +62,7 @@ cdef extern from "Python.h":
     PyTypeObject PyDict_Type
 
     void Py_INCREF(PyObject *)
+    void Py_DECREF(PyObject *)
 
     object PyUnicode_FromStringAndSize(const char *, Py_ssize_t)
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)

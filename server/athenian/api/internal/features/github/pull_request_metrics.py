@@ -38,6 +38,7 @@ from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inr
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     PRParticipants,
+    PRParticipationKind,
     PullRequestFacts,
 )
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
@@ -112,9 +113,13 @@ def group_prs_by_participants(
         group = np.full(len(items), False)
         for participation_kind, devs in participants_group.items():
             name = participation_kind.name.lower()
-            try:
+            if participation_kind in (
+                PRParticipationKind.AUTHOR,
+                PRParticipationKind.MERGER,
+                PRParticipationKind.RELEASER,
+            ):
                 group |= items[name].isin(devs).values
-            except KeyError:
+            else:
                 log.warning("Unsupported participation kind: %s", name)
         groups.append(np.nonzero(group)[0])
     return groups
