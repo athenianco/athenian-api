@@ -461,7 +461,7 @@ class Auth0:
         except aiohttp.ContentTypeError:
             raise ResponseError(
                 GenericError(
-                    "/errors/Auth0",
+                    type="/errors/Auth0",
                     title=resp.reason,
                     status=resp.status,
                     detail=await resp.text(),
@@ -470,7 +470,7 @@ class Auth0:
         if resp.status != 200:
             raise ResponseError(
                 GenericError(
-                    "/errors/Auth0",
+                    type="/errors/Auth0",
                     title=resp.reason,
                     status=resp.status,
                     detail=user.get("description", str(user)),
