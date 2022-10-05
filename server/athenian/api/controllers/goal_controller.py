@@ -18,6 +18,7 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.align.queries.goals import GoalToServe, GoalTreeGenerator
 from athenian.api.align.queries.metrics import calculate_team_metrics
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.db import Row, integrity_errors
 from athenian.api.internal.account import (
     get_metadata_account_ids,
@@ -180,6 +181,7 @@ async def parse_request_repositories(
         raise ResponseError(InvalidRequestError(".repositories", str(e)))
 
 
+@weight(10)
 async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate the metrics for the goal tree."""
     goals_request = AlignGoalsRequest.from_dict(body)
