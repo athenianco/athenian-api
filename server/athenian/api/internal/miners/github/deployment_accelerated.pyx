@@ -79,7 +79,7 @@ def split_prs_to_jira_ids(
         return np.array([], dtype=object), np.array([], dtype=object)
 
     cdef:
-        mi_heap_stl_allocator[char] alloc = mi_heap_stl_allocator[char]()
+        optional[mi_heap_stl_allocator[char]] alloc
         optional[mi_unordered_map[long, mi_vector[string_view]]] id_map
         mi_unordered_map[long, mi_vector[string_view]].iterator id_map_iter
         optional[mi_unordered_map[string_view, PyObjectPtr]] origin_map
@@ -129,8 +129,10 @@ def split_prs_to_jira_ids(
         optional[mi_vector[PyObjectPtr]] boilerplate_ptrs
 
     with nogil:
-        id_map.emplace(alloc)
-        origin_map.emplace(alloc)
+        alloc.emplace()
+        deref(alloc).disable_free()
+        id_map.emplace(deref(alloc))
+        origin_map.emplace(deref(alloc))
         for i in range(PyArray_DIM(<PyObject *> map_prs, 0)):
             str_obj = map_jira_data[i]
             node_id = map_prs_data[i]
@@ -139,15 +141,15 @@ def split_prs_to_jira_ids(
             deref(origin_map)[string_view(strptr, strlength)] = str_obj
             id_map_iter = deref(id_map).find(node_id)
             if id_map_iter == deref(id_map).end():
-                strvec.emplace(alloc)
+                strvec.emplace(deref(alloc))
                 deref(strvec).emplace_back(strptr, strlength)
                 deref(id_map)[node_id] = move(deref(strvec))
             else:
                 deref(id_map_iter).second.emplace_back(strptr, strlength)
 
-        resolved.emplace(alloc)
+        resolved.emplace(deref(alloc))
         deref(resolved).resize(deps_count)
-        resolved_by_pr.emplace(alloc)
+        resolved_by_pr.emplace(deref(alloc))
         deref(resolved_by_pr).resize(deps_count)
         resolved_by_pr_data = deref(resolved_by_pr).data()
         for dep_pos in range(deps_count):
@@ -192,9 +194,9 @@ def split_prs_to_jira_ids(
                         str_obj = deref(origin_map)[issue]
                         resolved_by_pr_dep_issues[v] = str_obj
                         deref(issues)[issue] = str_obj
-        boilerplate_indexes.emplace(alloc)
-        boilerplate_bodies.emplace(alloc)
-        boilerplate_ptrs.emplace(alloc)
+        boilerplate_indexes.emplace(deref(alloc))
+        boilerplate_bodies.emplace(deref(alloc))
+        boilerplate_ptrs.emplace(deref(alloc))
 
     assert not invalid_dtype_pr_node_ids
     assert not invalid_dtype_pr_offsets

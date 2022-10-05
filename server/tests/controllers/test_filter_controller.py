@@ -3895,8 +3895,6 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
 async def test_filter_deployments_smoke(client, headers):
     body = {
         "account": 1,
@@ -3915,6 +3913,23 @@ async def test_filter_deployments_smoke(client, headers):
     assert len(deps.include.jira) == 42
     deps = deps.deployments
     assert len(deps) == 1
+    assert len(deps[0].prs) == 513
+    assert deps[0].prs[0].to_dict() == {
+        "additions": 2000,
+        "author": "github.com/mcuadros",
+        "created": datetime(2016, 11, 7, 22, 17, 6, tzinfo=timezone.utc),
+        "deletions": 1933,
+        "number": 118,
+        "title": "new plumbing package",
+    }
+    assert deps[0].prs[-1].to_dict() == {
+        "number": 83,
+        "title": "fix a typo in readme",
+        "created": datetime(2016, 10, 6, 9, 9, 43, tzinfo=timezone.utc),
+        "additions": 1,
+        "deletions": 1,
+        "author": "github.com/ferhatelmas",
+    }
     assert deps[0].code.to_dict() == {
         "commits_overall": {"github.com/src-d/go-git": 1508},
         "commits_prs": {"github.com/src-d/go-git": 1070},
