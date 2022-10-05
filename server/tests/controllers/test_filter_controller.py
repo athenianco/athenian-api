@@ -3,14 +3,16 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import json
 from operator import itemgetter
-from typing import Collection, Dict, Optional, Set
+from typing import Any, Collection, Dict, Optional, Set
 
 from aiohttp import ClientResponse
 import dateutil
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import delete, insert, select
 
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
@@ -20,7 +22,6 @@ from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent as DBDeployedComponent,
     DeploymentNotification as DBDeploymentNotification,
-    ReleaseNotification,
 )
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation
@@ -44,7 +45,14 @@ from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
 from tests.testutils.db import models_insert
-from tests.testutils.factory.state import ReleaseSettingFactory
+from tests.testutils.factory.persistentdata import (
+    DeployedComponentFactory,
+    DeploymentNotificationFactory,
+    ReleaseNotificationFactory,
+)
+from tests.testutils.factory.state import LogicalRepositoryFactory, ReleaseSettingFactory
+from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 @pytest.fixture(scope="function")
@@ -53,19 +61,14 @@ async def with_event_releases(sdb, rdb):
         sdb,
         ReleaseSettingFactory(repo_id=40550, branches="master", match=ReleaseMatch.event.value),
     )
-    await rdb.execute(
-        insert(ReleaseNotification).values(
-            ReleaseNotification(
-                account_id=1,
-                repository_node_id=40550,
-                commit_hash_prefix="8d20cc5",
-                name="Pushed!",
-                author_node_id=40020,
-                url="www",
-                published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
+    await models_insert(
+        rdb,
+        ReleaseNotificationFactory(
+            repository_node_id=40550,
+            commit_hash_prefix="8d20cc5",
+            author_node_id=40020,
+            name="Pushed!",
+            published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
         ),
     )
 
@@ -4018,96 +4021,136 @@ async def test_filter_deployments_nasty_input(
     assert response.status == status, response_text
 
 
-@pytest.mark.parametrize("repos", [None, ["github.com/src-d/go-git"]])
-async def test_filter_environments_smoke(client, headers, repos, sample_deployments, rdb):
-    body = {
-        "account": 1,
-        "date_from": "2017-01-01",
-        "date_to": "2018-06-01",
-        **({"repositories": repos} if repos else {}),
-    }
-    await rdb.execute(
-        delete(DBDeployedComponent).where(
-            DBDeployedComponent.deployment_name == "canary_2018_01_12",
-        ),
-    )
-    await rdb.execute(
-        delete(DBDeploymentNotification).where(
-            DBDeploymentNotification.name == "canary_2018_01_12",
-        ),
-    )
-    response = await client.request(
-        method="POST", path="/v1/filter/environments", headers=headers, json=body,
-    )
-    response_text = (await response.read()).decode("utf-8")
-    assert response.status == 200, response_text
-    envs = [FilteredEnvironment.from_dict(x) for x in json.loads(response_text)]
-    assert envs == [
-        FilteredEnvironment(
-            name="canary",
-            deployments_count=2,
-            last_conclusion="SUCCESS",
-            repositories=["github.com/src-d/go-git"],
-        ),
-        FilteredEnvironment(
-            name="production",
-            deployments_count=3,
-            last_conclusion="FAILURE",
-            repositories=["github.com/src-d/go-git"],
-        ),
-        FilteredEnvironment(
-            name="staging",
-            deployments_count=3,
-            last_conclusion="FAILURE",
-            repositories=["github.com/src-d/go-git"],
-        ),
-    ]
+class TestFilterEnvironments(Requester):
+    @pytest.mark.parametrize("repos", [None, ["github.com/src-d/go-git"]])
+    async def test_smoke(self, repos, sample_deployments, rdb):
+        body = {
+            "account": 1,
+            "date_from": "2017-01-01",
+            "date_to": "2018-06-01",
+            **({"repositories": repos} if repos else {}),
+        }
+        await rdb.execute(
+            sa.delete(DBDeployedComponent).where(
+                DBDeployedComponent.deployment_name == "canary_2018_01_12",
+            ),
+        )
+        await rdb.execute(
+            sa.delete(DBDeploymentNotification).where(
+                DBDeploymentNotification.name == "canary_2018_01_12",
+            ),
+        )
+        response_data = await self._request(json=body)
+        envs = [FilteredEnvironment.from_dict(x) for x in response_data]
+        assert envs == [
+            FilteredEnvironment(
+                name="canary",
+                deployments_count=2,
+                last_conclusion="SUCCESS",
+                repositories=["github.com/src-d/go-git"],
+            ),
+            FilteredEnvironment(
+                name="production",
+                deployments_count=3,
+                last_conclusion="FAILURE",
+                repositories=["github.com/src-d/go-git"],
+            ),
+            FilteredEnvironment(
+                name="staging",
+                deployments_count=3,
+                last_conclusion="FAILURE",
+                repositories=["github.com/src-d/go-git"],
+            ),
+        ]
 
-
-@pytest.mark.parametrize(
-    "account, date_from, date_to, repos, status",
-    [
-        (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], 403),
-        (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 404),
-        (1, "2020-01-12", "2018-01-12", ["github.com/src-d/go-git"], 400),
-        (1, "2018-01-12", "2020-01-12", None, 400),
-        (2, "2018-01-12", "2020-01-12", [], 422),
-        (None, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 400),
-    ],
-)
-async def test_filter_environments_nasty_input(
-    client,
-    headers,
-    sample_deployments,
-    account,
-    date_from,
-    date_to,
-    repos,
-    status,
-):
-    body = {
-        "account": account,
-        "date_from": date_from,
-        "date_to": date_to,
-        "repositories": repos,
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/environments", headers=headers, json=body,
+    @pytest.mark.parametrize(
+        "account, date_from, date_to, repos, status",
+        [
+            (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], 403),
+            (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 404),
+            (1, "2020-01-12", "2018-01-12", ["github.com/src-d/go-git"], 400),
+            (1, "2018-01-12", "2020-01-12", None, 400),
+            (2, "2018-01-12", "2020-01-12", [], 422),
+            (None, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 400),
+        ],
     )
-    response_text = (await response.read()).decode("utf-8")
-    assert response.status == status, response_text
+    async def test_nasty_input(
+        self,
+        sample_deployments,
+        account,
+        date_from,
+        date_to,
+        repos,
+        status,
+    ):
+        body = {
+            "account": account,
+            "date_from": date_from,
+            "date_to": date_to,
+            "repositories": repos,
+        }
+        await self._request(assert_status=status, json=body)
 
+    async def test_422(self, rdb):
+        body = {"account": 1, "date_from": "2016-01-01", "date_to": "2020-01-01"}
+        await rdb.execute(sa.delete(DBDeployedComponent))
+        await rdb.execute(sa.delete(DBDeploymentNotification))
+        await self._request(assert_status=422, json=body)
 
-async def test_filter_environments_422(client, headers, rdb):
-    body = {
-        "account": 1,
-        "date_from": "2016-01-01",
-        "date_to": "2020-01-01",
-    }
-    await rdb.execute(delete(DBDeployedComponent))
-    await rdb.execute(delete(DBDeploymentNotification))
-    response = await client.request(
-        method="POST", path="/v1/filter/environments", headers=headers, json=body,
-    )
-    response_text = (await response.read()).decode("utf-8")
-    assert response.status == 422, response_text
+    async def test_invalid_date(self) -> None:
+        body = {"account": 1, "date_from": "2018-01-32", "date_to": "2018-02-15"}
+        await self._request(assert_status=400, json=body)
+
+    async def test_logical_repo_selecting_nothing(self, rdb: Database, sdb: Database) -> None:
+        await rdb.execute(sa.delete(DBDeployedComponent))
+        await rdb.execute(sa.delete(DBDeploymentNotification))
+
+        dates = {"started_at": dt(2018, 4, 10), "finished_at": dt(2018, 4, 10, 1)}
+        component_info = {"repository_node_id": 40550, "resolved_commit_node_id": 2755244}
+
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="d0", environment="e0", **dates),
+            DeploymentNotificationFactory(name="d1", environment="e1", **dates),
+            DeployedComponentFactory(deployment_name="d0", **component_info),
+            DeployedComponentFactory(deployment_name="d1", **component_info),
+        )
+        await models_insert(
+            sdb,
+            LogicalRepositoryFactory(
+                name="alpha",
+                repository_id=40550,
+                deployments={"title": "alpha-deploy-.*", "labels": None},
+            ),
+        )
+        body = {
+            "account": 1,
+            "date_from": "2018-04-01",
+            "date_to": "2018-05-01",
+            "repositories": ["github.com/src-d/go-git"],
+        }
+
+        response_data = await self._request(json=body)
+        response_envs = [FilteredEnvironment.from_dict(x) for x in response_data]
+        assert response_envs == [
+            FilteredEnvironment(
+                name="e0",
+                deployments_count=1,
+                last_conclusion="SUCCESS",
+                repositories=["github.com/src-d/go-git"],
+            ),
+            FilteredEnvironment(
+                name="e1",
+                deployments_count=1,
+                last_conclusion="SUCCESS",
+                repositories=["github.com/src-d/go-git"],
+            ),
+        ]
+
+    async def _request(self, assert_status: int = 200, **kwargs: Any) -> dict:
+        path = "/v1/filter/environments"
+        response = await self.client.request(
+            method="POST", path=path, headers=self.headers, **kwargs,
+        )
+        assert response.status == assert_status
+        return await response.json()
