@@ -2954,7 +2954,7 @@ async def load_jira_issues_for_deployments(
         return {}
 
     unique_jira_keys = unordered_unique(
-        np.concatenate(np.concatenate(deployments[DeploymentFacts.f.jira_ids].values)),
+        np.concatenate(deployments[DeploymentFacts.f.jira_ids].values),
     )
     rows = await fetch_jira_issues_by_keys(unique_jira_keys, jira_ids, mdb)
     return {row["id"]: PullRequestJIRAIssueItem(**row) for row in rows}
@@ -3201,7 +3201,7 @@ async def _fetch_deployed_jira(
 
 
 def _apply_jira_to_deployment_facts(facts: pd.DataFrame, df_map: pd.DataFrame) -> pd.DataFrame:
-    repo_jira_ids, pr_jira_ids = split_prs_to_jira_ids(
+    repo_jira_ids, repo_jira_offsets, pr_jira_ids, pr_jira_offsets = split_prs_to_jira_ids(
         facts[DeploymentFacts.f.prs].values,
         facts[DeploymentFacts.f.prs_offsets].values,
         df_map["node_id"].values,
@@ -3210,7 +3210,9 @@ def _apply_jira_to_deployment_facts(facts: pd.DataFrame, df_map: pd.DataFrame) -
     df = pd.DataFrame(
         {
             DeploymentFacts.f.jira_ids: repo_jira_ids,
+            DeploymentFacts.f.jira_offsets: repo_jira_offsets,
             DeploymentFacts.f.prs_jira_ids: pr_jira_ids,
+            DeploymentFacts.f.prs_jira_offsets: pr_jira_offsets,
         },
     )
     df.index = facts.index

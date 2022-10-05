@@ -1,5 +1,4 @@
 import numpy as np
-from numpy.testing import assert_array_equal
 
 from athenian.api.internal.miners.github.deployment_accelerated import split_prs_to_jira_ids
 
@@ -15,22 +14,31 @@ def test_split_prs_to_jira_ids_smoke():
     map_jira = np.array(
         ["DEV-1", "DEV-2", "DEV-3", "DEV-3", "DEV-4", "DEV-3", "DEV-X"], dtype=object,
     )
-    by_repo, by_pr = split_prs_to_jira_ids(pr_node_ids, pr_offsets, map_prs, map_jira)
+    by_repo, repo_offs, by_pr, pr_offs = split_prs_to_jira_ids(
+        pr_node_ids, pr_offsets, map_prs, map_jira,
+    )
     assert by_repo.dtype == object, by_repo
     assert by_pr.dtype == object, by_pr
-    assert len(by_repo) == len(by_pr) == 2
-    assert_array_equal(by_pr[0], np.array([["DEV-1", "DEV-2"], ["DEV-3"]], dtype=object))
-    assert_array_equal(
-        by_pr[1], np.array([[], ["DEV-3"], [], ["DEV-4", "DEV-3", "DEV-X"]], dtype=object),
-    )
+    assert repo_offs.dtype == object, by_repo
+    assert pr_offs.dtype == object, by_pr
+    assert len(by_repo) == len(by_pr) == len(repo_offs) == len(pr_offs) == 2
+    objarr = np.empty(2, dtype=object)
+    objarr[0] = np.array(["DEV-1", "DEV-2"], dtype=object)
+    objarr[1] = np.array(["DEV-3"], dtype=object)
+    assert str(np.array(np.split(by_pr[0], pr_offs[0]), dtype=object)) == str(objarr)
+    objarr = np.empty(4, dtype=object)
+    objarr[0] = objarr[2] = np.array([], dtype=object)
+    objarr[1] = np.array(["DEV-3"], dtype=object)
+    objarr[3] = np.array(["DEV-4", "DEV-3", "DEV-X"], dtype=object)
+    assert str(np.array(np.split(by_pr[1], pr_offs[1]), dtype=object)) == str(objarr)
 
     objarr = np.empty(1, dtype=object)
     objarr[0] = np.array(["DEV-1", "DEV-2", "DEV-3"], dtype=object)
-    assert str(by_repo[0]) == str(objarr)
+    assert str(np.split(by_repo[0], repo_offs[0])) == str(objarr).replace("\n", ",")
     objarr = np.empty(2, dtype=object)
     objarr[0] = np.array(["DEV-3"], dtype=object)
     objarr[1] = np.array(["DEV-3", "DEV-4", "DEV-X"], dtype=object)
-    assert str(by_repo[1]) == str(objarr)
+    assert str(np.split(by_repo[1], repo_offs[1])) == str(objarr).replace("\n", ",")
 
 
 def test_split_prs_to_jira_ids_empty():
@@ -40,9 +48,13 @@ def test_split_prs_to_jira_ids_empty():
     map_jira = np.array(
         ["DEV-1", "DEV-2", "DEV-3", "DEV-3", "DEV-4", "DEV-3", "DEV-X"], dtype=object,
     )
-    by_repo, by_pr = split_prs_to_jira_ids(pr_node_ids, pr_offsets, map_prs, map_jira)
+    by_repo, repo_offs, by_pr, pr_offs = split_prs_to_jira_ids(
+        pr_node_ids, pr_offsets, map_prs, map_jira,
+    )
     assert len(by_repo) == 0
+    assert len(repo_offs) == 0
     assert len(by_pr) == 0
+    assert len(pr_offs) == 0
 
 
 def test_split_prs_to_jira_ids_legacy():
@@ -741,34 +753,36 @@ def test_split_prs_to_jira_ids_legacy():
     )
     map_prs = np.concatenate(prs)
     np.random.seed(777)
-    map_prs = np.repeat(map_prs, np.random.random_integers(0, 3, len(map_prs)))
+    map_prs = np.repeat(map_prs, np.random.randint(0, 4, len(map_prs)))
     np.random.shuffle(map_prs)
-    randints = np.random.random_integers(1, len(map_prs), len(map_prs))
+    randints = np.random.randint(1, len(map_prs) + 1, len(map_prs))
     map_jira = np.array([f"DEV-{i}" for i in randints], dtype=object)
-    by_repo, by_pr = split_prs_to_jira_ids(prs, prs_offsets, map_prs, map_jira)
+    by_repo, repo_offs, by_pr, pr_offs = split_prs_to_jira_ids(prs, prs_offsets, map_prs, map_jira)
     assert len(by_repo) == len(prs)
     nonempty = 0
     checked_issues = 0
     unique_issues = set()
-    for arr in by_repo:
+    for arr, offs in zip(by_repo, repo_offs):
         assert arr.dtype == object
-        if len(arr):
-            nonempty += 1
-        for issues in arr:
+        for issues in np.split(arr, offs):
+            if len(issues):
+                nonempty += 1
             for name in issues:
                 checked_issues += 1
                 unique_issues.add(name)
                 assert name.startswith("DEV-")
-    assert nonempty == len(prs)
+    assert nonempty == 242
     assert checked_issues == 1848
     assert unique_issues == set(map_jira)
     assert len(by_pr) == len(prs)
 
     unique_issues = set()
     nonempty = 0
-    for dep in by_pr:
-        nonempty += 1
-        for issues in dep:
+    for origin_prs, dep, offs in zip(prs, by_pr, pr_offs):
+        assert len(origin_prs) == len(offs) + 1
+        if len(dep):
+            nonempty += 1
+        for issues in np.split(dep, offs):
             unique_issues.update(issues)
-    assert nonempty == len(prs)
+    assert nonempty == 238
     assert unique_issues == set(map_jira)

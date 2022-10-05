@@ -1254,7 +1254,9 @@ async def _build_deployments_response(
                     commits_overall=dict(zip(resolved_repos, commits_overall)),
                     jira={
                         r: keys
-                        for r, keys in zip(resolved_repos, jira_by_repo)
+                        for r, keys in zip(
+                            resolved_repos, np.split(jira_by_repo, jira_repo_offsets),
+                        )
                         if keys is not None
                     },
                 ),
@@ -1283,7 +1285,7 @@ async def _build_deployments_response(
                         pr_additions,
                         pr_deletions,
                         pr_user_node_ids,
-                        pr_jiras,
+                        np.split(pr_jiras, pr_jira_offsets),
                     )
                 ],
                 releases=[
@@ -1358,7 +1360,9 @@ async def _build_deployments_response(
                 pr_deletions,
                 pr_user_node_ids,
                 pr_jiras,
+                pr_jira_offsets,
                 jira_by_repo,
+                jira_repo_offsets,
             ) in zip(
                 df.index.values,
                 df[DeploymentNotification.environment.name].values,
@@ -1383,7 +1387,9 @@ async def _build_deployments_response(
                 df[DeploymentFacts.f.prs_deletions].values,
                 df[DeploymentFacts.f.prs_user_node_id].values,
                 df[DeploymentFacts.f.prs_jira_ids].values,
+                df[DeploymentFacts.f.prs_jira_offsets].values,
                 df[DeploymentFacts.f.jira_ids].values,
+                df[DeploymentFacts.f.jira_offsets].values,
             )
         ],
         include=ReleaseSetInclude(

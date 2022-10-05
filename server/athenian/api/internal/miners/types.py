@@ -628,8 +628,10 @@ class DeploymentFacts:
         prs_additions: npt.NDArray[int]
         prs_deletions: npt.NDArray[int]
         prs_user_node_id: npt.NDArray[int]
-        prs_jira_ids: npt.NDArray[int]
-        jira_ids: npt.NDArray[int]
+        prs_jira_ids: npt.NDArray[object]
+        prs_jira_offsets: npt.NDArray[np.uint32]
+        jira_ids: npt.NDArray[object]
+        jira_offsets: npt.NDArray[np.uint32]
 
     def with_nothing_deployed(self):
         """Return a copy of this DeploymentFacts with no deployed entities.
