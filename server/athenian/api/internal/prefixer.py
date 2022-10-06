@@ -6,7 +6,7 @@ import pickle
 from typing import Dict, Iterable, List, Optional
 
 import aiomcache
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
@@ -143,13 +143,13 @@ class Prefixer:
         """Load node IDs and prefixes for all known repositories and users."""
         repo_rows, user_rows = await gather(
             mdb.fetch_all(
-                select([Repository.node_id, Repository.full_name, Repository.html_url]).where(
-                    and_(Repository.acc_id.in_(meta_ids), Repository.full_name.isnot(None)),
+                select(Repository.node_id, Repository.full_name, Repository.html_url).where(
+                    Repository.acc_id.in_(meta_ids), Repository.full_name.isnot(None),
                 ),
             ),
             mdb.fetch_all(
-                select([User.node_id, User.login, User.html_url]).where(
-                    and_(User.acc_id.in_(meta_ids), User.login.isnot(None)),
+                select(User.node_id, User.login, User.html_url).where(
+                    User.acc_id.in_(meta_ids), User.login.isnot(None),
                 ),
             ),
             op="Prefixer",

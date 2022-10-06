@@ -90,8 +90,8 @@ async def _mine_user_avatars_logins(
     cache: Optional[aiomcache.Client],
 ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(
-        select([User.node_id, User.html_url, User.avatar_url]).where(
-            and_(User.login.in_(logins), User.acc_id.in_(meta_ids)),
+        select(User.node_id, User.html_url, User.avatar_url).where(
+            User.login.in_(logins), User.acc_id.in_(meta_ids),
         ),
     )
     return [
@@ -114,8 +114,8 @@ async def _mine_user_avatars_nodes(
     cache: Optional[aiomcache.Client],
 ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(
-        select([User.node_id, User.html_url, User.avatar_url]).where(
-            and_(User.node_id.in_(nodes), User.acc_id.in_(meta_ids)),
+        select(User.node_id, User.html_url, User.avatar_url).where(
+            User.node_id.in_(nodes), User.acc_id.in_(meta_ids), User.login.isnot(None),
         ),
     )
     return [

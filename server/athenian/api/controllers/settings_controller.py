@@ -354,13 +354,15 @@ async def get_jira_identities(
     github_ids = [r[MappedJIRAIdentity.github_user_id.name] for r in map_rows]
     tasks = [
         request.mdb.fetch_all(
-            select([GitHubUser.node_id, GitHubUser.html_url, GitHubUser.name]).where(
-                and_(GitHubUser.node_id.in_(github_ids), GitHubUser.acc_id.in_(meta_ids)),
+            select(GitHubUser.node_id, GitHubUser.html_url, GitHubUser.name).where(
+                GitHubUser.node_id.in_(github_ids),
+                GitHubUser.acc_id.in_(meta_ids),
+                GitHubUser.login.isnot(None),
             ),
         ),
         request.mdb.fetch_all(
-            select([JIRAUser.id, JIRAUser.display_name]).where(
-                and_(JIRAUser.acc_id == jira_acc, JIRAUser.type.in_(ALLOWED_USER_TYPES)),
+            select(JIRAUser.id, JIRAUser.display_name).where(
+                JIRAUser.acc_id == jira_acc, JIRAUser.type.in_(ALLOWED_USER_TYPES),
             ),
         ),
     ]

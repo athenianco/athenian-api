@@ -235,7 +235,7 @@ async def _resolve_members(
             to_fetch.add(splitted[1])
 
     rows = await mdb.fetch_all(
-        select([User.html_url, User.node_id])
+        select(User.html_url, User.node_id)
         .where(and_(User.acc_id.in_(meta_ids), User.login.in_(to_fetch)))
         .order_by(User.node_id),
     )

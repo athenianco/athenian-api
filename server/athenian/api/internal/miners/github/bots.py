@@ -26,8 +26,8 @@ class Bots:
 
     async def _fetch(self, mdb: Database) -> None:
         rows, extra = await gather(
-            mdb.fetch_all(select([Bot.acc_id, Bot.login])),
-            mdb.fetch_all(select([ExtraBot.login])),
+            mdb.fetch_all(select(Bot.acc_id, Bot.login)),
+            mdb.fetch_all(select(ExtraBot.login)),
         )
         bots: dict[int, set[str]] = {}
         for row in rows:
@@ -85,11 +85,10 @@ class Bots:
         assert self._bots is not None
         team = (await self.team(account, sdb)) or []
         team_logins = await mdb.fetch_all(
-            select([User.login]).where(
-                and_(
-                    User.acc_id.in_(meta_ids),
-                    User.node_id.in_(team),
-                ),
+            select(User.login).where(
+                User.acc_id.in_(meta_ids),
+                User.node_id.in_(team),
+                User.login.isnot(None),
             ),
         )
         bots = frozenset(
