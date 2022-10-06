@@ -415,7 +415,7 @@ class AthenianApp(especifico.AioHttpApp):
                         timeout = e  # `e` goes out of scope before `else`
                 else:
                     raise timeout from None
-                self.log.info("Connected to the %s DB on %s", name, db_conn)
+                self.log.info("Connected to the %s DB on %s", name, db.url.obscure_password)
                 self.app[shortcut] = measure_db_overhead_and_retry(db, shortcut, self.app)
                 if shortcut == "pdb":
                     db.metrics = pdbctx
