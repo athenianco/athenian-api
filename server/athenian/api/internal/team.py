@@ -114,7 +114,7 @@ async def get_all_team_members(
             ud = user_by_node[m]
         except KeyError:
             missing.append(m)
-            c = Contributor(login=str(m))
+            continue
         else:
             login = ud[User.html_url.name].split("://", 1)[1]
             c = Contributor(
