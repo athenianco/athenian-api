@@ -17,8 +17,8 @@ def main() -> int:
     """Try to fetch one example of each model in the metadata schema from a real DB instance."""
     setup_logging(logging.INFO, not sys.stdout.isatty())
     log = logging.getLogger("%s.metadata" % metadata.__package__)
-    setup_context(log)
     conn_str = sys.argv[1]
+    setup_context(log)
     check_schema_version(conn_str, log)
     engine = create_engine(conn_str)
     if engine.dialect.name == "sqlite":
