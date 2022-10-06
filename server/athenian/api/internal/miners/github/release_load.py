@@ -684,7 +684,9 @@ class ReleaseLoader:
             async def resolve_users():
                 user_rows = await mdb.fetch_all(
                     select(User.node_id, User.login).where(
-                        User.acc_id.in_(meta_ids), User.node_id.in_(author_node_ids),
+                        User.acc_id.in_(meta_ids),
+                        User.node_id.in_(author_node_ids),
+                        User.login.isnot(None),
                     ),
                 )
                 nonlocal user_map

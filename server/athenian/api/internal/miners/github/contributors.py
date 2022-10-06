@@ -394,7 +394,7 @@ async def load_organization_members(
     user_rows, bots = await gather(
         mdb.fetch_all(
             select(User.node_id, User.name, User.login, User.html_url, User.email).where(
-                User.acc_id.in_(meta_ids), User.node_id.in_(user_ids),
+                User.acc_id.in_(meta_ids), User.node_id.in_(user_ids), User.login.isnot(None),
             ),
         ),
         fetch_bots(account, meta_ids, mdb, sdb, cache),

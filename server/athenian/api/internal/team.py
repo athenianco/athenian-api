@@ -98,11 +98,10 @@ async def get_all_team_members(
     """Return contributor objects for given github user identifiers."""
     user_rows, mapped_jira = await gather(
         mdb.fetch_all(
-            sa.select([User]).where(
-                sa.and_(
-                    User.acc_id.in_(meta_ids),
-                    User.node_id.in_(gh_user_ids),
-                ),
+            sa.select(User).where(
+                User.acc_id.in_(meta_ids),
+                User.node_id.in_(gh_user_ids),
+                User.login.isnot(None),
             ),
         ),
         load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache),
