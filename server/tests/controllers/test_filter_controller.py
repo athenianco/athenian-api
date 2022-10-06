@@ -18,7 +18,7 @@ from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.release_mine import mine_releases, override_first_releases
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
-from athenian.api.models.metadata.github import Release
+from athenian.api.models.metadata.github import CheckRun, Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent as DBDeployedComponent,
     DeploymentNotification as DBDeploymentNotification,
@@ -3863,6 +3863,34 @@ async def test_filter_check_runs_logical_repos(client, headers, logical_settings
     assert response.status == 200, response_text
     check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
     assert len(check_runs.items) == 7
+
+
+# TODO: fix response validation against the schema
+@pytest.mark.app_validate_responses(False)
+async def test_filter_check_runs_none_last_execution_url(client, headers, mdb):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["github.com/src-d/go-git"],
+    }
+
+    try:
+        check_run_cond = CheckRun.check_run_node_id == 2795485
+        orig_url = await mdb.fetch_val(sa.select(CheckRun.url).where(check_run_cond))
+        await mdb.execute(sa.update(CheckRun).where(check_run_cond).values(url=None))
+
+        response = await client.request(
+            method="POST", path="/v1/filter/code_checks", headers=headers, json=body,
+        )
+        response_text = (await response.read()).decode("utf-8")
+        assert response.status == 200, response_text
+        check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
+        assert any(c.last_execution_url is None for c in check_runs.items)
+        assert len(check_runs.items) == 7
+    finally:
+        await mdb.execute(sa.update(CheckRun).where(check_run_cond).values(url=orig_url))
 
 
 @pytest.mark.parametrize(
