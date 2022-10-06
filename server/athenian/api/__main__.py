@@ -17,6 +17,7 @@ import re
 import socket
 import sys
 from typing import Any, Callable, Iterable, Optional
+from urllib.parse import urlsplit
 import warnings
 
 import aiohttp.web
@@ -191,7 +192,17 @@ def parse_args() -> argparse.Namespace:
 
 def setup_context(log: logging.Logger) -> None:
     """Log general info about the running process and configure Sentry."""
-    log.info("%s", sys.argv)
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        pgpos = arg.find("postgresql://")
+        if pgpos >= 0:
+            try:
+                url = urlsplit(arg[pgpos:])
+            except ValueError:
+                continue
+            url = url._replace(netloc=url.netloc.replace(url.password, "<secured>"))
+            argv[i] = arg[:pgpos] + url.geturl()
+    log.info("%s", argv)
     log.info("Version: %s", metadata.__version__)
     log.info("Local time: %s", now := datetime.now())
     log.info("UTC time: %s", now.replace(tzinfo=timezone.utc))
