@@ -7,6 +7,7 @@ from athenian.api.async_utils import gather
 
 
 # TODO: fix response validation against the schema
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 @pytest.mark.app_validate_responses(False)
 async def test_heavy_load(client, headers):
     req_body = {
