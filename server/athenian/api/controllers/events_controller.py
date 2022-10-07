@@ -259,6 +259,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             ReleaseNotification.author_node_id.name: sql.excluded.author_node_id,
             ReleaseNotification.url.name: sql.excluded.url,
             ReleaseNotification.published_at.name: sql.excluded.published_at,
+            ReleaseNotification.updated_at.name: sql.excluded.updated_at,
         },
     )
     if rdb.url.dialect == "sqlite":
