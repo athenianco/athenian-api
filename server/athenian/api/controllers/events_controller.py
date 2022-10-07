@@ -228,11 +228,11 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             ReleaseNotification(
                 account_id=account,
                 repository_node_id=installed_repos[repo],
-                commit_hash_prefix=resolved_commits[PushCommit.sha.name] or n.commit,
+                commit_hash_prefix=(prefix := resolved_commits[PushCommit.sha.name] or n.commit),
                 resolved_commit_hash=(sha := resolved_commits[PushCommit.sha.name]),
                 resolved_commit_node_id=(cid := resolved_commits[PushCommit.node_id.name]),
                 resolved_at=now if cid is not None else None,
-                name=n.name,
+                name=n.name or f"{repo}@{prefix}",
                 author_node_id=resolved_users.get(author),
                 url=n.url
                 or (
