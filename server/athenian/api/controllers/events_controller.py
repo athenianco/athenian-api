@@ -2,6 +2,7 @@ import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
+import logging
 import re
 import sqlite3
 from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
@@ -26,6 +27,7 @@ from sqlalchemy import (
 )
 from xxhash._xxhash import xxh32_intdigest
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
@@ -212,8 +214,10 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         PushCommit.sha.name: None,
         PushCommit.node_id.name: None,
     }
+    log = logging.getLogger(f"{metadata.__package__}.notify_releases")
     for i, (n, author, status) in enumerate(zip(notifications, authors, statuses)):
         if status == ReleaseNotificationStatus.IGNORED_DUPLICATE:
+            log.warning("ignored %s", n.to_dict())
             continue
         repos.add(repo := n.repository.split("/", 1)[1])
         try:
