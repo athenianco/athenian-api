@@ -348,7 +348,10 @@ async def test_load_releases_events_logical(
     await models_insert(
         rdb,
         ReleaseNotificationFactory(
-            repository_node_id=40550, published_at=dt(2019, 2, 2), commit_hash_prefix="8d20cc5",
+            repository_node_id=40550,
+            published_at=dt(2019, 2, 2),
+            commit_hash_prefix="8d20cc5",
+            name="40550@8d20cc5",
         ),
     )
     release_settings = ReleaseSettings(

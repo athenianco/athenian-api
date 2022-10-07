@@ -272,8 +272,10 @@ async def test_notify_release_nasty_input(
     assert response.status == status
     if status == 200:
         assert json.loads((await response.read()).decode("utf-8")) == statuses
-        rows = await rdb.fetch_all(select([ReleaseNotification]))
-        assert len(rows) == 1
+        rows = await rdb.fetch_all(select(ReleaseNotification))
+        assert len(rows) == 1 + (
+            statuses[0] == statuses[1] == ReleaseNotificationStatus.ACCEPTED_PENDING
+        )
         assert rows[0][ReleaseNotification.commit_hash_prefix.name] == body[0]["commit"]
         assert rows[0][ReleaseNotification.resolved_commit_hash.name] is None
         assert rows[0][ReleaseNotification.resolved_commit_node_id.name] is None
