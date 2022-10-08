@@ -111,6 +111,7 @@ def split_prs_to_jira_ids(
         PyObject *repo_issues
         PyObject *aux
         optional[mi_vector[mi_vector[mi_unordered_map[string_view, PyObjectPtr]]]] resolved
+        mi_vector[mi_unordered_map[string_view, PyObjectPtr]] *dep_resolved
         optional[mi_vector[mi_vector[mi_vector[PyObjectPtr]]]] resolved_by_pr
         string_view issue
         string_view *id_map_vec_data
@@ -118,6 +119,7 @@ def split_prs_to_jira_ids(
         mi_unordered_map[string_view, PyObjectPtr] *resolved_data = NULL
         mi_vector[mi_vector[PyObjectPtr]] *resolved_by_pr_data
         mi_vector[mi_vector[PyObjectPtr]] *resolved_by_pr_dep = NULL
+        mi_vector[PyObjectPtr] *resolved_by_pr_dep_objs
         npdtype objdtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_OBJECT))
         npdtype u32dtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_UINT))
         PyObject **result_repo_data
@@ -149,15 +151,16 @@ def split_prs_to_jira_ids(
             if id_map_iter == deref(id_map).end():
                 strvec.emplace(deref(alloc))
                 deref(strvec).emplace_back(strptr, strlength)
-                deref(id_map)[node_id] = move(deref(strvec))
+                deref(id_map).emplace(node_id, move(deref(strvec)))
             else:
                 deref(id_map_iter).second.emplace_back(strptr, strlength)
 
         resolved.emplace(deref(alloc))
-        deref(resolved).resize(deps_count)
+        deref(resolved).reserve(deps_count)
+        for dep_pos in range(deps_count):
+            deref(resolved).emplace_back(deref(alloc))
         resolved_by_pr.emplace(deref(alloc))
-        deref(resolved_by_pr).resize(deps_count)
-        resolved_by_pr_data = deref(resolved_by_pr).data()
+        deref(resolved_by_pr).reserve(deps_count)
         for dep_pos in range(deps_count):
             aux = pr_node_ids_data[dep_pos]
             if (
@@ -180,20 +183,26 @@ def split_prs_to_jira_ids(
                 break
             local_pr_offsets_data = <npy_uint32 *> PyArray_DATA(aux)
             local_pr_offsets_count = PyArray_DIM(aux, 0)
-            deref(resolved)[dep_pos].resize(local_pr_offsets_count + (dep_len > 0))
-            resolved_data = deref(resolved)[dep_pos].data()
-            resolved_by_pr_dep = resolved_by_pr_data + dep_pos
-            resolved_by_pr_dep.resize(dep_len)
+            dep_resolved = &deref(resolved)[dep_pos]
+            sub_len = local_pr_offsets_count + (dep_len > 0)
+            dep_resolved.reserve(sub_len)
+            for i in range(sub_len):
+                dep_resolved.emplace_back(deref(alloc))
+            resolved_data = dep_resolved.data()
+            resolved_by_pr_dep = &deref(resolved_by_pr).emplace_back(deref(alloc))
+            resolved_by_pr_dep.reserve(dep_len)
 
             for i in range(dep_len):
+                resolved_by_pr_dep.emplace_back(deref(alloc))
                 while repo_idx < local_pr_offsets_count and i >= local_pr_offsets_data[repo_idx]:
                     repo_idx += 1
                 id_map_iter = deref(id_map).find(dep_pr_node_ids_data[i])
                 if id_map_iter != deref(id_map).end():
                     issues = &resolved_data[repo_idx]
                     issues_count = deref(id_map_iter).second.size()
-                    deref(resolved_by_pr_dep)[i].resize(issues_count)
-                    resolved_by_pr_dep_issues = deref(resolved_by_pr_dep)[i].data()
+                    resolved_by_pr_dep_objs = &deref(resolved_by_pr_dep)[i]
+                    resolved_by_pr_dep_objs.resize(issues_count)
+                    resolved_by_pr_dep_issues = resolved_by_pr_dep_objs.data()
                     id_map_vec_data = deref(id_map_iter).second.data()
                     for v in range(issues_count):
                         issue = id_map_vec_data[v]
@@ -277,6 +286,7 @@ def split_prs_to_jira_ids(
 
     extra_u32dtype_refs_count = deps_count + 1
     extra_objdtype_refs_count = 5
+    resolved_by_pr_data = deref(resolved_by_pr).data()
     
     for i in range(deps_count):
         dep_len = deref(resolved_by_pr)[i].size()
