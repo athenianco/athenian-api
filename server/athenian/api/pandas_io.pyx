@@ -2,6 +2,9 @@
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
+
 from datetime import timezone
 import json
 import pickle
@@ -18,16 +21,15 @@ from cpython cimport (
     PyTuple_New,
     PyTuple_SET_ITEM,
 )
+from cython.operator cimport dereference as deref
 from libc.stdint cimport uint16_t, uint32_t
 from libc.string cimport memcmp, memcpy, memset, strcpy, strlen, strncmp
 from libcpp.string cimport string
-from libcpp.vector cimport vector
 from numpy cimport (
     NPY_OBJECT,
     NPY_STRING,
     NPY_UNICODE,
     NPY_VOID,
-    PyArray_Descr,
     dtype as npdtype,
     import_array,
     ndarray,
@@ -60,6 +62,7 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
 )
+from athenian.api.native.mi_heap_stl_allocator cimport mi_heap_stl_allocator, mi_vector
 from athenian.api.native.numpy cimport (
     PyArray_BYTES,
     PyArray_CheckExact,
@@ -72,6 +75,7 @@ from athenian.api.native.numpy cimport (
     PyArray_STRIDE,
     PyArray_TYPE,
 )
+from athenian.api.native.optional cimport optional
 
 import numpy as np
 from pandas import DataFrame, DatetimeTZDtype
@@ -165,11 +169,16 @@ def serialize_df(df not None) -> bytes:
         char *input
         char *output
         Py_ssize_t i, error_i = -1
-        vector[vector[ColumnMeasurement]] measurements
+        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_vector[mi_vector[ColumnMeasurement]]] measurements
 
     mgr = df._mgr
-    measurements.resize(len(mgr.blocks))
+    alloc.emplace()
+    deref(alloc).disable_free()
+    measurements.emplace(deref(alloc))
+    deref(measurements).reserve(len(mgr.blocks))
     for i, block in enumerate(mgr.blocks):
+        deref(measurements).emplace_back(deref(alloc))
         loc, arr = block.__getstate__()
         blocks.append((type(block), loc))
         arr_obj = <PyObject *> arr
@@ -194,7 +203,7 @@ def serialize_df(df not None) -> bytes:
             object_block_size = 0
         else:
             assert ndim == 2
-            object_block_size = _measure_object_block(arr_obj, &measurements[i])
+            object_block_size = _measure_object_block(arr_obj, &deref(measurements)[i])
             if object_block_size <= 0:
                 if isinstance(loc, slice):
                     loc = list(range(*loc.indices(sum(b.shape[0] for b in mgr.blocks))))
@@ -234,7 +243,7 @@ def serialize_df(df not None) -> bytes:
             (<uint32_t *> output)[1] = PyArray_DIM(arr_obj, 1) if ndim > 1 else nodim
             output += 8
             if not strncmp(input, b"object", aux_size):
-                _serialize_object_block(arr_obj, output, &measurements[i])
+                _serialize_object_block(arr_obj, output, &deref(measurements)[i])
                 output += object_block_size
                 continue
             aux_size = PyArray_ITEMSIZE(arr_obj) * PyArray_DIM(arr_obj, 0) * (PyArray_DIM(arr_obj, 1) if ndim > 1 else 1)
@@ -264,7 +273,7 @@ cdef struct ColumnMeasurement:
     string subdtype
 
 
-cdef long _measure_object_block(PyObject *block, vector[ColumnMeasurement] *measurements):
+cdef long _measure_object_block(PyObject *block, mi_vector[ColumnMeasurement] *measurements):
     cdef:
         npy_intp columns, rows, y, x, i
         PyObject **data = <PyObject **> PyArray_BYTES(block)
@@ -493,7 +502,7 @@ cdef Py_ssize_t _measure_json(PyObject *node) nogil:
 cdef void _serialize_object_block(
     PyObject *block,
     char *output,
-    vector[ColumnMeasurement] *measurements,
+    mi_vector[ColumnMeasurement] *measurements,
 ) nogil:
     cdef:
         npy_intp columns, rows, stride_y, stride_x, y, x, i
