@@ -151,7 +151,7 @@ def split_prs_to_jira_ids(
             if id_map_iter == deref(id_map).end():
                 strvec.emplace(deref(alloc))
                 deref(strvec).emplace_back(strptr, strlength)
-                deref(id_map).emplace(node_id, move(deref(strvec)))
+                deref(id_map).try_emplace(node_id, move(deref(strvec)))
             else:
                 deref(id_map_iter).second.emplace_back(strptr, strlength)
 

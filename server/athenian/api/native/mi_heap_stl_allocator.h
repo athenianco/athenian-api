@@ -125,6 +125,7 @@ template<class T1,class T2> bool operator==(const mi_heap_stl_allocator<T1>& fir
 template<class T1,class T2> bool operator!=(const mi_heap_stl_allocator<T1>& first, const mi_heap_stl_allocator<T2>& second) mi_attr_noexcept { return first._heap != second._heap; }
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 template<
@@ -135,6 +136,12 @@ template<
 >
 using mi_unordered_map = std::unordered_map<T, U, HASH, PRED, mi_heap_stl_allocator<std::pair<const T, U>>>;
 
+template<
+    class T,
+    class HASH = std::hash<T>,
+    class PRED = std::equal_to<T>
+>
+using mi_unordered_set = std::unordered_set<T, HASH, PRED, mi_heap_stl_allocator<T>>;
 
 template<class T>
 using mi_vector = std::vector<T, mi_heap_stl_allocator<T>>;

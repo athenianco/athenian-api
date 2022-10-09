@@ -2,14 +2,16 @@
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize -std=c++17
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
+
 import cython
 
 from cpython cimport PyObject
+from cython.operator cimport dereference as deref
 from libc.stddef cimport wchar_t
 from libc.stdint cimport int32_t, int64_t
 from libc.string cimport memchr, memcpy
-from libcpp.unordered_map cimport pair, unordered_map
-from libcpp.unordered_set cimport unordered_set
 from numpy cimport (
     PyArray_DATA,
     PyArray_DESCR,
@@ -28,6 +30,13 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
 )
+from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_stl_allocator,
+    mi_unordered_map,
+    mi_unordered_set,
+    pair,
+)
+from athenian.api.native.optional cimport optional
 from athenian.api.native.string_view cimport string_view
 
 import numpy as np
@@ -69,12 +78,16 @@ cdef ndarray _unordered_unique_pystr(ndarray arr):
         int64_t i, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0) >> 3
-        unordered_map[string_view, int64_t] hashtable
+        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_unordered_map[string_view, int64_t]] hashtable
         pair[string_view, int64_t] it
         ndarray result
 
     with nogil:
-        hashtable.reserve(length // 16)
+        alloc.emplace()
+        deref(alloc).disable_free()
+        hashtable.emplace(deref(alloc))
+        deref(hashtable).reserve(length // 16)
         for i in range(length):
             str_obj = data_in[i * stride]
             if str_obj == Py_None:
@@ -82,12 +95,12 @@ cdef ndarray _unordered_unique_pystr(ndarray arr):
             str_data = <char *> PyUnicode_DATA(str_obj)
             str_len = PyUnicode_GET_LENGTH(str_obj)
             str_kind = PyUnicode_KIND(str_obj)
-            hashtable.insert(pair[string_view, int64_t](string_view(str_data, str_len * str_kind), i))
+            deref(hashtable).try_emplace(string_view(str_data, str_len * str_kind), i)
 
-    result = np.empty(hashtable.size(), dtype=object)
+    result = np.empty(deref(hashtable).size(), dtype=object)
     data_out = <PyObject **>PyArray_DATA(result)
     i = 0
-    for it in hashtable:
+    for it in deref(hashtable):
         str_obj = data_in[it.second]
         data_out[i] = str_obj
         Py_INCREF(str_obj)
@@ -103,21 +116,25 @@ cdef ndarray _unordered_unique_str(ndarray arr, np_dtype dtype):
             itemsize = dtype.itemsize, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0)
-        unordered_set[string_view] hashtable
+        optional[mi_heap_stl_allocator[string_view]] alloc
+        optional[mi_unordered_set[string_view]] hashtable
         string_view it
         ndarray result
 
     with nogil:
-        hashtable.reserve(length // 16)
+        alloc.emplace()
+        deref(alloc).disable_free()
+        hashtable.emplace(deref(alloc))
+        deref(hashtable).reserve(length // 16)
         for i in range(length):
-            hashtable.insert(string_view(data + i * stride, itemsize))
+            deref(hashtable).emplace(data + i * stride, itemsize)
 
-    result = np.empty(hashtable.size(), dtype=dtype)
+    result = np.empty(deref(hashtable).size(), dtype=dtype)
 
     with nogil:
         data = <char *>PyArray_DATA(result)
         i = 0
-        for it in hashtable:
+        for it in deref(hashtable):
             memcpy(data + i * itemsize, it.data(), itemsize)
             i += 1
     return result
@@ -136,21 +153,25 @@ cdef ndarray _unordered_unique_int(ndarray arr, np_dtype dtype, varint _):
             itemsize = dtype.itemsize, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0)
-        unordered_set[varint] hashtable
+        optional[mi_heap_stl_allocator[varint]] alloc
+        optional[mi_unordered_set[varint]] hashtable
         varint it
         ndarray result
 
     with nogil:
-        hashtable.reserve(length // 16)
+        alloc.emplace()
+        deref(alloc).disable_free()
+        hashtable.emplace(deref(alloc))
+        deref(hashtable).reserve(length // 16)
         for i in range(length):
-            hashtable.insert((<varint *>(data + i * stride))[0])
+            deref(hashtable).emplace((<varint *>(data + i * stride))[0])
 
-    result = np.empty(hashtable.size(), dtype=dtype)
+    result = np.empty(deref(hashtable).size(), dtype=dtype)
 
     with nogil:
         data = <char *> PyArray_DATA(result)
         i = 0
-        for it in hashtable:
+        for it in deref(hashtable):
             (<varint *>(data + i * itemsize))[0] = it
             i += 1
     return result
@@ -184,12 +205,16 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
             itemsize = dtype_dict.itemsize, \
             length = PyArray_DIM(dictionary, 0), \
             stride = PyArray_STRIDE(dictionary, 0)
-        unordered_set[string_view] hashtable
-        unordered_set[string_view].iterator end
+        optional[mi_heap_stl_allocator[string_view]] alloc
+        optional[mi_unordered_set[string_view]] hashtable
+        mi_unordered_set[string_view].iterator end
         ndarray result
 
     with nogil:
-        hashtable.reserve(length * 4)
+        alloc.emplace()
+        deref(alloc).disable_free()
+        hashtable.emplace(deref(alloc))
+        deref(hashtable).reserve(length * 4)
         if is_char:
             for i in range(length):
                 s = data_dictionary + i * stride
@@ -202,7 +227,7 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
                     size = nullptr - s
                 else:
                     size = itemsize
-                hashtable.insert(string_view(s, size))
+                deref(hashtable).emplace(s, size)
         else:
             for i in range(length):
                 s = data_dictionary + i * stride
@@ -211,7 +236,7 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
                     size = nullptr - s
                 else:
                     size = itemsize
-                hashtable.insert(string_view(s, size))
+                deref(hashtable).emplace(s, size)
 
         itemsize = dtype_trial.itemsize
         length = PyArray_DIM(trial, 0)
@@ -221,7 +246,7 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
 
     with nogil:
         output = <char *>PyArray_DATA(result)
-        end = hashtable.end()
+        end = deref(hashtable).end()
         if is_char:
             for i in range(length):
                 s = data_trial + i * stride
@@ -234,7 +259,7 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
                     size = nullptr - s
                 else:
                     size = itemsize
-                output[i] = hashtable.find(string_view(s, size)) != end
+                output[i] = deref(hashtable).find(string_view(s, size)) != end
         else:
             for i in range(length):
                 s = data_trial + i * stride
@@ -243,5 +268,5 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
                     size = nullptr - s
                 else:
                     size = itemsize
-                output[i] = hashtable.find(string_view(s, size)) != end
+                output[i] = deref(hashtable).find(string_view(s, size)) != end
     return result
