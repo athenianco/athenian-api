@@ -348,11 +348,11 @@ def _remove_force_push_dropped(
             np.sort(
                 branches[columns[0] if isinstance(columns[0], str) else columns[0].name].values,
             ),
-        ),
+        )
+        if not branches.empty
+        else None,
         prune,
-    )
-    if not branches.empty
-    else None,
+    ),
     refresh_on_access=True,
 )
 async def fetch_repository_commits(
