@@ -439,20 +439,23 @@ jobs:
         docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
         docker run --rm us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api --help
         docker build -t test --build-arg base=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api server/tests
-        run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
+        mkdir /tmp/io
+        sudo chown 1984:1984 /tmp/io # worker user inside container needs write access to directory
+        run="docker run --network=host --rm -v /tmp/io:/home/worker/io -w /home/worker/io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
         $run run -a -m athenian.api.models.state postgresql://postgres:postgres@0.0.0.0:5432/state
         $run run -a -m athenian.api.invite_admin postgresql://postgres:postgres@0.0.0.0:5432/state
         $run run -a /usr/local/bin/alembic downgrade 34eafe9e7cd9
         $run combine
         $run xml
         docker rmi test
-        sed -i 's/[\./]server[\./]//g' coverage.xml
-        sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" coverage.xml
-        rm .coverage
+        sudo chown $(whoami) -R /tmp/io
+        sed -i 's/[\./]server[\./]//g' /tmp/io/coverage.xml
+        sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" /tmp/io/coverage.xml
     - uses: codecov/codecov-action@v1
       name: codecov
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: /tmp/io/coverage.xml
     - name: docker prune
       run: |
         (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
