@@ -34,6 +34,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
     cd python3.10* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
+    sed -i 's/__main__/__skip__/g' Lib/test/regrtest.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
     DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
     cd .. && \
