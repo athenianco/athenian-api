@@ -99,10 +99,10 @@ async def resolve_update_goal(
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            if deletions := update.team_goal_deletions:
-                await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
             if assignments := update.team_goal_assignments:
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
+            if deletions := update.team_goal_deletions:
+                await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
             kw = {}
 
             for update_info, col in (
