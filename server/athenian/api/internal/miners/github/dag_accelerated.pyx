@@ -1,6 +1,9 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
+# distutils: extra_compile_args = -std=c++17
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
 
 from posix.dlfcn cimport RTLD_LAZY, dlclose, dlopen, dlsym
 
@@ -28,6 +31,8 @@ from athenian.api.native.cpython cimport (
     PyUnicode_DATA,
     PyUnicode_FromStringAndSize,
 )
+from athenian.api.native.mi_heap_stl_allocator cimport mi_heap_stl_allocator, mi_vector
+from athenian.api.native.optional cimport optional
 from athenian.api.native.string_view cimport string_view
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -989,10 +994,12 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
                     borders[edge] = 1
 
 
-def extract_pr_commits(ndarray hashes,
-                       ndarray vertexes,
-                       ndarray edges,
-                       ndarray pr_merges) -> Sequence[np.ndarray]:
+def extract_pr_commits(
+    ndarray hashes,
+    ndarray vertexes,
+    ndarray edges,
+    ndarray pr_merges,
+) -> Sequence[np.ndarray]:
     if len(hashes) == 0:
         return [np.array([], dtype="S40") for _ in pr_merges]
     order = np.argsort(pr_merges)
@@ -1002,34 +1009,60 @@ def extract_pr_commits(ndarray hashes,
     pr_merges = found_pr_merges.astype(np.uint32)[np.argsort(order)]
     left_vertexes_map = np.zeros(len(hashes), dtype=np.int8)
     cdef:
-        vector[vector[uint32_t]] pr_commits = vector[vector[uint32_t]](len(pr_merges))
+        optional[mi_vector[mi_vector[uint32_t]]] pr_commits
+        optional[mi_heap_stl_allocator[uint32_t]] alloc
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] pr_merges_view = pr_merges
         int8_t[:] left_vertexes_map_view = left_vertexes_map
+        size_t pr_merges_len = len(pr_merges), i, j, v
+        char *hashes_data = PyArray_BYTES(hashes)
+        mi_vector[uint32_t] *pr_vertexes
+        ndarray pr_hashes
+        char *pr_hashes_data
     with nogil:
-        _extract_pr_commits(vertexes_view, edges_view, pr_merges_view, left_vertexes_map_view,
-                            &pr_commits)
-    result = np.zeros(len(pr_commits), dtype=object)
-    for i, pr_vertexes in enumerate(pr_commits):
-        result[i] = hashes[list(pr_vertexes)]
+        alloc.emplace()
+        dereference(alloc).disable_free()
+        pr_commits.emplace(dereference(alloc))
+        dereference(pr_commits).reserve(pr_merges_len)
+        for i in range(pr_merges_len):
+            dereference(pr_commits).emplace_back(dereference(alloc))
+        _extract_pr_commits(
+            vertexes_view,
+            edges_view,
+            pr_merges_view,
+            left_vertexes_map_view,
+            dereference(pr_commits),
+        )
+    result = np.zeros(pr_merges_len, dtype=object)
+    for i in range(pr_merges_len):
+        pr_vertexes = &dereference(pr_commits)[i]
+        pr_hashes = np.empty(pr_vertexes.size(), dtype=hashes.dtype)
+        pr_hashes_data = PyArray_BYTES(pr_hashes)
+        for j in range(pr_vertexes.size()):
+            v = dereference(pr_vertexes)[j]
+            memcpy(pr_hashes_data + j * 40, hashes_data + v * 40, 40)
+        result[i] = pr_hashes
     return result
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _extract_pr_commits(const uint32_t[:] vertexes,
-                              const uint32_t[:] edges,
-                              const uint32_t[:] pr_merges,
-                              int8_t[:] left_vertexes_map,
-                              vector[vector[uint32_t]] *pr_commits) nogil:
+cdef void _extract_pr_commits(
+    const uint32_t[:] vertexes,
+    const uint32_t[:] edges,
+    const uint32_t[:] pr_merges,
+    int8_t[:] left_vertexes_map,
+    mi_vector[mi_vector[uint32_t]] &pr_commits,
+) nogil:
     cdef:
         long i
         uint32_t first, last, v, j, edge, peek
         uint32_t oob = len(vertexes)
-        vector[uint32_t] *my_pr_commits
-        vector[uint32_t] boilerplate
-    boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
+        mi_vector[uint32_t] *my_pr_commits
+        optional[mi_vector[uint32_t]] boilerplate
+    boilerplate.emplace(pr_commits.get_allocator())
+    dereference(boilerplate).reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(len(pr_merges)):
         v = pr_merges[i]
         if v == oob:
@@ -1041,26 +1074,26 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
 
         # extract the full sub-DAG of the main branch
         left_vertexes_map[:] = 0
-        boilerplate.clear()
-        boilerplate.push_back(edges[first])
-        while not boilerplate.empty():
-            peek = boilerplate.back()
-            boilerplate.pop_back()
+        dereference(boilerplate).clear()
+        dereference(boilerplate).push_back(edges[first])
+        while not dereference(boilerplate).empty():
+            peek = dereference(boilerplate).back()
+            dereference(boilerplate).pop_back()
             if left_vertexes_map[peek]:
                 continue
             left_vertexes_map[peek] = 1
             for j in range(vertexes[peek], vertexes[peek + 1]):
                 edge = edges[j]
                 if not left_vertexes_map[edge]:
-                    boilerplate.push_back(edge)
+                    dereference(boilerplate).push_back(edge)
 
         # traverse the DAG starting from the side edge, stop on any vertex in the main sub-DAG
-        my_pr_commits = &dereference(pr_commits)[i]
+        my_pr_commits = &pr_commits[i]
         my_pr_commits.push_back(v)  # include the merge commit in the PR
-        boilerplate.push_back(edges[last - 1])
-        while not boilerplate.empty():
-            peek = boilerplate.back()
-            boilerplate.pop_back()
+        dereference(boilerplate).push_back(edges[last - 1])
+        while not dereference(boilerplate).empty():
+            peek = dereference(boilerplate).back()
+            dereference(boilerplate).pop_back()
             if left_vertexes_map[peek]:
                 continue
             left_vertexes_map[peek] = 1
@@ -1068,7 +1101,7 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
             for j in range(vertexes[peek], vertexes[peek + 1]):
                 edge = edges[j]
                 if not left_vertexes_map[edge]:
-                    boilerplate.push_back(edge)
+                    dereference(boilerplate).push_back(edge)
 
 
 def extract_independent_ownership(ndarray hashes,
