@@ -6,16 +6,18 @@
 from typing import Any, Sequence
 
 cimport cython
-from cpython cimport Py_INCREF, PyObject, PyTypeObject
+from cpython cimport Py_INCREF, PyObject
 from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_Check
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check
 from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cpython.unicode cimport PyUnicode_Check
 from numpy cimport (
     NPY_ARRAY_C_CONTIGUOUS,
+    NPY_OBJECT,
     PyArray_CheckExact,
     PyArray_DATA,
     PyArray_Descr,
+    PyArray_DescrFromType,
     PyArray_DIM,
     PyArray_ISOBJECT,
     PyArray_ISSTRING,
@@ -38,7 +40,7 @@ from athenian.api.native.cpython cimport (
     PyTuple_GET_ITEM,
     PyUnicode_GET_LENGTH,
 )
-from athenian.api.native.numpy cimport PyArray_NewFromDescr, PyArray_Type
+from athenian.api.native.numpy cimport PyArray_DescrNew, PyArray_NewFromDescr, PyArray_Type
 
 import asyncpg
 import numpy as np
@@ -304,4 +306,30 @@ def array_from_buffer(buffer not None, npdtype dtype, npy_intp count, npy_intp o
         NULL,
     )
     PyArray_SetBaseObject(arr, buffer)
+    return arr
+
+
+def array_of_objects(int length, fill_value) -> ndarray:
+    cdef:
+        ndarray arr
+        npdtype objdtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_OBJECT))
+        npy_intp nplength = length, i
+        PyObject **data
+        PyObject *obj = <PyObject *> fill_value
+
+    arr = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> objdtype,
+        1,
+        &nplength,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(objdtype)
+    data = <PyObject **> PyArray_DATA(arr)
+    for i in range(nplength):
+        data[i] = obj
+    obj.ob_refcnt += nplength
     return arr
