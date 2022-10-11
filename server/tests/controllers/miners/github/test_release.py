@@ -971,7 +971,7 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_d
         None,
     )
     consistent, (hashes, vertexes, edges) = dags["src-d/go-git"]
-    assert consistent
+    assert consistent != prune
     assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
     assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
     assert (edges == np.array([], dtype=np.uint32)).all()
@@ -1336,6 +1336,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     )
     assert len(subhashes) == 1414
     _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+        True,
         subhashes,
         subvertexes,
         subedges,
@@ -1349,6 +1350,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     assert_array_equal(newvertexes, vertexes)
     assert_array_equal(newedges, edges)
     _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+        True,
         subhashes,
         subvertexes,
         subedges,

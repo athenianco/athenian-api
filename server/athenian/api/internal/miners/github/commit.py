@@ -409,7 +409,7 @@ async def fetch_repository_commits(
         required_shas = required_shas[required_shas != b""]
         repo_heads[repo] = required_shas
         try:
-            _, (hashes, vertexes, edges) = repos[drop_logical_repo(repo)]
+            consistent, (hashes, vertexes, edges) = repos[drop_logical_repo(repo)]
         except KeyError:
             # totally OK, `branches` may include repositories from other ForSet-s
             continue
@@ -428,13 +428,22 @@ async def fetch_repository_commits(
             missed_ids = df_ids[missed_indexes[order]]
             tasks.append(
                 _fetch_commit_history_dag(
-                    hashes, vertexes, edges, missed_shas, missed_ids, repo, meta_ids, mdb,
+                    consistent,
+                    hashes,
+                    vertexes,
+                    edges,
+                    missed_shas,
+                    missed_ids,
+                    repo,
+                    meta_ids,
+                    mdb,
                 ),
             )
         else:
             if prune:
+                consistent = False
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_shas)
-            result[repo] = True, (hashes, vertexes, edges)
+            result[repo] = consistent, (hashes, vertexes, edges)
     # traverse commits starting from the missing branch heads
     add_pdb_hits(pdb, "fetch_repository_commits", len(df_shas) - missed_counter)
     add_pdb_misses(pdb, "fetch_repository_commits", missed_counter)
@@ -443,37 +452,43 @@ async def fetch_repository_commits(
         sql_values = []
         for consistent, repo, hashes, vertexes, edges in new_dags:
             assert (hashes[1:] > hashes[:-1]).all(), repo
-            sql_values.append(
-                GitHubCommitHistory(
-                    acc_id=account,
-                    repository_full_name=repo,
-                    dag=DAGStruct.from_fields(hashes=hashes, vertexes=vertexes, edges=edges).data,
+            if consistent:
+                # we don't want to overwrite the full DAG with pruned DAG
+                sql_values.append(
+                    GitHubCommitHistory(
+                        acc_id=account,
+                        repository_full_name=repo,
+                        dag=DAGStruct.from_fields(
+                            hashes=hashes, vertexes=vertexes, edges=edges,
+                        ).data,
+                    )
+                    .create_defaults()
+                    .explode(with_primary_keys=True),
                 )
-                .create_defaults()
-                .explode(with_primary_keys=True),
-            )
             if prune:
+                consistent = False
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
             result[repo] = consistent, (hashes, vertexes, edges)
-        sql = (await dialect_specific_insert(pdb))(GitHubCommitHistory)
-        sql = sql.on_conflict_do_update(
-            index_elements=GitHubCommitHistory.__table__.primary_key.columns,
-            set_={
-                GitHubCommitHistory.dag.name: sql.excluded.dag,
-                GitHubCommitHistory.updated_at.name: sql.excluded.updated_at,
-            },
-        )
+        if sql_values:
+            sql = (await dialect_specific_insert(pdb))(GitHubCommitHistory)
+            sql = sql.on_conflict_do_update(
+                index_elements=GitHubCommitHistory.__table__.primary_key.columns,
+                set_={
+                    GitHubCommitHistory.dag.name: sql.excluded.dag,
+                    GitHubCommitHistory.updated_at.name: sql.excluded.updated_at,
+                },
+            )
 
-        async def execute():
-            if pdb.url.dialect == "sqlite":
-                async with pdb.connection() as pdb_conn:
-                    async with pdb_conn.transaction():
-                        await pdb_conn.execute_many(sql, sql_values)
-            else:
-                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
-                await pdb.execute_many(sql, sql_values)
+            async def execute():
+                if pdb.url.dialect == "sqlite":
+                    async with pdb.connection() as pdb_conn:
+                        async with pdb_conn.transaction():
+                            await pdb_conn.execute_many(sql, sql_values)
+                else:
+                    # executemany() is atomic in new asyncpg versions
+                    await pdb.execute_many(sql, sql_values)
 
-        await defer(execute(), "fetch_repository_commits/pdb")
+            await defer(execute(), "fetch_repository_commits/pdb")
     for repo, pdag in repos.items():
         if repo not in result:
             result[repo] = (True, _empty_dag()) if prune else pdag
@@ -583,7 +598,7 @@ async def fetch_precomputed_commit_history_dags(
     format_version = ghrc.__table__.columns[ghrc.format_version.key].default.arg
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
-            select([ghrc.repository_full_name, ghrc.dag]).where(
+            select(ghrc.repository_full_name, ghrc.dag).where(
                 ghrc.format_version == format_version,
                 ghrc.repository_full_name.in_(repos),
                 ghrc.acc_id == account,
@@ -608,6 +623,7 @@ def _empty_dag() -> DAG:
 
 @sentry_span
 async def _fetch_commit_history_dag(
+    consistent: bool,
     hashes: np.ndarray,
     vertexes: np.ndarray,
     edges: np.ndarray,
@@ -617,7 +633,6 @@ async def _fetch_commit_history_dag(
     meta_ids: Tuple[int, ...],
     mdb: Database,
 ) -> Tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
-    consistent = True
     max_stop_heads = 25
     max_inner_partitions = 25
     log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
