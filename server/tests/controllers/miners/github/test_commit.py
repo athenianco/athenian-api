@@ -255,6 +255,7 @@ async def test__fetch_commit_history_dag_inconsistent(mdb_rw, dag):
     )
     try:
         consistent, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+            True,
             subhashes,
             subvertexes,
             subedges,
