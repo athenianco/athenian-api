@@ -1,3 +1,5 @@
+"""Tools to build a Goals tree with measured metrics."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
