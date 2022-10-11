@@ -1,4 +1,5 @@
 from libcpp cimport bool
+from libcpp.string cimport string
 from libcpp.unordered_map cimport pair, unordered_map
 from libcpp.unordered_set cimport unordered_set
 from libcpp.vector cimport vector
@@ -25,3 +26,7 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
         mi_vector mi_vector[X](mi_heap_stl_allocator[X]&) except +
         T& emplace_back(...) except +
         mi_heap_stl_allocator[T] get_allocator()
+
+    cdef cppclass mi_string(string):
+        mi_string mi_string[X](const char *, size_t, mi_heap_stl_allocator[X]&) except +
+        mi_heap_stl_allocator[char] get_allocator()

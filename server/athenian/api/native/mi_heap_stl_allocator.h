@@ -124,6 +124,7 @@ template<class T> struct mi_heap_stl_allocator {
 template<class T1,class T2> bool operator==(const mi_heap_stl_allocator<T1>& first, const mi_heap_stl_allocator<T2>& second) mi_attr_noexcept { return first._heap == second._heap; }
 template<class T1,class T2> bool operator!=(const mi_heap_stl_allocator<T1>& first, const mi_heap_stl_allocator<T2>& second) mi_attr_noexcept { return first._heap != second._heap; }
 
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -145,3 +146,13 @@ using mi_unordered_set = std::unordered_set<T, HASH, PRED, mi_heap_stl_allocator
 
 template<class T>
 using mi_vector = std::vector<T, mi_heap_stl_allocator<T>>;
+
+using mi_string = std::basic_string<char, std::char_traits<char>, mi_heap_stl_allocator<char>>;
+
+namespace std {
+    template<> struct hash<mi_string> {
+        size_t operator()(const mi_string &s) const {
+            return std::hash<std::string_view>()(s);
+        }
+    };
+}
