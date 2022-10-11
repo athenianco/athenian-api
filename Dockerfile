@@ -70,7 +70,12 @@ RUN apt-get update && \
     apt-key add - && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
-    rm -rf /opt/intel/documentation_* /opt/intel/compilers_and_libraries_*/linux/mkl/{bin,tools,examples} && \
+    rm -rf \
+        /opt/intel/documentation_* \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/bin \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/tools \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/examples && \
+    find /opt/intel/compilers_and_libraries_*/linux/mkl -name '*.a' -delete && \
     ln -s /opt/intel/compilers_and_libraries_*/linux/mkl /opt/intel/mkl && \
     printf '/opt/intel/mkl/lib/intel64_lin' >> /etc/ld.so.conf.d/mkl.conf && \
     ldconfig && \
