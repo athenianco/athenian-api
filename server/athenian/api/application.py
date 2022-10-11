@@ -14,7 +14,7 @@ import signal
 import socket
 import time
 import traceback
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import (
@@ -41,7 +41,9 @@ import psutil
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
+import yaml
 
+import athenian.api
 from athenian.api import align, metadata
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.ariadne import AriadneException, GraphQL
@@ -260,6 +262,7 @@ class AthenianApp(especifico.AioHttpApp):
          "performance_db": "%{X-Performance-DB}o"}
     """.strip(),
     )
+    _ref_resolver_store: Optional[dict[str, dict]] = None  # lazy init
 
     def __init__(
         self,
@@ -371,6 +374,7 @@ class AthenianApp(especifico.AioHttpApp):
                 },
             },
             validate_responses=validate_responses,
+            ref_resolver_store=self._get_ref_resolver_store(),
         )
         self.add_api("openapi.yaml", base_path="/v1", **add_api_kwargs)
         self.add_api("../align/spec/openapi.yaml", base_path="/private", **add_api_kwargs)
@@ -435,7 +439,7 @@ class AthenianApp(especifico.AioHttpApp):
                 raise GracefulExit() from None
 
         self.app.on_shutdown.append(self.shutdown)
-        self._on_dbs_connected_callbacks = []  # type: List[asyncio.Future]
+        self._on_dbs_connected_callbacks: list[asyncio.Future] = []
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -1018,3 +1022,20 @@ class AthenianApp(especifico.AioHttpApp):
         if (health := self.app.get("health")) is not None:
             self.app[PROMETHEUS_REGISTRY_VAR_NAME].unregister(health)
             del self.app["health"]
+
+    @classmethod
+    def _get_ref_resolver_store(cls) -> dict[str, dict]:
+        """Build the custom ref resolver store for especifico.
+
+        This store avoids network access to resolve references to public API schema.
+
+        """
+        if cls._ref_resolver_store is None:
+            public_schema_url = "https://api.athenian.co/v1/openapi.json"
+            public_schema_path = Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml"
+
+            with public_schema_path.open("r") as fp:
+                public_schema = yaml.load(fp, Loader=yaml.CSafeLoader)
+
+            cls._ref_resolver_store = {public_schema_url: public_schema}
+        return cls._ref_resolver_store
