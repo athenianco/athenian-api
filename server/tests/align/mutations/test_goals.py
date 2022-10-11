@@ -1002,3 +1002,29 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert tg_row[TeamGoal.jira_projects.name] == ["P0", "P1"]
         assert tg_row[TeamGoal.jira_priorities.name] is None
         assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]
+
+    async def test_unset_then_set_last_team_goal(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=20),
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            TeamGoalFactory(team_id=10, goal_id=20),
+        )
+        team_changes = [
+            {TeamGoalChangeFields.teamId: 10, TeamGoalChangeFields.remove: True},
+            {TeamGoalChangeFields.teamId: 11, TeamGoalChangeFields.target: {"int": 2}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 20,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+
+        team_11_row = await assert_existing_row(sdb, TeamGoal, team_id=11, goal_id=20)
+        assert team_11_row[TeamGoal.target.name] == 2
+        await assert_missing_row(sdb, TeamGoal, team_id=10, goal_id=20)
