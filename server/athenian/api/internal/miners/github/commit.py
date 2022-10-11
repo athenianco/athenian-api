@@ -633,7 +633,7 @@ async def _fetch_commit_history_dag(
         if len(stop_heads) > max_stop_heads:
             min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
             rows = await mdb.fetch_all(
-                select([NodeCommit.oid])
+                select(NodeCommit.oid)
                 .where(
                     NodeCommit.oid.in_(stop_heads),
                     NodeCommit.committed_date > min_commit_time,

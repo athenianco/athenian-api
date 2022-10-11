@@ -1839,29 +1839,8 @@ async def _fetch_commit_stats(
     else:
         rebased_map = {}
 
-    if len(commit_rows) != len(all_mentioned_hashes):
-        seen_commit_shas: set[str] = set()
-        dupes: set[str] = set()
-        dedup_commit_rows = []
-        for r in commit_rows:
-            if (sha := r[NodeCommit.sha.name]) not in seen_commit_shas:
-                dedup_commit_rows.append(r)
-                seen_commit_shas.add(sha)
-            else:
-                dupes.add(sha)
-        del seen_commit_shas
-        log = logging.getLogger(f"{__name__}._fetch_commit_stats")
-        msg = "number of retrieved commit rows is different than of requested hashes"
-        if dupes:
-            msg += (
-                " because some PRs in github.node_pull_request (acc_id %s) have "
-                "the same merge commit: %s"
-            )
-            log.error(msg, meta_ids, dupes)
-        else:
-            log.error(msg)
-        commit_rows = dedup_commit_rows
-
+    seen_commit_shas: dict[str, int] = {}
+    pure_commits_count = 0
     shas = np.zeros(len(commit_rows), "S40")
     lines = np.zeros(len(commit_rows), int)
     commit_authors = np.zeros_like(lines)
@@ -1888,10 +1867,17 @@ async def _fetch_commit_stats(
             merge_shas.append(sha)
             pr_ids.append(pr)
             pr_authors.append(row["pr_author"] or 0)
+            origin = seen_commit_shas.get(sha)
             if with_extended_prs:
-                pr_numbers.append(row[NodePullRequest.number.name])
-                pr_titles.append(row[NodePullRequest.title.name])
+                pr_numbers.append(number := row[NodePullRequest.number.name])
                 pr_createds.append(row[NodePullRequest.created_at.name])
+                if origin:
+                    pr_titles.append(
+                        row[NodePullRequest.title.name] + f" [duplicate of #{origin}]",
+                    )
+                else:
+                    seen_commit_shas[sha] = number
+                    pr_titles.append(row[NodePullRequest.title.name])
                 pr_additions.append(additions := row[NodePullRequest.additions.name])
                 pr_deletions.append(deletions := row[NodePullRequest.deletions.name])
                 pr_lines.append(additions + deletions)
@@ -1899,8 +1885,21 @@ async def _fetch_commit_stats(
                 if has_logical:
                     pr_titles.append(row[NodePullRequest.title.name])
                 pr_lines.append(row["pr_lines"])
-            prs_by_repo[repo].append(sha)
+                if not origin:
+                    seen_commit_shas[sha] = pr
+
+            if not origin:
+                prs_by_repo[repo].append(sha)
             pr_repo_names.append(repo)
+        else:
+            pure_commits_count += 1
+    if detected_duplicate_prs := (len(seen_commit_shas) + pure_commits_count) < len(commit_rows):
+        log = logging.getLogger(f"{__name__}._fetch_commit_stats")
+        log.warning(
+            "detected %d duplicate PRs",
+            len(commit_rows) - pure_commits_count - len(seen_commit_shas),
+        )
+    del seen_commit_shas
     if has_logical:
         pr_labels = await fetch_labels_to_filter(pr_ids, meta_ids, mdb)
     else:
@@ -1930,16 +1929,24 @@ async def _fetch_commit_stats(
     extra_jira_task = None
 
     if has_logical:
-        prs_df = pd.DataFrame(
-            {
-                PullRequest.node_id.name: pr_ids,
-                PullRequest.repository_full_name.name: pr_repo_names,
-                PullRequest.title.name: pr_titles,
-                PullRequest.merge_commit_sha.name: merge_shas,
-                PullRequest.user_node_id.name: pr_authors,
-                "lines": pr_lines,
-            },
-        )
+        df_body = {
+            PullRequest.node_id.name: pr_ids,
+            PullRequest.repository_full_name.name: pr_repo_names,
+            PullRequest.title.name: pr_titles,
+            PullRequest.merge_commit_sha.name: merge_shas,
+            PullRequest.user_node_id.name: pr_authors,
+            "lines": pr_lines,
+        }
+        if with_extended_prs:
+            df_body.update(
+                {
+                    PullRequest.number.name: pr_numbers,
+                    PullRequest.additions.name: pr_additions,
+                    PullRequest.deletions.name: pr_deletions,
+                    PullRequest.created_at.name: pr_createds,
+                },
+            )
+        prs_df = pd.DataFrame(df_body)
         prs_df = split_logical_prs(
             prs_df,
             pr_labels,
@@ -1953,9 +1960,18 @@ async def _fetch_commit_stats(
         pr_authors = prs_df[PullRequest.user_node_id.name].values
         pr_lines = prs_df["lines"].values
         pr_repo_names = prs_df[PullRequest.repository_full_name.name].values
+        if with_extended_prs:
+            pr_numbers = prs_df[PullRequest.number.name].values
+            pr_titles = prs_df[PullRequest.title.name].values
+            pr_additions = prs_df[PullRequest.additions.name].values
+            pr_deletions = prs_df[PullRequest.deletions.name].values
+            pr_createds = prs_df[PullRequest.created_at.name].values
 
     sha_order = np.argsort(merge_shas)
     merge_shas = merge_shas[sha_order]
+    unique_merge_shas, merge_sha_ff, merge_sha_counts = np.unique(
+        merge_shas, return_index=True, return_counts=True,
+    )
     pr_ids = pr_ids[sha_order]
     pr_authors = pr_authors[sha_order]
     pr_lines = pr_lines[sha_order]
@@ -1970,15 +1986,16 @@ async def _fetch_commit_stats(
     for repo, hashes in prs_by_repo.items():
         dag = dags[repo][1]
         pr_hashes = extract_pr_commits(*dag, np.array(hashes, dtype="S40"))
-        merge_sha_indexes = np.searchsorted(merge_shas, hashes)
         commit_counts = nested_lengths(pr_hashes)
-        if has_logical:
-            _, sha_counts = np.unique(merge_shas[merge_sha_indexes], return_counts=True)
-            commit_counts = np.repeat(commit_counts, sha_counts)
-            merge_sha_indexes = np.repeat(
-                merge_sha_indexes + sha_counts - sha_counts.cumsum(), sha_counts,
-            ) + np.arange(len(merge_sha_indexes))
-        pr_commits[merge_sha_indexes] = commit_counts
+        my_sha_indexes = np.searchsorted(unique_merge_shas, hashes)
+        if has_logical or detected_duplicate_prs:  # == (len(unique_merge_shas) != len(merge_shas))
+            my_merge_counts = merge_sha_counts[my_sha_indexes]
+            commit_counts = np.repeat(commit_counts, my_merge_counts)
+            my_sha_indexes = merge_sha_ff[my_sha_indexes]
+            my_sha_indexes = np.repeat(
+                my_sha_indexes + my_merge_counts - my_merge_counts.cumsum(), my_merge_counts,
+            ) + np.arange(len(commit_counts))
+        pr_commits[my_sha_indexes] = commit_counts
     selected = [
         NodePullRequest.id,
         NodePullRequest.repository_id,
