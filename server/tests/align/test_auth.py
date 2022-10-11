@@ -36,10 +36,10 @@ async def test_auth_failure(client, headers):
 async def test_auth_account_mismatch(client, headers):
     body = {
         "query": (
-            "query goals($account: Int!, $team: Int!)"
-            "{goals(accountId: $account, teamId: $team){id}}"
+            "query teams($account: Int!, $team: Int!)"
+            "{teams(accountId: $account, teamId: $team){id}}"
         ),
-        "variables": {"account": 3, "team": 1},
+        "variables": {"account": 3, "team": 0},
     }
     response = await align_graphql_request(client, headers=headers, json=body)
     assert response == {
@@ -47,7 +47,7 @@ async def test_auth_account_mismatch(client, headers):
             {
                 "message": "Not Found",
                 "locations": [{"line": 1, "column": 42}],
-                "path": ["goals"],
+                "path": ["teams"],
                 "extensions": {
                     "status": 404,
                     "type": "/errors/AccountNotFound",
@@ -64,10 +64,10 @@ async def test_auth_account_mismatch(client, headers):
 async def test_auth_account_expired(client, headers, sdb):
     body = {
         "query": (
-            "query goals($account: Int!, $team: Int!)"
-            "{goals(accountId: $account, teamId: $team){id}}"
+            "query teams($account: Int!, $team: Int!)"
+            "{teams(accountId: $account, teamId: $team){id}}"
         ),
-        "variables": {"account": 1, "team": 1},
+        "variables": {"account": 1, "team": 0},
     }
     await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
     response = await align_graphql_request(client, headers=headers, json=body)
@@ -76,7 +76,7 @@ async def test_auth_account_expired(client, headers, sdb):
             {
                 "message": "Unauthorized",
                 "locations": [{"line": 1, "column": 42}],
-                "path": ["goals"],
+                "path": ["teams"],
                 "extensions": {
                     "status": 401,
                     "type": "/errors/Unauthorized",
