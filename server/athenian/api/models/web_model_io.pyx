@@ -4,6 +4,7 @@
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
 cimport cython
+from cython.operator import dereference
 from cpython cimport (
     Py_INCREF,
     PyBytes_FromStringAndSize,
@@ -23,8 +24,7 @@ from libc.stdint cimport int32_t, uint16_t, uint32_t
 from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell, fwrite
 from libc.stdlib cimport free
 from libc.string cimport memcpy
-from libcpp.vector cimport vector
-from numpy cimport import_array, npy_int64, npy_intp
+from numpy cimport import_array, npy_int64
 
 from athenian.api.native.cpython cimport (
     Py_False,
@@ -70,6 +70,7 @@ from athenian.api.native.cpython cimport (
     PyUnicode_KIND,
     PyUnicode_Type,
 )
+from athenian.api.native.mi_heap_stl_allocator cimport mi_heap_stl_allocator, mi_vector
 from athenian.api.native.numpy cimport (
     PyArray_CheckExact,
     PyArray_DATA,
@@ -81,6 +82,7 @@ from athenian.api.native.numpy cimport (
     PyDatetimeArrType_Type,
     PyTimedeltaArrType_Type,
 )
+from athenian.api.native.optional cimport optional
 
 import pickle
 from types import GenericAlias
@@ -140,7 +142,7 @@ ctypedef struct ModelFields:
     DataType type
     Py_ssize_t offset
     PyTypeObject *model
-    vector[ModelFields] nested
+    optional[mi_vector[ModelFields]] nested
 
 
 cdef inline DataType _discover_data_type(PyTypeObject *obj, PyTypeObject **deref) except DT_INVALID:
@@ -180,22 +182,36 @@ cdef inline void _apply_data_type(
     Py_ssize_t offset,
     PyTypeObject *member_type,
     ModelFields *fields,
+    mi_heap_stl_allocator[char] &alloc,
 ) except *:
     cdef:
         PyTypeObject *deref = NULL
         DataType dtype = _discover_data_type(member_type, &deref)
+        ModelFields *back
     if deref != NULL:
-        fields.nested.push_back(_discover_fields(deref, dtype, offset))
+        _discover_fields(deref, &dereference(fields.nested).emplace_back(), dtype, offset, alloc)
     else:
-        fields.nested.push_back(ModelFields(dtype, offset, NULL))
+        back = &dereference(fields.nested).emplace_back()
+        back.type = dtype
+        back.offset = offset
+        back.nested.emplace(alloc)
 
 
-cdef ModelFields _discover_fields(PyTypeObject *model, DataType dtype, Py_ssize_t offset) except *:
+cdef void _discover_fields(
+    PyTypeObject *model,
+    ModelFields *fields,
+    DataType dtype,
+    Py_ssize_t offset,
+    mi_heap_stl_allocator[char] &alloc,
+) except *:
     cdef:
         object attribute_types
         PyTypeObject *member_type
         PyMemberDef *members
-        ModelFields fields = ModelFields(dtype, offset, NULL)
+
+    fields.type = dtype
+    fields.offset = offset
+    fields.nested.emplace(alloc)
 
     if dtype == DT_MODEL:
         attribute_types = (<object> model).attribute_types
@@ -203,17 +219,31 @@ cdef ModelFields _discover_fields(PyTypeObject *model, DataType dtype, Py_ssize_
         members = model.tp_members
         for i in range(len((<object> model).__slots__)):
             member_type = <PyTypeObject *> PyDict_GetItemString(attribute_types, members[i].name + 1)
-            _apply_data_type(members[i].offset, member_type, &fields)
+            _apply_data_type(members[i].offset, member_type, fields, alloc)
     elif dtype == DT_LIST:
         attribute_types = (<object> model).__args__
-        _apply_data_type(0, <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0), &fields)
+        _apply_data_type(
+            0,
+            <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0),
+            fields,
+            alloc,
+        )
     elif dtype == DT_DICT:
         attribute_types = (<object> model).__args__
-        _apply_data_type(0, <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0), &fields)
-        _apply_data_type(0, <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 1), &fields)
+        _apply_data_type(
+            0,
+            <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0),
+            fields,
+            alloc,
+        )
+        _apply_data_type(
+            0,
+            <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 1),
+            fields,
+            alloc,
+        )
     else:
         raise AssertionError(f"Cannot recurse in dtype {dtype}")
-    return fields
 
 
 @cython.cdivision(True)
@@ -233,6 +263,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         PyObject *dict_key = NULL
         PyObject *dict_val = NULL
         PyObject **npdata
+        ModelFields *field
     if obj == Py_None:
         dtype = 0
         fwrite(&dtype, 1, 1, stream)
@@ -333,14 +364,14 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
             fwrite(&val32, 4, 1, stream)
             npdata = <PyObject **> PyArray_DATA(obj)
             for i in range(val32):
-                exc = _write_object(npdata[i], &spec.nested[0], stream)
+                exc = _write_object(npdata[i], &dereference(spec.nested)[0], stream)
                 if exc != NULL:
                     return exc
         else:
             val32 = PyList_GET_SIZE(obj)
             fwrite(&val32, 4, 1, stream)
             for i in range(val32):
-                exc = _write_object(PyList_GET_ITEM(obj, i), &spec.nested[0], stream)
+                exc = _write_object(PyList_GET_ITEM(obj, i), &dereference(spec.nested)[0], stream)
                 if exc != NULL:
                     return exc
     elif dtype == DT_DICT:
@@ -349,17 +380,18 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         val32 = PyDict_Size(obj)
         fwrite(&val32, 4, 1, stream)
         while PyDict_Next(obj, &dict_pos, &dict_key, &dict_val):
-            exc = _write_object(dict_key, &spec.nested[0], stream)
+            exc = _write_object(dict_key, &dereference(spec.nested)[0], stream)
             if exc != NULL:
                 return exc
-            exc = _write_object(dict_val, &spec.nested[1], stream)
+            exc = _write_object(dict_val, &dereference(spec.nested)[1], stream)
             if exc != NULL:
                 return exc
     elif dtype == DT_MODEL:
-        val32 = spec.nested.size()
+        val32 = dereference(spec.nested).size()
         fwrite(&val32, 4, 1, stream)
-        for field in spec.nested:
-            exc = _write_object((<PyObject **>((<char *> obj) + field.offset))[0], &field, stream)
+        for i in range(val32):
+            field = &dereference(spec.nested)[i]
+            exc = _write_object((<PyObject **>((<char *> obj) + field.offset))[0], field, stream)
             if exc != NULL:
                 return exc
     else:
@@ -367,20 +399,26 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
     return NULL
 
 
-cdef void _serialize_list_of_models(list models, FILE *stream) except *:
+cdef void _serialize_list_of_models(
+    list models,
+    FILE *stream,
+    mi_heap_stl_allocator[char] &alloc,
+) except *:
     cdef:
         uint32_t size
-        ModelFields spec = ModelFields(DT_LIST, 0, NULL)
+        ModelFields spec
         type item_type
         PyObject *exc
 
+    spec.type = DT_LIST
+    spec.nested.emplace(alloc)
     if len(models) == 0:
         size = 0
         fwrite(&size, 4, 1, stream)
         return
     item_type = type(models[0])
     result = pickle.dumps(GenericAlias(list, (item_type,)))
-    _apply_data_type(0, <PyTypeObject *> item_type, &spec)
+    _apply_data_type(0, <PyTypeObject *> item_type, &spec, alloc)
     with nogil:
         size = PyBytes_GET_SIZE(<PyObject *> result)
         fwrite(&size, 4, 1, stream)
@@ -405,14 +443,17 @@ def serialize_models(tuple models not None) -> bytes:
         FILE *stream
         bytes result
         char count
+        optional[mi_heap_stl_allocator[char]] alloc
     assert len(models) < 255
+    alloc.emplace()
+    dereference(alloc).disable_free()
     stream = open_memstream(&output, &output_size)
     count = len(models)
     fwrite(&count, 1, 1, stream)
     try:
         for model in models:
             if PyList_CheckExact(<PyObject *> model):
-                _serialize_list_of_models(model, stream)
+                _serialize_list_of_models(model, stream, dereference(alloc))
             else:
                 _serialize_generic(model, stream)
     finally:
@@ -433,7 +474,10 @@ def deserialize_models(bytes buffer not None) -> tuple[list[object], ...]:
         bytes type_buf
         object model_type
         ModelFields spec
+        optional[mi_heap_stl_allocator[char]] alloc
 
+    alloc.emplace()
+    dereference(alloc).disable_free()
     stream = fmemopen(input, PyBytes_GET_SIZE(<PyObject *> buffer), b"r")
     if fread(&aux, 1, 1, stream) != 1:
         raise ValueError(corrupted_msg % (ftell(stream), "tuple"))
@@ -452,7 +496,7 @@ def deserialize_models(bytes buffer not None) -> tuple[list[object], ...]:
             if not isinstance(model_type, (type, GenericAlias)):
                 model = model_type
             else:
-                spec = _discover_fields(<PyTypeObject *> model_type, DT_LIST, 0)
+                _discover_fields(<PyTypeObject *> model_type, &spec, DT_LIST, 0, dereference(alloc))
                 model = _read_model(&spec, stream, input, corrupted_msg)
         Py_INCREF(model)
         PyTuple_SET_ITEM(result, tuple_pos, model)
@@ -472,7 +516,7 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         int year, month, day, hour, minute, second
         PyObject *utctz = (<PyDateTime_CAPI *> PyDateTimeAPI).TimeZone_UTC
         PyObject *obj_val
-        ModelFields field
+        ModelFields *field
 
     if fread(&dtype, 1, 1, stream) != 1:
         raise ValueError(corrupted_msg % (ftell(stream), "dtype"))
@@ -536,11 +580,12 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         obj = <object> spec.model
         if fread(&aux32, 4, 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "model"))
-        if aux32 != spec.nested.size():
+        if aux32 != dereference(spec.nested).size():
             raise ValueError(corrupted_msg % (ftell(stream), f"{obj} has changed"))
         obj = obj.__new__(obj)
-        for field in spec.nested:
-            val = _read_model(&field, stream, raw, corrupted_msg)
+        for i in range(aux32):
+            field = &dereference(spec.nested)[i]
+            val = _read_model(field, stream, raw, corrupted_msg)
             Py_INCREF(val)
             (<PyObject **>((<char *><PyObject *> obj) + field.offset))[0] = <PyObject *> val
         return obj
@@ -549,7 +594,7 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
             raise ValueError(corrupted_msg % (ftell(stream), "list"))
         obj = PyList_New(aux32)
         for i in range(aux32):
-            val = _read_model(&spec.nested[0], stream, raw, corrupted_msg)
+            val = _read_model(&dereference(spec.nested)[0], stream, raw, corrupted_msg)
             Py_INCREF(val)
             PyList_SET_ITEM(obj, i, val)
         return obj
@@ -558,8 +603,8 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
             raise ValueError(corrupted_msg % (ftell(stream), "dict"))
         obj = PyDict_New()
         for i in range(aux32):
-            key = _read_model(&spec.nested[0], stream, raw, corrupted_msg)
-            val = _read_model(&spec.nested[1], stream, raw, corrupted_msg)
+            key = _read_model(&dereference(spec.nested)[0], stream, raw, corrupted_msg)
+            val = _read_model(&dereference(spec.nested)[1], stream, raw, corrupted_msg)
             PyDict_SetItem(obj, key, val)
         return obj
     else:
