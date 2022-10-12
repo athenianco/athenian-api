@@ -15,7 +15,7 @@ from athenian.api.align.goals.dbaccess import (
     parse_goal_repositories,
     update_goal_template_in_db,
 )
-from athenian.api.align.queries.goals import GoalToServe, GoalTreeGenerator
+from athenian.api.align.goals.measure import GoalToServe, GoalTreeGenerator
 from athenian.api.align.queries.metrics import calculate_team_metrics
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight

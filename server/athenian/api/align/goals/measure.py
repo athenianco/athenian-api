@@ -1,12 +1,9 @@
+"""Tools to build a Goals tree with measured metrics."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import groupby
-from operator import itemgetter
-from typing import Any, Callable, Generic, Iterable, Mapping, Optional, Sequence, Type, TypeVar
-
-from ariadne import ObjectType
-from graphql import GraphQLResolveInfo
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from athenian.api.align.goals.dates import (
     GoalTimeseriesSpec,
@@ -17,36 +14,18 @@ from athenian.api.align.goals.dbaccess import (
     AliasedGoalColumns,
     GoalColumnAlias,
     TeamGoalColumns,
-    fetch_team_goals,
     resolve_goal_repositories,
-)
-from athenian.api.align.models import (
-    GraphQLGoalTree,
-    GraphQLGoalValue,
-    GraphQLMetricValue,
-    GraphQLTeamGoalTree,
-    GraphQLTeamTree,
 )
 from athenian.api.align.queries.metrics import (
     RequestedTeamDetails,
     TeamMetricsRequest,
     TeamMetricsResult,
-    calculate_team_metrics,
 )
-from athenian.api.align.queries.teams import build_team_tree_from_rows
-from athenian.api.async_utils import gather
 from athenian.api.db import Row
-from athenian.api.internal.account import get_metadata_account_ids
-from athenian.api.internal.jira import (
-    JIRAConfig,
-    check_jira_installation,
-    get_jira_installation_or_none,
-)
+from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.team import fetch_teams_recursively
-from athenian.api.internal.with_ import flatten_teams
-from athenian.api.models.state.models import Goal, Team, TeamGoal
+from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web.goal import (
     GoalMetricSeriesPoint,
     GoalTree,
@@ -56,75 +35,6 @@ from athenian.api.models.web.goal import (
     TeamTree,
 )
 from athenian.api.tracing import sentry_span
-
-query = ObjectType("Query")
-
-
-@query.field("goals")
-@sentry_span
-async def resolve_goals(
-    obj: Any,
-    info: GraphQLResolveInfo,
-    accountId: int,
-    teamId: int,
-    onlyWithTargets: bool,
-    **kwargs,
-) -> Any:
-    """Serve goals() query."""
-    team_rows, meta_ids, jira_config = await gather(
-        fetch_teams_recursively(
-            accountId,
-            info.context.sdb,
-            select_entities=(Team.id, Team.name, Team.members, Team.parent_id),
-            # teamId 0 means to implicitly use the single root team
-            root_team_ids=None if teamId == 0 else [teamId],
-        ),
-        get_metadata_account_ids(accountId, info.context.sdb, info.context.cache),
-        get_jira_installation_or_none(
-            accountId, info.context.sdb, info.context.mdb, info.context.cache,
-        ),
-    )
-    team_tree = build_team_tree_from_rows(team_rows, None if teamId == 0 else teamId)
-    team_member_map = flatten_teams(team_rows)
-    team_ids = [row[Team.id.name] for row in team_rows]
-    team_goal_rows, prefixer = await gather(
-        fetch_team_goals(accountId, team_ids, info.context.sdb),
-        Prefixer.load(meta_ids, info.context.mdb, info.context.cache),
-    )
-
-    goals_to_serve = []
-
-    # iter all team goal rows, grouped by goal, to build GoalToServe object for the goal
-    for _, group_team_goal_rows_iter in groupby(team_goal_rows, itemgetter(Goal.id.name)):
-        goal_team_goal_rows = list(group_team_goal_rows_iter)
-        goal_to_serve = GoalToServe(
-            goal_team_goal_rows,
-            team_tree,
-            team_member_map,
-            prefixer,
-            jira_config,
-            onlyWithTargets,
-            False,
-        )
-        goals_to_serve.append(goal_to_serve)
-
-    all_metric_values = await calculate_team_metrics(
-        [g.request for g in goals_to_serve],
-        account=accountId,
-        meta_ids=meta_ids,
-        sdb=info.context.sdb,
-        mdb=info.context.mdb,
-        pdb=info.context.pdb,
-        rdb=info.context.rdb,
-        cache=info.context.cache,
-        slack=info.context.app["slack"],
-        unchecked_jira_config=jira_config,
-    )
-    goal_tree_generator = GraphQLGoalTreeGenerator()
-    return [
-        to_serve.build_goal_tree(all_metric_values, goal_tree_generator).to_dict()
-        for to_serve in goals_to_serve
-    ]
 
 
 class GoalToServe:
@@ -179,7 +89,7 @@ class GoalToServe:
         else:
             series = metric_values[self._timeseries_spec.intervals][metric]
 
-        metric_values = GoalMetricValues(
+        metric_values = _GoalMetricValues(
             initial_metrics, current_metrics, series, self._timeseries_spec,
         )
 
@@ -286,7 +196,7 @@ class GoalToServe:
 
 
 @dataclass(slots=True, frozen=True)
-class GoalMetricValues:
+class _GoalMetricValues:
     """The metric values for a Goal across all teams."""
 
     initial: Mapping[tuple[int, int], Any]
@@ -295,13 +205,8 @@ class GoalMetricValues:
     series_spec: Optional[GoalTimeseriesSpec]
 
 
-GoalTreeType = TypeVar("GoalTreeType", bound=GoalTree)
-
-
-class GoalTreeGenerator(Generic[GoalTreeType]):
+class GoalTreeGenerator:
     """Generate the response GoalTree for a goal."""
-
-    goal_tree_class: Type[GoalTreeType] = GoalTree
 
     @sentry_span
     def __call__(
@@ -309,9 +214,9 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
         team_tree: TeamTree,
         goal_row: Row,
         team_goal_rows: Iterable[Row],
-        metric_values: GoalMetricValues,
+        metric_values: _GoalMetricValues,
         prefixer: Prefixer,
-    ) -> GoalTreeType:
+    ) -> GoalTree:
         """Compose the GoalTree for a goal from various piece of information."""
         valid_from, expires_at = goal_datetimes_to_dates(
             goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
@@ -322,7 +227,7 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
             repos = [str(repo_name) for repo_name in resolve_goal_repositories(repos, prefixer)]
 
         team_goal = self._team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values)
-        return self.goal_tree_class(
+        return GoalTree(
             id=goal_row[Goal.id.name],
             name=goal_row[Goal.name.name],
             metric=goal_row[Goal.metric.name],
@@ -340,7 +245,7 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
         cls,
         team_tree: TeamTree,
         team_goal_rows_map: Mapping[int, Row],
-        metric_values: GoalMetricValues,
+        metric_values: _GoalMetricValues,
     ) -> TeamGoalTree:
         team_id = team_tree.id
         try:
@@ -397,30 +302,6 @@ class GoalTreeGenerator(Generic[GoalTreeType]):
             series_granularity=series_granularity,
         )
         return TeamGoalTree(team=team, value=goal_value, children=children)
-
-
-class GraphQLGoalTreeGenerator(GoalTreeGenerator[GraphQLTeamGoalTree]):
-    """Generate the response GoalTree for a goal."""
-
-    goal_tree_class = GraphQLGoalTree
-
-    @classmethod
-    def _compose_team_goal_tree(
-        cls,
-        team_tree: TeamTree,
-        initial: MetricValue,
-        current: MetricValue,
-        target: MetricValue,
-        series: Optional[list[MetricValue]],
-        series_spec: Optional[GoalTimeseriesSpec],
-        children: Sequence[TeamGoalTree],
-    ) -> GraphQLTeamGoalTree:
-        team = GraphQLTeamTree.from_team_tree(team_tree)
-        tgt = None if target is None else GraphQLMetricValue(target)
-        goal_value = GraphQLGoalValue(
-            current=GraphQLMetricValue(current), initial=GraphQLMetricValue(initial), target=tgt,
-        )
-        return GraphQLTeamGoalTree(team=team, value=goal_value, children=children)
 
 
 @sentry_span

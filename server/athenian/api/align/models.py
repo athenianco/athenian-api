@@ -4,7 +4,6 @@ import numpy as np
 
 from athenian.api.models.web import Contributor, TeamTree
 from athenian.api.models.web.base_model_ import Enum, Model
-from athenian.api.models.web.goal import GoalTree, TeamGoalTree
 
 
 class GoalRemoveStatus(Model):
@@ -82,14 +81,6 @@ class GraphQLMetricValue(Model):
             self._float_ = value
         else:
             self._str_ = value
-
-
-class GraphQLGoalValue(Model):
-    """The current metric values for the goal on a team."""
-
-    current: GraphQLMetricValue
-    initial: GraphQLMetricValue
-    target: Optional[GraphQLMetricValue]
 
 
 class GraphQLTeamTree(TeamTree):
@@ -194,51 +185,6 @@ class MetricParamsFields(_GoalMetricFilters):
     metrics = "metrics"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
-
-
-class GraphQLTeamGoalTree(TeamGoalTree):
-    """Wraps the generic TeamGoalTree model to change the type of the team field."""
-
-    team: GraphQLTeamTree
-    value: GraphQLGoalValue
-
-    @classmethod
-    def from_team_goal_tree(cls, team_goal_tree: TeamGoalTree) -> "GraphQLTeamGoalTree":
-        """Build a GraphQLTeamGoalTree from a base TeamGoalTree."""
-        kwargs = {
-            name: getattr(team_goal_tree, name)
-            for name in team_goal_tree.attribute_types
-            if name != "team"
-        }
-        kwargs["team"] = GraphQLTeamTree.from_team_tree(team_goal_tree["team"])
-        return cls(**kwargs)
-
-
-class GraphQLGoalTree(GoalTree):
-    """Wraps the generic GoalTree model to add camel case attribute map for GraphQL."""
-
-    attribute_types: dict = {
-        "team_goal": GraphQLTeamGoalTree,
-    }
-    attribute_map = {
-        "valid_from": "validFrom",
-        "expires_at": "expiresAt",
-        "team_goal": "teamGoal",
-        "jira_projects": "jiraProjects",
-        "jira_priorities": "jiraPriorities",
-        "jira_issue_types": "jiraIssueTypes",
-    }
-
-    @classmethod
-    def from_goal_tree(cls, goal_tree: GoalTree) -> "GraphQLGoalTree":
-        """Build a GraphQLGoalTree from a base GoalTree."""
-        kwargs = {
-            name: getattr(goal_tree, name)
-            for name in goal_tree.attribute_types
-            if name != "team_goal"
-        }
-        kwargs["team_goal"] = GraphQLTeamGoalTree.from_team_goal_tree(goal_tree.team_goal)
-        return cls(**kwargs)
 
 
 class Member(Contributor):
