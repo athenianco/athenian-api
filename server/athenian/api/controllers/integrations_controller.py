@@ -1,8 +1,9 @@
+from datetime import datetime, timezone
 import logging
 import os
 from tempfile import NamedTemporaryFile
 from typing import Optional
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 from aiohttp import web
 from aiohttp.abc import AbstractStreamWriter
@@ -169,12 +170,14 @@ async def get_everything(
         request.cache,
     )
     serialize = _get_everything_formats[format]
+    now = datetime.now(timezone.utc)
+    znow = (now.year, now.month, now.day, now.hour, now.minute, now.second)
     with NamedTemporaryFile(
         prefix=f"athenian_get_everything_{account}_", suffix=".zip", delete=False,
     ) as tmpf:
-        with ZipFile(tmpf, "w") as zipf:
+        with ZipFile(tmpf, "w") as zipf:  # parquet is already compressed with snappy
             for key, df_dict in data.items():
                 for subkey, df in df_dict.items():
-                    with zipf.open(f"{key.value}{subkey}.{format}", mode="w") as pf:
+                    with zipf.open(ZipInfo(f"{key.value}{subkey}.{format}", znow), mode="w") as pf:
                         serialize(df, pf)
         return RemovingFileResponse(tmpf.name)
