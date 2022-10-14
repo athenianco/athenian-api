@@ -6,7 +6,7 @@
 
 **/*.speedscope
 **/alembic.ini
-server/tests/*.sqlite
+server/tests/**/*.sqlite
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

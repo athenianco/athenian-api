@@ -685,15 +685,23 @@ async def _fetch_commit_history_dag(
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb,
         )
-        if bads := verify_edges_integrity(new_edges):
+        bads, bad_hashes = verify_edges_integrity(new_edges)
+        if bads:
             log.warning(
-                "some new DAG edges are not consistent: %s",
-                [new_edges[i] for i in bads],
+                "%d new DAG edges are not consistent (%d commits): %s",
+                len(bads),
+                len(bad_hashes),
+                [new_edges[i] for i in bads[:10]],
             )
             consistent = False
             for i in bads[::-1]:
                 new_edges.pop(i)
-        append_missing_heads(new_edges, head_hashes[:batch_size])
+        if len(
+            good_head_hashes := np.setdiff1d(
+                head_hashes[:batch_size], bad_hashes, assume_unique=True,
+            ),
+        ):
+            append_missing_heads(new_edges, good_head_hashes)
         if orphans := find_orphans(new_edges, hashes):
             committed_dates = dict(
                 await mdb.fetch_all(
@@ -712,11 +720,11 @@ async def _fetch_commit_history_dag(
                 else:
                     committed_date = ensure_db_datetime_tz(committed_date, mdb)
                     if datetime.now(timezone.utc) - committed_date < timedelta(days=1, hours=6):
-                        log.warning("skipping an orphan which is suspiciously young: %s", leaf)
                         removed_orphans.update(indexes)
                     else:
                         log.info("accepting an orphan: %s", leaf)
             if removed_orphans:
+                log.warning("skipping orphans which are suspiciously young: %s", removed_orphans)
                 consistent = False
                 for i in sorted(removed_orphans, reverse=True):
                     new_edges.pop(i)
