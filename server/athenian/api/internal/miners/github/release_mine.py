@@ -2159,7 +2159,7 @@ async def override_first_releases(
 
 async def _fetch_commits(hashes: npt.NDArray[bytes], meta_ids: Sequence[int], mdb: DatabaseLike):
     """Fetch from mdb all commits with the given hashes."""
-    log = logging.getLogger(f"{__package__}.hide_first_releases")
+    log = logging.getLogger(f"{__package__}._fetch_commits")
 
     columns = [
         NodeCommit.sha,
