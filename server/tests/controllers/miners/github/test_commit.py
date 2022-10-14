@@ -210,7 +210,7 @@ async def test_extract_commits_users(
     ],
 )
 def test_verify_edges_integrity_indexes(edges, result):
-    assert verify_edges_integrity(edges) == result
+    assert verify_edges_integrity(edges)[0] == result
 
 
 def test_find_orphans():

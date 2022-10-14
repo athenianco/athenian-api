@@ -501,10 +501,10 @@ def _metadata_db(worker_id: str, force_reset: bool) -> str:
     if override_mdb:
         conn_str = override_mdb % worker_id
     else:
-        metadata_db_path = db_dir / ("mdb-%s.sqlite" % worker_id)
+        metadata_db_path = db_dir / f"mdb-{worker_id}.sqlite"
         if force_reset:
             metadata_db_path.unlink(missing_ok=True)
-        conn_str = "sqlite:///%s" % metadata_db_path
+        conn_str = f"sqlite:///{metadata_db_path}"
     engine = create_engine(conn_str.rsplit("?", 1)[0])
     if engine.url.drivername == "postgresql":
         engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
@@ -630,7 +630,7 @@ def precomputed_db(worker_id) -> str:
     )
 
 
-async def _connect_to_db(addr, event_loop, request):
+async def connect_to_db(addr, event_loop, request):
     db = measure_db_overhead_and_retry(Database(addr), None, None)
     try:
         await db.connect()
@@ -648,7 +648,7 @@ async def _connect_to_db(addr, event_loop, request):
 
 @pytest.fixture(scope="function")
 async def _mdb(metadata_db, event_loop, request):
-    return await _connect_to_db(metadata_db, event_loop, request)
+    return await connect_to_db(metadata_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")
@@ -664,7 +664,7 @@ async def mdb(_mdb, worker_id, event_loop, request):
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
-            _mdb = await _connect_to_db(metadata_db, event_loop, request)
+            _mdb = await connect_to_db(metadata_db, event_loop, request)
     _mdb.is_rw = False
     return _mdb
 
@@ -696,7 +696,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
-            mdb = await _connect_to_db(metadata_db, event_loop, request)
+            mdb = await connect_to_db(metadata_db, event_loop, request)
         finally:
             await mdb.execute(delete(Account).where(Account.id == 777))
     mdb.is_rw = True
@@ -705,7 +705,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
 
 @pytest.fixture(scope="function")
 async def sdb(state_db, event_loop, request):
-    return await _connect_to_db(state_db, event_loop, request)
+    return await connect_to_db(state_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")
@@ -716,7 +716,7 @@ async def sdb_conn(sdb: Database) -> Connection:
 
 @pytest.fixture(scope="function")
 async def pdb(precomputed_db, event_loop, request):
-    db = await _connect_to_db(precomputed_db, event_loop, request)
+    db = await connect_to_db(precomputed_db, event_loop, request)
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -726,7 +726,7 @@ async def pdb(precomputed_db, event_loop, request):
 
 @pytest.fixture(scope="function")
 async def rdb(persistentdata_db, event_loop, request):
-    return await _connect_to_db(persistentdata_db, event_loop, request)
+    return await connect_to_db(persistentdata_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")

@@ -22,6 +22,10 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
         pair[mi_unordered_set.iterator, bool] emplace(...) except +
         mi_heap_stl_allocator[T] get_allocator()
 
+        mi_unordered_set.iterator erase(mi_unordered_set.iterator)
+        mi_unordered_set.iterator erase(mi_unordered_set.iterator, mi_unordered_set.iterator)
+        size_t erase(T&)
+
     cdef cppclass mi_vector[T](vector[T]):
         mi_vector mi_vector[X](mi_heap_stl_allocator[X]&) except +
         T& emplace_back(...) except +
