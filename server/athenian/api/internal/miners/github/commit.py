@@ -254,8 +254,14 @@ async def extract_commits(
             )
             full_ids = commits[PushCommit.node_id.name].values
             order = np.argsort(full_ids)
-            fill_col[order[np.in1d(full_ids[order], dep_id_col, assume_unique=True)]] = split_deps
-            commits["deployments"] = fill_col
+            try:
+                fill_col[
+                    order[np.in1d(full_ids[order], dep_id_col, assume_unique=True)]
+                ] = split_deps
+                commits["deployments"] = fill_col
+            except ValueError:
+                log.error("detected multiple deployments of the same commits")
+                commits["deployments"] = [None] * len(commits)
         else:
             deployments = {}
             commits["deployments"] = [None] * len(commits)
@@ -708,6 +714,8 @@ async def _fetch_commit_history_dag(
                     if datetime.now(timezone.utc) - committed_date < timedelta(days=1, hours=6):
                         log.warning("skipping an orphan which is suspiciously young: %s", leaf)
                         removed_orphans.update(indexes)
+                    else:
+                        log.info("accepting an orphan: %s", leaf)
             if removed_orphans:
                 consistent = False
                 for i in sorted(removed_orphans, reverse=True):

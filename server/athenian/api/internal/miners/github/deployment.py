@@ -1067,12 +1067,7 @@ async def _compute_deployment_facts(
             np.in1d(components.index.values.astype("U"), notifications.index.values.astype("U")),
         ),
     )
-    (
-        commit_relationship,
-        dags,
-        deployed_commits_df,
-        tainted_envs,
-    ) = await _resolve_commit_relationship(
+    (commit_relationship, dags, deployed_commits_df) = await _resolve_commit_relationship(
         notifications,
         components,
         logical_settings,
@@ -1084,16 +1079,6 @@ async def _compute_deployment_facts(
         rdb,
         cache,
     )
-    if tainted_envs:
-        notifications = notifications.take(
-            np.flatnonzero(
-                np.in1d(
-                    notifications[DeploymentNotification.environment.name].values,
-                    tainted_envs,
-                    invert=True,
-                ),
-            ),
-        )
     if notifications.empty:
         return (pd.DataFrame(),) * 4
     with sentry_sdk.start_span(op=f"_extract_deployed_commits({len(components)})"):
@@ -2331,7 +2316,6 @@ async def _resolve_commit_relationship(
     dict[str, dict[str, dict[int, dict[int, _CommitRelationship]]]],
     dict[str, tuple[bool, DAG]],
     pd.DataFrame,
-    list[str],
 ]:
     log = logging.getLogger(f"{metadata.__package__}._resolve_commit_relationship")
     until_per_repo_env = defaultdict(dict)
@@ -2381,6 +2365,11 @@ async def _resolve_commit_relationship(
     del joined
     del finished_ats
     del commit_ids
+    log.info(
+        "finding previous successful deployments of %d repositories in %d environments",
+        sum(len(v) for v in until_per_repo_env.values()),
+        len(until_per_repo_env),
+    )
     commits_per_physical_repo = {}
     for env_commits_per_repo in commits_per_repo_per_env.values():
         for repo_name, (successful_commits, _, failed_commits, _) in env_commits_per_repo.items():
@@ -2393,8 +2382,8 @@ async def _resolve_commit_relationship(
         fetch_dags_with_commits(
             commits_per_physical_repo, True, account, meta_ids, mdb, pdb, cache,
         ),
-        _fetch_latest_deployed_components(
-            until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb,
+        _append_latest_deployed_components(
+            until_per_repo_env, {}, logical_settings, prefixer, account, meta_ids, mdb, rdb,
         ),
         op="_compute_deployment_facts/dags_and_latest",
     )
@@ -2448,18 +2437,15 @@ async def _resolve_commit_relationship(
                 )
     del commits_per_repo_per_env
     missing_sha = b"0" * 40
-    tainted_envs = set()
     suspects = defaultdict(dict)
     dags = await _extend_dags_with_previous_commits(previous, dags, account, meta_ids, mdb, pdb)
 
     # there may be older commits deployed earlier, disregarding our loading in batches
     for env, repos in previous.items():
         for repo_name, (_, shas, _) in repos.items():
-            if until_per_repo_env[env][repo_name] == datetime.min:
-                log.warning("skipped environment %s, repository %s is unresolved", env, repo_name)
-                del until_per_repo_env[env][repo_name]
-                tainted_envs.add(env)
-                break
+            if shas[0] == missing_sha:
+                suspects[env][repo_name] = []
+                continue
 
             root_ids, root_shas, root_deployed_ats, success_len = root_details_per_repo[env][
                 repo_name
@@ -2469,9 +2455,10 @@ async def _resolve_commit_relationship(
             # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
             ownership = mark_dag_access(*dag, successful_shas, True)
             suspects[env][repo_name] = dag[0][ownership < success_len]
-    # fetch those "impossible" deployments
-    back_to_the_future_previous = await _fetch_latest_deployed_components(
+    # fetch and merge those "impossible" deployments
+    await _append_latest_deployed_components(
         until_per_repo_env,
+        previous,
         logical_settings,
         prefixer,
         account,
@@ -2480,31 +2467,17 @@ async def _resolve_commit_relationship(
         rdb,
         suspects=suspects,
     )
-    # merge with the original `previous`
-    for env, repos in previous.items():
-        back_to_the_future_repos = back_to_the_future_previous[env]
-        for repo_name, (cids, shas, dep_finished_ats) in repos.items():
-            (
-                back_to_the_future_cids,
-                back_to_the_future_shas,
-                back_to_the_future_dep_finished_ats,
-            ) = back_to_the_future_repos[repo_name]
-            if back_to_the_future_shas[0] != missing_sha:
-                cids.extend(back_to_the_future_cids)
-                shas.extend(back_to_the_future_shas)
-                dep_finished_ats.extend(back_to_the_future_dep_finished_ats)
-    del back_to_the_future_previous
 
     while until_per_repo_env:
+        removed_previous = []
         for env, repos in previous.items():
-            if env in tainted_envs:
-                continue
             for repo_name, (cids, shas, dep_finished_ats) in repos.items():
                 my_relationships = commit_relationship[env][repo_name]
                 root_ids, root_shas, root_deployed_ats, success_len = root_details_per_repo[env][
                     repo_name
                 ]
                 dag = dags[drop_logical_repo(repo_name)][1]
+
                 successful_shas = np.concatenate([root_shas[:success_len], shas])
                 # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
                 ownership = mark_dag_access(*dag, successful_shas, True)
@@ -2516,7 +2489,7 @@ async def _resolve_commit_relationship(
                         root_deployed_ats[success_len:],
                     ],
                 )
-                reached_root = shas[0] == missing_sha
+                reached_root = until_per_repo_env[env][repo_name] == datetime.min
                 parents = mark_dag_parents(
                     *dag, all_shas, all_deployed_ats, ownership, slay_hydra=not reached_root,
                 )
@@ -2554,16 +2527,26 @@ async def _resolve_commit_relationship(
                     until_per_repo_env[env][repo_name] = min(dep_finished_ats)
                 else:
                     del until_per_repo_env[env][repo_name]
+                    removed_previous.append((env, repo_name))
             if not until_per_repo_env[env]:
                 del until_per_repo_env[env]
+        for env, repo_name in removed_previous:
+            del previous[env][repo_name]
         if until_per_repo_env:
-            previous = await _fetch_latest_deployed_components(
-                until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb,
+            await _append_latest_deployed_components(
+                until_per_repo_env,
+                previous,
+                logical_settings,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                rdb,
             )
             dags = await _extend_dags_with_previous_commits(
                 previous, dags, account, meta_ids, mdb, pdb,
             )
-    return commit_relationship, dags, deployed_commits_df, sorted(tainted_envs)
+    return commit_relationship, dags, deployed_commits_df
 
 
 @sentry_span
@@ -2610,8 +2593,9 @@ async def _extend_dags_with_previous_commits(
 
 
 @sentry_span
-async def _fetch_latest_deployed_components(
+async def _append_latest_deployed_components(
     until_per_repo_env: dict[str, dict[str, datetime]],
+    previous: dict[str, dict[str, tuple[list[int], list[bytes], list[datetime]]]],
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
@@ -2631,25 +2615,41 @@ async def _fetch_latest_deployed_components(
                 assert physical_repo == repo, f"{physical_repo} misses logical deployment settings"
                 until_per_repo_env_physical.setdefault(env, {})[repo] = ts
             else:
-                until_per_repo_env_logical.setdefault(env, {}).setdefault(physical_repo, {})[
-                    repo
-                ] = ts
+                # fmt: off
+                (
+                    until_per_repo_env_logical
+                    .setdefault(env, {})
+                    .setdefault(physical_repo, {})
+                )[repo] = ts
+                # fmt: on
     if suspects is not None:
+        for env, env_suspects in suspects.items():
+            for repo, commits in env_suspects.items():
+                if len(commits) == 0:
+                    try:
+                        del until_per_repo_env_physical[env][repo]
+                    except KeyError:
+                        pass
+                    try:
+                        del until_per_repo_env_logical[env][repo]
+                    except KeyError:
+                        pass
         all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
-        all_shas = unordered_unique(np.concatenate(all_shas))
-        sha_df = await read_sql_query(
-            select(NodeCommit.id, NodeCommit.sha).where(
-                NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas),
-            ),
-            mdb,
-            [NodeCommit.id, NodeCommit.sha],
-        )
-        order = np.argsort(sha_df[NodeCommit.sha.name].values)
-        all_shas = sha_df[NodeCommit.sha.name].values[order]
-        all_ids = sha_df[NodeCommit.id.name].values[order]
-        for repo_suspects in suspects.values():
-            for repo, shas in repo_suspects.items():
-                repo_suspects[repo] = all_ids[np.searchsorted(all_shas, shas)]
+        all_shas = unordered_unique(np.concatenate(all_shas, dtype="S40"))
+        if len(all_shas):
+            sha_df = await read_sql_query(
+                select(NodeCommit.id, NodeCommit.sha).where(
+                    NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(all_shas),
+                ),
+                mdb,
+                [NodeCommit.id, NodeCommit.sha],
+            )
+            order = np.argsort(sha_df[NodeCommit.sha.name].values)
+            all_shas = sha_df[NodeCommit.sha.name].values[order]
+            all_ids = sha_df[NodeCommit.id.name].values[order]
+            for repo_suspects in suspects.values():
+                for repo, shas in repo_suspects.items():
+                    repo_suspects[repo] = all_ids[np.searchsorted(all_shas, shas)]
     queries = [
         *_compose_latest_deployed_components_physical(
             until_per_repo_env_physical, suspects, prefixer, account, batch,
@@ -2658,15 +2658,20 @@ async def _fetch_latest_deployed_components(
             until_per_repo_env_logical, suspects, logical_settings, prefixer, account, batch,
         ),
     ]
-    previous = await _fetch_latest_deployed_components_queries(queries, meta_ids, mdb, rdb)
+    next_previous = await _fetch_latest_deployed_components_queries(queries, meta_ids, mdb, rdb)
     missing_sha = b"0" * 40
     for env, repos in until_per_repo_env.items():
-        if env not in previous:
-            previous[env] = {}
-        repo_commits = previous[env]
+        repo_commits = previous.setdefault(env, {})
+        next_repo_commits = next_previous.setdefault(env, {})
         for repo in repos:
-            if repo_commits.setdefault(repo, ([0], [missing_sha], [datetime.min])) == (None,) * 3:
-                until_per_repo_env[env][repo] = datetime.min
+            if repo not in next_repo_commits:
+                if suspects is None:
+                    until_per_repo_env[env][repo] = datetime.min
+                    repo_commits.setdefault(repo, ([0], [missing_sha], [datetime.min]))
+            else:
+                intel = repo_commits.setdefault(repo, ([], [], []))
+                for i, val in enumerate(next_repo_commits[repo]):
+                    intel[i].extend(val)
     return previous
 
 
@@ -2733,14 +2738,12 @@ def _compose_latest_deployed_components_logical(
                 queries.append(
                     select("*").select_from(  # use LIMIT inside UNION hack
                         select(
-                            [
-                                DeploymentNotification.environment,
-                                literal_column(f"'{repo}'").label(
-                                    DeployedComponent.repository_full_name,
-                                ),
-                                DeploymentNotification.finished_at,
-                                DeployedComponent.resolved_commit_node_id,
-                            ],
+                            DeploymentNotification.environment,
+                            literal_column(f"'{repo}'").label(
+                                DeployedComponent.repository_full_name,
+                            ),
+                            DeploymentNotification.finished_at,
+                            DeployedComponent.resolved_commit_node_id,
                         )
                         .select_from(
                             join(
@@ -2787,17 +2790,17 @@ def _compose_latest_deployed_components_physical(
     account: int,
     batch: int,
 ) -> list[Select]:
+    if not until_per_repo_env:
+        return []
     repo_name_to_node = prefixer.repo_name_to_node
     CONCLUSION_SUCCESS = DeploymentNotification.CONCLUSION_SUCCESS.decode()
     queries = [
         select("*").select_from(  # use LIMIT inside UNION hack
             select(
-                [
-                    DeploymentNotification.environment,
-                    literal_column(f"'{repo}'").label(DeployedComponent.repository_full_name),
-                    DeploymentNotification.finished_at,
-                    DeployedComponent.resolved_commit_node_id,
-                ],
+                DeploymentNotification.environment,
+                literal_column(f"'{repo}'").label(DeployedComponent.repository_full_name),
+                DeploymentNotification.finished_at,
+                DeployedComponent.resolved_commit_node_id,
             )
             .select_from(
                 join(

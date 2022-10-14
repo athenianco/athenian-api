@@ -790,37 +790,47 @@ def mark_dag_parents(ndarray hashes,
     timestamps = timestamps.view(np.uint64)
     ownership = ownership.astype(np.int32, copy=False)
     cdef:
-        vector[vector[uint32_t]] parents = vector[vector[uint32_t]](len(heads))
+        optional[mi_heap_stl_allocator[uint32_t]] alloc
+        optional[mi_vector[mi_vector[uint32_t]]] parents
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] heads_view = heads
         const uint64_t[:] timestamps_view = timestamps
         const int32_t[:] ownership_view = ownership
         bool slay_hydra_native = slay_hydra
+        Py_ssize_t len_heads = len(heads), i
     with nogil:
+        alloc.emplace()
+        dereference(alloc).disable_free()
+        parents.emplace(dereference(alloc))
+        dereference(parents).reserve(len_heads)
+        for i in range(len_heads):
+            dereference(parents).emplace_back(dereference(alloc))
         full_size = _mark_dag_parents(
             vertexes_view, edges_view, heads_view, timestamps_view, ownership_view,
-            slay_hydra_native, &parents)
+            slay_hydra_native, &dereference(parents))
     concat_parents = np.zeros(full_size, dtype=np.uint32)
-    split_points = np.zeros(len(parents), dtype=np.int64)
+    split_points = np.zeros(dereference(parents).size(), dtype=np.int64)
     cdef:
         uint32_t[:] concat_parents_view = concat_parents
         int64_t[:] split_points_view = split_points
     with nogil:
-        _copy_parents_to_array(&parents, concat_parents_view, split_points_view)
-    result = np.empty(len(parents), dtype=object)
+        _copy_parents_to_array(&dereference(parents), concat_parents_view, split_points_view)
+    result = np.empty(dereference(parents).size(), dtype=object)
     result[:] = np.split(concat_parents, split_points[:-1])
     return result
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _copy_parents_to_array(const vector[vector[uint32_t]] *parents,
+cdef void _copy_parents_to_array(const mi_vector[mi_vector[uint32_t]] *parents,
                                  uint32_t[:] output,
                                  int64_t[:] splits) nogil:
-    cdef int64_t i, offset = 0
-    for i in range(<int64_t>parents.size()):
-        vec = dereference(parents)[i]  # (*parents)[i]
+    cdef:
+        size_t i, offset = 0
+        const mi_vector[uint32_t] *vec
+    for i in range(parents.size()):
+        vec = &dereference(parents)[i]  # (*parents)[i]
         memcpy(&output[offset], vec.data(), 4 * vec.size())
         offset += vec.size()
         splits[i] = offset
@@ -834,15 +844,18 @@ cdef int64_t _mark_dag_parents(const uint32_t[:] vertexes,
                                const uint64_t[:] timestamps,
                                const int32_t[:] ownership,
                                bool slay_hydra,
-                               vector[vector[uint32_t]] *parents) nogil:
+                               mi_vector[mi_vector[uint32_t]] *parents) nogil:
     cdef:
-        uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent, beg, end
+        uint32_t not_found = len(vertexes), head, peek, edge, peek_owner, parent, beg, end
         uint64_t timestamp, head_timestamp
-        int64_t i, j, p, sum_len = 0
+        int64_t i, j, sum_len = 0
+        size_t p
         bool reached_root
-        vector[char] visited = vector[char](len(vertexes) - 1)
-        vector[uint32_t] boilerplate
-        vector[uint32_t] *my_parents
+        optional[mi_vector[char]] visited
+        optional[mi_vector[uint32_t]] boilerplate
+        mi_vector[uint32_t] *my_parents
+    visited.emplace(len(vertexes) - 1, parents.get_allocator())
+    boilerplate.emplace(parents.get_allocator())
     for i in range(len(heads)):
         head = heads[i]
         if head == not_found:
@@ -850,38 +863,38 @@ cdef int64_t _mark_dag_parents(const uint32_t[:] vertexes,
         head_timestamp = timestamps[i]
         my_parents = &dereference(parents)[i]
         reached_root = False
-        memset(visited.data(), 0, visited.size())
-        boilerplate.push_back(head)
-        while not boilerplate.empty():
-            peek = boilerplate.back()
-            boilerplate.pop_back()
-            if visited[peek]:
+        memset(dereference(visited).data(), 0, dereference(visited).size())
+        dereference(boilerplate).push_back(head)
+        while not dereference(boilerplate).empty():
+            peek = dereference(boilerplate).back()
+            dereference(boilerplate).pop_back()
+            if dereference(visited)[peek]:
                 continue
-            visited[peek] = 1
-            peak_owner = ownership[peek]
-            if peak_owner != i:
-                timestamp = timestamps[peak_owner]
+            dereference(visited)[peek] = 1
+            peek_owner = ownership[peek]
+            if peek_owner != i:
+                timestamp = timestamps[peek_owner]
                 if timestamp < head_timestamp:
                     # we don't expect many parents so scan linear
-                    for p in range(<int64_t> my_parents.size()):
+                    for p in range(my_parents.size()):
                         parent = dereference(my_parents)[p]
-                        if parent == peak_owner:
+                        if parent == peek_owner:
                             break
                         if timestamp > timestamps[parent]:
                             sum_len += 1
-                            my_parents.insert(my_parents.begin() + p, peak_owner)
+                            my_parents.insert(my_parents.begin() + p, peek_owner)
                             break
                     else:
                         sum_len += 1
-                        my_parents.push_back(peak_owner)
+                        my_parents.push_back(peek_owner)
                     continue
             beg, end = vertexes[peek], vertexes[peek + 1]
             if beg == end:
                 reached_root = True
             for j in range(beg, end):
                 edge = edges[j]
-                if not visited[edge]:
-                    boilerplate.push_back(edge)
+                if not dereference(visited)[edge]:
+                    dereference(boilerplate).push_back(edge)
         if reached_root and slay_hydra:
             # case when there are several different histories merged together
             my_parents.clear()
