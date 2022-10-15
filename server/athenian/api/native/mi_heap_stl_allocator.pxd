@@ -1,3 +1,7 @@
+# cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
+# cython: warn.maybe_uninitialized=True
+
+from cpython.pycapsule cimport PyCapsule_GetPointer
 from libcpp cimport bool
 from libcpp.string cimport string
 from libcpp.unordered_map cimport pair, unordered_map
@@ -34,3 +38,12 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
     cdef cppclass mi_string(string):
         mi_string mi_string[X](const char *, size_t, mi_heap_stl_allocator[X]&) except +
         mi_heap_stl_allocator[char] get_allocator()
+
+
+cdef inline mi_heap_stl_allocator[char] *mi_heap_allocator_from_capsule(obj) except? NULL:
+    return <mi_heap_stl_allocator[char] *> PyCapsule_GetPointer(obj, NULL)
+
+
+cdef inline void _delete_mi_heap_allocator_in_capsule(obj):
+    cdef mi_heap_stl_allocator[char] *alloc = mi_heap_allocator_from_capsule(obj)
+    del alloc

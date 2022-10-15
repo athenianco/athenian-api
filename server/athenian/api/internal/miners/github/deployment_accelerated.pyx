@@ -31,6 +31,7 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
 )
 from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_allocator_from_capsule,
     mi_heap_stl_allocator,
     mi_unordered_map,
     mi_vector,
@@ -64,6 +65,7 @@ def split_prs_to_jira_ids(
     ndarray pr_offsets not None,
     ndarray map_prs not None,
     ndarray map_jira not None,
+    alloc_capsule=None,
 ) -> tuple[ndarray, ndarray, ndarray, ndarray]:
     cdef ndarray arr
     for arr in (pr_node_ids, pr_offsets, map_prs, map_jira):
@@ -136,9 +138,13 @@ def split_prs_to_jira_ids(
         optional[mi_vector[string_view]] boilerplate_bodies
         optional[mi_vector[PyObjectPtr]] boilerplate_ptrs
 
-    with nogil:
+    if alloc_capsule is not None:
+        alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
+    else:
         alloc.emplace()
         deref(alloc).disable_free()
+
+    with nogil:
         id_map.emplace(deref(alloc))
         origin_map.emplace(deref(alloc))
         for i in range(PyArray_DIM(<PyObject *> map_prs, 0)):
@@ -391,9 +397,9 @@ def split_prs_to_jira_ids(
                 sub_len = resolved_data[j].size()
                 if sub_len == 0:
                     continue
-                deref(boilerplate_indexes).resize(0)
-                deref(boilerplate_bodies).resize(0)
-                deref(boilerplate_ptrs).resize(0)
+                deref(boilerplate_indexes).clear()
+                deref(boilerplate_bodies).clear()
+                deref(boilerplate_ptrs).clear()
                 k = 0
                 for origin_pair in resolved_data[j]:
                     deref(boilerplate_indexes).push_back(k)

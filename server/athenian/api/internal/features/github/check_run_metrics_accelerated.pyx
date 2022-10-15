@@ -13,6 +13,7 @@ from libcpp.set cimport set
 from libcpp.utility cimport move
 
 from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_allocator_from_capsule,
     mi_heap_stl_allocator,
     mi_string,
     mi_unordered_map,
@@ -117,6 +118,7 @@ cdef void _calculate_interval_intersections(const uint64_t[:] intervals,
 def mark_check_suite_types(
     check_run_names: np.ndarray,
     check_suite_ids: np.ndarray,
+    alloc_capsule=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     assert len(check_run_names) == len(check_suite_ids)
     _, name_indexes = np.unique(check_run_names, return_inverse=True)
@@ -135,8 +137,14 @@ def mark_check_suite_types(
         int64_t[:] name_indexes_view = name_indexes
         int64_t[:] suite_sizes_view = suite_sizes
         int64_t[:] type_marks_view = type_marks
+        optional[mi_heap_stl_allocator[int64_t]] alloc
+    if alloc_capsule is not None:
+        alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
+    else:
+        alloc.emplace()
+        deref(alloc).disable_free()
     with nogil:
-        _mark_check_suite_types(name_indexes_view, suite_sizes_view, type_marks_view)
+        _mark_check_suite_types(name_indexes_view, suite_sizes_view, type_marks_view, &deref(alloc))
     return first_suite_encounters, type_marks
 
 
@@ -146,19 +154,17 @@ cdef void _mark_check_suite_types(
     const int64_t[:] check_run_names,
     const int64_t[:] check_suite_sizes,
     int64_t[:] type_marks,
+    mi_heap_stl_allocator[int64_t] *alloc,
 ) nogil:
     cdef:
         int64_t pos = 0, local_pos, size, previous_name, current_name
         size_t j
         bool duplicates
-        optional[mi_heap_stl_allocator[int64_t]] alloc
         optional[mi_unordered_map[mi_string, mi_vector[int64_t]]] type_map
         mi_unordered_map[mi_string, mi_vector[int64_t]].iterator it
         optional[mi_vector[int64_t]] unique_names
         optional[mi_string] key
         int64_t *val_data
-    alloc.emplace()
-    deref(alloc).disable_free()
     type_map.emplace(deref(alloc))
     unique_names.emplace(deref(alloc))
     for index in range(len(check_suite_sizes)):

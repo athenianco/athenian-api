@@ -4,7 +4,9 @@
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
 cimport cython
+
 from cython.operator import dereference
+
 from cpython cimport (
     Py_INCREF,
     PyBytes_FromStringAndSize,
@@ -70,7 +72,11 @@ from athenian.api.native.cpython cimport (
     PyUnicode_KIND,
     PyUnicode_Type,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport mi_heap_stl_allocator, mi_vector
+from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_allocator_from_capsule,
+    mi_heap_stl_allocator,
+    mi_vector,
+)
 from athenian.api.native.numpy cimport (
     PyArray_CheckExact,
     PyArray_DATA,
@@ -436,7 +442,7 @@ cdef void _serialize_generic(model, FILE *stream) except *:
     fwrite(PyBytes_AS_STRING(<PyObject *> buf), size, 1, stream)
 
 
-def serialize_models(tuple models not None) -> bytes:
+def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
     cdef:
         char *output = NULL
         size_t output_size = 0
@@ -445,8 +451,11 @@ def serialize_models(tuple models not None) -> bytes:
         char count
         optional[mi_heap_stl_allocator[char]] alloc
     assert len(models) < 255
-    alloc.emplace()
-    dereference(alloc).disable_free()
+    if alloc_capsule is not None:
+        alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
+    else:
+        alloc.emplace()
+        dereference(alloc).disable_free()
     stream = open_memstream(&output, &output_size)
     count = len(models)
     fwrite(&count, 1, 1, stream)
@@ -463,7 +472,7 @@ def serialize_models(tuple models not None) -> bytes:
     return result
 
 
-def deserialize_models(bytes buffer not None) -> tuple[list[object], ...]:
+def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[object], ...]:
     cdef:
         char *input = PyBytes_AS_STRING(<PyObject *> buffer)
         uint32_t aux = 0, tuple_pos
@@ -476,8 +485,11 @@ def deserialize_models(bytes buffer not None) -> tuple[list[object], ...]:
         ModelFields spec
         optional[mi_heap_stl_allocator[char]] alloc
 
-    alloc.emplace()
-    dereference(alloc).disable_free()
+    if alloc_capsule is not None:
+        alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
+    else:
+        alloc.emplace()
+        dereference(alloc).disable_free()
     stream = fmemopen(input, PyBytes_GET_SIZE(<PyObject *> buffer), b"r")
     if fread(&aux, 1, 1, stream) != 1:
         raise ValueError(corrupted_msg % (ftell(stream), "tuple"))
