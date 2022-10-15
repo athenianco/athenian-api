@@ -59,6 +59,7 @@ from athenian.api.models.metadata.github import (
     Release,
 )
 from athenian.api.models.precomputed.models import GitHubCommitHistory
+from athenian.api.native.mi_heap_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
@@ -307,13 +308,14 @@ def _take_commits_in_default_branches(
     branch_hashes = branch_hashes[branch_repos_in_commits_mask]
     commit_hashes = commits[PushCommit.sha.name].values
 
+    alloc = make_mi_heap_allocator_capsule()
     accessible_indexes = []
     for repo, head_sha, commit_repo_index in zip(
         branch_repos, branch_hashes, np.nonzero(commit_repos_in_branches_mask)[0],
     ):
         repo_indexes = np.nonzero(commit_repo_indexes == commit_repo_index)[0]
         repo_hashes = commit_hashes[repo_indexes]
-        default_branch_hashes = extract_subdag(*dags[repo][1], np.array([head_sha]))[0]
+        default_branch_hashes = extract_subdag(*dags[repo][1], np.array([head_sha]), alloc)[0]
         accessible_indexes.append(
             repo_indexes[np.in1d(repo_hashes, default_branch_hashes, assume_unique=True)],
         )
@@ -410,6 +412,7 @@ async def fetch_repository_commits(
     repo_order = np.argsort(index_map)
     offsets = np.zeros(len(counts) + 1, dtype=int)
     np.cumsum(counts, out=offsets[1:])
+    alloc = make_mi_heap_allocator_capsule()
     for i, repo in enumerate(unique_repos):
         required_shas = df_shas[repo_order[offsets[i] : offsets[i + 1]]]
         required_shas = required_shas[required_shas != b""]
@@ -443,12 +446,15 @@ async def fetch_repository_commits(
                     repo,
                     meta_ids,
                     mdb,
+                    alloc,
                 ),
             )
         else:
             if prune:
                 consistent = False
-                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_shas)
+                hashes, vertexes, edges = extract_subdag(
+                    hashes, vertexes, edges, required_shas, alloc,
+                )
             result[repo] = consistent, (hashes, vertexes, edges)
     # traverse commits starting from the missing branch heads
     add_pdb_hits(pdb, "fetch_repository_commits", len(df_shas) - missed_counter)
@@ -473,7 +479,9 @@ async def fetch_repository_commits(
                 )
             if prune:
                 consistent = False
-                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
+                hashes, vertexes, edges = extract_subdag(
+                    hashes, vertexes, edges, repo_heads[repo], alloc,
+                )
             result[repo] = consistent, (hashes, vertexes, edges)
         if sql_values:
             sql = (await dialect_specific_insert(pdb))(GitHubCommitHistory)
@@ -638,6 +646,7 @@ async def _fetch_commit_history_dag(
     repo: str,
     meta_ids: Tuple[int, ...],
     mdb: Database,
+    alloc=None,
 ) -> Tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
@@ -650,6 +659,8 @@ async def _fetch_commit_history_dag(
     head_ids = head_ids[unique_indexes]
     # find max `max_stop_heads` top-level most recent commit hashes
     stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
+    if alloc is None:
+        alloc = make_mi_heap_allocator_capsule()
     if len(stop_heads) > 0:
         if len(stop_heads) > max_stop_heads:
             min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
@@ -677,7 +688,7 @@ async def _fetch_commit_history_dag(
         with sentry_sdk.start_span(
             op="partition_dag", description="%d %d" % (len(hashes), len(partition_seeds)),
         ):
-            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds)
+            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds, alloc)
     else:
         stop_hashes = []
     batch_size = 20
@@ -685,7 +696,7 @@ async def _fetch_commit_history_dag(
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb,
         )
-        bads, bad_hashes = verify_edges_integrity(new_edges)
+        bads, bad_hashes = verify_edges_integrity(new_edges, alloc)
         if bads:
             log.warning(
                 "%d new DAG edges are not consistent (%d commits): %s",
@@ -701,8 +712,8 @@ async def _fetch_commit_history_dag(
                 head_hashes[:batch_size], bad_hashes, assume_unique=True,
             ),
         ):
-            append_missing_heads(new_edges, good_head_hashes)
-        if orphans := find_orphans(new_edges, hashes):
+            append_missing_heads(new_edges, good_head_hashes, alloc)
+        if orphans := find_orphans(new_edges, hashes, alloc):
             committed_dates = dict(
                 await mdb.fetch_all(
                     select(NodeCommit.oid, NodeCommit.committed_date).where(
@@ -728,7 +739,7 @@ async def _fetch_commit_history_dag(
                 consistent = False
                 for i in sorted(removed_orphans, reverse=True):
                     new_edges.pop(i)
-        hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
+        hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges, alloc)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
         if len(head_hashes) > 0 and len(hashes) > 0:

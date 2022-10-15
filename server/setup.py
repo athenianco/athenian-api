@@ -50,6 +50,7 @@ setup(
                 code_root / "sentry_native.pyx",
                 code_root / "models" / "sql_builders.pyx",
                 code_root / "models" / "web_model_io.pyx",
+                code_root / "native" / "mi_heap_stl_allocator.pyx",
             )
             # fmt: on
         ],

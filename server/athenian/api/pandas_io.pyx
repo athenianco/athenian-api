@@ -62,7 +62,11 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport mi_heap_stl_allocator, mi_vector
+from athenian.api.native.mi_heap_stl_allocator cimport (
+    mi_heap_allocator_from_capsule,
+    mi_heap_stl_allocator,
+    mi_vector,
+)
 from athenian.api.native.numpy cimport (
     PyArray_BYTES,
     PyArray_CheckExact,
@@ -93,7 +97,7 @@ cdef extern from "<string.h>" nogil:
     size_t strnlen(const char *, size_t)
 
 
-def serialize_args(tuple args) -> bytes:
+def serialize_args(tuple args, alloc_capsule=None) -> bytes:
     cdef:
         bytes result, buffer
         Py_ssize_t size = 4
@@ -104,7 +108,7 @@ def serialize_args(tuple args) -> bytes:
     for arg in args:
         if isinstance(arg, DataFrame):
             is_df = True
-            buffer = serialize_df(arg)
+            buffer = serialize_df(arg, alloc_capsule)
         else:
             is_df = False
             buffer = pickle.dumps(arg)
@@ -157,7 +161,7 @@ def deserialize_args(bytes buffer) -> tuple[Any]:
 DEF nodim = 0xFFFFFFFF
 
 
-def serialize_df(df not None) -> bytes:
+def serialize_df(df not None, alloc_capsule=None) -> bytes:
     cdef:
         list blocks = [], arrs = []
         object arr
@@ -173,8 +177,11 @@ def serialize_df(df not None) -> bytes:
         optional[mi_vector[mi_vector[ColumnMeasurement]]] measurements
 
     mgr = df._mgr
-    alloc.emplace()
-    deref(alloc).disable_free()
+    if alloc_capsule is not None:
+        alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
+    else:
+        alloc.emplace()
+        deref(alloc).disable_free()
     measurements.emplace(deref(alloc))
     deref(measurements).reserve(len(mgr.blocks))
     for i, block in enumerate(mgr.blocks):

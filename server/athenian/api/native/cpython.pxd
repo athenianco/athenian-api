@@ -68,6 +68,7 @@ cdef extern from "Python.h":
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
     object PyUnicode_New(Py_ssize_t, Py_UCS4)
     PyObject *PyBytes_FromStringAndSize(char *v, Py_ssize_t len)
+    PyObject *PyLong_FromLong(long v)
 
 cdef extern from "datetime.h" nogil:
     bint PyDateTime_Check(PyObject *)
