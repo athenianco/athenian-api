@@ -82,6 +82,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubRepository,
 )
+from athenian.api.native.mi_heap_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
@@ -249,6 +250,7 @@ class PullRequestToReleaseMapper:
         release_pos = pr_pos = 0
         released_prs = []
         log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
+        alloc = make_mi_heap_allocator_capsule()
         while release_pos < len(unique_release_repos) and pr_pos < len(unique_pr_repos):
             release_repo = unique_release_repos[release_pos]
             pr_repo = unique_pr_repos[pr_pos]
@@ -259,7 +261,12 @@ class PullRequestToReleaseMapper:
                 release_beg = release_repo_offsets[release_pos]
                 release_end = release_repo_offsets[release_pos + 1]
                 ownership = mark_dag_access(
-                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end], True,
+                    hashes,
+                    vertexes,
+                    edges,
+                    ordered_release_shas[release_beg:release_end],
+                    True,
+                    alloc,
                 )
                 unmatched = np.flatnonzero(ownership == (release_end - release_beg))
                 if len(unmatched) > 0:
@@ -554,6 +561,7 @@ class ReleaseToPullRequestMapper:
             shas_col = releases[Release.sha.name].values
             repos_order = np.argsort(repos_col, kind="stable")
             pos = 0
+            alloc = make_mi_heap_allocator_capsule()
             for repo, group_count in zip(*np.unique(repos_col[repos_order], return_counts=True)):
                 indexes = repos_order[pos : pos + group_count]
                 pos += group_count
@@ -564,6 +572,7 @@ class ReleaseToPullRequestMapper:
                         shas_col[indexes],
                         dags[drop_logical_repo(repo)][1],
                         time_from64,
+                        alloc,
                     )
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
@@ -781,6 +790,7 @@ class ReleaseToPullRequestMapper:
 
         not_enough_repos = [None]
         releases_previous_older = None
+        alloc = make_mi_heap_allocator_capsule()
         while not_enough_repos:
             previous_shas = releases_previous[Release.sha.name].values
             previous_dates = releases_previous[Release.published_at.name].values
@@ -805,8 +815,8 @@ class ReleaseToPullRequestMapper:
                 all_shas = np.concatenate([in_range_repo_shas, previous_repo_shas])
                 all_timestamps = np.concatenate([in_range_repo_dates, previous_repo_dates])
                 dag = dags[physical_repo][1]
-                ownership = mark_dag_access(*dag, all_shas, True)
-                parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership)
+                ownership = mark_dag_access(*dag, all_shas, True, alloc)
+                parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership, alloc)
                 if any((len(p) == 0) for p in parents[: len(in_range_repo_indexes)]):
                     not_enough_repos.append(repo)
             if not_enough_repos:
@@ -1295,17 +1305,18 @@ class ReleaseToPullRequestMapper:
         shas: npt.NDArray[bytes],
         dag: DAG,
         time_boundary: np.datetime64,
+        alloc=None,
     ) -> np.ndarray:
         time_mask = published_ats >= time_boundary
         new_shas = shas if (everything := time_mask.all()) else shas[time_mask]
         assert len(new_shas), "you must check this before calling me"
-        visited_hashes, _, _ = extract_subdag(*dag, new_shas)
+        visited_hashes, _, _ = extract_subdag(*dag, new_shas, alloc)
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not everything:
             boundary_release_hashes = shas[~time_mask]
         else:
             return visited_hashes
-        ignored_hashes, _, _ = extract_subdag(*dag, boundary_release_hashes)
+        ignored_hashes, _, _ = extract_subdag(*dag, boundary_release_hashes, alloc)
         deleted_indexes = np.searchsorted(visited_hashes, ignored_hashes)
         # boundary_release_hash may touch some unique hashes not present in visited_hashes
         deleted_indexes = deleted_indexes[deleted_indexes < len(visited_hashes)]
