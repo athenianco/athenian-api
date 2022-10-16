@@ -91,6 +91,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRebasedPullRequest,
     GitHubReleaseDeployment,
 )
+from athenian.api.native.mi_heap_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
@@ -465,6 +466,7 @@ async def _mine_releases(
         release_hashes = releases[Release.sha.name].values
         release_timestamps = releases[Release.published_at.name].values
         pos = 0
+        alloc = make_mi_heap_allocator_capsule()
         for repo, repo_release_count in zip(
             *np.unique(release_repos[repo_order], return_counts=True),
         ):
@@ -477,9 +479,15 @@ async def _mine_releases(
                 continue
             repo_release_hashes = release_hashes[repo_indexes]
             repo_release_timestamps = release_timestamps[repo_indexes]
-            ownership = mark_dag_access(hashes, vertexes, edges, repo_release_hashes, True)
+            ownership = mark_dag_access(hashes, vertexes, edges, repo_release_hashes, True, alloc)
             parents = mark_dag_parents(
-                hashes, vertexes, edges, repo_release_hashes, repo_release_timestamps, ownership,
+                hashes,
+                vertexes,
+                edges,
+                repo_release_hashes,
+                repo_release_timestamps,
+                ownership,
+                alloc,
             )
             if len(relevant := np.flatnonzero(release_relevant[repo_indexes])) == 0:
                 continue
@@ -1875,6 +1883,7 @@ async def diff_releases(
     release_name_col = releases[ReleaseFacts.f.name].values
     sha_col = releases[ReleaseFacts.f.sha]
     pos = 0
+    alloc = make_mi_heap_allocator_capsule()
     for repo, repo_group_count in zip(unique_repos, repo_group_counts):
         repo_names = {v: k for k, v in names[repo].items()}
         pairs = borders[repo]
@@ -1893,7 +1902,7 @@ async def diff_releases(
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
             start_sha, finish_sha = (sha_col[indexes[x]] for x in (start, finish))
-            hashes, _, _ = extract_subdag(*dags[repo][1], np.array([finish_sha]))
+            hashes, _, _ = extract_subdag(*dags[repo][1], np.array([finish_sha]), alloc)
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 pair_indexes = indexes[start + 1 : finish + 1]
                 shas = sha_col[pair_indexes]
