@@ -3599,8 +3599,8 @@ async def test_diff_releases_commits(
     branches,
     default_branches,
 ):
-    # d105e15d91e7553d9d40d6e9fffe0a5008cf8afe
-    # 31a249d0d5b71bc0f374d3297247d89808263a8b
+    # d105e15d91e7553d9d40d6e9fffe0a5008cf8afe 2017-03-01 17:39:56
+    # 31a249d0d5b71bc0f374d3297247d89808263a8b 2017-03-31 15:19:36
     body = {
         "account": 1,
         "borders": {
@@ -3647,7 +3647,7 @@ async def test_diff_releases_commits(
     assert response.status == 200, response_body
     dr = DiffedReleases.from_dict(response_body)
 
-    assert len(dr.data["github.com/src-d/go-git"]) == 1
+    assert len(dr.data.get("github.com/src-d/go-git", [])) == 1, dr
     assert len(dr.include.users) == 8
     assert dr.include.jira is None
     assert {r.name for r in dr.data["github.com/src-d/go-git"][0].releases} == {

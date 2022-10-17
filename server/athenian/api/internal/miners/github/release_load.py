@@ -156,8 +156,22 @@ class ReleaseLoader:
             # both options precomputed
             # We cannot use nlargest(1) because it produces an inconsistent index:
             # we don't have repository_full_name when there is only one release.
+            relevant = releases[
+                [Release.repository_full_name.name, Release.published_at.name, matched_by_column]
+            ]
             matches = (
-                releases[[Release.repository_full_name.name, matched_by_column]]
+                relevant.take(
+                    np.flatnonzero(
+                        (
+                            relevant[Release.published_at.name]
+                            >= time_from - tag_by_branch_probe_lookaround
+                        ).values
+                        & (
+                            relevant[Release.published_at.name]
+                            < time_to + tag_by_branch_probe_lookaround
+                        ).values,
+                    ),
+                )
                 .groupby(Release.repository_full_name.name, sort=False)[matched_by_column]
                 .apply(lambda s: s[s.astype(int).idxmax()])
                 .to_dict()
@@ -206,6 +220,13 @@ class ReleaseLoader:
         missing_all = []
         hits = 0
         ambiguous_branches_scanned = set()
+        # DEV-990: ensure some gap to avoid failing when mdb lags
+        # related: DEV-4267
+        if force_fresh:
+            # effectively, we break if metadata stays out of sync during > 1 week
+            lookbehind = fresh_lookbehind
+        else:
+            lookbehind = timedelta(hours=1)
         for repo in repos:
             applied_match = applied_matches[repo]
             if applied_match == ReleaseMatch.tag_or_branch:
@@ -232,23 +253,13 @@ class ReleaseLoader:
                     my_time_to += tag_by_branch_probe_lookaround
                 my_time_to = min(my_time_to, max_time_to)
                 missed = False
-                if my_time_from < rt_from <= my_time_to:
+                if my_time_from < rt_from <= my_time_to or my_time_to < rt_from:
                     missing_low.append((rt_from, (repo, match)))
                     missed = True
-                if my_time_from <= rt_to < my_time_to:
-                    # DEV-990: ensure some gap to avoid failing when mdb lags
-                    # related: DEV-4267
-                    if force_fresh:
-                        # effectively, we break if metadata stays out of sync during > 1 week
-                        lookbehind = fresh_lookbehind
-                    else:
-                        lookbehind = timedelta(hours=1)
+                if my_time_from <= rt_to < my_time_to or rt_to < my_time_from:
                     missing_high.append((rt_to - lookbehind, (repo, match)))
                     missed = True
-                if rt_from > my_time_to or rt_to < my_time_from:
-                    missing_all.append((repo, match))
-                    missed = True
-                if not missed:
+                if missed:
                     hits += 1
         add_pdb_hits(pdb, "releases", hits)
         tasks = []
@@ -382,6 +393,8 @@ class ReleaseLoader:
                     errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
             include = (
                 ~errors
+                # must check the time frame
+                # because we sometimes have to load more releases than requested
                 & (published_at >= time_from).values
                 & (published_at < time_to).values
                 # repeat what we did in match_releases_by_tag()

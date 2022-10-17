@@ -2572,7 +2572,7 @@ async def test_precomputed_releases_tags_after_branches(
         default_branches,
         time_from,
         time_to,
-        release_match_setting_branch,
+        release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -2587,7 +2587,7 @@ async def test_precomputed_releases_tags_after_branches(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
-    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2019, month=9, day=1, tzinfo=timezone.utc)
     releases_branch, _ = await release_loader.load_releases(
         ["src-d/go-git"],
         branches,
@@ -2605,7 +2605,7 @@ async def test_precomputed_releases_tags_after_branches(
         None,
     )
     await wait_deferred()
-    assert len(releases_branch) == 772
+    assert len(releases_branch) == 768
 
     releases_tag, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -2751,3 +2751,99 @@ def _mk_rel_match_settings(
     else:
         raise ValueError("At least one keywork argument is needed")
     return ReleaseMatchSetting(**kwargs)
+
+
+@with_defer
+async def test_change_release_settings_event_branch_hole(
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_branch,
+    release_loader,
+    default_branches,
+    prefixer,
+):
+    branches = pd.DataFrame(
+        {
+            Branch.branch_name.name: ["master"],
+            Branch.repository_full_name.name: ["src-d/go-git"],
+            Branch.commit_id.name: [2755789],
+            Branch.commit_sha.name: np.array(
+                [b"7b6c1266556f59ac436fada3fa6106d4a84f9b56"], dtype="S40",
+            ),
+            Branch.commit_date: [datetime(2018, 8, 17, 11, 17, 46, tzinfo=timezone.utc)],
+        },
+    )
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git"],
+        branches,
+        default_branches,
+        (time_from := datetime(2015, 1, 1, tzinfo=timezone.utc)),
+        (time_to := datetime(2018, 8, 17, 11, 17, 47, tzinfo=timezone.utc)),
+        release_match_setting_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
+    check_branch_releases(releases, 649, time_from, time_to)
+    await wait_deferred()
+
+    time_from = datetime(2019, 6, 19, 12, 0, 0, tzinfo=timezone.utc)
+    time_to = datetime(2019, 9, 1, 12, 0, 0, tzinfo=timezone.utc)
+    branches = pd.DataFrame(
+        {
+            Branch.branch_name.name: ["master"],
+            Branch.repository_full_name.name: ["src-d/go-git"],
+            Branch.commit_id.name: [2756775],
+            Branch.commit_sha.name: np.array(
+                [b"8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"], dtype="S40",
+            ),
+            Branch.commit_date: [datetime(2019, 8, 31, 11, 57, 37, tzinfo=timezone.utc)],
+        },
+    )
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git"],
+        branches,
+        default_branches,
+        time_from,
+        time_to,
+        release_match_setting_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
+    check_branch_releases(releases, 15, time_from, time_to)
+    await wait_deferred()
+
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git"],
+        branches,
+        default_branches,
+        time_from,
+        time_to,
+        release_match_setting_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
+    assert len(releases) > 649 + 15
+    check_branch_releases(releases, 768, time_from, time_to)
