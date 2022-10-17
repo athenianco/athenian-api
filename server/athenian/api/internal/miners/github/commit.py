@@ -721,23 +721,29 @@ async def _fetch_commit_history_dag(
                     ),
                 ),
             )
-            removed_orphans = set()
+            removed_orphans_indexes = set()
+            removed_orphans_hashes = []
             for leaf, indexes in orphans.items():
                 try:
                     committed_date = committed_dates[leaf]
                 except KeyError:
                     log.error("failed to fetch committed_date of %s", leaf)
-                    removed_orphans.update(indexes)
+                    removed_orphans_indexes.update(indexes)
+                    removed_orphans_hashes.append(leaf)
                 else:
                     committed_date = ensure_db_datetime_tz(committed_date, mdb)
                     if datetime.now(timezone.utc) - committed_date < timedelta(days=1, hours=6):
-                        removed_orphans.update(indexes)
+                        removed_orphans_indexes.update(indexes)
+                        removed_orphans_hashes.append(leaf)
                     else:
-                        log.info("accepting an orphan: %s", leaf)
-            if removed_orphans:
-                log.warning("skipping orphans which are suspiciously young: %s", removed_orphans)
+                        log.info("accepting an orphan as root: %s", leaf)
+            if removed_orphans_indexes:
+                log.warning(
+                    "skipping orphans which are suspiciously young: %s",
+                    ", ".join(removed_orphans_hashes),
+                )
                 consistent = False
-                for i in sorted(removed_orphans, reverse=True):
+                for i in sorted(removed_orphans_indexes, reverse=True):
                     new_edges.pop(i)
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges, alloc)
         head_hashes = head_hashes[batch_size:]
