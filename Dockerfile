@@ -60,17 +60,17 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     rm Makefile
 
-ENV MKL=2020.0-166
+ENV MKL=2020.4-304
 
 # Intel MKL
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends gnupg && \
+    apt-get install -y --no-install-suggests --no-install-recommends gnupg gcc && \
     echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
     wget -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
     apt-key add - && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
-    rm -rf /opt/intel/documentation_2019 /opt/intel/compilers_and_libraries_*/linux/mkl/{bin,tools,examples} && \
+    rm -rf /opt/intel/documentation_* /opt/intel/compilers_and_libraries_*/linux/mkl/{bin,tools,examples} && \
     ln -s /opt/intel/compilers_and_libraries_*/linux/mkl /opt/intel/mkl && \
     printf '/opt/intel/mkl/lib/intel64_lin' >> /etc/ld.so.conf.d/mkl.conf && \
     ldconfig && \
@@ -83,7 +83,7 @@ RUN apt-get update && \
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 \
                     liblapack.so.3-x86_64-linux-gnu  /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
     apt-get clean && \
-    apt-get purge -y gnupg && \
+    apt-get purge -y gnupg gcc && \
     apt-get autoremove -y --purge && \
     rm -rf /var/lib/apt/lists/*
 
@@ -108,7 +108,7 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     pip3 install 'setuptools<60.0.0' && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir scipy==1.8.1 numpy==1.23.3 --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir scipy==1.9.2 numpy==1.23.3 --no-binary numpy && \
     apt-get purge -y libfftw3-dev gfortran gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \
