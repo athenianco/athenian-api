@@ -643,10 +643,10 @@ def find_orphans(
     alloc_capsule=None,
 ) -> dict[str, list[int]]:
     cdef:
-        Py_ssize_t size = len(edges)
+        Py_ssize_t size = len(edges), i
         const char *child_oid
         const char *parent_oid
-        long i, is_asyncpg
+        bint is_asyncpg
         size_t j
         optional[mi_heap_stl_allocator[char]] alloc
         optional[mi_unordered_set[string_view]] parents
@@ -659,10 +659,11 @@ def find_orphans(
         optional[mi_vector[RawEdge]] leaves
         optional[mi_vector[RawEdge]] boilerplate
         RawEdge edge
+        RawEdge *leaves_data
         RawEdge *reversed_data
         optional[mi_vector[mi_unordered_set[int]]] rejected
 
-    if size == 0 or attach_length == 0:
+    if size == 0:
         return {}
 
     if alloc_capsule is not None:
@@ -707,17 +708,18 @@ def find_orphans(
                     dereference(leaves).emplace_back(i, parent_oid)
 
         # propagate orphaned leaves up, recording the parents in `rejected`
+        leaves_data = dereference(leaves).data()
         size = 0
-        for i in range(<int>dereference(leaves).size()):
-            if dereference(parents).find(string_view(dereference(leaves)[i].second, 40)) == dereference(parents).end():
+        for i in range(<Py_ssize_t> dereference(leaves).size()):
+            if dereference(parents).find(string_view(leaves_data[i].second, 40)) == dereference(parents).end():
                 if not binary_search(
                     attach_data,
                     attach_data + attach_length,
-                    dereference(<sha_t *>dereference(leaves)[i].second),
+                    dereference(<sha_t *>leaves_data[i].second),
                     _compare_shas,
                 ):
-                    dereference(boilerplate).emplace_back(dereference(leaves)[i])
-                    dereference(leaves)[size] = dereference(leaves)[i]
+                    dereference(boilerplate).emplace_back(leaves_data[i])
+                    leaves_data[size] = leaves_data[i]
                     size += 1
                     dereference(rejected).emplace_back(dereference(alloc))
                     while not dereference(boilerplate).empty():
@@ -733,7 +735,7 @@ def find_orphans(
                                     dereference(boilerplate).emplace_back(edge)
 
     result = {
-        PyUnicode_FromStringAndSize(dereference(leaves)[i].second, 40):
+        PyUnicode_FromStringAndSize(leaves_data[i].second, 40):
             _unordered_set_to_list(dereference(rejected)[i])
         for i in range(size)
     }

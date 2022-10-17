@@ -117,7 +117,9 @@ def mdb_torture_file(worker_id) -> Path:
 
 
 @pytest.fixture(scope="function")
-async def mdb_torture(mdb_torture_file, event_loop, request, worker_id):
+async def mdb_torture(mdb_torture_file, metadata_db, event_loop, request, worker_id):
+    if metadata_db.startswith("postgresql://"):
+        raise pytest.skip("incompatible with dereferenced schemas")
     if getattr(request, "param", None) is not None:
         param_file = Path(
             NamedTemporaryFile(
@@ -282,7 +284,6 @@ async def test_consistency_torture_oct7(mdb_torture, pdb):
     )
 
 
-@pytest.mark.skip("todo")
 @pytest.mark.parametrize(
     "mdb_torture",
     [pd.Timestamp("2022-10-07 16:16:00+00")],
@@ -290,14 +291,14 @@ async def test_consistency_torture_oct7(mdb_torture, pdb):
 )
 @with_defer
 @freeze_time("2022-10-07 16:16:00+00")
-async def test_consistency_torture_second_line_of_defense(metadata_db, mdb_torture, pdb):
+async def test_consistency_torture_second_line_of_defense(mdb_torture, pdb):
     # what happens if we fetched 0672cf47016ff70929632f25c8fb864919af4a75
     await _test_consistency_torture(
         mdb_torture,
         pdb,
         ["45b176dd4689c791126bbfb2f9b3a140d79f0b4a", "96815f9c8ba3cd92a9620fcb11035ee896563a39"],
         False,
-        162556,
+        162555,
         [],
         [
             "96815f9c8ba3cd92a9620fcb11035ee896563a39",
