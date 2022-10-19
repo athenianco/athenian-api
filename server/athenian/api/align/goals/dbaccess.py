@@ -9,7 +9,11 @@ from typing import Any, Iterable, Optional, Sequence
 
 import sqlalchemy as sa
 
-from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoundError
+from athenian.api.align.exceptions import (
+    GoalMutationError,
+    GoalNotFoundError,
+    GoalTemplateNotFoundError,
+)
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import (
     Connection,
@@ -52,6 +56,14 @@ async def fetch_goal(account: int, id: int, sdb: DatabaseLike) -> Row:
             Goal.id == id,
         ),
     )
+
+
+async def fetch_goal_account(goal_id: int, sdb: DatabaseLike) -> int:
+    """Fetch the account owner of the goal, or fail if the Goal is not found."""
+    res = await sdb.fetch_val(sa.select(Goal.account_id).where(Goal.id == goal_id))
+    if res is None:
+        raise GoalNotFoundError(goal_id)
+    return res
 
 
 @sentry_span

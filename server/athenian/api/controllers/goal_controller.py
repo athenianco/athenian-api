@@ -6,8 +6,10 @@ from aiohttp import web
 
 from athenian.api.align.exceptions import GoalTemplateNotFoundError
 from athenian.api.align.goals.dbaccess import (
+    delete_goal as db_delete_goal,
     delete_goal_template_from_db,
     dump_goal_repositories,
+    fetch_goal_account,
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
@@ -18,6 +20,7 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.align.goals.measure import GoalToServe, GoalTreeGenerator
 from athenian.api.align.queries.metrics import calculate_team_metrics
 from athenian.api.async_utils import gather
+from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import Row, integrity_errors
 from athenian.api.internal.account import (
@@ -243,3 +246,15 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
         for to_serve in goals_to_serve
     ]
     return model_response(models)
+
+
+@disable_default_user
+async def delete_goal(request: AthenianWebRequest, id: int) -> web.Response:
+    """Delete an existing goal."""
+    async with request.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            account = await fetch_goal_account(id, sdb_conn)
+            await get_user_account_status_from_request(request, account)
+            await db_delete_goal(account, id, sdb_conn)
+
+    return web.Response(status=204)
