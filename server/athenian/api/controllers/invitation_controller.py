@@ -93,8 +93,8 @@ async def gen_user_invitation(request: AthenianWebRequest, id: int) -> web.Respo
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status_from_request(request, id)
         existing = await sdb_conn.fetch_one(
-            select([Invitation.id, Invitation.salt]).where(
-                and_(Invitation.is_active, Invitation.account_id == id),
+            select(Invitation.id, Invitation.salt).where(
+                Invitation.is_active, Invitation.account_id == id,
             ),
         )
         if existing is not None:
@@ -126,8 +126,8 @@ async def gen_account_invitation(request: AthenianWebRequest) -> web.Response:
 
 async def _check_admin_access(uid: str, account: int, sdb_conn: morcilla.core.Connection):
     status = await sdb_conn.fetch_one(
-        select([UserAccount.is_admin]).where(
-            and_(UserAccount.user_id == uid, UserAccount.account_id == account),
+        select(UserAccount.is_admin).where(
+            UserAccount.user_id == uid, UserAccount.account_id == account,
         ),
     )
     if status is None:
@@ -291,24 +291,23 @@ async def _join_account(
     log = logging.getLogger(f"{metadata.__package__}.join_account")
     if not (is_admin := acc_id == admin_backdoor):
         is_admin = 0 == await sdb_transaction.fetch_val(
-            select([func.count(text("*"))]).where(UserAccount.account_id == acc_id),
+            select(func.count(text("*"))).where(UserAccount.account_id == acc_id),
         )
     slack = request.app["slack"]  # type: SlackWebClient
+    new_acc_id = False
     if is_admin:
         other_accounts = await sdb_transaction.fetch_all(
-            select([UserAccount.account_id]).where(
-                and_(UserAccount.user_id == request.uid, UserAccount.is_admin),
+            select(UserAccount.account_id).where(
+                UserAccount.user_id == request.uid, UserAccount.is_admin,
             ),
         )
         if other_accounts:
             other_accounts = {row[0] for row in other_accounts}
             installed_accounts = await sdb_transaction.fetch_all(
-                select([RepositorySet.owner_id]).where(
-                    and_(
-                        RepositorySet.owner_id.in_(other_accounts),
-                        RepositorySet.name == RepositorySet.ALL,
-                        RepositorySet.precomputed,
-                    ),
+                select(RepositorySet.owner_id).where(
+                    RepositorySet.owner_id.in_(other_accounts),
+                    RepositorySet.name == RepositorySet.ALL,
+                    RepositorySet.precomputed,
                 ),
             )
             installed = {row[0] for row in installed_accounts}
@@ -328,23 +327,12 @@ async def _join_account(
             log.info("Created new account %d", acc_id)
         else:
             log.info("Activated new account %d", acc_id)
-        if slack is not None:
-
-            async def report_new_account_to_slack():
-                jira_link = await generate_jira_invitation_link(acc_id, sdb)
-                await slack.post_install(
-                    "new_account.jinja2",
-                    user=await request.user(),
-                    account=acc_id,
-                    jira_link=jira_link,
-                )
-
-            await defer(report_new_account_to_slack(), "report_new_account_to_slack")
+        new_acc_id = True
         status = None
     else:
         status = await sdb_transaction.fetch_one(
-            select([UserAccount.is_admin]).where(
-                and_(UserAccount.user_id == request.uid, UserAccount.account_id == acc_id),
+            select(UserAccount.is_admin).where(
+                UserAccount.user_id == request.uid, UserAccount.account_id == acc_id,
             ),
         )
     if status is None:
@@ -357,13 +345,25 @@ async def _join_account(
         if invitation is not None:
             user.name = invitation["name"] or user.name
             user.email = invitation["email"] or user.email
+
+        if new_acc_id and slack is not None:
+
+            async def report_new_account_to_slack():
+                jira_link = await generate_jira_invitation_link(acc_id, sdb)
+                await slack.post_install(
+                    "new_account.jinja2",
+                    user=user,
+                    account=acc_id,
+                    jira_link=jira_link,
+                )
+
+            await defer(report_new_account_to_slack(), "report_new_account_to_slack")
+
         # create the user<>account record if not blocked
         if await sdb_transaction.fetch_val(
-            select([func.count(text("*"))]).where(
-                and_(
-                    BanishedUserAccount.user_id == request.uid,
-                    BanishedUserAccount.account_id == acc_id,
-                ),
+            select(func.count(text("*"))).where(
+                BanishedUserAccount.user_id == request.uid,
+                BanishedUserAccount.account_id == acc_id,
             ),
         ):
             if slack is not None:
@@ -463,8 +463,8 @@ async def _check_user_org_membership(
     if not meta_ids:
         return user
     user_node_id = await mdb.fetch_val(
-        select([NodeUser.node_id]).where(
-            and_(NodeUser.acc_id.in_(meta_ids), NodeUser.login == user.login),
+        select(NodeUser.node_id).where(
+            NodeUser.acc_id.in_(meta_ids), NodeUser.login == user.login,
         ),
     )
     if user_node_id not in user_node_ids:
@@ -493,7 +493,7 @@ async def get_organizations_members(meta_ids: Sequence[int], mdb: DatabaseLike) 
     return [
         r[0]
         for r in await mdb.fetch_all(
-            select([OrganizationMember.child_id]).where(OrganizationMember.acc_id.in_(meta_ids)),
+            select(OrganizationMember.child_id).where(OrganizationMember.acc_id.in_(meta_ids)),
         )
     ]
 
@@ -556,7 +556,7 @@ async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
         secret_salt=0, secret=Account.missing_secret, expires_at=datetime.now() + TRIAL_PERIOD,
     ).create_defaults()
     max_id = (
-        await conn.fetch_one(select([func.max(Account.id)]).where(Account.id < admin_backdoor))
+        await conn.fetch_one(select(func.max(Account.id)).where(Account.id < admin_backdoor))
     )[0] or 0
     acc.id = max_id + 1
     acc_id = await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
@@ -584,8 +584,8 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     except binascii.Error:
         return model_response(result)
     inv = await request.sdb.fetch_one(
-        select([Invitation.account_id, Invitation.is_active]).where(
-            and_(Invitation.id == iid, Invitation.salt == salt),
+        select(Invitation.account_id, Invitation.is_active).where(
+            Invitation.id == iid, Invitation.salt == salt,
         ),
     )
     if inv is None:
@@ -653,7 +653,7 @@ async def _append_precomputed_progress(
             if now > estimated_precompute_time:
                 if slack is not None and cache is not None:
                     expires = await sdb.fetch_val(
-                        select([Account.expires_at]).where(Account.id == account),
+                        select(Account.expires_at).where(Account.id == account),
                     )
                     await _notify_precomputed_failure(
                         slack, uid, account, model, created, expires, cache,
