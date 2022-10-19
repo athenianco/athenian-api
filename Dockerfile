@@ -122,6 +122,11 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     rm -rf /usr/share/doc/*
 
 
+ARG ROOT_ENC_PASSWD=
+RUN if [ -n "${ROOT_ENC_PASSWD}" ]; then \
+    echo root:"${ROOT_ENC_PASSWD}" | chpasswd -e; \
+    fi
+
 ARG UID=1984
 ARG GID=1984
 

@@ -436,7 +436,7 @@ jobs:
         python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
         cpuinfo && \
         resolve-march-native --vertical && \
-        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD="${{ secrets.API_IMAGE_ROOT_PASSWORD }}" -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
         docker run --rm us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api --help
         docker build -t test --build-arg base=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api server/tests
         mkdir /tmp/io
@@ -532,7 +532,7 @@ jobs:
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         make gcloud-login
-        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD="${{ secrets.API_IMAGE_ROOT_PASSWORD }}" -t $IMAGE .
         make docker-push
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
