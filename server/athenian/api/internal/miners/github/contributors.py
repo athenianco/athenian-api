@@ -265,7 +265,10 @@ async def mine_contributors(
             # we may load 200,000 releases here, must optimize and sacrifice precision
             prel = PrecomputedRelease
             or_items, _ = match_groups_to_sql(
-                group_repos_by_release_match(repos, default_branches, release_settings)[0], prel,
+                group_repos_by_release_match(repos, default_branches, release_settings)[0],
+                prel,
+                True,
+                prefixer,
             )
             if pdb.url.dialect == "sqlite":
                 query = (

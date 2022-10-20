@@ -752,6 +752,7 @@ class ReleaseToPullRequestMapper:
             fetch_dags(),
             cls._fetch_first_release_dates(
                 physical_repos,
+                prefixer,
                 consistent_release_settings,
                 default_branches,
                 account,
@@ -1134,6 +1135,7 @@ class ReleaseToPullRequestMapper:
     async def _fetch_first_release_dates(
         cls,
         repos: Iterable[str],
+        prefixer: Prefixer,
         release_settings: ReleaseSettings,
         default_branches: Dict[str, str],
         account: int,
@@ -1145,7 +1147,7 @@ class ReleaseToPullRequestMapper:
         match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
         spans, earliest_releases, repo_biths = await gather(
             cls.release_loader.fetch_precomputed_release_match_spans(match_groups, account, pdb),
-            cls._fetch_earliest_precomputed_releases(match_groups, account, pdb),
+            cls._fetch_earliest_precomputed_releases(match_groups, prefixer, account, pdb),
             cls._fetch_repository_first_commit_dates(repos, account, meta_ids, mdb, pdb, cache),
         )
         for key, val in repo_biths.items():
@@ -1163,17 +1165,18 @@ class ReleaseToPullRequestMapper:
     async def _fetch_earliest_precomputed_releases(
         cls,
         match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        prefixer: Prefixer,
         account: int,
         pdb: Database,
     ) -> Dict[str, datetime]:
         prel = PrecomputedRelease
-        or_items, _ = match_groups_to_sql(match_groups, prel)
+        or_items, _ = match_groups_to_sql(match_groups, prel, True, prefixer)
         if not or_items:
             return {}
         query = union_all(
             *(
-                select([prel.repository_full_name, func.min(prel.published_at)])
-                .where(and_(item, prel.acc_id == account))
+                select(prel.repository_full_name, func.min(prel.published_at))
+                .where(item, prel.acc_id == account)
                 .group_by(prel.repository_full_name)
                 for item in or_items
             ),
