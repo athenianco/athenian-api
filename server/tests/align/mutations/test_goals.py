@@ -156,7 +156,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         }
         res = await self._request(variables)
         assert "data" not in res
-        assert_extension_error(res, "Some teamId-s don't exist or access denied: 10")
+        assert_extension_error(res, "Some teams don't exist or access denied: 10")
         await self._assert_no_goal_exists(sdb)
 
     async def test_goals_for_other_account_team(self, sdb: Database) -> None:
@@ -172,9 +172,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         }
         res = await self._request(variables)
         assert "data" not in res
-        assert_extension_error(
-            res, f"Some {TeamGoalInputFields.teamId}-s don't exist or access denied: 20",
-        )
+        assert_extension_error(res, "Some teams don't exist or access denied: 20")
         await self._assert_no_goal_exists(sdb)
 
     async def test_inverted_dates(self, sdb: Database):
@@ -396,9 +394,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         )
 
     async def test_repositories(self, sdb: Database) -> None:
-        await models_insert(
-            sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=11, parent_id=10),
-        )
+        await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11, parent_id=10))
 
         team_goals = [
             {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}},
