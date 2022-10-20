@@ -389,8 +389,12 @@ class ReleaseLoader:
             matched_by_vec = releases[matched_by_column].values
             errors = np.full(len(releases), False)
             for repo, match in applied_matches.items():
-                if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
-                    errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
+                try:
+                    if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
+                        errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
+                except KeyError:
+                    # DEV-5212: deleted or renamed repos may emerge after a node ID search
+                    errors |= repos_vec == repo.encode()
             include = (
                 ~errors
                 # must check the time frame
