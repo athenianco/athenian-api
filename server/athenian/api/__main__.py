@@ -200,7 +200,8 @@ def setup_context(log: logging.Logger) -> None:
                 url = urlsplit(arg[pgpos:])
             except ValueError:
                 continue
-            url = url._replace(netloc=url.netloc.replace(url.password, "<secured>"))
+            if url.password is not None:
+                url = url._replace(netloc=url.netloc.replace(url.password, "<secured>"))
             argv[i] = arg[:pgpos] + url.geturl()
     log.info("%s", argv)
     log.info("Version: %s", metadata.__version__)

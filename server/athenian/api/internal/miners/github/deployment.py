@@ -3160,21 +3160,29 @@ async def _fetch_extended_prs_for_facts(
         PullRequest.user_node_id,
     ]
     any_values = len(unique_pr_node_ids) > 100
-    query = (
+    queries = [
         select(*selected)
         .where(
-            PullRequest.acc_id.in_(meta_ids),
+            PullRequest.acc_id == acc_id,
             PullRequest.node_id.in_any_values(unique_pr_node_ids)
             if any_values
             else PullRequest.node_id.in_(unique_pr_node_ids),
         )
         .order_by(PullRequest.node_id)
-    )
+        for acc_id in meta_ids
+    ]
+    if len(queries) == 1:
+        query = queries[0]
+    else:
+        query = union_all(*queries)
     if any_values:
         query = (
             query.with_statement_hint("Leading(((pr *VALUES*) repo))")
             .with_statement_hint(f"Rows(pr *VALUES* #{len(unique_pr_node_ids)})")
             .with_statement_hint(f"Rows(pr *VALUES* repo #{len(unique_pr_node_ids)})")
+            .with_statement_hint(f"Rows(pr *VALUES* repo ath #{len(unique_pr_node_ids)})")
+            .with_statement_hint(f"Rows(pr *VALUES* repo math #{len(unique_pr_node_ids)})")
+            .with_statement_hint(f"Rows(pr *VALUES* repo ath math #{len(unique_pr_node_ids)})")
         )
     prs_df = await read_sql_query(query, mdb, selected)
     dep_lengths = nested_lengths(facts[DeploymentFacts.f.prs].values)

@@ -10,6 +10,7 @@ import aiomcache
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import and_, select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -307,109 +308,40 @@ async def _epic_flow(
         cache,
         extra_columns=extra_columns,
     )
-    children_columns = {k: children_df[k].values for k in children_df.columns}
-    children_columns[Issue.id.name] = children_df.index.values
-    epics = []
-    issue_by_id = {}
-    issue_type_ids = {}
-    children_by_type = defaultdict(list)
-    epics_by_type = defaultdict(list)
-    now = datetime.utcnow()
-    for (
-        epic_id,
-        project_id,
-        epic_key,
-        epic_title,
-        epic_created,
-        epic_updated,
-        epic_prs_began,
-        epic_work_began,
-        epic_prs_released,
-        epic_resolved,
-        epic_reporter,
-        epic_assignee,
-        epic_priority,
-        epic_status,
-        epic_type,
-        epic_prs,
-        epic_comments,
-        epic_url,
-    ) in zip(
-        epics_df.index.values,
-        *(
-            epics_df[column].values
-            for column in (
-                Issue.project_id.name,
-                Issue.key.name,
-                Issue.title.name,
-                Issue.created.name,
-                AthenianIssue.updated.name,
-                ISSUE_PRS_BEGAN,
-                AthenianIssue.work_began.name,
-                ISSUE_PRS_RELEASED,
-                AthenianIssue.resolved.name,
-                Issue.reporter_display_name.name,
-                Issue.assignee_display_name.name,
-                Issue.priority_name.name,
-                Issue.status.name,
-                Issue.type_id.name,
-                ISSUE_PRS_COUNT,
-                Issue.comments_count.name,
-                Issue.url.name,
-            )
-        ),
-    ):
-        work_began, resolved = resolve_work_began_and_resolved(
-            epic_work_began, epic_prs_began, epic_resolved, epic_prs_released,
-        )
-        epics.append(
-            epic := JIRAEpic(
-                id=epic_key,
-                project=project_id.decode(),
-                children=[],
-                title=epic_title,
-                created=epic_created,
-                updated=epic_updated,
-                work_began=work_began,
-                resolved=resolved,
-                reporter=epic_reporter,
-                assignee=epic_assignee,
-                comments=epic_comments,
-                priority=epic_priority,
-                status=epic_status,
-                type=epic_type,
-                prs=epic_prs,
-                url=epic_url,
-                life_time=timedelta(0),
-            ),
-        )
-        epics_by_type[(project_id, epic_type)].append(epic)
-        children_indexes = epic_children_map.get(epic_id, [])
-        project_type_ids = issue_type_ids.setdefault(project_id, set())
-        project_type_ids.add(epic_type)
+    with sentry_sdk.start_span(op="materialize models", description=str(len(epics_df))):
+        children_columns = {k: children_df[k].values for k in children_df.columns}
+        children_columns[Issue.id.name] = children_df.index.values
+        epics = []
+        issue_by_id = {}
+        issue_type_ids = {}
+        children_by_type = defaultdict(list)
+        epics_by_type = defaultdict(list)
+        now = datetime.utcnow()
         for (
-            child_id,
-            child_key,
-            child_title,
-            child_created,
-            child_updated,
-            child_prs_began,
-            child_work_began,
-            child_prs_released,
-            child_resolved,
-            child_comments,
-            child_reporter,
-            child_assignee,
-            child_priority,
-            child_status,
-            child_prs,
-            child_type,
-            child_url,
+            epic_id,
+            project_id,
+            epic_key,
+            epic_title,
+            epic_created,
+            epic_updated,
+            epic_prs_began,
+            epic_work_began,
+            epic_prs_released,
+            epic_resolved,
+            epic_reporter,
+            epic_assignee,
+            epic_priority,
+            epic_status,
+            epic_type,
+            epic_prs,
+            epic_comments,
+            epic_url,
         ) in zip(
+            epics_df.index.values,
             *(
-                children_columns[column][children_indexes]
+                epics_df[column].values
                 for column in (
-                    Issue.id.name,
+                    Issue.project_id.name,
                     Issue.key.name,
                     Issue.title.name,
                     Issue.created.name,
@@ -418,67 +350,137 @@ async def _epic_flow(
                     AthenianIssue.work_began.name,
                     ISSUE_PRS_RELEASED,
                     AthenianIssue.resolved.name,
-                    Issue.comments_count.name,
                     Issue.reporter_display_name.name,
                     Issue.assignee_display_name.name,
                     Issue.priority_name.name,
                     Issue.status.name,
-                    ISSUE_PRS_COUNT,
                     Issue.type_id.name,
+                    ISSUE_PRS_COUNT,
+                    Issue.comments_count.name,
                     Issue.url.name,
                 )
             ),
-        ):  # noqa(E123)
-            epic.prs += child_prs
+        ):
             work_began, resolved = resolve_work_began_and_resolved(
-                child_work_began, child_prs_began, child_resolved, child_prs_released,
+                epic_work_began, epic_prs_began, epic_resolved, epic_prs_released,
             )
-            if work_began is not None:
-                epic.work_began = min(epic.work_began or work_began, work_began)
-            if resolved is not None:
-                lead_time = resolved - work_began
-                life_time = resolved - child_created
-            else:
-                life_time = now - pd.to_datetime(child_created)
-                if work_began is not None:
-                    lead_time = now - pd.to_datetime(work_began)
-                else:
-                    lead_time = None
-            if resolved is None:
-                epic.resolved = None
-            project_type_ids.add(child_type)
-            epic.children.append(
-                child := JIRAEpicChild(
-                    id=child_key,
-                    title=child_title,
-                    created=child_created,
-                    updated=child_updated,
+            epics.append(
+                epic := JIRAEpic(
+                    id=epic_key,
+                    project=project_id.decode(),
+                    children=[],
+                    title=epic_title,
+                    created=epic_created,
+                    updated=epic_updated,
                     work_began=work_began,
-                    lead_time=lead_time,
-                    life_time=life_time,
                     resolved=resolved,
-                    reporter=child_reporter,
-                    assignee=child_assignee,
-                    comments=child_comments,
-                    priority=child_priority,
-                    status=child_status,
-                    prs=child_prs,
-                    type=child_type,
-                    subtasks=0,
-                    url=child_url,
+                    reporter=epic_reporter,
+                    assignee=epic_assignee,
+                    comments=epic_comments,
+                    priority=epic_priority,
+                    status=epic_status,
+                    type=epic_type,
+                    prs=epic_prs,
+                    url=epic_url,
+                    life_time=timedelta(0),
                 ),
             )
-            issue_by_id[child_id] = child
-            children_by_type[(project_id, child_type)].append(child)
-            if len(issue_by_id) % 200 == 0:
-                await asyncio.sleep(0)
-        if epic.resolved is not None:
-            epic.lead_time = epic.resolved - epic.work_began
-            epic.life_time = epic.resolved - epic.created
-        else:
-            epic.life_time = now - pd.to_datetime(epic.created)
-            if epic.work_began is not None:
-                epic.lead_time = now - pd.to_datetime(epic.work_began)
+            epics_by_type[(project_id, epic_type)].append(epic)
+            children_indexes = epic_children_map.get(epic_id, [])
+            project_type_ids = issue_type_ids.setdefault(project_id, set())
+            project_type_ids.add(epic_type)
+            for (
+                child_id,
+                child_key,
+                child_title,
+                child_created,
+                child_updated,
+                child_prs_began,
+                child_work_began,
+                child_prs_released,
+                child_resolved,
+                child_comments,
+                child_reporter,
+                child_assignee,
+                child_priority,
+                child_status,
+                child_prs,
+                child_type,
+                child_url,
+            ) in zip(
+                *(
+                    children_columns[column][children_indexes]
+                    for column in (
+                        Issue.id.name,
+                        Issue.key.name,
+                        Issue.title.name,
+                        Issue.created.name,
+                        AthenianIssue.updated.name,
+                        ISSUE_PRS_BEGAN,
+                        AthenianIssue.work_began.name,
+                        ISSUE_PRS_RELEASED,
+                        AthenianIssue.resolved.name,
+                        Issue.comments_count.name,
+                        Issue.reporter_display_name.name,
+                        Issue.assignee_display_name.name,
+                        Issue.priority_name.name,
+                        Issue.status.name,
+                        ISSUE_PRS_COUNT,
+                        Issue.type_id.name,
+                        Issue.url.name,
+                    )
+                ),
+            ):  # noqa(E123)
+                epic.prs += child_prs
+                work_began, resolved = resolve_work_began_and_resolved(
+                    child_work_began, child_prs_began, child_resolved, child_prs_released,
+                )
+                if work_began is not None:
+                    epic.work_began = min(epic.work_began or work_began, work_began)
+                if resolved is not None:
+                    lead_time = resolved - work_began
+                    life_time = resolved - child_created
+                else:
+                    life_time = now - pd.to_datetime(child_created)
+                    if work_began is not None:
+                        lead_time = now - pd.to_datetime(work_began)
+                    else:
+                        lead_time = None
+                if resolved is None:
+                    epic.resolved = None
+                project_type_ids.add(child_type)
+                epic.children.append(
+                    child := JIRAEpicChild(
+                        id=child_key,
+                        title=child_title,
+                        created=child_created,
+                        updated=child_updated,
+                        work_began=work_began,
+                        lead_time=lead_time,
+                        life_time=life_time,
+                        resolved=resolved,
+                        reporter=child_reporter,
+                        assignee=child_assignee,
+                        comments=child_comments,
+                        priority=child_priority,
+                        status=child_status,
+                        prs=child_prs,
+                        type=child_type,
+                        subtasks=0,
+                        url=child_url,
+                    ),
+                )
+                issue_by_id[child_id] = child
+                children_by_type[(project_id, child_type)].append(child)
+                if len(issue_by_id) % 200 == 0:
+                    await asyncio.sleep(0)
+            if epic.resolved is not None:
+                epic.lead_time = epic.resolved - epic.work_began
+                epic.life_time = epic.resolved - epic.created
+            else:
+                epic.life_time = now - pd.to_datetime(epic.created)
+                if epic.work_began is not None:
+                    epic.lead_time = now - pd.to_datetime(epic.work_began)
     if JIRAFilterReturn.PRIORITIES in return_:
         priority_ids = unordered_unique(
             np.concatenate(
