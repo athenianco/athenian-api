@@ -451,7 +451,7 @@ class ReleaseLoader:
         """Find out the precomputed time intervals for each release match group of repositories."""
         ghrts = GitHubReleaseMatchTimespan
         sqlite = pdb.url.dialect == "sqlite"
-        or_items, _ = match_groups_to_sql(match_groups, ghrts)
+        or_items, _ = match_groups_to_sql(match_groups, ghrts, False)
         if pdb.url.dialect == "sqlite":
             query = select(
                 [ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to],
@@ -549,7 +549,7 @@ class ReleaseLoader:
         index: Optional[str | Sequence[str]] = None,
     ) -> pd.DataFrame:
         prel = PrecomputedRelease
-        or_items, _ = match_groups_to_sql(match_groups, prel)
+        or_items, _ = match_groups_to_sql(match_groups, prel, True, prefixer)
         if pdb.url.dialect == "sqlite":
             query = (
                 select(prel)
@@ -1004,6 +1004,8 @@ def group_repos_by_release_match(
 def match_groups_to_sql(
     match_groups: dict[ReleaseMatch, dict[str, Iterable[str]]],
     model,
+    use_repository_node_id: bool,
+    prefixer: Optional[Prefixer] = None,
 ) -> tuple[list[ClauseElement], list[Iterable[str]]]:
     """
     Convert the grouped release matches to a list of SQL conditions.
@@ -1012,13 +1014,47 @@ def match_groups_to_sql(
              2. List of involved repository names for each SQL filter.
     """
     or_conditions, repos = match_groups_to_conditions(match_groups, model)
-    or_items = [
-        and_(
-            model.release_match == cond[model.release_match.name],
-            model.repository_full_name.in_(cond[model.repository_full_name.name]),
-        )
-        for cond in or_conditions
-    ]
+    if use_repository_node_id:
+        repo_name_to_node = prefixer.repo_name_to_node.__getitem__
+        or_items = []
+        restricted_physical = set()
+        for cond in or_conditions:
+            for repo in cond[model.repository_full_name.name]:
+                if (physical_repo := drop_logical_repo(repo)) != repo:
+                    restricted_physical.add(physical_repo)
+        for cond in or_conditions:
+            resolved = []
+            unresolved = []
+            for repo in cond[model.repository_full_name.name]:
+                try:
+                    resolved.append(
+                        repo_name_to_node(repo if repo not in restricted_physical else None),
+                    )
+                except KeyError:
+                    # logical
+                    unresolved.append(repo)
+            if resolved:
+                or_items.append(
+                    and_(
+                        model.release_match == cond[model.release_match.name],
+                        model.repository_node_id.in_(resolved),
+                    ),
+                )
+            if unresolved:
+                or_items.append(
+                    and_(
+                        model.release_match == cond[model.release_match.name],
+                        model.repository_full_name.in_(unresolved),
+                    ),
+                )
+    else:
+        or_items = [
+            and_(
+                model.release_match == cond[model.release_match.name],
+                model.repository_full_name.in_(cond[model.repository_full_name.name]),
+            )
+            for cond in or_conditions
+        ]
 
     return or_items, repos
 

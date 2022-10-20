@@ -329,7 +329,7 @@ class DonePRFactsLoader:
             match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = {
                 "": repos,
             }
-            or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
+            or_items, or_repos = match_groups_to_sql(match_groups, ghprt, False)
             query = union_all(
                 *(
                     select(selected).where(
@@ -602,7 +602,7 @@ class DonePRFactsLoader:
         }
 
         def or_items():
-            return match_groups_to_sql(match_groups, ghprt)[0]
+            return match_groups_to_sql(match_groups, ghprt, False)[0]
 
         queries_undeployed, date_range = await cls._compose_query_filters_undeployed(
             selected,
