@@ -375,11 +375,9 @@ async def _drop_precomputed_event_releases(
         *(
             pdb.execute(
                 delete(table).where(
-                    and_(
-                        table.release_match == ReleaseMatch.event.name,
-                        table.repository_full_name.in_(repos),
-                        table.acc_id == account,
-                    ),
+                    table.release_match == ReleaseMatch.event.name,
+                    table.repository_full_name.in_(repos),
+                    table.acc_id == account,
                 ),
             )
             for table in (
