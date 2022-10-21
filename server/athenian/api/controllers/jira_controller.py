@@ -1199,7 +1199,8 @@ async def _collect_ids(
         repos = logical_settings.append_logical_prs(repos)
         release_settings = await settings.list_release_matches(repos)
     else:
-        branches = default_branches = release_settings = logical_settings = None
+        branches = release_settings = logical_settings = None
+        default_branches = {}
     return (
         meta_ids,
         jira_ids,
