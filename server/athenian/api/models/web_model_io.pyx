@@ -1,7 +1,9 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
-# distutils: extra_compile_args = -mavx2 -ftree-vectorize
+# distutils: extra_compile_args = -mavx2 -ftree-vectorize -std=c++20
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
 
 cimport cython
 
@@ -23,8 +25,7 @@ from cpython cimport (
 from cpython.datetime cimport PyDateTimeAPI, import_datetime
 from cpython.dict cimport PyDict_GetItemString
 from libc.stdint cimport int32_t, uint16_t, uint32_t
-from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell, fwrite
-from libc.stdlib cimport free
+from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell
 from libc.string cimport memcpy
 from numpy cimport import_array, npy_int64
 
@@ -73,8 +74,11 @@ from athenian.api.native.cpython cimport (
     PyUnicode_Type,
 )
 from athenian.api.native.mi_heap_stl_allocator cimport (
+    ios_in,
+    ios_out,
     mi_heap_allocator_from_capsule,
     mi_heap_stl_allocator,
+    mi_stringstream,
     mi_vector,
 )
 from athenian.api.native.numpy cimport (
@@ -97,7 +101,6 @@ from athenian.api.typing_utils import is_generic, is_optional
 
 
 cdef extern from "stdio.h" nogil:
-    FILE *open_memstream(char **ptr, size_t *sizeloc)
     FILE *fmemopen(void *buf, size_t size, const char *mode)
 
 
@@ -253,7 +256,7 @@ cdef void _discover_fields(
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nogil:
+cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, mi_stringstream &stream) nogil:
     cdef:
         char dtype = spec.type, bool
         long val_long = 0
@@ -272,9 +275,9 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         ModelFields *field
     if obj == Py_None:
         dtype = 0
-        fwrite(&dtype, 1, 1, stream)
+        stream.write(<char *> &dtype, 1)
         return NULL
-    fwrite(&dtype, 1, 1, stream)
+    stream.write(<char *> &dtype, 1)
     if dtype == DT_LONG:
         if not PyLong_CheckExact(obj):
             if PyArray_IsIntegerScalar(obj):
@@ -283,7 +286,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
                 return obj
         else:
             val_long = PyLong_AsLong(obj)
-        fwrite(&val_long, sizeof(long), 1, stream)
+        stream.write(<char *> &val_long, sizeof(long))
     elif dtype == DT_FLOAT:
         is_float = PyFloat_CheckExact(obj)
         if not is_float and not PyLong_CheckExact(obj):
@@ -292,7 +295,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
             val_double = PyFloat_AS_DOUBLE(obj)
         else:
             val_double = PyLong_AsLong(obj)
-        fwrite(&val_double, sizeof(double), 1, stream)
+        stream.write(<char *> &val_double, sizeof(double))
     elif dtype == DT_STRING:
         is_unicode = PyUnicode_Check(obj)
         if not is_unicode and not PyBytes_Check(obj):
@@ -300,13 +303,13 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         if is_unicode:
             str_length = PyUnicode_GET_LENGTH(obj)
             val32 = str_length | ((PyUnicode_KIND(obj) - 1) << 30)
-            fwrite(&val32, 4, 1, stream)
+            stream.write(<char *> &val32, 4)
             # each code point in PyUnicode_DATA buffer has PyUnicode_KIND(obj) bytes
-            fwrite(PyUnicode_DATA(obj), PyUnicode_KIND(obj), str_length, stream)
+            stream.write(<char *> PyUnicode_DATA(obj), PyUnicode_KIND(obj) * str_length)
         else:
             val32 = PyBytes_GET_SIZE(obj)
-            fwrite(&val32, 4, 1, stream)
-            fwrite(PyBytes_AS_STRING(obj), 1, val32, stream)
+            stream.write(<char *> &val32, 4)
+            stream.write(PyBytes_AS_STRING(obj), val32)
     elif dtype == DT_DT:
         if not PyDateTime_Check(obj):
             if PyObject_TypeCheck(obj, &PyDatetimeArrType_Type):
@@ -328,7 +331,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
             val16[1] |= PyDateTime_DATE_GET_HOUR(obj)
             val16[2] = (PyDateTime_DATE_GET_MINUTE(obj) << 8) | 0x8000
             val16[2] |= PyDateTime_DATE_GET_SECOND(obj)
-        fwrite(val16, 2, 3, stream)
+        stream.write(<char *> val16, 2 * 3)
     elif dtype == DT_TD:
         if not PyDelta_Check(obj):
             if PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type):
@@ -355,19 +358,19 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         if var_long >= 1 << 16:
             vali32 |= 1
         val16[0] = var_long & 0xFFFF
-        fwrite(&vali32, 4, 1, stream)
-        fwrite(val16, 2, 1, stream)
+        stream.write(<char *> &vali32, 4)
+        stream.write(<char *> val16, 2)
     elif dtype == DT_BOOL:
         bool = obj == Py_True
         if not bool and obj != Py_False:
             return obj
-        fwrite(&bool, 1, 1, stream)
+        stream.write(<char *> &bool, 1)
     elif dtype == DT_LIST:
         if not PyList_CheckExact(obj):
             if not PyArray_CheckExact(obj) or not PyArray_IS_C_CONTIGUOUS(obj) or PyArray_NDIM(obj) != 1:
                 return obj
             val32 = PyArray_DIM(obj, 0)
-            fwrite(&val32, 4, 1, stream)
+            stream.write(<char *> &val32, 4)
             npdata = <PyObject **> PyArray_DATA(obj)
             for i in range(val32):
                 exc = _write_object(npdata[i], &dereference(spec.nested)[0], stream)
@@ -375,7 +378,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
                     return exc
         else:
             val32 = PyList_GET_SIZE(obj)
-            fwrite(&val32, 4, 1, stream)
+            stream.write(<char *> &val32, 4)
             for i in range(val32):
                 exc = _write_object(PyList_GET_ITEM(obj, i), &dereference(spec.nested)[0], stream)
                 if exc != NULL:
@@ -384,7 +387,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
         if not PyDict_CheckExact(obj):
             return obj
         val32 = PyDict_Size(obj)
-        fwrite(&val32, 4, 1, stream)
+        stream.write(<char *> &val32, 4)
         while PyDict_Next(obj, &dict_pos, &dict_key, &dict_val):
             exc = _write_object(dict_key, &dereference(spec.nested)[0], stream)
             if exc != NULL:
@@ -394,7 +397,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
                 return exc
     elif dtype == DT_MODEL:
         val32 = dereference(spec.nested).size()
-        fwrite(&val32, 4, 1, stream)
+        stream.write(<char *> &val32, 4)
         for i in range(val32):
             field = &dereference(spec.nested)[i]
             exc = _write_object((<PyObject **>((<char *> obj) + field.offset))[0], field, stream)
@@ -407,7 +410,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, FILE *stream) nog
 
 cdef void _serialize_list_of_models(
     list models,
-    FILE *stream,
+    mi_stringstream &stream,
     mi_heap_stl_allocator[char] &alloc,
 ) except *:
     cdef:
@@ -420,55 +423,53 @@ cdef void _serialize_list_of_models(
     spec.nested.emplace(alloc)
     if len(models) == 0:
         size = 0
-        fwrite(&size, 4, 1, stream)
+        stream.write(<char *> &size, 4)
         return
     item_type = type(models[0])
     result = pickle.dumps(GenericAlias(list, (item_type,)))
     _apply_data_type(0, <PyTypeObject *> item_type, &spec, alloc)
     with nogil:
         size = PyBytes_GET_SIZE(<PyObject *> result)
-        fwrite(&size, 4, 1, stream)
-        fwrite(PyBytes_AS_STRING(<PyObject *> result), 1, size, stream)
+        stream.write(<char *> &size, 4)
+        stream.write(PyBytes_AS_STRING(<PyObject *> result), size)
         exc = _write_object(<PyObject *> models, &spec, stream)
     if exc != NULL:
         raise ValueError(f"Could not serialize {<object> exc} of type {type(<object> exc)} in {item_type.__name__}")
 
 
-cdef void _serialize_generic(model, FILE *stream) except *:
+cdef void _serialize_generic(model, mi_stringstream &stream) except *:
     cdef:
         bytes buf = pickle.dumps(model)
         uint32_t size = len(buf)
-    fwrite(&size, 4, 1, stream)
-    fwrite(PyBytes_AS_STRING(<PyObject *> buf), size, 1, stream)
+    stream.write(<char *> &size, 4)
+    stream.write(PyBytes_AS_STRING(<PyObject *> buf), size)
 
 
 def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
     cdef:
-        char *output = NULL
-        size_t output_size = 0
-        FILE *stream
+        optional[mi_stringstream] stream
         bytes result
         char count
         optional[mi_heap_stl_allocator[char]] alloc
+        size_t size
     assert len(models) < 255
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
         dereference(alloc).disable_free()
-    stream = open_memstream(&output, &output_size)
+    stream.emplace(ios_in | ios_out, dereference(alloc))
     count = len(models)
-    fwrite(&count, 1, 1, stream)
-    try:
-        for model in models:
-            if PyList_CheckExact(<PyObject *> model):
-                _serialize_list_of_models(model, stream, dereference(alloc))
-            else:
-                _serialize_generic(model, stream)
-    finally:
-        fclose(stream)
-        result = PyBytes_FromStringAndSize(output, output_size)
-        free(output)
+    dereference(stream).write(&count, 1)
+    for model in models:
+        if PyList_CheckExact(<PyObject *> model):
+            _serialize_list_of_models(model, dereference(stream), dereference(alloc))
+        else:
+            _serialize_generic(model, dereference(stream))
+    size = dereference(stream).tellp()
+    result = PyBytes_FromStringAndSize(NULL, size)
+    dereference(stream).seekg(0)
+    dereference(stream).read(PyBytes_AS_STRING(<PyObject *> result), size)
     return result
 
 
@@ -621,3 +622,7 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         return obj
     else:
         raise AssertionError(f"Unsupported dtype: {dtype}")
+
+
+def model_list_to_json(list models not None) -> str:
+    pass

@@ -124,6 +124,7 @@ template<class T> struct mi_heap_stl_allocator {
 template<class T1,class T2> bool operator==(const mi_heap_stl_allocator<T1>& first, const mi_heap_stl_allocator<T2>& second) mi_attr_noexcept { return first._heap == second._heap; }
 template<class T1,class T2> bool operator!=(const mi_heap_stl_allocator<T1>& first, const mi_heap_stl_allocator<T2>& second) mi_attr_noexcept { return first._heap != second._heap; }
 
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -156,3 +157,5 @@ namespace std {
         }
     };
 }
+
+using mi_stringstream = std::basic_stringstream<char, std::char_traits<char>, mi_heap_stl_allocator<char>>;
