@@ -4,7 +4,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Iterable, KeysView, Mapping, Optional, Sequence
 
 import aiomcache
 import morcilla
@@ -388,13 +388,14 @@ class ReleaseLoader:
             published_at = releases[Release.published_at.name]
             matched_by_vec = releases[matched_by_column].values
             errors = np.full(len(releases), False)
+            if not isinstance(repos, (set, frozenset, dict, KeysView)):
+                repos = set(repos)
             for repo, match in applied_matches.items():
-                try:
-                    if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
-                        errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
-                except KeyError:
-                    # DEV-5212: deleted or renamed repos may emerge after a node ID search
+                if repo not in repos:
+                    # DEV-5212: deleted or renamed repos may emerge after searching by node ID
                     errors |= repos_vec == repo.encode()
+                elif release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
+                    errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
             include = (
                 ~errors
                 # must check the time frame

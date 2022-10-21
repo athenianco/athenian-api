@@ -41,7 +41,7 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
 
 
 cdef inline mi_heap_stl_allocator[char] *mi_heap_allocator_from_capsule(obj) except? NULL:
-    return <mi_heap_stl_allocator[char] *> PyCapsule_GetPointer(obj, NULL)
+    return <mi_heap_stl_allocator[char] *> PyCapsule_GetPointer(obj, b"mi_heap_stl_allocator")
 
 
 cdef inline void _delete_mi_heap_allocator_in_capsule(obj):
