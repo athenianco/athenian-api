@@ -1867,7 +1867,19 @@ class PullRequestMiner:
                     ),
                 )
         if not jira:
-            query = sql.select(selected_columns).where(sql.and_(*filters))
+            query = sql.select(selected_columns).where(*filters)
+            if (
+                PRParticipationKind.AUTHOR in participants
+                or PRParticipationKind.MERGER in participants
+            ) and pr_blacklist is not None:
+                # another planner fix to join with node_commit *after* all the filters
+                # fmt: off
+                query = (
+                    query
+                    .with_statement_hint("IndexScan(pr github_node_pull_request_main)")
+                    .with_statement_hint("Leading(((((pr *VALUES*) repo) ath) math))")
+                )
+                # fmt: on
         else:
             query = await generate_jira_prs_query(
                 filters, jira, None, mdb, cache, columns=selected_columns,

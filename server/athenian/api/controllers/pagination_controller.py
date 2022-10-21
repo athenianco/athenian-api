@@ -101,7 +101,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             labels,
             jira,
             filt.request.exclude_inactive,
-            PullRequest.node_id.notin_(done_node_ids),
+            PullRequest.node_id.notin_any_values(done_node_ids),
             None,
             branches,
             None,
