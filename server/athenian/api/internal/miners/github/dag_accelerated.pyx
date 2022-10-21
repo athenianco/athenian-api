@@ -15,7 +15,14 @@ from libc.string cimport memcpy, memset, strlen, strncmp
 from libcpp cimport bool
 from libcpp.algorithm cimport binary_search
 from libcpp.utility cimport pair
-from numpy cimport PyArray_BYTES, ndarray
+from numpy cimport (
+    PyArray_BYTES,
+    PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
+    PyArray_NDIM,
+    ndarray,
+    npy_intp,
+)
 
 from athenian.api.native.cpython cimport (
     Py_None,
@@ -28,6 +35,7 @@ from athenian.api.native.cpython cimport (
     PyTuple_GET_ITEM,
     PyUnicode_DATA,
     PyUnicode_FromStringAndSize,
+    PyUnicode_New,
 )
 from athenian.api.native.mi_heap_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
@@ -1484,3 +1492,29 @@ def lookup_children(
                 PyBytes_FromStringAndSize(hashes_data + edges_arr[edge] * 40, 40),
             )
         output_data[output_indexes_arr[i]] = children
+
+
+def compose_sha_values(ndarray shas not None, str suffix) -> str:
+    assert shas.dtype == "S40"
+    assert PyArray_NDIM(shas) == 1
+    assert PyArray_IS_C_CONTIGUOUS(shas)
+    cdef:
+        npy_intp count = PyArray_DIM(shas, 0), i
+        Py_ssize_t suffix_len = len(suffix)
+        str result = PyUnicode_New(count * (40 + 2 + 2 + 1) - 1 + 1 + 6 + 1 + 1 + suffix_len, 127)
+        char *rbuf = <char *> PyUnicode_DATA(<PyObject *> result)
+        char *shas_data = PyArray_BYTES(shas)
+    with nogil:
+        memcpy(rbuf, b"(VALUES ", 8)
+        rbuf += 8
+        for i in range(count):
+            rbuf[0] = ord(b"(")
+            rbuf[1] = ord(b"'")
+            memcpy(rbuf + 2, shas_data + i * 40, 40)
+            rbuf[42] = ord(b"'")
+            rbuf[43] = ord(b")")
+            rbuf[44] = ord(b",")
+            rbuf += 45
+        rbuf[-1] = ord(b")")
+        memcpy(rbuf, PyUnicode_DATA(<PyObject *> suffix), suffix_len)
+    return result
