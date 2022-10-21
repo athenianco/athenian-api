@@ -16,7 +16,7 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
+from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import Database, DatabaseLike, Row
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -265,6 +265,76 @@ ISSUE_PRS_COUNT = "prs_count"
 ISSUE_PR_IDS = "pr_ids"
 
 
+async def fetch_jira_issues(
+    time_from: Optional[datetime],
+    time_to: Optional[datetime],
+    jira_filter: JIRAFilter,
+    exclude_inactive: bool,
+    reporters: Collection[str],
+    assignees: Collection[Optional[str]],
+    commenters: Collection[str],
+    nested_assignees: bool,
+    default_branches: Optional[dict[str, str]],
+    release_settings: Optional[ReleaseSettings],
+    logical_settings: Optional[LogicalRepositorySettings],
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Iterable[InstrumentedAttribute] = (),
+    adjust_timestamps_using_prs=True,
+) -> pd.DataFrame:
+    """
+    Load JIRA issues following the specified filters.
+
+    The aggregation is OR between the participation roles.
+
+    :param time_from: Issues should not be resolved before this timestamp.
+    :param time_to: Issues should be opened before this timestamp.
+    :param exclude_inactive: Issues must be updated after `time_from`.
+    :param reporters: List of lower-case issue reporters.
+    :param assignees: List of lower-case issue assignees. None means unassigned.
+    :param commenters: List of lower-case issue commenters.
+    :param nested_assignees: If filter by assignee, include all the children's.
+    :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
+    :param adjust_timestamps_using_prs: Value indicating whether we must populate the columns \
+                                        which depend on the mapped pull requests.
+    """
+    return (
+        await _fetch_jira_issues(
+            time_from,
+            time_to,
+            jira_filter,
+            exclude_inactive,
+            reporters,
+            assignees,
+            commenters,
+            nested_assignees,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            cache,
+            extra_columns,
+            adjust_timestamps_using_prs,
+        )
+    )[0]
+
+
+def _postprocess_fetch_jira_issues(
+    result: tuple[pd.DataFrame, bool],
+    adjust_timestamps_using_prs=True,
+    **_,
+) -> tuple[pd.DataFrame, bool]:
+    if adjust_timestamps_using_prs and not result[1]:
+        raise CancelCache()
+    return result
+
+
 @sentry_span
 @cached(
     exptime=short_term_exptime,
@@ -283,8 +353,9 @@ ISSUE_PR_IDS = "pr_ids"
         release_settings,
         logical_settings,
     ),
+    postprocess=_postprocess_fetch_jira_issues,
 )
-async def fetch_jira_issues(
+async def _fetch_jira_issues(
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     jira_filter: JIRAFilter,
@@ -293,40 +364,20 @@ async def fetch_jira_issues(
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
     nested_assignees: bool,
-    default_branches: dict[str, str],
-    release_settings: ReleaseSettings,
-    logical_settings: LogicalRepositorySettings,
+    default_branches: Optional[dict[str, str]],
+    release_settings: Optional[ReleaseSettings],
+    logical_settings: Optional[LogicalRepositorySettings],
     account: int,
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
     extra_columns: Iterable[InstrumentedAttribute] = (),
-) -> pd.DataFrame:
-    """
-    Load JIRA issues following the specified filters.
-
-    The aggregation is OR between the participation roles.
-
-    :param installation_ids: JIRA installation ID and the enabled project IDs.
-    :param time_from: Issues should not be resolved before this timestamp.
-    :param time_to: Issues should be opened before this timestamp.
-    :param exclude_inactive: Issues must be updated after `time_from`.
-    :param labels: Issues must satisfy these label conditions.
-    :param priorities: List of lower-case priorities.
-    :param types: List of lower-case types.
-    :param epics: List of required parent epic keys. If empty, disable filtering by epics. \
-                  If false, return only those issues which are without an epic and are not epics \
-                  themselves.
-    :param reporters: List of lower-case issue reporters.
-    :param assignees: List of lower-case issue assignees. None means unassigned.
-    :param commenters: List of lower-case issue commenters.
-    :param nested_assignees: If filter by assignee, include all the children's.
-    :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
-    """
+    adjust_timestamps_using_prs=True,
+) -> tuple[pd.DataFrame, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
-    issues = await _fetch_issues(
+    issues = await _fetch_raw_issues(
         time_from,
         time_to,
         jira_filter,
@@ -347,6 +398,8 @@ async def fetch_jira_issues(
                 ", ".join(issues[Issue.key.name].values[missing_updated]),
             )
             issues = issues.take(np.flatnonzero(~missing_updated))
+    if not adjust_timestamps_using_prs:
+        return issues, adjust_timestamps_using_prs
     if len(issues) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
     else:
@@ -481,7 +534,7 @@ async def fetch_jira_issues(
             issues.index.values[negative].tolist(),
         )
         issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
-    return issues
+    return issues, adjust_timestamps_using_prs
 
 
 @sentry_span
@@ -501,10 +554,8 @@ async def _fetch_released_prs(
     ]
     released_df = await read_sql_query(
         sql.select(selected).where(
-            sql.and_(
-                ghdprf.pr_node_id.in_(pr_node_ids),
-                ghdprf.acc_id == account,
-            ),
+            ghdprf.acc_id == account,
+            ghdprf.pr_node_id.in_(pr_node_ids),
         ),
         pdb,
         selected,
@@ -547,7 +598,7 @@ async def _fetch_released_prs(
 
 
 @sentry_span
-async def _fetch_issues(
+async def _fetch_raw_issues(
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     jira_filter: JIRAFilter,
