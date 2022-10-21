@@ -34,6 +34,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
     cd python3.10* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
+    sed -i 's/__main__/__skip__/g' Lib/test/regrtest.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
     DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
     cd .. && \
@@ -70,7 +71,12 @@ RUN apt-get update && \
     apt-key add - && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
-    rm -rf /opt/intel/documentation_* /opt/intel/compilers_and_libraries_*/linux/mkl/{bin,tools,examples} && \
+    rm -rf \
+        /opt/intel/documentation_* \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/bin \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/tools \
+        /opt/intel/compilers_and_libraries_*/linux/mkl/examples && \
+    find /opt/intel/compilers_and_libraries_*/linux/mkl -name '*.a' -delete && \
     ln -s /opt/intel/compilers_and_libraries_*/linux/mkl /opt/intel/mkl && \
     printf '/opt/intel/mkl/lib/intel64_lin' >> /etc/ld.so.conf.d/mkl.conf && \
     ldconfig && \
@@ -115,12 +121,25 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /usr/share/doc/*
 
+
+ARG ROOT_ENC_PASSWD=
+RUN if [ -n "${ROOT_ENC_PASSWD}" ]; then \
+    echo root:"${ROOT_ENC_PASSWD}" | chpasswd -e; \
+    fi
+
+ARG UID=1984
+ARG GID=1984
+
+RUN groupadd -g "${GID}" worker && useradd -N -m -s /bin/bash -u "${UID}" -g "${GID}" worker
+
 ADD server/requirements.txt /server/requirements.txt
+
 ADD patches /patches
 ARG GKWILLIE_TOKEN
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch && \
     sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
+    echo "Installing Python packages" && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
@@ -132,13 +151,13 @@ RUN apt-get update && \
 
 ADD server /server
 ADD README.md /
+
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev && \
     echo "Building native libraries" && \
     make -C /server install-native-user && \
     make -C /server clean-native && \
     rm -rf /usr/local/lib/cmake && \
-    echo "Installing Python packages" && \
     pip3 install --no-deps -e /server && \
     apt-get purge -y gcc g++ cmake make libcurl4-openssl-dev libssl-dev && \
     apt-get autoremove -y --purge && \
@@ -147,5 +166,9 @@ RUN apt-get update && \
 ARG COMMIT
 RUN echo "__commit__ = \"$COMMIT\"" >>/server/athenian/api/metadata.py && \
     echo "__date__ = \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"" >>/server/athenian/api/metadata.py
+
+USER worker
+
+WORKDIR /home/worker
 
 ENTRYPOINT ["python3", "-m", "athenian.api"]
