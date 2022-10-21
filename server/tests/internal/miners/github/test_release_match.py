@@ -13,6 +13,7 @@ from athenian.api.async_utils import read_sql_query
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.dag_accelerated import compose_sha_values
 from athenian.api.internal.miners.github.precomputed_prs import store_precomputed_done_facts
 from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
 from athenian.api.internal.miners.github.release_match import (
@@ -1073,3 +1074,19 @@ async def test_map_releases_to_prs_precomputed_observed(
         *args, truncate=False, precomputed_observed=precomputed_observed,
     )
     assert_frame_equal(prs1, prs2)
+
+
+def test_compose_sha_values_smoke():
+    arr = np.array(["1" * 40, "2" * 40], dtype="S40")
+    assert (
+        compose_sha_values(arr, " extra!!!")
+        == "(VALUES "
+        "('1111111111111111111111111111111111111111'),"
+        "('2222222222222222222222222222222222222222'))"
+        " extra!!!"
+    )
+
+
+def test_compose_sha_values_empty():
+    arr = np.array([], dtype="S40")
+    assert compose_sha_values(arr, " extra!!!") == "(VALUES) extra!!!"

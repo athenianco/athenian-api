@@ -37,6 +37,7 @@ from athenian.api.internal.miners.github.commit import (
     fetch_repository_commits,
 )
 from athenian.api.internal.miners.github.dag_accelerated import (
+    compose_sha_values,
     extract_subdag,
     mark_dag_access,
     mark_dag_parents,
@@ -968,11 +969,7 @@ class ReleaseToPullRequestMapper:
                         join(
                             join(
                                 NodeCommit,
-                                sql.text(
-                                    "(VALUES ('"
-                                    + "'),('".join(sha.decode() for sha in unique_commits)
-                                    + "')) shas(sha)",
-                                ),
+                                sql.text(compose_sha_values(unique_commits, " shas(sha)")),
                                 NodeCommit.sha == literal_column("shas.sha"),
                             ),
                             NodePullRequest,
