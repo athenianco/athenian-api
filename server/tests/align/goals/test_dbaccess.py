@@ -4,7 +4,11 @@ from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
-from athenian.api.align.exceptions import GoalMutationError, GoalTemplateNotFoundError
+from athenian.api.align.exceptions import (
+    GoalMutationError,
+    GoalNotFoundError,
+    GoalTemplateNotFoundError,
+)
 from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
     create_default_goal_templates,
@@ -12,6 +16,7 @@ from athenian.api.align.goals.dbaccess import (
     delete_goal_template_from_db,
     delete_team_goals,
     dump_goal_repositories,
+    fetch_goal_account,
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
@@ -34,12 +39,23 @@ from tests.testutils.db import (
     transaction_conn,
 )
 from tests.testutils.factory.state import (
+    AccountFactory,
     GoalFactory,
     GoalTemplateFactory,
     TeamFactory,
     TeamGoalFactory,
 )
 from tests.testutils.time import dt
+
+
+class TestFetchGoalAccount:
+    async def test_success(self, sdb: Database) -> None:
+        await models_insert(sdb, AccountFactory(id=456), GoalFactory(account_id=456, id=123))
+        assert await fetch_goal_account(123, sdb) == 456
+
+    async def test_not_found(self, sdb: Database) -> None:
+        with pytest.raises(GoalNotFoundError):
+            await fetch_goal_account(123, sdb)
 
 
 class TestDeleteTeamGoals:

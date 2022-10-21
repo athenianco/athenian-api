@@ -18,6 +18,20 @@ class GoalMutationError(ResponseError):
         super().__init__(wrapped_error)
 
 
+class GoalNotFoundError(ResponseError):
+    """A Goal was not found."""
+
+    def __init__(self, goal_id: int):
+        """Init the GoalNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/align/GoalNotFoundError",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Goal {goal_id} not found or access denied.",
+            title="Goal not found",
+        )
+        super().__init__(wrapped_error)
+
+
 class GoalTemplateNotFoundError(ResponseError):
     """A goal template was not found."""
 

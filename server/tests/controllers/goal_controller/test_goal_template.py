@@ -1,3 +1,5 @@
+"""Test for the goal template related controllers."""
+
 from typing import Any
 
 from athenian.api.db import Database
