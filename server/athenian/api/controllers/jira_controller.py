@@ -107,6 +107,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+    return_ = set(filt.return_ or JIRAFilterReturn)
+    if not filt.return_:
+        return_.remove(JIRAFilterReturn.ONLY_FLYING)
     (
         meta_ids,
         jira_ids,
@@ -115,7 +118,14 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         release_settings,
         logical_settings,
         prefixer,
-    ) = await _collect_ids(filt.account, request, request.sdb, request.mdb, request.cache)
+    ) = await _collect_ids(
+        filt.account,
+        request,
+        JIRAFilterReturn.ISSUE_BODIES in return_ or JIRAFilterReturn.EPICS in return_,
+        request.sdb,
+        request.mdb,
+        request.cache,
+    )
     if filt.projects is not None:
         projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
         projects = {k: projects[k] for k in jira_ids.projects if k in projects}
@@ -140,9 +150,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         reporters = assignees = commenters = []
     filt.priorities = {normalize_priority(p) for p in (filt.priorities or [])}
     filt.types = {normalize_issue_type(p) for p in (filt.types or [])}
-    return_ = set(filt.return_ or JIRAFilterReturn)
-    if not filt.return_:
-        return_.remove(JIRAFilterReturn.ONLY_FLYING)
     sdb, mdb, pdb, rdb = request.sdb, request.mdb, request.pdb, request.rdb
     cache = request.cache
     (
@@ -588,9 +595,9 @@ async def _issue_flow(
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
     branches: pd.DataFrame,
-    default_branches: dict[str, str],
-    release_settings: ReleaseSettings,
-    logical_settings: LogicalRepositorySettings,
+    default_branches: Optional[dict[str, str]],
+    release_settings: Optional[ReleaseSettings],
+    logical_settings: Optional[LogicalRepositorySettings],
     prefixer: Prefixer,
     meta_ids: tuple[int, ...],
     sdb: Database,
@@ -665,6 +672,7 @@ async def _issue_flow(
         pdb,
         cache,
         extra_columns=extra_columns,
+        adjust_timestamps_using_prs=JIRAFilterReturn.ISSUE_BODIES in return_,
     )
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name].values)))
@@ -1161,16 +1169,17 @@ def _nonzero(arr: np.ndarray) -> np.ndarray:
 async def _collect_ids(
     account: int,
     request: AthenianWebRequest,
+    with_branches_and_settings: bool,
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> tuple[
     tuple[int, ...],
     JIRAConfig,
-    pd.DataFrame,
-    dict[str, str],
-    ReleaseSettings,
-    LogicalRepositorySettings,
+    Optional[pd.DataFrame],
+    Optional[dict[str, str]],
+    Optional[ReleaseSettings],
+    Optional[LogicalRepositorySettings],
     Prefixer,
 ]:
     repos, jira_ids, meta_ids = await gather(
@@ -1180,14 +1189,17 @@ async def _collect_ids(
         op="sdb/ids",
     )
     prefixer = await Prefixer.load(meta_ids, mdb, cache)
-    settings = Settings.from_request(request, account, prefixer)
-    (branches, default_branches), logical_settings = await gather(
-        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
-        settings.list_logical_repositories(repos),
-        op="sdb/branches and releases",
-    )
-    repos = logical_settings.append_logical_prs(repos)
-    release_settings = await settings.list_release_matches(repos)
+    if with_branches_and_settings:
+        settings = Settings.from_request(request, account, prefixer)
+        (branches, default_branches), logical_settings = await gather(
+            BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
+            settings.list_logical_repositories(repos),
+            op="sdb/branches and releases",
+        )
+        repos = logical_settings.append_logical_prs(repos)
+        release_settings = await settings.list_release_matches(repos)
+    else:
+        branches = default_branches = release_settings = logical_settings = None
     return (
         meta_ids,
         jira_ids,
@@ -1230,7 +1242,7 @@ async def _calc_jira_entry(
         release_settings,
         logical_settings,
         _,
-    ) = await _collect_ids(filt.account, request, request.sdb, request.mdb, request.cache)
+    ) = await _collect_ids(filt.account, request, True, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
         projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
         projects = {k: projects[k] for k in jira_ids.projects if k in projects}
