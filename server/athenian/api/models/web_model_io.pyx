@@ -24,7 +24,7 @@ from cpython cimport (
 )
 from cpython.datetime cimport PyDateTimeAPI, import_datetime
 from cpython.dict cimport PyDict_GetItemString
-from libc.stdint cimport int32_t, uint16_t, uint32_t
+from libc.stdint cimport int32_t, uint8_t, uint16_t, uint32_t
 from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell
 from libc.string cimport memcpy, strlen
 from numpy cimport import_array, npy_int64
@@ -160,17 +160,30 @@ cdef enum DataType:
     DT_BOOL = 9
 
 
+cdef enum DataFlags:
+    DF_KEY_UNMAPPED = 1
+    DF_OPTIONAL = 2
+    DF_VERBATIM = 4
+
+
 ctypedef struct ModelFields:
     DataType type
-    char key_type
+    uint8_t flags
     Py_ssize_t offset
     const void *key
     PyTypeObject *model
     optional[mi_vector[ModelFields]] nested
 
 
-cdef inline DataType _discover_data_type(PyTypeObject *obj, PyTypeObject **deref) except DT_INVALID:
+cdef inline DataType _discover_data_type(
+    PyTypeObject *obj,
+    PyTypeObject **deref,
+    bint *optional,
+    bint *verbatim,
+) except DT_INVALID:
     if is_optional(<object> obj):
+        optional[0] = 1
+        verbatim[0] = hasattr((<object> obj).__origin__, "__verbatim__")
         args = (<object> obj).__args__
         obj = <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> args, 0)
     if obj == &PyLong_Type:
@@ -210,22 +223,23 @@ cdef inline void _apply_data_type(
 ) except *:
     cdef:
         PyTypeObject *deref = NULL
-        DataType dtype = _discover_data_type(member_type, &deref)
-        ModelFields *back
+        bint optional = 0, verbatim = 0
+        DataType dtype = _discover_data_type(member_type, &deref, &optional, &verbatim)
+        ModelFields *back = &dereference(fields.nested).emplace_back()
+    back.type = dtype
+    back.offset = offset
+    if optional:
+        back.flags |= DF_OPTIONAL
+    if verbatim:
+        back.flags |= DF_VERBATIM
+    back.nested.emplace(alloc)
     if deref != NULL:
-        _discover_fields(deref, &dereference(fields.nested).emplace_back(), dtype, offset, alloc)
-    else:
-        back = &dereference(fields.nested).emplace_back()
-        back.type = dtype
-        back.offset = offset
-        back.nested.emplace(alloc)
+        _discover_fields(deref, back, alloc)
 
 
 cdef void _discover_fields(
     PyTypeObject *model,
     ModelFields *fields,
-    DataType dtype,
-    Py_ssize_t offset,
     mi_heap_stl_allocator[char] &alloc,
 ) except *:
     cdef:
@@ -235,11 +249,7 @@ cdef void _discover_fields(
         PyMemberDef *members
         PyObject *key
 
-    fields.type = dtype
-    fields.offset = offset
-    fields.nested.emplace(alloc)
-
-    if dtype == DT_MODEL:
+    if fields.type == DT_MODEL:
         attribute_types = (<object> model).attribute_types
         attribute_map = (<object> model).attribute_map
         fields.model = model
@@ -249,12 +259,12 @@ cdef void _discover_fields(
             _apply_data_type(members[i].offset, member_type, fields, alloc)
             key = PyDict_GetItemString(attribute_map, members[i].name + 1)
             if key != NULL:
-                dereference(fields.nested).back().key_type = b"O"
+                dereference(fields.nested).back().flags &= ~DF_KEY_UNMAPPED
                 dereference(fields.nested).back().key = key
             else:
-                dereference(fields.nested).back().key_type = b"S"
+                dereference(fields.nested).back().flags |= DF_KEY_UNMAPPED
                 dereference(fields.nested).back().key = members[i].name + 1
-    elif dtype == DT_LIST:
+    elif fields.type == DT_LIST:
         attribute_types = (<object> model).__args__
         _apply_data_type(
             0,
@@ -262,7 +272,7 @@ cdef void _discover_fields(
             fields,
             alloc,
         )
-    elif dtype == DT_DICT:
+    elif fields.type == DT_DICT:
         attribute_types = (<object> model).__args__
         _apply_data_type(
             0,
@@ -277,7 +287,7 @@ cdef void _discover_fields(
             alloc,
         )
     else:
-        raise AssertionError(f"Cannot recurse in dtype {dtype}")
+        raise AssertionError(f"Cannot recurse in dtype {fields.type}")
 
 
 @cython.cdivision(True)
@@ -538,7 +548,9 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
             if not isinstance(model_type, (type, GenericAlias)):
                 model = model_type
             else:
-                _discover_fields(<PyTypeObject *> model_type, &spec, DT_LIST, 0, dereference(alloc))
+                spec.type = DT_LIST
+                spec.nested.emplace(dereference(alloc))
+                _discover_fields(<PyTypeObject *> model_type, &spec, dereference(alloc))
                 model = _read_model(&spec, stream, input, corrupted_msg)
         Py_INCREF(model)
         PyTuple_SET_ITEM(result, tuple_pos, model)
@@ -713,12 +725,25 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
         return NULL
     if spec.type == DT_MODEL:
         stream.write(b"{", 1)
+        kind = 0
         members = spec.model.tp_members
         for i in range(<Py_ssize_t> dereference(spec.nested).size()):
-            if i != 0:
-                stream.write(b",", 1)
             nested = &dereference(spec.nested)[i]
-            if nested.key_type == b"S":
+            value = dereference(<PyObject **>((<char *> obj) + nested.offset))
+            if (nested.flags & DF_OPTIONAL) and not (nested.flags & DF_VERBATIM):
+                if value == NULL or value == Py_None:
+                    continue
+                if PyList_CheckExact(value) and PyList_GET_SIZE(value) == 0:
+                    continue
+                if PyDict_CheckExact(value) and PyDict_Size(value) == 0:
+                    continue
+                if PyArray_CheckExact(value) and PyArray_NDIM(value) == 1 and PyArray_DIM(value, 0) == 0:
+                    continue
+            if kind:
+                stream.write(b",", 1)
+            else:
+                kind = 1
+            if nested.flags & DF_KEY_UNMAPPED:
                 stream.write(b'"', 1)
                 stream.write(<const char *> nested.key, strlen(<const char *> nested.key))
                 stream.write(b'"', 1)
@@ -727,11 +752,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
                 if r != NULL:
                     return r
             stream.write(b":", 1)
-            r = _write_json(
-                dereference(<PyObject **>((<char *> obj) + nested.offset)),
-                dereference(nested),
-                stream,
-            )
+            r = _write_json(value, dereference(nested), stream)
             if r != NULL:
                 return r
         stream.write(b"}", 1)
@@ -797,6 +818,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
 
         stream.write(b'"', 1)
     elif spec.type == DT_DT:
+        buffer[0] = buffer[21] = b'"'
         if not PyDateTime_Check(obj):
             if PyObject_TypeCheck(obj, &PyDatetimeArrType_Type):
                 npy_unit = (<PyDatetimeScalarObject *> obj).obmeta.base
@@ -813,91 +835,92 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
                 year = month = day = 0
                 set_datetimestruct_days(long_val, &year, &month, &day)
                 aux = year
-                pos = 3
-                while pos >= 0:
+                pos = 4
+                while pos > 0:
                     auxdiv = aux
                     aux = aux // 10
                     buffer[pos] = auxdiv - aux * 10 + ord(b"0")
                     pos -= 1
-                buffer[4] = b"-"
+                buffer[5] = b"-"
 
                 aux = month
                 if aux < 10:
-                    buffer[5] = b"0"
-                    buffer[6] = ord(b"0") + aux
+                    buffer[6] = b"0"
+                    buffer[7] = ord(b"0") + aux
                 else:
-                    buffer[5] = b"1"
-                    buffer[6] = ord(b"0") + aux - 10
-                buffer[7] = b"-"
+                    buffer[6] = b"1"
+                    buffer[7] = ord(b"0") + aux - 10
+                buffer[8] = b"-"
 
                 aux = day
                 auxdiv = aux // 10
-                buffer[8] = ord(b"0") + auxdiv
-                buffer[9] = ord(b"0") + aux - auxdiv * 10
-                buffer[10] = b"T"
+                buffer[9] = ord(b"0") + auxdiv
+                buffer[10] = ord(b"0") + aux - auxdiv * 10
+                buffer[11] = b"T"
 
                 auxdiv = obval // 60
                 aux = obval - auxdiv * 60
                 rem = auxdiv
                 auxdiv = aux // 10
-                buffer[17] = ord(b"0") + auxdiv
-                buffer[18] = ord(b"0") + aux - auxdiv * 10
-                buffer[19] = b"Z"
+                buffer[18] = ord(b"0") + auxdiv
+                buffer[19] = ord(b"0") + aux - auxdiv * 10
+                buffer[20] = b"Z"
 
                 auxdiv = rem // 60
                 aux = rem - auxdiv * 60
                 rem = auxdiv
                 auxdiv = aux // 10
-                buffer[14] = ord(b"0") + auxdiv
-                buffer[15] = ord(b"0") + aux - auxdiv * 10
-                buffer[16] = b":"
+                buffer[15] = ord(b"0") + auxdiv
+                buffer[16] = ord(b"0") + aux - auxdiv * 10
+                buffer[17] = b":"
 
                 aux = rem
                 auxdiv = aux // 10
-                buffer[11] = ord(b"0") + auxdiv
-                buffer[12] = ord(b"0") + aux - auxdiv * 10
-                buffer[13] = b":"
+                buffer[12] = ord(b"0") + auxdiv
+                buffer[13] = ord(b"0") + aux - auxdiv * 10
+                buffer[14] = b":"
             else:
                 return obj
         else:
             aux = PyDateTime_GET_YEAR(obj)
-            pos = 3
-            while pos >= 0:
+            pos = 4
+            while pos > 0:
                 auxdiv = aux
                 aux = aux // 10
                 buffer[pos] = auxdiv - aux * 10 + ord(b"0")
                 pos -= 1
-            buffer[4] = b"-"
+            buffer[5] = b"-"
             aux = PyDateTime_GET_MONTH(obj)
             if aux < 10:
-                buffer[5] = b"0"
-                buffer[6] = ord(b"0") + aux
+                buffer[6] = b"0"
+                buffer[7] = ord(b"0") + aux
             else:
-                buffer[5] = b"1"
-                buffer[6] = ord(b"0") + aux - 10
-            buffer[7] = b"-"
+                buffer[6] = b"1"
+                buffer[7] = ord(b"0") + aux - 10
+            buffer[8] = b"-"
             aux = PyDateTime_GET_DAY(obj)
             auxdiv = aux // 10
-            buffer[8] = ord(b"0") + auxdiv
-            buffer[9] = ord(b"0") + aux - auxdiv * 10
-            buffer[10] = b"T"
+            buffer[9] = ord(b"0") + auxdiv
+            buffer[10] = ord(b"0") + aux - auxdiv * 10
+            buffer[11] = b"T"
             aux = PyDateTime_DATE_GET_HOUR(obj)
             auxdiv = aux // 10
-            buffer[11] = ord(b"0") + auxdiv
-            buffer[12] = ord(b"0") + aux - auxdiv * 10
-            buffer[13] = b":"
+            buffer[12] = ord(b"0") + auxdiv
+            buffer[13] = ord(b"0") + aux - auxdiv * 10
+            buffer[14] = b":"
             aux = PyDateTime_DATE_GET_MINUTE(obj)
             auxdiv = aux // 10
-            buffer[14] = ord(b"0") + auxdiv
-            buffer[15] = ord(b"0") + aux - auxdiv * 10
-            buffer[16] = b":"
+            buffer[15] = ord(b"0") + auxdiv
+            buffer[16] = ord(b"0") + aux - auxdiv * 10
+            buffer[17] = b":"
             aux = PyDateTime_DATE_GET_SECOND(obj)
             auxdiv = aux // 10
-            buffer[17] = ord(b"0") + auxdiv
-            buffer[18] = ord(b"0") + aux - auxdiv * 10
-            buffer[19] = b"Z"
-        stream.write(buffer, 20)
+            buffer[18] = ord(b"0") + auxdiv
+            buffer[19] = ord(b"0") + aux - auxdiv * 10
+            buffer[20] = b"Z"
+        stream.write(buffer, 22)
     elif spec.type == DT_TD:
+        stream.write(b'"', 1)
         if not PyDelta_Check(obj):
             if PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type):
                 npy_unit = (<PyDatetimeScalarObject *> obj).obmeta.base
@@ -932,7 +955,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
                 buffer[i] = buffer[div]
                 buffer[div] = sym
             stream.write(buffer, pos)
-        stream.write(b"s", 1)
+        stream.write(b's"', 2)
     elif spec.type == DT_LONG:
         long_val = PyLong_AsLong(obj)
         if long_val < 0:
