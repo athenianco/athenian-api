@@ -12,6 +12,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     ReviewedRatioCalculator,
     ReviewTimeBelowThresholdRatio,
     ReviewTimeCalculator,
+    SizeBelowThresholdRatio,
+    SizeCalculator,
     WaitFirstReviewTimeBelowThresholdRatio,
     WaitFirstReviewTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
@@ -260,3 +262,36 @@ class TestWaitFirstReviewTimeBelowThresholdRatio:
             first_review_request_exact=review_request,
             first_comment_on_first_review=pd.Timestamp(first_comment) if first_comment else None,
         )
+
+
+class TestSizeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(50),
+            self._mk_pr(100),
+            self._mk_pr(120),
+            self._mk_pr(101),
+            self._mk_pr(1, created=dt(2023, 1, 1)),  # out of interval
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        size_calc = SizeCalculator(quantiles=quantiles)
+        calc = SizeBelowThresholdRatio(size_calc, quantiles=quantiles)  # default threshold is 100
+
+        size_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 4)
+
+    _DEFAULT_DT = dt(2022, 1, 15)
+
+    @classmethod
+    def _mk_pr(cls, size: int, created: datetime = _DEFAULT_DT) -> None:
+        return PullRequestFactsFactory(size=size, created=pd.Timestamp(created))

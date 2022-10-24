@@ -1000,6 +1000,14 @@ class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
     """Median PR size."""
 
 
+class SizeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a size below a given threshold."""
+
+    deps = (SizeCalculator,)
+    compare = np.less_equal
+    default_threshold = 100
+
+
 class PendingStage(IntEnum):
     """Indexes of the pending stages that are used below."""
 
