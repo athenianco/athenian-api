@@ -33,7 +33,7 @@ class PullRequestFactsFactory(factory.Factory):
         return self.first_commit
 
     @factory.lazy_attribute
-    def last_commit_before_first_review(self):
+    def last_commit_before_first_review(self) -> pd.Timestamp:
         return pd.Timestamp(
             _dt_between(start_date=self.created, end_date=self.created + timedelta(days=30)),
         )
@@ -48,6 +48,8 @@ class PullRequestFactsFactory(factory.Factory):
 
     @factory.lazy_attribute
     def approved(self):
+        if self.first_comment_on_first_review is None:
+            return None
         return pd.Timestamp(
             _dt_between(
                 start_date=self.first_comment_on_first_review + timedelta(days=1),
@@ -57,15 +59,14 @@ class PullRequestFactsFactory(factory.Factory):
 
     @factory.lazy_attribute
     def last_commit(self):
-        return pd.Timestamp(
-            _dt_between(
-                start_date=self.first_comment_on_first_review + timedelta(days=1),
-                end_date=self.approved,
-            ),
-        )
+        start_date = (self.first_comment_on_first_review or self.created) + timedelta(days=1)
+        end_date = (self.approved or start_date) + timedelta(days=30)
+        return pd.Timestamp(_dt_between(start_date=start_date, end_date=end_date))
 
     @factory.lazy_attribute
     def merged(self):
+        if self.approved is None:
+            return None
         return pd.Timestamp(_dt_between(self.approved, self.approved + timedelta(days=2)))
 
     @factory.lazy_attribute
@@ -81,14 +82,20 @@ class PullRequestFactsFactory(factory.Factory):
 
     @factory.lazy_attribute
     def first_review_request(self):
+        if self.first_review_request_exact is None:
+            return None
         return pd.Timestamp(self.first_review_request_exact)
 
     @factory.lazy_attribute
     def last_review(self):
+        if self.approved is None or self.closed is None:
+            return None
         return pd.Timestamp(_dt_between(self.approved, self.closed))
 
     @factory.lazy_attribute
     def released(self):
+        if self.merged is None:
+            return None
         return pd.Timestamp(_dt_between(self.merged, self.merged + timedelta(days=30)))
 
     @factory.lazy_attribute
@@ -113,13 +120,14 @@ class PullRequestFactsFactory(factory.Factory):
 
     @factory.lazy_attribute
     def reviews(self):
-        return np.array(
-            [
+        if self.created is None or self.last_review is None:
+            values = []
+        else:
+            values = [
                 _faker.date_time_between(self.created, self.last_review)
                 for _ in range(random.randint(0, 3))
-            ],
-            dtype="datetime64[ns]",
-        )
+            ]
+        return np.array(values, dtype="datetime64[ns]")
 
     @factory.lazy_attribute
     def activity_days(self):
@@ -136,6 +144,7 @@ class PullRequestFactsFactory(factory.Factory):
                         self.last_commit_before_first_review,
                         self.last_commit,
                     ]
+                    if dt is not None
                 ]
                 + self.reviews.tolist(),
                 dtype="datetime64[D]",

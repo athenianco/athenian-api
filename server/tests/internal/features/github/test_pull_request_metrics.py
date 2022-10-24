@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,11 +10,12 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     NotReviewedCalculator,
     ReviewedCalculator,
     ReviewedRatioCalculator,
+    ReviewTimeBelowThresholdRatio,
     ReviewTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
-from athenian.api.internal.miners.types import PRParticipationKind
+from athenian.api.internal.miners.types import PRParticipationKind, PullRequestFacts
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples
 from tests.controllers.features.github.test_pull_request_metrics import dt64arr_ns
@@ -108,7 +112,6 @@ class TestReviewedRatioCalculator:
 
         assert reviewed is not None
         assert not_reviewed is not None
-
         assert reviewed_ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
 
 
@@ -132,3 +135,73 @@ class TestReviewTimeCalculator:
 
         calc(facts, min_times, max_times, None, np.full((1, len(prs)), True, bool))
         assert calc.values[0][0].value == timedelta(days=2)
+
+
+class TestReviewTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        threshold = timedelta(hours=5)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 4, 1))
+
+        review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
+        calc = ReviewTimeBelowThresholdRatio(
+            review_time_calc, quantiles=quantiles, threshold=threshold,
+        )
+
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 5), dt(2022, 1, 1, 10)),
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 8)),
+            self._mk_pr(dt(2022, 1, 1, 12), dt(2022, 1, 1, 14)),
+            self._mk_pr(dt(2022, 1, 1, 12), None),
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.full((1, len(prs)), True, bool)
+        review_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+
+    def test_complex_groups_mask(self) -> None:
+        quantiles = (0, 1)
+        threshold = timedelta(hours=3)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 4, 1))
+
+        review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
+        calc = ReviewTimeBelowThresholdRatio(
+            review_time_calc, quantiles=quantiles, threshold=threshold,
+        )
+
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 5), dt(2022, 1, 1, 10)),
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 5)),
+            self._mk_pr(dt(2022, 1, 1, 12), dt(2022, 1, 1, 14)),
+            self._mk_pr(dt(2022, 1, 1, 3), dt(2022, 1, 1, 4)),
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.array(
+            [[True, True, False, True], [True, False, False, True], [True, False, False, False]],
+            dtype=bool,
+        )
+
+        review_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 3
+        assert all(len(v) == 1 for v in calc.values)
+
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+        assert calc.values[1][0].value == pytest.approx(1 / 2)
+        assert calc.values[2][0].value == pytest.approx(0)
+
+    @classmethod
+    def _mk_pr(cls, review_request: datetime, approved: Optional[datetime]) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            first_review_request_exact=pd.Timestamp(review_request),
+            approved=pd.Timestamp(approved) if approved else None,
+        )
