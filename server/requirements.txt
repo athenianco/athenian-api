@@ -7,7 +7,7 @@ sqlalchemy==1.4.41
 asyncpg-rkt==0.26.1
 morcilla[sqlite,postgresql]==0.5.22
 psycopg2-binary==2.9.4
-xxhash==3.0.0
+xxhash==3.1.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
 numpy==1.23.3
 scipy==1.9.2
