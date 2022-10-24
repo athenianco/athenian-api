@@ -41,7 +41,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         filt = PullRequestHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account, prefixer)
@@ -145,7 +145,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         filt = CodeCheckHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)

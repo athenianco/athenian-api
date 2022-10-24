@@ -136,7 +136,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         filt = PullRequestMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -552,7 +552,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt = CodeFilter.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -609,7 +609,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         filt = DeveloperMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -749,7 +749,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         filt = ReleaseMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos, prefixer, logical_settings, participants = await _compile_filters_releases(
         request, filt.for_, filt.with_, filt.account, meta_ids,
@@ -847,7 +847,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         filt = CodeCheckMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -955,7 +955,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         filt = DeploymentMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     meta_ids, jira_ids = await gather(
         get_metadata_account_ids(filt.account, request.sdb, request.cache),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),

@@ -19,7 +19,6 @@ from athenian.api.internal.account import (
     get_user_account_status_from_request,
     is_membership_check_enabled,
     only_admin,
-    only_god,
 )
 from athenian.api.internal.jira import get_jira_id
 from athenian.api.internal.user import load_user_accounts
@@ -33,7 +32,6 @@ from athenian.api.models.state.models import (
     BanishedUserAccount,
     Feature,
     FeatureComponent,
-    God,
     Invitation,
     UserAccount,
 )
@@ -293,36 +291,6 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                     ),
                 )
     return await _get_account_features(request.sdb, id)
-
-
-@only_god
-async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
-    """God mode ability to turn into any user. The current user must be marked internally as \
-    a super admin."""
-    user_id = request.god_id
-    async with request.sdb.connection() as conn:
-        if (
-            id
-            and (await conn.fetch_one(select([UserAccount]).where(UserAccount.user_id == id)))
-            is None
-        ):
-            raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
-        god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
-        god = God(**god).refresh()
-        god.mapped_id = id or None
-        await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
-    user = await request.app["auth"].get_user(id or user_id)
-    user.accounts = await load_user_accounts(
-        user.id,
-        getattr(request, "god_id", user.id),
-        request.sdb,
-        request.mdb,
-        request.rdb,
-        request.app["slack"],
-        request.user,
-        request.cache,
-    )
-    return model_response(user)
 
 
 @only_admin

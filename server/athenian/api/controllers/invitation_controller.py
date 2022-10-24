@@ -180,7 +180,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     try:
         invitation = AcceptedInvitation.from_dict(body)
     except ValueError as e:
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     if invitation.name or invitation.email:
         if not await request.app["auth"].update_user_profile(
             request.uid, name=invitation.name, email=invitation.email,

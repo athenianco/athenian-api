@@ -10,7 +10,7 @@ class _CodeFilter(Model, sealed=False):
     granularity: str
 
     def validate_granularity(self, granularity: str) -> str:
-        """Sets the granularity of this CodeFilter.
+        """Validate the granularity of this CodeFilter.
 
         How often the metrics are reported. The value must satisfy the following regular
         expression: (^([1-9]\\d* )?(day|week|month|year)$
