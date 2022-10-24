@@ -24,6 +24,7 @@ cdef extern from "Python.h":
 
     double PyFloat_AS_DOUBLE(PyObject *) nogil
     bint PyFloat_CheckExact(PyObject *) nogil
+    bint PyFloat_Check(PyObject *) nogil
 
     PyObject *PyList_New(Py_ssize_t len)
     bint PyList_CheckExact(PyObject *) nogil
