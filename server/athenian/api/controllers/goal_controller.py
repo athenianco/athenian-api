@@ -276,7 +276,7 @@ async def create_goal(request: AthenianWebRequest, body: dict) -> web.Response:
     try:
         create_request = GoalCreateRequest.from_dict(body)
     except ValueError as e:
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
 
     creation_info = await _parse_create_request(request, create_request)
     async with request.sdb.connection() as sdb_conn:

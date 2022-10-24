@@ -31,7 +31,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         filt = PaginatePullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     await get_user_account_status_from_request(request, filt.request.account)
     # we ignore events and stages because we cannot do anything with them
     (

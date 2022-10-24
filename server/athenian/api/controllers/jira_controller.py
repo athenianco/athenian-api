@@ -106,7 +106,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         filt = FilterJIRAStuff.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
     return_ = set(filt.return_ or JIRAFilterReturn)
     if not filt.return_:
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
@@ -1234,7 +1234,7 @@ async def _calc_jira_entry(
         filt = model.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from None
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from None
     (
         meta_ids,
         jira_ids,

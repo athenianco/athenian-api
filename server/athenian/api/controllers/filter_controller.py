@@ -146,7 +146,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterContributorsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (
         time_from,
         time_to,
@@ -209,7 +209,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterRepositoriesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (
         time_from,
         time_to,
@@ -378,7 +378,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         filt = FilterPullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (
         time_from,
         time_to,
@@ -509,7 +509,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         filt = FilterCommitsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     time_from, time_to, repos, meta_ids, prefixer, _ = await _common_filter_preprocess(
         filt, filt.in_, request,
     )
@@ -652,7 +652,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         filt = FilterReleasesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (
         time_from,
         time_to,
@@ -889,7 +889,7 @@ async def _check_github_repos(
         repos = {k.split("/", 1)[1]: v for k, v in prefixed_repos.items()}
     except IndexError:
         raise ResponseError(
-            InvalidRequestError(detail="Invalid repositories.", pointer=pointer),
+            InvalidRequestError(detail="Invalid format of repositories.", pointer=pointer),
         ) from None
 
     async def check():
@@ -980,7 +980,7 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     try:
         filt = FilterLabelsRequest.from_dict(body)
     except ValueError as e:
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     repos, meta_ids, _, _ = await _repos_preprocess(filt.repositories, filt.account, request)
     labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
     labels = [FilteredLabel(**dataclass_asdict(label)) for label in labels]
@@ -1094,7 +1094,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterCodeChecksRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
         _common_filter_preprocess(filt, filt.in_, request, strip_prefix=True),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -1146,7 +1146,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterDeploymentsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
         _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -1405,7 +1405,7 @@ async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterEnvironmentsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     time_from, time_to, repos, _, prefixer, logical_settings = await _common_filter_preprocess(
         filt, filt.repositories, request,
     )
