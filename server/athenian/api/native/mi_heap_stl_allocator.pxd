@@ -9,6 +9,14 @@ from libcpp.unordered_set cimport unordered_set
 from libcpp.vector cimport vector
 
 
+cdef extern from "<sstream>" namespace "std::ios" nogil:
+    cdef cppclass openmode:
+        openmode operator|(openmode)
+
+    openmode ios_in "std::ios::in"
+    openmode ios_out "std::ios::out"
+
+
 cdef extern from "mi_heap_stl_allocator.h" nogil:
     cdef cppclass mi_heap_stl_allocator[T]:
         mi_heap_stl_allocator() except +
@@ -38,6 +46,14 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
     cdef cppclass mi_string(string):
         mi_string mi_string[X](const char *, size_t, mi_heap_stl_allocator[X]&) except +
         mi_heap_stl_allocator[char] get_allocator()
+
+    cdef cppclass mi_stringstream:
+        # requires C++20
+        mi_stringstream(openmode, mi_heap_stl_allocator[char]&) except +
+        mi_stringstream& write(const char *, ssize_t) except +
+        mi_stringstream& read(char *, ssize_t)
+        mi_stringstream& seekg(size_t pos)
+        size_t tellp()
 
 
 cdef inline mi_heap_stl_allocator[char] *mi_heap_allocator_from_capsule(obj) except? NULL:
