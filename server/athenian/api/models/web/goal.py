@@ -53,16 +53,33 @@ class TeamGoalTree(Model):
     children: list["TeamGoalTree"]
 
 
-class GoalTree(Model):
-    """A goal attached to a tree of teams."""
-
-    id: int
+class _BaseGoal(Model, sealed=False):  # type: ignore
     name: str
     metric: str
     valid_from: date
     expires_at: date
-    team_goal: TeamGoalTree
     repositories: Optional[list[str]]
     jira_projects: Optional[list[str]]
     jira_priorities: Optional[list[str]]
     jira_issue_types: Optional[list[str]]
+
+
+class GoalTree(_BaseGoal):
+    """A goal attached to a tree of teams."""
+
+    id: int
+    team_goal: TeamGoalTree
+
+
+class GoalCreationTeamGoal(Model):
+    """Team-goal association when creating a goal."""
+
+    team_id: int
+    target: MetricValue
+
+
+class GoalCreateRequest(_BaseGoal):
+    """Goal creation request."""
+
+    account: int
+    team_goals: list[GoalCreationTeamGoal]

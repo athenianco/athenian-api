@@ -354,8 +354,9 @@ async def _validate_goal_creation_info(
 
     if missing_team_ids := team_ids - existing_team_ids:
         missing_repr = ",".join(str(team_id) for team_id in missing_team_ids)
+        # TODO: change to a more generic exception when graphql is dropped
         raise GoalMutationError(
-            f"Some teamId-s don't exist or access denied: {missing_repr}", HTTPStatus.FORBIDDEN,
+            f"Some teams don't exist or access denied: {missing_repr}", HTTPStatus.NOT_FOUND,
         )
 
 

@@ -5,7 +5,9 @@ from typing import Optional
 from aiohttp import web
 
 from athenian.api.align.exceptions import GoalTemplateNotFoundError
+from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
+    GoalCreationInfo,
     delete_goal as db_delete_goal,
     delete_goal_template_from_db,
     dump_goal_repositories,
@@ -13,6 +15,7 @@ from athenian.api.align.goals.dbaccess import (
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
+    insert_goal,
     insert_goal_template,
     parse_goal_repositories,
     update_goal_template_in_db,
@@ -27,16 +30,22 @@ from athenian.api.internal.account import (
     get_metadata_account_ids,
     get_user_account_status_from_request,
 )
-from athenian.api.internal.jira import get_jira_installation_or_none
+from athenian.api.internal.jira import (
+    get_jira_installation_or_none,
+    normalize_issue_type,
+    normalize_priority,
+)
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.team_tree import build_team_tree_from_rows
 from athenian.api.internal.with_ import flatten_teams
-from athenian.api.models.state.models import Goal, GoalTemplate as DBGoalTemplate, Team
+from athenian.api.models.state.models import Goal, GoalTemplate as DBGoalTemplate, Team, TeamGoal
 from athenian.api.models.web import (
     AlignGoalsRequest,
+    BadRequestError,
     CreatedIdentifier,
     DatabaseConflict,
+    GoalCreateRequest,
     GoalTemplate,
     GoalTemplateCreateRequest,
     GoalTemplateUpdateRequest,
@@ -44,6 +53,7 @@ from athenian.api.models.web import (
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
+from athenian.api.tracing import sentry_span
 
 
 def _goal_template_from_row(row: Row, **kwargs) -> GoalTemplate:
@@ -258,3 +268,69 @@ async def delete_goal(request: AthenianWebRequest, id: int) -> web.Response:
             await db_delete_goal(account, id, sdb_conn)
 
     return web.Response(status=204)
+
+
+@disable_default_user
+async def create_goal(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Create a new goal."""
+    try:
+        create_request = GoalCreateRequest.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+
+    creation_info = await _parse_create_request(request, create_request)
+    async with request.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            new_goal_id = await insert_goal(creation_info, sdb_conn)
+
+    return model_response(CreatedIdentifier(id=new_goal_id))
+
+
+@sentry_span
+async def _parse_create_request(
+    request: AthenianWebRequest,
+    creat_req: GoalCreateRequest,
+) -> GoalCreationInfo:
+    valid_from, expires_at = goal_dates_to_datetimes(creat_req.valid_from, creat_req.expires_at)
+    if expires_at < valid_from:
+        raise ResponseError(BadRequestError(detail="Goal expires_at cannot precede valid_from"))
+
+    repositories = await parse_request_repositories(
+        creat_req.repositories, request, creat_req.account,
+    )
+    jira_projects = creat_req.jira_projects
+    if creat_req.jira_priorities is None:
+        jira_priorities = None
+    else:
+        jira_priorities = sorted({normalize_priority(p) for p in creat_req.jira_priorities})
+    if creat_req.jira_issue_types is None:
+        jira_issue_types = None
+    else:
+        jira_issue_types = sorted({normalize_issue_type(t) for t in creat_req.jira_issue_types})
+
+    # user cannot directly set TeamGoal filter fields, received goal values are applied
+    extra_team_goal_info = {
+        TeamGoal.repositories.name: repositories,
+        TeamGoal.jira_projects.name: jira_projects,
+        TeamGoal.jira_priorities.name: jira_priorities,
+        TeamGoal.jira_issue_types.name: jira_issue_types,
+    }
+    team_goals = [
+        TeamGoal(team_id=tg.team_id, target=tg.target, **extra_team_goal_info)
+        for tg in creat_req.team_goals
+    ]
+
+    if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
+        raise ResponseError(BadRequestError("More than one team goal with the same teamId"))
+    goal = Goal(
+        account_id=creat_req.account,
+        name=creat_req.name,
+        metric=creat_req.metric,
+        repositories=repositories,
+        jira_projects=jira_projects,
+        jira_priorities=jira_priorities,
+        jira_issue_types=jira_issue_types,
+        valid_from=valid_from,
+        expires_at=expires_at,
+    )
+    return GoalCreationInfo(goal, team_goals)

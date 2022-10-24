@@ -120,6 +120,8 @@ from athenian.api.models.web.get_pull_requests_request import GetPullRequestsReq
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.goal import (
     AlignGoalsRequest,
+    GoalCreateRequest,
+    GoalCreationTeamGoal,
     GoalMetricSeriesPoint,
     GoalSeriesGranularity,
     GoalTree,
