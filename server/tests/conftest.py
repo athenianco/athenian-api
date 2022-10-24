@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections import defaultdict
 from contextvars import ContextVar
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
@@ -17,14 +17,13 @@ from typing import Dict, List, Optional, Union, cast
 import warnings
 
 import aiomcache
-import faker
 from filelock import FileLock
 import sentry_sdk
 import sqlalchemy as sa
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.internal.features.entries import MetricEntriesCalculator
-from athenian.api.internal.miners.types import PullRequestFacts, nonemin
+from tests.testutils.factory.miners import PullRequestFactsFactory
 
 try:
     import nest_asyncio
@@ -593,6 +592,7 @@ def _init_own_db_unchecked(
             session.close()
     engine.dispose()
     if not override_db:
+        assert db_path
         os.chmod(db_path, 0o666)
         if not Path(backup_path).exists():
             shutil.copy(db_path, backup_path)
@@ -1056,95 +1056,7 @@ def bots() -> set[str]:
 
 
 def generate_pr_samples(n):
-    fake = faker.Faker()
-
-    def random_pr():
-        created_at = fake.date_time_between(start_date="-3y", end_date="-6M", tzinfo=timezone.utc)
-        first_commit = fake.date_time_between(
-            start_date="-3y1M", end_date=created_at, tzinfo=timezone.utc,
-        )
-        last_commit_before_first_review = fake.date_time_between(
-            start_date=created_at,
-            end_date=created_at + timedelta(days=30),
-            tzinfo=timezone.utc,
-        )
-        first_comment_on_first_review = fake.date_time_between(
-            start_date=last_commit_before_first_review,
-            end_date=timedelta(days=2),
-            tzinfo=timezone.utc,
-        )
-        first_review_request = fake.date_time_between(
-            start_date=last_commit_before_first_review,
-            end_date=first_comment_on_first_review,
-            tzinfo=timezone.utc,
-        )
-        approved_at = fake.date_time_between(
-            start_date=first_comment_on_first_review + timedelta(days=1),
-            end_date=first_comment_on_first_review + timedelta(days=30),
-            tzinfo=timezone.utc,
-        )
-        last_commit = fake.date_time_between(
-            start_date=first_comment_on_first_review + timedelta(days=1),
-            end_date=approved_at,
-            tzinfo=timezone.utc,
-        )
-        merged_at = fake.date_time_between(
-            approved_at, approved_at + timedelta(days=2), tzinfo=timezone.utc,
-        )
-        closed_at = merged_at
-        last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
-        released_at = fake.date_time_between(
-            merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc,
-        )
-        reviews = np.array(
-            [fake.date_time_between(created_at, last_review) for _ in range(random.randint(0, 3))],
-            dtype="datetime64[ns]",
-        )
-        activity_days = np.unique(
-            np.array(
-                [
-                    dt.replace(tzinfo=None)
-                    for dt in [
-                        created_at,
-                        closed_at,
-                        released_at,
-                        first_review_request,
-                        first_commit,
-                        last_commit_before_first_review,
-                        last_commit,
-                    ]
-                ]
-                + reviews.tolist(),
-                dtype="datetime64[D]",
-            ).astype("datetime64[ns]"),
-        )
-        return PullRequestFacts.from_fields(
-            created=pd.Timestamp(created_at),
-            first_commit=pd.Timestamp(first_commit or created_at),
-            work_began=nonemin(first_commit, created_at),
-            last_commit_before_first_review=pd.Timestamp(last_commit_before_first_review),
-            last_commit=pd.Timestamp(last_commit),
-            merged=pd.Timestamp(merged_at),
-            first_comment_on_first_review=pd.Timestamp(first_comment_on_first_review),
-            first_review_request=pd.Timestamp(first_review_request),
-            first_review_request_exact=first_review_request,
-            last_review=pd.Timestamp(last_review),
-            reviews=np.array(reviews),
-            activity_days=activity_days,
-            approved=pd.Timestamp(approved_at),
-            released=pd.Timestamp(released_at),
-            closed=pd.Timestamp(closed_at),
-            size=random.randint(10, 1000),
-            force_push_dropped=False,
-            release_ignored=False,
-            done=pd.Timestamp(released_at),
-            review_comments=max(0, random.randint(-5, 15)),
-            regular_comments=max(0, random.randint(-5, 15)),
-            participants=max(random.randint(-1, 4), 1),
-            merged_with_failed_check_runs=["flake8"] if fake.random.random() > 0.9 else [],
-        )
-
-    return [random_pr() for _ in range(n)]
+    return [PullRequestFactsFactory() for _ in range(n)]
 
 
 @pytest.fixture(scope="session")

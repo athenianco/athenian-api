@@ -7,6 +7,7 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     NotReviewedCalculator,
     ReviewedCalculator,
     ReviewedRatioCalculator,
+    ReviewTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
@@ -14,6 +15,7 @@ from athenian.api.internal.miners.types import PRParticipationKind
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples
 from tests.controllers.features.github.test_pull_request_metrics import dt64arr_ns
+from tests.testutils.factory.miners import PullRequestFactsFactory
 from tests.testutils.time import dt
 
 
@@ -108,3 +110,25 @@ class TestReviewedRatioCalculator:
         assert not_reviewed is not None
 
         assert reviewed_ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
+
+
+class TestReviewTimeCalculator:
+    def test_base(self) -> None:
+        calc = ReviewTimeCalculator(quantiles=(0, 1))
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 3, 1))
+
+        prs = [
+            PullRequestFactsFactory(
+                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)),
+                approved=pd.Timestamp(dt(2022, 1, 4)),
+            ),
+            PullRequestFactsFactory(
+                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)),
+                approved=pd.Timestamp(dt(2022, 1, 2)),
+            ),
+        ]
+        facts = df_from_structs(prs)
+
+        calc(facts, min_times, max_times, None, np.full((1, len(prs)), True, bool))
+        assert calc.values[0][0].value == timedelta(days=2)
