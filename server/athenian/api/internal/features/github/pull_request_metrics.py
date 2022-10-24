@@ -729,6 +729,14 @@ class WaitFirstReviewCounterWithQuantiles(Counter):
     deps = (WaitFirstReviewTimeCalculator,)
 
 
+class WaitFirstReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_WAIT_FIRST_REVIEW_TIME below a given threshold."""
+
+    deps = (WaitFirstReviewTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(hours=6)
+
+
 @register_metric(PullRequestMetricID.PR_OPENED)
 class OpenedCalculator(SumMetricCalculator[int]):
     """Number of open PRs."""

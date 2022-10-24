@@ -12,6 +12,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     ReviewedRatioCalculator,
     ReviewTimeBelowThresholdRatio,
     ReviewTimeCalculator,
+    WaitFirstReviewTimeBelowThresholdRatio,
+    WaitFirstReviewTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
@@ -204,4 +206,57 @@ class TestReviewTimeBelowThresholdRatio:
         return PullRequestFactsFactory(
             first_review_request_exact=pd.Timestamp(review_request),
             approved=pd.Timestamp(approved) if approved else None,
+        )
+
+
+class TestWaitFirstReviewTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 2, 1))
+
+        wait_review_calc = WaitFirstReviewTimeCalculator(quantiles=quantiles)
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=24),
+        )
+
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 4)),
+            self._mk_pr(dt(2022, 1, 2), dt(2022, 1, 3)),
+            self._mk_pr(dt(2022, 1, 2, 2), dt(2022, 1, 3, 1)),
+            self._mk_pr(dt(2022, 1, 3, 1), dt(2022, 1, 4, 5)),
+            self._mk_pr(dt(2022, 1, 3, 1), None),
+            self._mk_pr(None, dt(2022, 1, 3, 1)),
+        ]
+        facts = df_from_structs(prs)
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        wait_review_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(3 / 4)
+
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=48),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == 1
+
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=12),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == pytest.approx(1 / 4)
+
+    @classmethod
+    def _mk_pr(
+        cls,
+        review_request: Optional[datetime],
+        first_comment: Optional[datetime],
+    ) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            first_review_request_exact=review_request,
+            first_comment_on_first_review=pd.Timestamp(first_comment) if first_comment else None,
         )
