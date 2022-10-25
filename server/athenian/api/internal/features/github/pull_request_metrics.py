@@ -28,6 +28,7 @@ from athenian.api.internal.features.metric_calculator import (
     MetricCalculatorEnsemble,
     RatioCalculator,
     SumMetricCalculator,
+    ThresholdComparisonRatioCalculator,
     WithoutQuantilesMixin,
     calculate_logical_duplication_mask,
     group_by_lines,
@@ -291,6 +292,14 @@ class ReviewCounterWithQuantiles(Counter):
     the quantiles."""
 
     deps = (ReviewTimeCalculator,)
+
+
+class ReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_REVIEW_TIME below a given threshold."""
+
+    deps = (ReviewTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(days=2)
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_TIME)

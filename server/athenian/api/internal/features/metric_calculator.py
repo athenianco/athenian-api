@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractproperty
 from collections import defaultdict
 import dataclasses
 from datetime import datetime, timedelta
@@ -35,6 +35,7 @@ from athenian.api.internal.features.metric import (
     MultiMetric,
     NumpyMetric,
     T,
+    make_metric,
 )
 from athenian.api.internal.features.statistics import (
     mean_confidence_interval,
@@ -645,6 +646,64 @@ class MetricCalculatorEnsemble:
     def reset(self) -> None:
         """Clear the states of all the contained calculators."""
         [c.reset() for c in self._calcs]
+
+
+class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
+    """Calculate the ratio of metric values satisfying a given threshold.
+
+    Metric values are computed by the upstream MetricCalculator dependency.
+
+    Subclasses must specify the numpy comparison function
+    (eg. np.less_equal, np.greater, ...) to use between the metric
+    values and the threshold.
+
+    """
+
+    metric = make_metric("MetricComparisonRatio", __name__, np.float32, -1)
+
+    def compare(
+        self,
+        peek: np.ndarray,
+        threshold: Any,
+        *,
+        out: np.ndarray,
+        where: np.ndarray,
+    ) -> np.ndarray:
+        """Compare a metric value against the threshold."""
+        raise NotImplementedError()
+
+    @abstractproperty
+    def default_threshold(self) -> Any:
+        """Return the default threshold if an explicit one is missing."""
+
+    def __init__(self, *args, threshold: Optional[Any] = None, **kwargs) -> None:
+        """Init the ThresholdComparisonRatioCalculator."""
+        super().__init__(*args, **kwargs)
+        self._threshold = self.default_threshold if threshold is None else threshold
+
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
+        calc = self._calcs[0]
+        assert isinstance(calc, MetricCalculator)
+        peek = calc.peek
+
+        # keep self.nan in results for nan values, that cannot be compared
+        out = np.full(peek.shape, self.nan, dtype=np.int8)
+        if np.isnan(calc.metric.nan):
+            compare_where = ~np.isnan(peek)
+        else:
+            compare_where = peek != calc.metric.nan
+        self.compare(calc.peek, self._threshold, out=out, where=compare_where)
+
+        return out
+
+    def _agg(self, samples: np.ndarray) -> float:
+        return samples.sum() / len(samples)
 
 
 class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
