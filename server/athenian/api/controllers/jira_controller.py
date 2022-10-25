@@ -226,6 +226,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             statuses=statuses,
             deployments=deps,
         ),
+        native=True,
     )
 
 

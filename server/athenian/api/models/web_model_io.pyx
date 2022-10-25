@@ -34,6 +34,7 @@ from athenian.api.native.cpython cimport (
     Py_None,
     Py_True,
     Py_TYPE,
+    PyBaseObject_Type,
     PyBool_Type,
     PyBytes_AS_STRING,
     PyBytes_Check,
@@ -55,7 +56,6 @@ from athenian.api.native.cpython cimport (
     PyDict_Size,
     PyDict_Type,
     PyFloat_AS_DOUBLE,
-    PyFloat_Check,
     PyFloat_CheckExact,
     PyFloat_Type,
     PyList_CheckExact,
@@ -75,6 +75,7 @@ from athenian.api.native.cpython cimport (
     PyUnicode_Check,
     PyUnicode_DATA,
     PyUnicode_FromKindAndData,
+    PyUnicode_FromString,
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
     PyUnicode_Type,
@@ -162,6 +163,7 @@ cdef enum DataType:
     DT_DT = 7
     DT_TD = 8
     DT_BOOL = 9
+    DT_FREEFORM = 10
 
 
 cdef enum DataFlags:
@@ -181,6 +183,7 @@ ctypedef struct ModelFields:
 
 cdef inline DataType _discover_data_type(
     PyTypeObject *obj,
+    const char *key,
     PyTypeObject **deref,
     bint *optional,
     bint *verbatim,
@@ -215,12 +218,15 @@ cdef inline DataType _discover_data_type(
     elif hasattr(<object> obj, "attribute_types"):
         deref[0] = obj
         return DT_MODEL
+    elif obj == &PyDict_Type or obj == &PyBaseObject_Type:
+        return DT_FREEFORM
     else:
-        raise AssertionError(f"Field type is not supported: {<object> obj}")
+        raise AssertionError(f"{'Optional f' if optional[0] else 'F'}ield `{PyUnicode_FromString(key)}` type is not supported: {<object> obj}")
 
 
 cdef inline void _apply_data_type(
     Py_ssize_t offset,
+    const char *key,
     PyTypeObject *member_type,
     ModelFields *fields,
     mi_heap_stl_allocator[char] &alloc,
@@ -228,7 +234,7 @@ cdef inline void _apply_data_type(
     cdef:
         PyTypeObject *deref = NULL
         bint optional = 0, verbatim = 0
-        DataType dtype = _discover_data_type(member_type, &deref, &optional, &verbatim)
+        DataType dtype = _discover_data_type(member_type, key, &deref, &optional, &verbatim)
         ModelFields *back = &dereference(fields.nested).emplace_back()
     back.type = dtype
     back.offset = offset
@@ -261,7 +267,7 @@ cdef void _discover_fields(
         members = model.tp_members
         for i in range(len((<object> model).__slots__)):
             member_type = <PyTypeObject *> PyDict_GetItemString(attribute_types, members[i].name + 1)
-            _apply_data_type(members[i].offset, member_type, fields, alloc)
+            _apply_data_type(members[i].offset, members[i].name + 1, member_type, fields, alloc)
             back = &dereference(fields.nested).back()
             key = PyDict_GetItemString(attribute_map, members[i].name + 1)
             if key != NULL:
@@ -274,6 +280,7 @@ cdef void _discover_fields(
         attribute_types = (<object> model).__args__
         _apply_data_type(
             0,
+            b"list",
             <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0),
             fields,
             alloc,
@@ -282,12 +289,14 @@ cdef void _discover_fields(
         attribute_types = (<object> model).__args__
         _apply_data_type(
             0,
+            b"dict key",
             <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 0),
             fields,
             alloc,
         )
         _apply_data_type(
             0,
+            b"dict value",
             <PyTypeObject *> PyTuple_GET_ITEM(<PyObject *> attribute_types, 1),
             fields,
             alloc,
@@ -481,14 +490,14 @@ cdef void _serialize_list_of_models(
         return
     item_type = type(models[0])
     result = pickle.dumps(GenericAlias(list, (item_type,)))
-    _apply_data_type(0, <PyTypeObject *> item_type, &spec, alloc)
+    _apply_data_type(0, b"root", <PyTypeObject *> item_type, &spec, alloc)
     with nogil:
         size = PyBytes_GET_SIZE(<PyObject *> result)
         stream.write(<char *> &size, 4)
         stream.write(PyBytes_AS_STRING(<PyObject *> result), size)
         exc = _write_object(<PyObject *> models, &spec, stream)
     if exc != NULL:
-        raise ValueError(f"Could not serialize {<object> exc} of type {type(<object> exc)} in {item_type.__name__}")
+        raise ValueError(f"Could not serialize `{<object> exc}` of type {type(<object> exc)} in {item_type.__qualname__}")
 
 
 cdef void _serialize_generic(model, mi_stringstream &stream) except *:
@@ -531,7 +540,7 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
     cdef:
         char *input = PyBytes_AS_STRING(<PyObject *> buffer)
         uint32_t aux = 0, tuple_pos
-        str corrupted_msg = "Corrupted buffer ar position %d: %s"
+        str corrupted_msg = "Corrupted buffer at position %d: %s"
         FILE *stream
         tuple result
         long pos
@@ -708,12 +717,16 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
     stream.emplace(ios_in | ios_out, dereference(alloc))
 
     spec.nested.emplace(dereference(alloc))
-    _apply_data_type(0, <PyTypeObject *> root_type, &spec, dereference(alloc))
+    _apply_data_type(0, b"root", <PyTypeObject *> root_type, &spec, dereference(alloc))
+    if spec.type == DT_MODEL:
+        spec = dereference(spec.nested)[0]
 
     with nogil:
         error = _write_json(<PyObject *> model, spec, dereference(stream))
     if error != NULL:
-        raise AssertionError(f"failed to serialize to JSON: {<object> error}")
+        raise AssertionError(
+            f"failed to serialize to JSON: {<object> error} of type {type(<object> error).__name__}"
+        )
 
     size = dereference(stream).tellp()
     result = PyBytes_FromStringAndSize(NULL, size)
@@ -827,7 +840,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
             item_len = PyUnicode_GET_LENGTH(obj)
             if kind == PyUnicode_1BYTE_KIND:
                 for i in range(item_len):
-                    stream.write(buffer, ucs4_to_utf8_json(data[i], buffer))
+                    stream.write(buffer, ucs4_to_utf8_json((<uint8_t *> data)[i], buffer))
             elif kind == PyUnicode_2BYTE_KIND:
                 for i in range(item_len):
                     stream.write(buffer, ucs4_to_utf8_json((<uint16_t *> data)[i], buffer))
@@ -838,7 +851,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
             data = PyBytes_AS_STRING(obj)
             item_len = PyBytes_GET_SIZE(obj)
             for i in range(item_len):
-                stream.write(buffer, ucs4_to_utf8_json(data[i], buffer))
+                stream.write(buffer, ucs4_to_utf8_json((<uint8_t *> data)[i], buffer))
         else:
             return obj
 
@@ -1035,6 +1048,97 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
             return obj
         gcvt(val_double, 24, buffer)
         stream.write(buffer, strlen(buffer))
+    elif spec.type == DT_FREEFORM:
+        r = _write_freeform_json(obj, stream)
+        if r != NULL:
+            return r
     else:
         return obj
+    return NULL
+
+
+@cython.cdivision(True)
+cdef PyObject *_write_freeform_json(PyObject *node, mi_stringstream &stream) nogil:
+    cdef:
+        PyObject *key = NULL
+        PyObject *value = NULL
+        PyObject *r
+        Py_ssize_t pos = 0, size = 0, i, j, item_len, char_len
+        char *data
+        unsigned int kind
+        char sym
+        long val_long, div
+        double float_val
+        char buffer[24]
+
+    if PyDict_CheckExact(node):
+        stream.write(b"{", 1)
+        while PyDict_Next(node, &pos, &key, &value):
+            if pos != 1:
+                stream.write(b",", 1)
+            r = _write_freeform_json(key, stream)
+            if r != NULL:
+                return r
+            stream.write(b":", 1)
+            r = _write_freeform_json(value, stream)
+            if r != NULL:
+                return r
+        stream.write(b"}", 1)
+    elif PyList_CheckExact(node):
+        stream.write(b"[", 1)
+        for i in range(PyList_GET_SIZE(node)):
+            if i != 0:
+                stream.write(b",", 1)
+            r = _write_freeform_json(PyList_GET_ITEM(node, i), stream)
+            if r != NULL:
+                return r
+        stream.write(b"]", 1)
+    elif PyUnicode_Check(node):
+        stream.write(b'"', 1)
+
+        data = <char *>PyUnicode_DATA(node)
+        kind = PyUnicode_KIND(node)
+        item_len = PyUnicode_GET_LENGTH(node)
+        if kind == PyUnicode_1BYTE_KIND:
+            for i in range(item_len):
+                stream.write(buffer, ucs4_to_utf8_json((<uint8_t *> data)[i], buffer))
+        elif kind == PyUnicode_2BYTE_KIND:
+            for i in range(item_len):
+                stream.write(buffer, ucs4_to_utf8_json((<uint16_t *> data)[i], buffer))
+        elif kind == PyUnicode_4BYTE_KIND:
+            for i in range(item_len):
+                stream.write(buffer, ucs4_to_utf8_json((<uint32_t *> data)[i], buffer))
+
+        stream.write(b'"', 1)
+    elif PyLong_CheckExact(node):
+        val_long = PyLong_AsLong(node)
+        if val_long < 0:
+            stream.write(b"-", 1)
+            val_long = -val_long
+        if val_long == 0:
+            stream.write(b"0", 1)
+        else:
+            pos = 0
+            while val_long:
+                div = val_long
+                val_long = val_long // 10
+                buffer[pos] = div - val_long * 10 + ord(b"0")
+                pos += 1
+            for i in range(pos // 2):
+                sym = buffer[i]
+                div = pos - i - 1
+                buffer[i] = buffer[div]
+                buffer[div] = sym
+            stream.write(buffer, pos)
+    elif node == Py_True:
+        stream.write(b"true", 4)
+    elif node == Py_False:
+        stream.write(b"false", 5)
+    elif PyFloat_CheckExact(node):
+        gcvt(PyFloat_AS_DOUBLE(node), 24, buffer)
+        stream.write(buffer, strlen(buffer))
+    elif node == Py_None:
+        stream.write(b"null", 4)
+    else:
+        return node
     return NULL

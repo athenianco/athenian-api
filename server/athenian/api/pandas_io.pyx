@@ -22,7 +22,7 @@ from cpython cimport (
     PyTuple_SET_ITEM,
 )
 from cython.operator cimport dereference as deref
-from libc.stdint cimport uint16_t, uint32_t
+from libc.stdint cimport uint8_t, uint16_t, uint32_t
 from libc.string cimport memcmp, memcpy, memset, strcpy, strlen, strncmp
 from libcpp.string cimport string
 from numpy cimport (
@@ -649,7 +649,7 @@ cdef char *_write_json(PyObject *node, char *output) nogil:
         item_len = PyUnicode_GET_LENGTH(node)
         if kind == PyUnicode_1BYTE_KIND:
             for i in range(item_len):
-                output += ucs4_to_utf8_json(data[i], output)
+                output += ucs4_to_utf8_json((<uint8_t *> data)[i], output)
         elif kind == PyUnicode_2BYTE_KIND:
             for i in range(item_len):
                 output += ucs4_to_utf8_json((<uint16_t *> data)[i], output)

@@ -112,7 +112,7 @@ smoke_models = [
         MappedJIRAIdentity(
             developer_id="222dev_id",
             developer_name="Vadim",
-            jira_name="2222jira_name_val",
+            jira_name="Podgórski",
             confidence=np.int32(0),
         ),
     ],
@@ -124,7 +124,7 @@ smoke_models = [
     ],
     [
         PullRequest(
-            repository="repo",
+            repository="repó_репо",
             number=1234,
             title="title",
             size_added=1,
@@ -157,7 +157,7 @@ smoke_models = [
             deployments=None,
         ),
     ],
-    {"a": 111},
+    {"a": 111, "b": [None, 1.4], "c": True, "d": False, "e": "Podgórski"},
 ]
 
 
@@ -180,8 +180,9 @@ class TestSerializeModelsUnicode:
         f: str
         g: int
 
-    def test_not_nested_model(self) -> None:
-        u = self._M(f="İbZZ KK yök", g=2)
+    @pytest.mark.parametrize("f", ["İbZZ KK yök", "Podgórski"])
+    def test_not_nested_model(self, f) -> None:
+        u = self._M(f=f, g=2)
         res = deserialize_models(serialize_models((u,)))
         assert res == (u,)
 
@@ -218,7 +219,7 @@ class TestSerializeModelsUnicode:
         assert res[1][0].avatar == "𝞈𝝖"
 
 
-@pytest.mark.parametrize("models", smoke_models[:-1])
+@pytest.mark.parametrize("models", [smoke_models[0][0], *smoke_models])
 def test_model_to_json_smoke(models):
     baseline = FriendlyJson.dumps(Model.serialize(models))
     native = model_to_json(models).decode()
@@ -226,5 +227,8 @@ def test_model_to_json_smoke(models):
 
 
 def test_model_to_json_unsupported():
+    class FooBar:
+        pass
+
     with pytest.raises(AssertionError):
-        model_to_json(smoke_models[-1])
+        model_to_json(FooBar())

@@ -6,6 +6,7 @@ import aiohttp.web
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.generic_error import _GenericError
+from athenian.api.models.web_model_io import model_to_json
 from athenian.api.serialization import FriendlyJson
 from athenian.api.tracing import sentry_span
 
@@ -17,8 +18,12 @@ def model_response(
     status: int = 200,
     reason: Optional[str] = None,
     headers: LooseHeaders = None,
+    native: bool = False,
 ) -> web.Response:
     """Generate a web model_response from the given model."""
+    if native:
+        data = model_to_json(model)
+        return web.json_response(body=data, status=status, reason=reason, headers=headers)
     data = Model.serialize(model)
     return web.json_response(
         data, dumps=FriendlyJson.dumps, status=status, reason=reason, headers=headers,
