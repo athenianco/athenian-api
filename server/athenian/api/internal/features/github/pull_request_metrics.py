@@ -479,6 +479,14 @@ class OpenCounterWithQuantiles(Counter):
     deps = (OpenTimeCalculator,)
 
 
+class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_OPEN_TIME below a given threshold."""
+
+    deps = (OpenTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(days=3)
+
+
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
 class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
