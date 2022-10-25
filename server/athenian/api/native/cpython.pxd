@@ -18,6 +18,7 @@ cdef extern from "Python.h":
         PyMemberDef *tp_members
 
     bint PyObject_TypeCheck(PyObject *, PyTypeObject *) nogil
+    PyTypeObject *Py_TYPE(const PyObject *) nogil
 
     bint PyLong_CheckExact(PyObject *) nogil
     long PyLong_AsLong(PyObject *) nogil
@@ -85,6 +86,8 @@ cdef extern from "datetime.h" nogil:
 
     int PyDateTime_DELTA_GET_DAYS(PyObject *)
     int PyDateTime_DELTA_GET_SECONDS(PyObject *)
+
+    PyObject *PyDateTime_DATE_GET_TZINFO(PyObject *)
 
     ctypedef struct PyDateTime_CAPI:
         PyObject *TimeZone_UTC

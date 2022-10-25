@@ -7,6 +7,9 @@ from athenian.api.native.cpython cimport PyTypeObject
 cdef extern from "numpy/arrayobject.h":
     PyTypeObject PyArray_Type
     PyTypeObject PyDatetimeArrType_Type
+    PyTypeObject PyDoubleArrType_Type
+    PyTypeObject PyIntegerArrType_Type
+    PyTypeObject PyFloatArrType_Type
     PyTypeObject PyTimedeltaArrType_Type
 
     ctypedef struct PyArray_Descr:
@@ -42,4 +45,3 @@ cdef extern from "numpy/arrayobject.h":
     bint PyArray_IS_C_CONTIGUOUS(PyObject *) nogil
     bint PyArray_IS_F_CONTIGUOUS(PyObject *) nogil
     void PyArray_ScalarAsCtype(PyObject *scalar, void *ctypeptr) nogil
-    bint PyArray_IsIntegerScalar(PyObject *) nogil

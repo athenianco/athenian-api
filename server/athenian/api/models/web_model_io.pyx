@@ -1,5 +1,5 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
-# cython: warn.maybe_uninitialized=True
+# cython: warn.maybe_uninitialized=False
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize -std=c++20
 # distutils: libraries = mimalloc
@@ -33,6 +33,7 @@ from athenian.api.native.cpython cimport (
     Py_False,
     Py_None,
     Py_True,
+    Py_TYPE,
     PyBool_Type,
     PyBytes_AS_STRING,
     PyBytes_Check,
@@ -42,6 +43,7 @@ from athenian.api.native.cpython cimport (
     PyDateTime_DATE_GET_HOUR,
     PyDateTime_DATE_GET_MINUTE,
     PyDateTime_DATE_GET_SECOND,
+    PyDateTime_DATE_GET_TZINFO,
     PyDateTime_DELTA_GET_DAYS,
     PyDateTime_DELTA_GET_SECONDS,
     PyDateTime_GET_DAY,
@@ -90,10 +92,12 @@ from athenian.api.native.numpy cimport (
     PyArray_DATA,
     PyArray_DIM,
     PyArray_IS_C_CONTIGUOUS,
-    PyArray_IsIntegerScalar,
     PyArray_NDIM,
     PyArray_ScalarAsCtype,
     PyDatetimeArrType_Type,
+    PyDoubleArrType_Type,
+    PyFloatArrType_Type,
+    PyIntegerArrType_Type,
     PyTimedeltaArrType_Type,
 )
 from athenian.api.native.optional cimport optional
@@ -248,6 +252,7 @@ cdef void _discover_fields(
         PyTypeObject *member_type
         PyMemberDef *members
         PyObject *key
+        ModelFields *back
 
     if fields.type == DT_MODEL:
         attribute_types = (<object> model).attribute_types
@@ -257,13 +262,14 @@ cdef void _discover_fields(
         for i in range(len((<object> model).__slots__)):
             member_type = <PyTypeObject *> PyDict_GetItemString(attribute_types, members[i].name + 1)
             _apply_data_type(members[i].offset, member_type, fields, alloc)
+            back = &dereference(fields.nested).back()
             key = PyDict_GetItemString(attribute_map, members[i].name + 1)
             if key != NULL:
-                dereference(fields.nested).back().flags &= ~DF_KEY_UNMAPPED
-                dereference(fields.nested).back().key = key
+                back.flags &= ~DF_KEY_UNMAPPED
+                back.key = key
             else:
-                dereference(fields.nested).back().flags |= DF_KEY_UNMAPPED
-                dereference(fields.nested).back().key = members[i].name + 1
+                back.flags |= DF_KEY_UNMAPPED
+                back.key = members[i].name + 1
     elif fields.type == DT_LIST:
         attribute_types = (<object> model).__args__
         _apply_data_type(
@@ -294,9 +300,10 @@ cdef void _discover_fields(
 cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, mi_stringstream &stream) nogil:
     cdef:
         char dtype = spec.type, bool
-        long val_long = 0
+        long val_long
         double val_double
-        uint32_t str_length, val32 = 0, i
+        float val_float
+        uint32_t str_length, val32, i
         uint16_t val16[4]
         int32_t vali32
         PyObject *exc
@@ -314,22 +321,30 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, mi_stringstream &
         return NULL
     stream.write(<char *> &dtype, 1)
     if dtype == DT_LONG:
-        if not PyLong_CheckExact(obj):
-            if PyArray_IsIntegerScalar(obj):
-                PyArray_ScalarAsCtype(obj, &val_long)
-            else:
-                return obj
-        else:
+        if PyLong_CheckExact(obj):
             val_long = PyLong_AsLong(obj)
+        elif PyObject_TypeCheck(obj, &PyIntegerArrType_Type):
+            val_long = 0
+            PyArray_ScalarAsCtype(obj, &val_long)
+        else:
+            return obj
         stream.write(<char *> &val_long, sizeof(long))
     elif dtype == DT_FLOAT:
-        is_float = PyFloat_CheckExact(obj)
-        if not is_float and not PyLong_CheckExact(obj):
-            return obj
-        if is_float:
+        if PyFloat_CheckExact(obj):
             val_double = PyFloat_AS_DOUBLE(obj)
-        else:
+        elif PyLong_CheckExact(obj):
             val_double = PyLong_AsLong(obj)
+        elif PyObject_TypeCheck(obj, &PyDoubleArrType_Type):
+            PyArray_ScalarAsCtype(obj, &val_double)
+        elif PyObject_TypeCheck(obj, &PyFloatArrType_Type):
+            PyArray_ScalarAsCtype(obj, &val_float)
+            val_double = val_float
+        elif PyObject_TypeCheck(obj, &PyIntegerArrType_Type):
+            val_long = 0
+            PyArray_ScalarAsCtype(obj, &val_long)
+            val_double = val_long
+        else:
+            return obj
         stream.write(<char *> &val_double, sizeof(double))
     elif dtype == DT_STRING:
         is_unicode = PyUnicode_Check(obj)
@@ -560,11 +575,11 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
 
 cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str corrupted_msg):
     cdef:
-        char dtype = 0, bool = 0
-        long long_val = 0
-        double double_val = 0
-        uint32_t aux32 = 0, i
-        int32_t auxi32 = 0
+        char dtype, bool
+        long val_long
+        double val_double
+        uint32_t aux32, i
+        int32_t auxi32
         uint16_t aux16[4]
         unsigned int kind
         int year, month, day, hour, minute, second
@@ -579,23 +594,23 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
     if dtype != spec.type:
         raise ValueError(corrupted_msg % (ftell(stream), f"dtype {dtype} != {spec.type}"))
     if dtype == DT_LONG:
-        if fread(&long_val, sizeof(long), 1, stream) != 1:
+        if fread(&val_long, sizeof(long), 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "long"))
-        return PyLong_FromLong(long_val)
+        return PyLong_FromLong(val_long)
     elif dtype == DT_FLOAT:
-        if fread(&double_val, sizeof(double), 1, stream) != 1:
+        if fread(&val_double, sizeof(double), 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "float"))
-        return PyFloat_FromDouble(double_val)
+        return PyFloat_FromDouble(val_double)
     elif dtype == DT_STRING:
         if fread(&aux32, 4, 1, stream) != 1:
             raise ValueError(corrupted_msg % (ftell(stream), "str/header"))
         kind = (aux32 >> 30) + 1
         aux32 &= 0x3FFFFFFF
-        long_val = ftell(stream)
+        val_long = ftell(stream)
         # move stream forward of the number of bytes we are about to read from raw
         if fseek(stream, aux32 * kind, SEEK_CUR):
             raise ValueError(corrupted_msg % (ftell(stream), "str/body"))
-        return PyUnicode_FromKindAndData(kind, raw + long_val, aux32)
+        return PyUnicode_FromKindAndData(kind, raw + val_long, aux32)
     elif dtype == DT_DT:
         if fread(aux16, 2, 3, stream) != 3:
             raise ValueError(corrupted_msg % (ftell(stream), "dt"))
@@ -670,12 +685,21 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
         bytes result
         optional[mi_heap_stl_allocator[char]] alloc
         optional[mi_stringstream] stream
-        type root_type = type(model)
+        type root_type
         ModelFields spec
         PyObject *error
 
     if model is None:
         return b"null"
+    if PyList_CheckExact(<PyObject *> model):
+        if PyList_GET_SIZE(<PyObject *> model) == 0:
+            return b"[]"
+        spec.type = DT_LIST
+        root_type = type(model[0])
+    else:
+        spec.type = DT_MODEL
+        root_type = type(model)
+
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
@@ -685,7 +709,7 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
 
     spec.nested.emplace(dereference(alloc))
     _apply_data_type(0, <PyTypeObject *> root_type, &spec, dereference(alloc))
-    spec = dereference(spec.nested)[0]
+
     with nogil:
         error = _write_json(<PyObject *> model, spec, dereference(stream))
     if error != NULL:
@@ -708,25 +732,27 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
         PyObject *key = NULL
         PyObject *value = NULL
         PyObject *r
-        Py_ssize_t pos = 0, size = 0, i, j, item_len, char_len
+        Py_ssize_t pos = 0, size, i, j, item_len, char_len
         unsigned int kind
         char sym
         char *data
         int aux, auxdiv, rem, year, month, day
-        long long_val, div
+        long val_long, div
         npy_int64 obval
-        double float_val
+        double val_double
+        float val_float
         char buffer[24]
         ModelFields *nested
-        PyMemberDef *members
 
     if obj == Py_None:
         stream.write(b"null", 4)
         return NULL
     if spec.type == DT_MODEL:
+        if Py_TYPE(obj).tp_members == NULL:
+            # this is just a check for __slots__, it's hard to validate better without GIL
+            return obj
         stream.write(b"{", 1)
         kind = 0
-        members = spec.model.tp_members
         for i in range(<Py_ssize_t> dereference(spec.nested).size()):
             nested = &dereference(spec.nested)[i]
             value = dereference(<PyObject **>((<char *> obj) + nested.offset))
@@ -829,11 +855,11 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
                     obval //= 1000000
                 elif npy_unit != NPY_FR_s:
                     return obj
-                long_val = obval // (60 * 60 * 24)
-                obval = obval - long_val * 60 * 60 * 24
+                val_long = obval // (60 * 60 * 24)
+                obval = obval - val_long * 60 * 60 * 24
 
                 year = month = day = 0
-                set_datetimestruct_days(long_val, &year, &month, &day)
+                set_datetimestruct_days(val_long, &year, &month, &day)
                 aux = year
                 pos = 4
                 while pos > 0:
@@ -882,6 +908,8 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
             else:
                 return obj
         else:
+            if (<PyDateTime_CAPI *> PyDateTimeAPI).TimeZone_UTC != PyDateTime_DATE_GET_TZINFO(obj):
+                return obj
             aux = PyDateTime_GET_YEAR(obj)
             pos = 4
             while pos > 0:
@@ -924,30 +952,30 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
         if not PyDelta_Check(obj):
             if PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type):
                 npy_unit = (<PyDatetimeScalarObject *> obj).obmeta.base
-                long_val = (<PyDatetimeScalarObject *> obj).obval
+                val_long = (<PyDatetimeScalarObject *> obj).obval
                 if npy_unit == NPY_FR_ns:
-                    long_val //= 1000000000
+                    val_long //= 1000000000
                 elif npy_unit == NPY_FR_us:
-                    long_val //= 1000000
+                    val_long //= 1000000
                 elif npy_unit != NPY_FR_s:
                     return obj
             else:
                 return obj
         else:
-            long_val = PyDateTime_DELTA_GET_DAYS(obj)
-            long_val *= 24 * 3600
-            long_val += PyDateTime_DELTA_GET_SECONDS(obj)
-        if long_val < 0:
+            val_long = PyDateTime_DELTA_GET_DAYS(obj)
+            val_long *= 24 * 3600
+            val_long += PyDateTime_DELTA_GET_SECONDS(obj)
+        if val_long < 0:
             stream.write(b"-", 1)
-            long_val = -long_val
-        if long_val == 0:
+            val_long = -val_long
+        if val_long == 0:
             stream.write(b"0", 1)
         else:
             pos = 0
-            while long_val:
-                div = long_val
-                long_val = long_val // 10
-                buffer[pos] = div - long_val * 10 + ord(b"0")
+            while val_long:
+                div = val_long
+                val_long = val_long // 10
+                buffer[pos] = div - val_long * 10 + ord(b"0")
                 pos += 1
             for i in range(pos // 2):
                 sym = buffer[i]
@@ -957,18 +985,24 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
             stream.write(buffer, pos)
         stream.write(b's"', 2)
     elif spec.type == DT_LONG:
-        long_val = PyLong_AsLong(obj)
-        if long_val < 0:
+        if PyLong_CheckExact(obj):
+            val_long = PyLong_AsLong(obj)
+        elif PyObject_TypeCheck(obj, &PyIntegerArrType_Type):
+            val_long = 0
+            PyArray_ScalarAsCtype(obj, &val_long)
+        else:
+            return obj
+        if val_long < 0:
             stream.write(b"-", 1)
-            long_val = -long_val
-        if long_val == 0:
+            val_long = -val_long
+        if val_long == 0:
             stream.write(b"0", 1)
         else:
             pos = 0
-            while long_val:
-                div = long_val
-                long_val = long_val // 10
-                buffer[pos] = div - long_val * 10 + ord(b"0")
+            while val_long:
+                div = val_long
+                val_long = val_long // 10
+                buffer[pos] = div - val_long * 10 + ord(b"0")
                 pos += 1
             for i in range(pos // 2):
                 sym = buffer[i]
@@ -984,15 +1018,23 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
         else:
             return obj
     elif spec.type == DT_FLOAT:
-        if not PyFloat_Check(obj):
-            if not PyLong_CheckExact(obj):
-                return obj
-            spec.type = DT_LONG
-            r = _write_json(obj, spec, stream)
-            spec.type = DT_FLOAT
+        if PyFloat_CheckExact(obj):
+            val_double = PyFloat_AS_DOUBLE(obj)
+        elif PyLong_CheckExact(obj):
+            val_double = PyLong_AsLong(obj)
+        elif PyObject_TypeCheck(obj, &PyDoubleArrType_Type):
+            PyArray_ScalarAsCtype(obj, &val_double)
+        elif PyObject_TypeCheck(obj, &PyFloatArrType_Type):
+            PyArray_ScalarAsCtype(obj, &val_float)
+            val_double = val_float
+        elif PyObject_TypeCheck(obj, &PyIntegerArrType_Type):
+            val_long = 0
+            PyArray_ScalarAsCtype(obj, &val_long)
+            val_double = val_long
         else:
-            gcvt(PyFloat_AS_DOUBLE(obj), 24, buffer)
-            stream.write(buffer, strlen(buffer))
+            return obj
+        gcvt(val_double, 24, buffer)
+        stream.write(buffer, strlen(buffer))
     else:
         return obj
     return NULL
