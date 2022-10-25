@@ -16,6 +16,7 @@ from athenian.api.internal.features.metric_calculator import (
     MetricCalculatorEnsemble,
     RatioCalculator,
     SumMetricCalculator,
+    ThresholdComparisonRatioCalculator,
     WithoutQuantilesMixin,
     make_register_metric,
 )
@@ -311,6 +312,14 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
         result[:] = lead_times
         result[~focus_mask] = None
         return result
+
+
+class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of issues with a JIRA_LEAD_TIME below a given threshold."""
+
+    deps = (LeadTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(hours=5)
 
 
 @register_metric(JIRAMetricID.JIRA_ACKNOWLEDGE_TIME)
