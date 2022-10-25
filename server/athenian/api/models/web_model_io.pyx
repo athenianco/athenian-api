@@ -29,6 +29,7 @@ from libc.stdio cimport FILE, SEEK_CUR, fclose, fread, fseek, ftell
 from libc.string cimport memcpy, strlen
 from numpy cimport import_array, npy_int64
 
+from athenian.api.native.chunked_stream cimport chunked_stream
 from athenian.api.native.cpython cimport (
     Py_False,
     Py_None,
@@ -81,11 +82,8 @@ from athenian.api.native.cpython cimport (
     PyUnicode_Type,
 )
 from athenian.api.native.mi_heap_stl_allocator cimport (
-    ios_in,
-    ios_out,
     mi_heap_allocator_from_capsule,
     mi_heap_stl_allocator,
-    mi_stringstream,
     mi_vector,
 )
 from athenian.api.native.numpy cimport (
@@ -306,7 +304,7 @@ cdef void _discover_fields(
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, mi_stringstream &stream) nogil:
+cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, chunked_stream &stream) nogil:
     cdef:
         char dtype = spec.type, bool
         long val_long
@@ -473,7 +471,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, mi_stringstream &
 
 cdef void _serialize_list_of_models(
     list models,
-    mi_stringstream &stream,
+    chunked_stream &stream,
     mi_heap_stl_allocator[char] &alloc,
 ) except *:
     cdef:
@@ -500,7 +498,7 @@ cdef void _serialize_list_of_models(
         raise ValueError(f"Could not serialize `{<object> exc}` of type {type(<object> exc)} in {item_type.__qualname__}")
 
 
-cdef void _serialize_generic(model, mi_stringstream &stream) except *:
+cdef void _serialize_generic(model, chunked_stream &stream) except *:
     cdef:
         bytes buf = pickle.dumps(model)
         uint32_t size = len(buf)
@@ -510,7 +508,7 @@ cdef void _serialize_generic(model, mi_stringstream &stream) except *:
 
 def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
     cdef:
-        optional[mi_stringstream] stream
+        optional[chunked_stream] stream
         bytes result
         char count
         optional[mi_heap_stl_allocator[char]] alloc
@@ -521,7 +519,7 @@ def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
     else:
         alloc.emplace()
         dereference(alloc).disable_free()
-    stream.emplace(ios_in | ios_out, dereference(alloc))
+    stream.emplace(dereference(alloc))
     count = len(models)
     dereference(stream).write(&count, 1)
     for model in models:
@@ -529,10 +527,9 @@ def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
             _serialize_list_of_models(model, dereference(stream), dereference(alloc))
         else:
             _serialize_generic(model, dereference(stream))
-    size = dereference(stream).tellp()
+    size = dereference(stream).size()
     result = PyBytes_FromStringAndSize(NULL, size)
-    dereference(stream).seekg(0)
-    dereference(stream).read(PyBytes_AS_STRING(<PyObject *> result), size)
+    dereference(stream).dump(PyBytes_AS_STRING(<PyObject *> result), size)
     return result
 
 
@@ -693,7 +690,7 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
     cdef:
         bytes result
         optional[mi_heap_stl_allocator[char]] alloc
-        optional[mi_stringstream] stream
+        optional[chunked_stream] stream
         type root_type
         ModelFields spec
         PyObject *error
@@ -714,7 +711,7 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
     else:
         alloc.emplace()
         dereference(alloc).disable_free()
-    stream.emplace(ios_in | ios_out, dereference(alloc))
+    stream.emplace(dereference(alloc))
 
     spec.nested.emplace(dereference(alloc))
     _apply_data_type(0, b"root", <PyTypeObject *> root_type, &spec, dereference(alloc))
@@ -728,10 +725,9 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
             f"failed to serialize to JSON: {<object> error} of type {type(<object> error).__name__}"
         )
 
-    size = dereference(stream).tellp()
+    size = dereference(stream).size()
     result = PyBytes_FromStringAndSize(NULL, size)
-    dereference(stream).seekg(0)
-    dereference(stream).read(PyBytes_AS_STRING(<PyObject *> result), size)
+    dereference(stream).dump(PyBytes_AS_STRING(<PyObject *> result), size)
     return result
 
 
@@ -740,7 +736,7 @@ fake_str_model.type = DT_STRING
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &stream) nogil:
+cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, chunked_stream &stream) nogil:
     cdef:
         PyObject *key = NULL
         PyObject *value = NULL
@@ -1058,7 +1054,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, mi_stringstream &st
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_freeform_json(PyObject *node, mi_stringstream &stream) nogil:
+cdef PyObject *_write_freeform_json(PyObject *node, chunked_stream &stream) nogil:
     cdef:
         PyObject *key = NULL
         PyObject *value = NULL
