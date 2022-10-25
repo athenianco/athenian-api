@@ -27,9 +27,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
 from athenian.api.internal.miners.types import PRParticipationKind, PullRequestFacts
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples
-from tests.controllers.features.github.test_pull_request_metrics import dt64arr_ns
 from tests.testutils.factory.miners import PullRequestFactsFactory
-from tests.testutils.time import dt
+from tests.testutils.time import dt, dt64arr_ns
 
 
 class TestGroupPRsByParticipants:
