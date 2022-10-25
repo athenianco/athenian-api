@@ -62,12 +62,14 @@ cdef extern from "Python.h":
     PyTypeObject PyBool_Type
     PyTypeObject PyList_Type
     PyTypeObject PyDict_Type
+    PyTypeObject PyBaseObject_Type
 
     void Py_INCREF(PyObject *)
     void Py_DECREF(PyObject *)
 
     object PyUnicode_FromStringAndSize(const char *, Py_ssize_t)
     str PyUnicode_FromKindAndData(unsigned int kind, void *buffer, Py_ssize_t size)
+    str PyUnicode_FromString(const char *)
     object PyUnicode_New(Py_ssize_t, Py_UCS4)
     PyObject *PyBytes_FromStringAndSize(char *v, Py_ssize_t len)
     PyObject *PyLong_FromLong(long v)
