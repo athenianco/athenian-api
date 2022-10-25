@@ -6,8 +6,11 @@ import pandas as pd
 import pytest
 
 from athenian.api.internal.features.github.pull_request_metrics import (
+    AllCounter,
+    AverageReviewCommentsCalculator,
     ClosedCalculator,
     NotReviewedCalculator,
+    ReviewCommentsAboveThresholdRatio,
     ReviewedCalculator,
     ReviewedRatioCalculator,
     ReviewTimeBelowThresholdRatio,
@@ -293,5 +296,47 @@ class TestSizeBelowThresholdRatio:
     _DEFAULT_DT = dt(2022, 1, 15)
 
     @classmethod
-    def _mk_pr(cls, size: int, created: datetime = _DEFAULT_DT) -> None:
+    def _mk_pr(cls, size: int, created: datetime = _DEFAULT_DT) -> PullRequestFacts:
         return PullRequestFactsFactory(size=size, created=pd.Timestamp(created))
+
+
+class TestReviewCommentsAboveThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(0),  # ignored, not reviewed
+            self._mk_pr(1),
+            self._mk_pr(2),
+            self._mk_pr(3),
+            self._mk_pr(4),
+            self._mk_pr(1, created=dt(2022, 8, 1)),  # ignored, out of time
+            self._mk_pr(5, created=dt(2022, 8, 1)),  # ignored, out of time
+        ]
+        groups_mask = np.full((1, len(prs)), True, bool)
+        facts = df_from_structs(prs)
+
+        all_calc = AllCounter(quantiles=quantiles)
+        review_comments_calc = AverageReviewCommentsCalculator(all_calc, quantiles=quantiles)
+        calc = ReviewCommentsAboveThresholdRatio(review_comments_calc, quantiles=quantiles)
+
+        all_calc(facts, min_times, max_times, None, groups_mask)
+        review_comments_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 4)
+
+        calc = ReviewCommentsAboveThresholdRatio(
+            review_comments_calc, quantiles=quantiles, threshold=4,
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == pytest.approx(1 / 4)
+
+    _DEFAULT_CREATED = dt(2022, 2, 1)
+
+    @classmethod
+    def _mk_pr(cls, review_comments: int, created=_DEFAULT_CREATED) -> PullRequestFacts:
+        return PullRequestFactsFactory(review_comments=review_comments, created=created)

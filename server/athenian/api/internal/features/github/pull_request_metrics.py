@@ -1213,6 +1213,14 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
         return result
 
 
+class ReviewCommentsAboveThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a number of review comments above a given threshold."""
+
+    deps = (AverageReviewCommentsCalculator,)
+    compare = np.greater_equal
+    default_threshold = 3
+
+
 @register_metric(PullRequestMetricID.PR_REVIEWS_PER)
 class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
     """Average number of reviews in reviewed PRs metric."""
