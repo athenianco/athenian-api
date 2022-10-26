@@ -2,13 +2,11 @@ import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from asyncpg import DeadlockDetectedError
 import numpy as np
 from sqlalchemy import func, select, text, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.db import Database
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.models.metadata.github import NodePullRequest, PullRequestLabel
 from athenian.api.models.precomputed.models import (
@@ -178,7 +176,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         dfs_acc_counts[-1][accs] = counts
     batch_size = 20
     update_tasks = []
-    updates_by_acc_id = {}
+    updates_by_acc_id = defaultdict(set)
     for batch in tqdm(
         range(0, len(tasks), batch_size), total=(len(tasks) + batch_size - 1) // batch_size,
     ):
@@ -215,10 +213,23 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                 df[model.labels.name].values[indexes],
             ):
                 assert isinstance(labels, dict)
-                if (pr_labels := actual_labels.get(pr_node_id, {})) != labels:
-                    updates_by_acc_id[acc_id] = updates_by_acc_id.setdefault(acc_id, 0) + 1
+                if (
+                    (pr_labels := actual_labels.get(pr_node_id, {})) != labels
+                    # there can be several release settings for the same PR
+                    and pr_node_id not in updates_by_acc_id[acc_id]
+                ):
+                    updates_by_acc_id[acc_id].add(pr_node_id)
                     update_tasks.append(
-                        _update_model_labels(model, pdb, acc_id, pr_node_id, pr_labels),
+                        pdb.execute(
+                            update(model)
+                            .where(model.acc_id == acc_id, model.pr_node_id == pr_node_id)
+                            .values(
+                                {
+                                    model.labels: pr_labels,
+                                    model.updated_at: datetime.now(timezone.utc),
+                                },
+                            ),
+                        ),
                     )
     tasks = update_tasks
     if not tasks:
@@ -233,27 +244,3 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             bar.update(len(batch))
     finally:
         bar.close()
-
-
-async def _update_model_labels(
-    model,
-    pdb: Database,
-    acc_id: int,
-    pr_node_id: int,
-    pr_labels: dict,
-) -> None:
-    for _ in range(10):
-        try:
-            await pdb.execute(
-                update(model)
-                .where(model.acc_id == acc_id, model.pr_node_id == pr_node_id)
-                .values(
-                    {
-                        model.labels: pr_labels,
-                        model.updated_at: datetime.now(timezone.utc),
-                    },
-                ),
-            )
-            break
-        except DeadlockDetectedError:
-            continue
