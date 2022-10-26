@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
@@ -11,6 +11,7 @@ class GoalTemplateCommon(Model, sealed=False):
 
     name: str
     metric: str
+    metric_params: Optional[dict[str, Any]]
     repositories: Optional[list[str]]
 
     def validate_name(self, name: str) -> str:

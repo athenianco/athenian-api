@@ -62,6 +62,7 @@ def _goal_template_from_row(row: Row, **kwargs) -> GoalTemplate:
         id=row[DBGoalTemplate.id.name],
         name=row[DBGoalTemplate.name.name],
         metric=row[DBGoalTemplate.metric.name],
+        metric_params=row[DBGoalTemplate.metric_params.name],
         **kwargs,
     )
 
@@ -125,6 +126,7 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
         DBGoalTemplate.name.name: create_request.name,
         DBGoalTemplate.metric.name: create_request.metric,
         DBGoalTemplate.repositories.name: repositories,
+        DBGoalTemplate.metric_params.name: create_request.metric_params,
     }
     try:
         template_id = await insert_goal_template(request.sdb, **values)
@@ -175,6 +177,7 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
         DBGoalTemplate.name.name: update_request.name,
         DBGoalTemplate.metric.name: update_request.metric,
         DBGoalTemplate.repositories.name: repositories,
+        DBGoalTemplate.metric_params.name: update_request.metric_params,
     }
     await update_goal_template_in_db(id, request.sdb, **values)
     return web.json_response({})

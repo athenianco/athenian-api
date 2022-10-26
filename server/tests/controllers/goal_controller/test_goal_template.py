@@ -26,7 +26,8 @@ class TestGetGoalTemplate(Requester):
         res = await self._request(200)
         assert res["id"] == 200
         assert res["name"] == "T 1"
-        assert "repositories" not in res
+        for field in ("metric_params", "repositories"):
+            assert field not in res
 
     async def test_with_repositories(
         self,
@@ -70,12 +71,14 @@ class TestListGoalTemplates(Requester):
         await models_insert(
             sdb,
             GoalTemplateFactory(id=1002, name="T1002"),
-            GoalTemplateFactory(id=1001, name="T1001"),
+            GoalTemplateFactory(id=1001, name="T1001", metric_params={"foo": 0}),
         )
         res = await self._request(1)
         assert [r["id"] for r in res] == [1001, 1002]
         assert [r["name"] for r in res] == ["T1001", "T1002"]
         assert not any("repositories" in r for r in res)
+        assert res[0]["metric_params"] == {"foo": 0}
+        assert "metric_params" not in res[1]
 
     async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
@@ -205,6 +208,20 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
         template_id = res["id"]
         await assert_existing_row(sdb, GoalTemplate, account_id=1, id=template_id, name="T0")
 
+    async def test_with_metric_params(self, sdb: Database) -> None:
+        req = GoalTemplateCreateRequest(
+            account=1,
+            metric=PullRequestMetricID.PR_OPENED,
+            name="T0",
+            metric_params={"foo": "bar"},
+        )
+        res = await self._request(json=req.to_dict())
+        template_id = res["id"]
+        row = await assert_existing_row(
+            sdb, GoalTemplate, id=template_id, name="T0", metric=PullRequestMetricID.PR_OPENED,
+        )
+        assert row[GoalTemplate.metric_params.name] == {"foo": "bar"}
+
 
 class BaseDeleteGoalTemplateTest(Requester):
     async def _request(self, template: int, assert_status: int = 200) -> dict:
@@ -310,6 +327,19 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
         await self._request(111, json=req.to_dict())
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
         assert row[GoalTemplate.metric.name] == req.metric
+
+    async def test_update_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=10),
+            GoalTemplateFactory(id=111),
+        )
+        req = GoalTemplateUpdateRequest(
+            name="T1", metric=PullRequestMetricID.PR_MERGED, metric_params={"42": 43},
+        )
+        await self._request(111, json=req.to_dict())
+        row = await assert_existing_row(sdb, GoalTemplate, id=111)
+        assert row[GoalTemplate.metric_params.name] == {"42": 43}
 
     async def test_update_repositories(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
