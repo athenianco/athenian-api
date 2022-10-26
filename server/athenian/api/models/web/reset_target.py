@@ -1,7 +1,7 @@
-from athenian.api.models.web import Enum
+from athenian.api.models.web import Enum, Model
 
 
-class ResetTarget(Enum):
+class ResetTarget(Model, metaclass=Enum):
     """What to clear in `/reset`."""
 
     COMMITS = "commits"

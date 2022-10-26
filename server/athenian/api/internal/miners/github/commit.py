@@ -2,18 +2,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import (
-    Collection,
-    Dict,
-    Iterable,
-    KeysView,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Collection, Iterable, KeysView, Mapping, Optional, Sequence, Union
 
 import aiomcache
 import numpy as np
@@ -75,7 +64,7 @@ class FilterCommitsProperty(Enum):
 
 
 # hashes, vertex offsets in edges, edge indexes
-DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
+DAG = tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 def _postprocess_extract_commits(result, with_deployments=True, **_):
@@ -118,14 +107,14 @@ async def extract_commits(
     branch_miner: Optional[BranchMiner],
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
     pdb: DatabaseLike,
     rdb: Optional[DatabaseLike],
     cache: Optional[aiomcache.Client],
-    columns: Optional[List[InstrumentedAttribute]] = None,
+    columns: Optional[list[InstrumentedAttribute]] = None,
     with_deployments: bool = True,
-) -> tuple[pd.DataFrame, Dict[str, Deployment]] | pd.DataFrame:
+) -> tuple[pd.DataFrame, dict[str, Deployment]] | pd.DataFrame:
     """Fetch commits that satisfy the given filters."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
@@ -282,9 +271,9 @@ async def extract_commits(
 
 def _take_commits_in_default_branches(
     commits: pd.DataFrame,
-    dags: Dict[str, Tuple[bool, DAG]],
+    dags: dict[str, tuple[bool, DAG]],
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
 ) -> pd.DataFrame:
     if commits.empty:
         return commits
@@ -326,7 +315,7 @@ def _take_commits_in_default_branches(
 
 def _remove_force_push_dropped(
     commits: pd.DataFrame,
-    dags: Dict[str, Tuple[bool, DAG]],
+    dags: dict[str, tuple[bool, DAG]],
 ) -> pd.DataFrame:
     if commits.empty:
         return commits
@@ -364,9 +353,9 @@ def _remove_force_push_dropped(
     refresh_on_access=True,
 )
 async def fetch_repository_commits(
-    repos: Dict[str, Tuple[bool, DAG]],
+    repos: dict[str, tuple[bool, DAG]],
     branches: pd.DataFrame,
-    columns: Tuple[
+    columns: tuple[
         Union[str, InstrumentedAttribute],
         Union[str, InstrumentedAttribute],
         Union[str, InstrumentedAttribute],
@@ -374,11 +363,11 @@ async def fetch_repository_commits(
     ],
     prune: bool,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[bool, DAG]]:
+) -> dict[str, tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -531,16 +520,16 @@ COMMIT_FETCH_COMMITS_COLUMNS = (
 
 @sentry_span
 async def fetch_repository_commits_no_branch_dates(
-    repos: Dict[str, Tuple[bool, DAG]],
+    repos: dict[str, tuple[bool, DAG]],
     branches: pd.DataFrame,
-    columns: Tuple[str, str, str, str],
+    columns: tuple[str, str, str, str],
     prune: bool,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[bool, DAG]]:
+) -> dict[str, tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -561,11 +550,11 @@ async def fetch_repository_commits_from_scratch(
     prune: bool,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[str, Tuple[bool, DAG]], pd.DataFrame, Dict[str, str]]:
+) -> tuple[dict[str, tuple[bool, DAG]], pd.DataFrame, dict[str, str]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -606,7 +595,7 @@ async def fetch_precomputed_commit_history_dags(
     account: int,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[bool, DAG]]:
+) -> dict[str, tuple[bool, DAG]]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
     format_version = ghrc.__table__.columns[ghrc.format_version.key].default.arg
@@ -644,10 +633,10 @@ async def _fetch_commit_history_dag(
     head_hashes: Sequence[Union[str, bytes]],
     head_ids: Sequence[int],
     repo: str,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     alloc=None,
-) -> Tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
     log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
@@ -761,9 +750,9 @@ async def _fetch_commit_history_dag(
 async def _fetch_commit_history_edges(
     commit_ids: Iterable[int],
     stop_hashes: Iterable[bytes],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
-) -> List[Tuple]:
+) -> list[tuple]:
     """
     Query metadata DB for the new commit DAG edges.
 
@@ -830,11 +819,11 @@ async def fetch_dags_with_commits(
     commits: Mapping[str, Sequence[int]],
     prune: bool,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[str, Tuple[bool, DAG]], pd.DataFrame]:
+) -> tuple[dict[str, tuple[bool, DAG]], pd.DataFrame]:
     """
     Load full commit DAGs for the given commit node IDs mapped from repository names.
 
@@ -867,7 +856,7 @@ async def fetch_dags_with_commits(
 )
 async def _fetch_commits_for_dags(
     commits: Mapping[str, Sequence[int]],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
