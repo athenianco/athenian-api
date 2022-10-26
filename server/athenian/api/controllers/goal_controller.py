@@ -324,7 +324,12 @@ async def _parse_create_request(
         TeamGoal.jira_issue_types.name: jira_issue_types,
     }
     team_goals = [
-        TeamGoal(team_id=tg.team_id, target=tg.target, **extra_team_goal_info)
+        TeamGoal(
+            team_id=tg.team_id,
+            target=tg.target,
+            metric_params=tg.metric_params,
+            **extra_team_goal_info,
+        )
         for tg in creat_req.team_goals
     ]
 
@@ -338,6 +343,7 @@ async def _parse_create_request(
         jira_projects=jira_projects,
         jira_priorities=jira_priorities,
         jira_issue_types=jira_issue_types,
+        metric_params=creat_req.metric_params,
         valid_from=valid_from,
         expires_at=expires_at,
     )

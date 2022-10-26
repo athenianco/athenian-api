@@ -1,6 +1,6 @@
 from datetime import date
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.team_tree import TeamTree
@@ -51,6 +51,7 @@ class TeamGoalTree(Model):
     team: TeamTree
     value: GoalValue
     children: list["TeamGoalTree"]
+    metric_params: Optional[dict[str, Any]]
 
 
 class _BaseGoal(Model, sealed=False):  # type: ignore
@@ -62,6 +63,7 @@ class _BaseGoal(Model, sealed=False):  # type: ignore
     jira_projects: Optional[list[str]]
     jira_priorities: Optional[list[str]]
     jira_issue_types: Optional[list[str]]
+    metric_params: Optional[dict[str, Any]]
 
 
 class GoalTree(_BaseGoal):
@@ -76,6 +78,7 @@ class GoalCreationTeamGoal(Model):
 
     team_id: int
     target: MetricValue
+    metric_params: Optional[dict[str, Any]]
 
 
 class GoalCreateRequest(_BaseGoal):

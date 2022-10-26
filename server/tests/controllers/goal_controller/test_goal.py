@@ -124,9 +124,10 @@ class BaseCreateGoalTest(BaseGoalTest):
         metric: str = PullRequestMetricID.PR_ALL_COUNT,
         valid_from: date = date(2012, 10, 1),  # noqa: B008
         expires_at: date = date(2012, 12, 31),  # noqa: B008
-        team_goals: Sequence[tuple[int, MetricValue]] = (),
+        team_goals: Sequence[tuple[int, MetricValue] | tuple[int, MetricValue, dict]] = (),
         **kwargs,
     ) -> dict:
+        normalized_team_goals = [tg if len(tg) > 2 else (*tg, None) for tg in team_goals]
         request = GoalCreateRequest(
             account=account,
             name=name,
@@ -134,7 +135,8 @@ class BaseCreateGoalTest(BaseGoalTest):
             valid_from=valid_from,
             expires_at=expires_at,
             team_goals=[
-                GoalCreationTeamGoal(team_id=t_id, target=target) for t_id, target in team_goals
+                GoalCreationTeamGoal(team_id=t_id, target=target, metric_params=params)
+                for t_id, target, params in normalized_team_goals
             ],
             **kwargs,
         )
@@ -227,6 +229,13 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         body = self._body(team_goals=[(10, 42)], repositories=["github.com/athenianco/xxx"])
         res = await self._request(400, json=body)
         assert res["detail"] == "Unknown repository github.com/athenianco/xxx"
+        await self._assert_no_goal_exists(sdb)
+
+    async def test_invalid_metric_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+        body = self._body(team_goals=[(10, 42)], metric_params=0)
+        res = await self._request(400, json=body)
+        assert res["detail"] == "0 is not of type 'object' - 'metric_params'"
         await self._assert_no_goal_exists(sdb)
 
 
@@ -359,3 +368,16 @@ class TestCreateGoals(BaseCreateGoalTest):
         for col in (TeamGoal.repositories, TeamGoal.jira_projects, TeamGoal.jira_issue_types):
             assert tg_row[col.name] is None
         assert tg_row[TeamGoal.jira_priorities.name] == ["high", "low"]
+
+    async def test_metric_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11, parent_id=10))
+        body = self._body(team_goals=[(10, 42), (11, 43, {"p1": 2})], metric_params={"p0": 1})
+        new_goal_id = (await self._request(json=body))["id"]
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        assert goal_row[Goal.metric_params.name] == {"p0": 1}
+
+        tg_10_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_10_row[TeamGoal.metric_params.name] is None
+
+        tg_11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
+        assert tg_11_row[TeamGoal.metric_params.name] == {"p1": 2}
