@@ -116,7 +116,7 @@ async def load_all_reposet(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
-) -> list[Collection[str]]:
+) -> list[int]:
     """Fetch the contents (items) of the main reposet with all the repositories to consider."""
     rss = await load_account_reposets(
         account,
@@ -129,7 +129,7 @@ async def load_all_reposet(
     )
     for rs in rss:
         if rs[RepositorySet.name.name] == RepositorySet.ALL:
-            return [[r[0] for r in rs[RepositorySet.items.name]]]
+            return [r[0] for r in rs[RepositorySet.items.name]]
     raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
 
 
@@ -161,7 +161,7 @@ async def resolve_repos(
     """
     if not repositories:
         # this may initialize meta_ids, so execute serialized
-        reposets = await load_all_reposet(account, login, sdb, mdb, cache, slack)
+        reposets = [await load_all_reposet(account, login, sdb, mdb, cache, slack)]
         if meta_ids is None:
             meta_ids = await get_metadata_account_ids(account, sdb, cache)
     else:

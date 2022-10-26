@@ -90,7 +90,7 @@ async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
             ForbiddenError(detail="User %s may not modify reposet %d" % (request.uid, id)),
         )
     await request.sdb.execute(delete(RepositorySet).where(RepositorySet.id == id))
-    return web.Response(status=200)
+    return web.Response()
 
 
 async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
