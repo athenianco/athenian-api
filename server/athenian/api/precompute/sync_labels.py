@@ -2,11 +2,13 @@ import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from asyncpg import DeadlockDetectedError
 import numpy as np
 from sqlalchemy import func, select, text, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.db import Database
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.models.metadata.github import NodePullRequest, PullRequestLabel
 from athenian.api.models.precomputed.models import (
@@ -42,11 +44,9 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     ) = await gather(
         read_sql_query(
             select(
-                [
-                    GitHubDonePullRequestFacts.acc_id,
-                    GitHubDonePullRequestFacts.pr_node_id,
-                    GitHubDonePullRequestFacts.labels,
-                ],
+                GitHubDonePullRequestFacts.acc_id,
+                GitHubDonePullRequestFacts.pr_node_id,
+                GitHubDonePullRequestFacts.labels,
             )
             .where(GitHubDonePullRequestFacts.labels != text("''::HSTORE"))
             .order_by(GitHubDonePullRequestFacts.acc_id),
@@ -59,10 +59,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         ),
         read_sql_query(
             select(
-                [
-                    GitHubDonePullRequestFacts.acc_id,
-                    GitHubDonePullRequestFacts.pr_node_id,
-                ],
+                GitHubDonePullRequestFacts.acc_id,
+                GitHubDonePullRequestFacts.pr_node_id,
             )
             .where(GitHubDonePullRequestFacts.labels == text("''::HSTORE"))
             .order_by(GitHubDonePullRequestFacts.acc_id),
@@ -74,11 +72,9 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         ),
         read_sql_query(
             select(
-                [
-                    GitHubMergedPullRequestFacts.acc_id,
-                    GitHubMergedPullRequestFacts.pr_node_id,
-                    GitHubMergedPullRequestFacts.labels,
-                ],
+                GitHubMergedPullRequestFacts.acc_id,
+                GitHubMergedPullRequestFacts.pr_node_id,
+                GitHubMergedPullRequestFacts.labels,
             )
             .where(GitHubMergedPullRequestFacts.labels != text("''::HSTORE"))
             .order_by(GitHubMergedPullRequestFacts.acc_id),
@@ -91,10 +87,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         ),
         read_sql_query(
             select(
-                [
-                    GitHubMergedPullRequestFacts.acc_id,
-                    GitHubMergedPullRequestFacts.pr_node_id,
-                ],
+                GitHubMergedPullRequestFacts.acc_id,
+                GitHubMergedPullRequestFacts.pr_node_id,
             )
             .where(GitHubMergedPullRequestFacts.labels == text("''::HSTORE"))
             .order_by(GitHubMergedPullRequestFacts.acc_id),
@@ -159,10 +153,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     tasks = [
         read_sql_query(
             select(
-                [
-                    PullRequestLabel.pull_request_node_id,
-                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-                ],
+                PullRequestLabel.pull_request_node_id,
+                func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
             ).where(
                 PullRequestLabel.pull_request_node_id.in_(node_ids),
                 PullRequestLabel.acc_id == int(acc_id),
@@ -186,6 +178,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         dfs_acc_counts[-1][accs] = counts
     batch_size = 20
     update_tasks = []
+    updates_by_acc_id = {}
     for batch in tqdm(
         range(0, len(tasks), batch_size), total=(len(tasks) + batch_size - 1) // batch_size,
     ):
@@ -216,28 +209,21 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             indexes = np.repeat(indexes + lengths - lengths.cumsum(), lengths) + np.arange(
                 lengths.sum(),
             )
-            for pr_node_id, labels in zip(
+            for acc_id, pr_node_id, labels in zip(
+                df[model.acc_id.name].values[indexes],
                 df[model.pr_node_id.name].values[indexes],
                 df[model.labels.name].values[indexes],
             ):
                 assert isinstance(labels, dict)
                 if (pr_labels := actual_labels.get(pr_node_id, {})) != labels:
+                    updates_by_acc_id[acc_id] = updates_by_acc_id.setdefault(acc_id, 0) + 1
                     update_tasks.append(
-                        pdb.execute(
-                            update(model)
-                            .where(model.pr_node_id == pr_node_id)
-                            .values(
-                                {
-                                    model.labels: pr_labels,
-                                    model.updated_at: datetime.now(timezone.utc),
-                                },
-                            ),
-                        ),
+                        _update_model_labels(model, pdb, acc_id, pr_node_id, pr_labels),
                     )
     tasks = update_tasks
     if not tasks:
         return
-    log.info("Updating %d records", len(tasks))
+    log.info("Updating %d records: %s", len(tasks), updates_by_acc_id)
     batch_size = 1000
     bar = tqdm(total=len(tasks))
     try:
@@ -247,3 +233,27 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             bar.update(len(batch))
     finally:
         bar.close()
+
+
+async def _update_model_labels(
+    model,
+    pdb: Database,
+    acc_id: int,
+    pr_node_id: int,
+    pr_labels: dict,
+) -> None:
+    for _ in range(10):
+        try:
+            await pdb.execute(
+                update(model)
+                .where(model.acc_id == acc_id, model.pr_node_id == pr_node_id)
+                .values(
+                    {
+                        model.labels: pr_labels,
+                        model.updated_at: datetime.now(timezone.utc),
+                    },
+                ),
+            )
+            break
+        except DeadlockDetectedError:
+            continue
