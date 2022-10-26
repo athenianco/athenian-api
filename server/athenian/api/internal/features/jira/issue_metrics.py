@@ -314,6 +314,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
         return result
 
 
+@register_metric(JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO)
 class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of issues with a JIRA_LEAD_TIME below a given threshold."""
 
