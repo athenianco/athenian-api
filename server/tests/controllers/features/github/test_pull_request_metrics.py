@@ -67,6 +67,7 @@ from athenian.api.models.precomputed.models import (
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import has_memcached
+from tests.testutils.time import dt64arr_ns, dt64arr_s
 
 
 def random_dropout(pr, prob):
@@ -96,14 +97,6 @@ def random_dropout(pr, prob):
             or (kwargs["closed"] and not kwargs["merged"])
         )
     return PullRequestFacts.from_fields(**kwargs)
-
-
-def dt64arr_ns(dt: datetime) -> np.ndarray:
-    return np.array([dt.replace(tzinfo=None)], dtype="datetime64[ns]")
-
-
-def dt64arr_s(dt: datetime) -> np.ndarray:
-    return np.array([dt.replace(tzinfo=None)], dtype="datetime64[s]")
 
 
 @pytest.mark.parametrize(

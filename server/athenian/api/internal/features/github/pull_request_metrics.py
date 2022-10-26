@@ -479,6 +479,14 @@ class OpenCounterWithQuantiles(Counter):
     deps = (OpenTimeCalculator,)
 
 
+class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_OPEN_TIME below a given threshold."""
+
+    deps = (OpenTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(days=3)
+
+
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
 class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
@@ -727,6 +735,14 @@ class WaitFirstReviewCounterWithQuantiles(Counter):
     """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME respecting the quantiles."""
 
     deps = (WaitFirstReviewTimeCalculator,)
+
+
+class WaitFirstReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_WAIT_FIRST_REVIEW_TIME below a given threshold."""
+
+    deps = (WaitFirstReviewTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(hours=6)
 
 
 @register_metric(PullRequestMetricID.PR_OPENED)
@@ -992,6 +1008,14 @@ class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
     """Median PR size."""
 
 
+class SizeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a size below a given threshold."""
+
+    deps = (SizeCalculator,)
+    compare = np.less_equal
+    default_threshold = 100
+
+
 class PendingStage(IntEnum):
     """Indexes of the pending stages that are used below."""
 
@@ -1195,6 +1219,14 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
         result = np.repeat(comments[None, :], len(min_times), axis=0)
         result[self._calcs[0].peek == self._calcs[0].nan] = None
         return result
+
+
+class ReviewCommentsAboveThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a number of review comments above a given threshold."""
+
+    deps = (AverageReviewCommentsCalculator,)
+    compare = np.greater_equal
+    default_threshold = 3
 
 
 @register_metric(PullRequestMetricID.PR_REVIEWS_PER)
@@ -1559,6 +1591,14 @@ class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
 
     deps = (CycleTimeCalculator, DeploymentTimeCalculator)
     only_complete = True
+
+
+class CycleDeploymentTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_CYCLE_DEPLOYMENT_TIME below a given threshold."""
+
+    deps = (CycleDeploymentTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(days=5)
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q)

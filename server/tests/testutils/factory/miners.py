@@ -107,7 +107,7 @@ class PullRequestFactsFactory(factory.Factory):
         return self.released
 
     @factory.lazy_attribute
-    def review_comments(self):
+    def review_comments(self) -> int:
         return max(0, random.randint(-5, 15))
 
     @factory.lazy_attribute

@@ -6,21 +6,29 @@ import pandas as pd
 import pytest
 
 from athenian.api.internal.features.github.pull_request_metrics import (
+    AllCounter,
+    AverageReviewCommentsCalculator,
     ClosedCalculator,
     NotReviewedCalculator,
+    OpenTimeBelowThresholdRatio,
+    OpenTimeCalculator,
+    ReviewCommentsAboveThresholdRatio,
     ReviewedCalculator,
     ReviewedRatioCalculator,
     ReviewTimeBelowThresholdRatio,
     ReviewTimeCalculator,
+    SizeBelowThresholdRatio,
+    SizeCalculator,
+    WaitFirstReviewTimeBelowThresholdRatio,
+    WaitFirstReviewTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
 from athenian.api.internal.miners.types import PRParticipationKind, PullRequestFacts
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples
-from tests.controllers.features.github.test_pull_request_metrics import dt64arr_ns
 from tests.testutils.factory.miners import PullRequestFactsFactory
-from tests.testutils.time import dt
+from tests.testutils.time import dt, dt64arr_ns
 
 
 class TestGroupPRsByParticipants:
@@ -204,4 +212,197 @@ class TestReviewTimeBelowThresholdRatio:
         return PullRequestFactsFactory(
             first_review_request_exact=pd.Timestamp(review_request),
             approved=pd.Timestamp(approved) if approved else None,
+        )
+
+
+class TestWaitFirstReviewTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 2, 1))
+
+        wait_review_calc = WaitFirstReviewTimeCalculator(quantiles=quantiles)
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=24),
+        )
+
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 4)),
+            self._mk_pr(dt(2022, 1, 2), dt(2022, 1, 3)),
+            self._mk_pr(dt(2022, 1, 2, 2), dt(2022, 1, 3, 1)),
+            self._mk_pr(dt(2022, 1, 3, 1), dt(2022, 1, 4, 5)),
+            self._mk_pr(dt(2022, 1, 3, 1), None),
+            self._mk_pr(None, dt(2022, 1, 3, 1)),
+        ]
+        facts = df_from_structs(prs)
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        wait_review_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(3 / 4)
+
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=48),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == 1
+
+        calc = WaitFirstReviewTimeBelowThresholdRatio(
+            wait_review_calc, quantiles=quantiles, threshold=timedelta(hours=12),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == pytest.approx(1 / 4)
+
+    @classmethod
+    def _mk_pr(
+        cls,
+        review_request: Optional[datetime],
+        first_comment: Optional[datetime],
+    ) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            first_review_request_exact=review_request,
+            first_comment_on_first_review=pd.Timestamp(first_comment) if first_comment else None,
+        )
+
+
+class TestSizeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(50),
+            self._mk_pr(100),
+            self._mk_pr(120),
+            self._mk_pr(101),
+            self._mk_pr(1, created=dt(2023, 1, 1)),  # out of interval
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        size_calc = SizeCalculator(quantiles=quantiles)
+        calc = SizeBelowThresholdRatio(size_calc, quantiles=quantiles)  # default threshold is 100
+
+        size_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 4)
+
+    _DEFAULT_DT = dt(2022, 1, 15)
+
+    @classmethod
+    def _mk_pr(cls, size: int, created: datetime = _DEFAULT_DT) -> PullRequestFacts:
+        return PullRequestFactsFactory(size=size, created=pd.Timestamp(created))
+
+
+class TestReviewCommentsAboveThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(0),  # ignored, not reviewed
+            self._mk_pr(1),
+            self._mk_pr(2),
+            self._mk_pr(3),
+            self._mk_pr(4),
+            self._mk_pr(1, created=dt(2022, 8, 1)),  # ignored, out of time
+            self._mk_pr(5, created=dt(2022, 8, 1)),  # ignored, out of time
+        ]
+        groups_mask = np.full((1, len(prs)), True, bool)
+        facts = df_from_structs(prs)
+
+        all_calc = AllCounter(quantiles=quantiles)
+        review_comments_calc = AverageReviewCommentsCalculator(all_calc, quantiles=quantiles)
+        calc = ReviewCommentsAboveThresholdRatio(review_comments_calc, quantiles=quantiles)
+
+        all_calc(facts, min_times, max_times, None, groups_mask)
+        review_comments_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 4)
+
+        calc = ReviewCommentsAboveThresholdRatio(
+            review_comments_calc, quantiles=quantiles, threshold=4,
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == pytest.approx(1 / 4)
+
+    _DEFAULT_CREATED = dt(2022, 2, 1)
+
+    @classmethod
+    def _mk_pr(cls, review_comments: int, created=_DEFAULT_CREATED) -> PullRequestFacts:
+        return PullRequestFactsFactory(review_comments=review_comments, created=created)
+
+
+class TestOpenTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 8)),
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
+            self._mk_pr(dt(2022, 1, 3), None),
+        ]
+        groups_mask = np.full((1, len(prs)), True, bool)
+        facts = df_from_structs(prs)
+
+        open_time_calc = OpenTimeCalculator(quantiles=quantiles)
+        calc = OpenTimeBelowThresholdRatio(open_time_calc, quantiles=quantiles)
+
+        open_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+
+        calc = OpenTimeBelowThresholdRatio(
+            open_time_calc, quantiles=quantiles, threshold=timedelta(days=10),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert calc.values[0][0].value == 1
+
+    def test_more_groups(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 8)),
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
+            self._mk_pr(dt(2022, 1, 3), None),
+        ]
+        groups_mask = np.array(
+            [[True, True, True, False], [True, False, False, True], [False, True, True, True]],
+            dtype=bool,
+        )
+
+        facts = df_from_structs(prs)
+
+        open_time_calc = OpenTimeCalculator(quantiles=quantiles)
+        calc = OpenTimeBelowThresholdRatio(open_time_calc, quantiles=quantiles)
+
+        open_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 3
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+        assert calc.values[1][0].value == pytest.approx(1 / 1)
+        assert calc.values[2][0].value == pytest.approx(1 / 2)
+
+    @classmethod
+    def _mk_pr(cls, created: datetime, closed: Optional[datetime]) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            created=created, closed=None if closed is None else pd.Timestamp(closed),
         )
