@@ -319,7 +319,7 @@ class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
 
     deps = (LeadTimeCalculator,)
     compare = np.less_equal
-    default_threshold = timedelta(hours=5)
+    default_threshold = timedelta(days=5)
 
 
 @register_metric(JIRAMetricID.JIRA_ACKNOWLEDGE_TIME)
