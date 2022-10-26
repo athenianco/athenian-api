@@ -1593,6 +1593,14 @@ class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
     only_complete = True
 
 
+class CycleDeploymentTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_CYCLE_DEPLOYMENT_TIME below a given threshold."""
+
+    deps = (CycleDeploymentTimeCalculator,)
+    compare = np.less_equal
+    default_threshold = timedelta(days=5)
+
+
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q)
 class CycleDeploymentCounterWithQuantiles(DeploymentMetricBase, CycleCounterWithQuantiles):
     """Count the number of PRs that were used to calculate PR_CYCLE_DEPLOYMENT_TIME respecting \
