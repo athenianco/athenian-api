@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
@@ -35,10 +35,7 @@ class GoalTemplateCommon(Model, sealed=False):
         return metric
 
 
-class _GoalTemplate(Model, sealed=False):
+class GoalTemplate(GoalTemplateCommon):
     """A template to generate a goal."""
 
     id: int
-
-
-GoalTemplate = AllOf(GoalTemplateCommon, _GoalTemplate, name="GoalTemplate", module=__name__)
