@@ -195,6 +195,8 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                     instance=event_id,
                 ),
             )
+        if (segment := request.app["segment"]) is not None:
+            await defer(segment.update_user(request, invitation.name, invitation.email))
     url = invitation.url
     if not url.startswith(url_prefix):
         bad_req()
