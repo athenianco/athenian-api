@@ -480,7 +480,7 @@ async def _epic_flow(
                 )
                 issue_by_id[child_id] = child
                 children_by_type[(project_id, child_type)].append(child)
-                if len(issue_by_id) % 200 == 0:
+                if len(issue_by_id) % 1000 == 0:
                     await asyncio.sleep(0)
             if epic.resolved is not None:
                 epic.lead_time = epic.resolved - epic.work_began

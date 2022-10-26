@@ -970,7 +970,7 @@ async def _build_github_prs_response(
         ),
         data=web_prs,
     )
-    return model_response(model)
+    return model_response(model, native=True)
 
 
 @expires_header(middle_term_exptime)
