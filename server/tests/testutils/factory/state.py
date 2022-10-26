@@ -151,6 +151,7 @@ class GoalFactory(SQLAlchemyModelFactory):
     jira_projects = None
     jira_priorities = None
     jira_issue_types = None
+    metric_params = None
     # create unique intervals by default to avoid uniqueness constraint
     valid_from = factory.Sequence(
         lambda n: datetime(2022, 1, 1).replace(tzinfo=timezone.utc) + timedelta(hours=n),
@@ -181,6 +182,7 @@ class TeamGoalFactory(SQLAlchemyModelFactory):
     jira_projects = None
     jira_priorities = None
     jira_issue_types = None
+    metric_params = None
 
 
 class MappedJIRAIdentityFactory(SQLAlchemyModelFactory):
