@@ -252,6 +252,7 @@ class GoalTreeGenerator:
             jira_projects=goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
             jira_priorities=goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
             jira_issue_types=goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
+            metric_params=goal_row[GoalColumnAlias.METRIC_PARAMS.value],
         )
 
     @classmethod
@@ -266,11 +267,12 @@ class GoalTreeGenerator:
             team_goal_row = team_goal_rows_map[team_id]
         except KeyError:
             # the team can be present in the tree but have no team goal
-            target = None
+            target = metric_params = None
             goal_id = 0
         else:
             goal_id = team_goal_row[TeamGoal.goal_id.name]
             target = team_goal_row[TeamGoal.target.name]
+            metric_params = team_goal_row[TeamGoal.metric_params.name]
 
         children = [
             cls._team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
@@ -285,7 +287,14 @@ class GoalTreeGenerator:
             series = metric_values.series.get((team_id, goal_id))
 
         return cls._compose_team_goal_tree(
-            team_tree, initial, current, target, series, metric_values.series_spec, children,
+            team_tree,
+            initial,
+            current,
+            target,
+            metric_params,
+            series,
+            metric_values.series_spec,
+            children,
         )
 
     @classmethod
@@ -295,6 +304,7 @@ class GoalTreeGenerator:
         initial: MetricValue,
         current: MetricValue,
         target: MetricValue,
+        metric_params: Optional[dict],
         series: Optional[list[MetricValue]],
         series_spec: Optional[GoalTimeseriesSpec],
         children: Sequence[TeamGoalTree],
@@ -315,7 +325,9 @@ class GoalTreeGenerator:
             series=series,
             series_granularity=series_granularity,
         )
-        return TeamGoalTree(team=team, value=goal_value, children=children)
+        return TeamGoalTree(
+            team=team, value=goal_value, metric_params=metric_params, children=children,
+        )
 
 
 @sentry_span
