@@ -400,7 +400,7 @@ class AthenianApp(especifico.AioHttpApp):
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
-        self._segment = segment
+        self.app["segment"] = self._segment = segment
 
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)

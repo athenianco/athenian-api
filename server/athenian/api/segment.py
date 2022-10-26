@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from itertools import chain
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
 from flogging import flogging
@@ -41,6 +41,15 @@ class SegmentClient:
         await self._identify(request)
         await self._track(request)
 
+    async def update_user(
+        self,
+        request: AthenianWebRequest,
+        name: Optional[str],
+        email: Optional[str],
+    ) -> bool:
+        """Update the name and the email of the user."""
+        return await self._identify_with_overrides(request, name, email)
+
     def _check_identify_full(result: bool, **_) -> bool:
         if not result:
             raise CancelCache()
@@ -56,13 +65,25 @@ class SegmentClient:
         refresh_on_access=True,
     )
     async def _identify(self, request: AthenianWebRequest) -> bool:
+        return await self._identify_with_overrides(request, None, None)
+
+    async def _identify_with_overrides(
+        self,
+        request: AthenianWebRequest,
+        name: Optional[str],
+        email: Optional[str],
+    ) -> bool:
         tasks = [
             request.user(),
             request.sdb.fetch_all(
-                select([UserAccount.account_id]).where(UserAccount.user_id == request.uid),
+                select(UserAccount.account_id).where(UserAccount.user_id == request.uid),
             ),
         ]
         user, accounts = await gather(*tasks)
+        if name is not None:
+            user.name = name
+        if email is not None:
+            user.email = email
         accounts = [r[0] for r in accounts]
         tasks = [
             get_metadata_account_ids_or_empty(acc, request.sdb, request.cache) for acc in accounts
