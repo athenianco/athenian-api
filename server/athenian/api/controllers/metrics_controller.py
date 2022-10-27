@@ -26,7 +26,7 @@ from athenian.api.internal.miners.types import (
     ReleaseParticipationKind,
 )
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, Settings
 from athenian.api.internal.with_ import (
     compile_developers,
@@ -519,20 +519,12 @@ async def _extract_repos(
     all_repos: Set[str],
     checkers: Dict[str, AccessChecker],
 ) -> Tuple[List[Set[str]], str, str]:
-    async def login_loader() -> str:
-        return (await request.user()).login
-
     pointer = ".for[%d].repositories" % for_set_index
-    resolved, prefix = await resolve_repos(
+    resolved, prefix = await resolve_repos_with_request(
         for_set,
         account,
-        request.uid,
-        login_loader,
+        request,
         meta_ids,
-        request.sdb,
-        request.mdb,
-        request.cache,
-        request.app["slack"],
         strip_prefix=False,
         separate=True,
         checkers=checkers,
@@ -556,21 +548,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-
-    async def login_loader() -> str:
-        return (await request.user()).login
-
-    repos, _ = await resolve_repos(
-        filt.in_,
-        filt.account,
-        request.uid,
-        login_loader,
-        meta_ids,
-        request.sdb,
-        request.mdb,
-        request.cache,
-        request.app["slack"],
-    )
+    repos, _ = await resolve_repos_with_request(filt.in_, filt.account, request, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone,
     )

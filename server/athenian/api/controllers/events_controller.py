@@ -43,7 +43,7 @@ from athenian.api.internal.miners.github.commit import compose_commit_url
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import (
     LogicalRepositorySettings,
     ReleaseMatch,
@@ -452,23 +452,15 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     launch_defer_from_request(request, detached=True)  # DEV-2798
     model = DeleteEventsCacheRequest.from_dict(body)
 
-    async def login_loader() -> str:
-        return (await request.user()).login
-
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, model.account, prefixer)
     logical_settings = await settings.list_logical_repositories()
-    prefixed_repos, _ = await resolve_repos(
+    prefixed_repos, _ = await resolve_repos_with_request(
         model.repositories,
         model.account,
-        request.uid,
-        login_loader,
+        request,
         meta_ids,
-        request.sdb,
-        request.mdb,
-        request.cache,
-        request.app["slack"],
         strip_prefix=False,
     )
     repos = [r.split("/", 1)[1] for r in prefixed_repos]

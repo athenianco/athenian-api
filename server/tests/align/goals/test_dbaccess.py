@@ -29,6 +29,7 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
 from athenian.api.internal.prefixer import RepositoryName, RepositoryReference
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.controllers.test_prefixer import mk_prefixer
 from tests.testutils.db import (
@@ -308,9 +309,9 @@ class TestDumpGoalRepositories:
 
 
 class TestResolveGoalRepositories:
-    def test_empty(self) -> None:
+    def test_empty(self, logical_settings_full) -> None:
         prefixer = mk_prefixer()
-        assert resolve_goal_repositories([], prefixer) == ()
+        assert resolve_goal_repositories([], 0, prefixer, logical_settings_full) == ()
 
     def test_base(self) -> None:
         prefixer = mk_prefixer(
@@ -319,8 +320,18 @@ class TestResolveGoalRepositories:
                 2: "github.com/athenianco/b",
             },
         )
+        logical_settings = LogicalRepositorySettings(
+            {
+                "athenianco/a": {"labels": ["a"]},
+                "athenianco/b": {"labels": ["b"]},
+                "athenianco/b/logic": {"labels": ["logic"]},
+            },
+            {},
+        )
 
-        res = resolve_goal_repositories([(1, None), (2, None), (2, "logic")], prefixer)
+        res = resolve_goal_repositories(
+            [(1, None), (2, None), (2, "logic"), (2, "xxx")], 1, prefixer, logical_settings,
+        )
 
         assert res == (
             RepositoryName("github.com", "athenianco", "a", None),
@@ -330,6 +341,12 @@ class TestResolveGoalRepositories:
 
     def test_unknown_ids_are_ignored(self) -> None:
         prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/athenianco/a"})
-        res = resolve_goal_repositories([(1, None), (2, None)], prefixer)
+        logical_settings = LogicalRepositorySettings(
+            {
+                "athenianco/a": {"labels": ["a"]},
+            },
+            {},
+        )
+        res = resolve_goal_repositories([(1, None), (2, None)], 1, prefixer, logical_settings)
 
         assert res == (RepositoryName("github.com", "athenianco", "a", None),)

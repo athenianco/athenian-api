@@ -74,6 +74,7 @@ class ReleaseSettingFactory(SQLAlchemyModelFactory):
     repo_id = factory.Sequence(lambda n: n + 1)
     logical_name = ""
     account_id = DEFAULT_ACCOUNT_ID
+    match = 2
 
 
 class FeatureFactory(SQLAlchemyModelFactory):

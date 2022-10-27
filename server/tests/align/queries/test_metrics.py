@@ -614,7 +614,12 @@ class TestMetricsNasty(BaseMetricsTest):
             repositories=["github.com/src-d/not-existing"],
         )
         assert res["errors"][0]["message"] == "Forbidden"
-        assert_extension_error(res, "Account 1 is access denied to repos src-d/not-existing")
+        print(res)
+        assert_extension_error(
+            res,
+            'The following repositories are access denied for account 1 (missing "github.com/"'
+            " prefix?): {'src-d/not-existing'}",
+        )
 
 
 class TestSimplifyRequests:

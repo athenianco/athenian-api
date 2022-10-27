@@ -25,6 +25,7 @@ from athenian.api.db import Row
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web.goal import (
     GoalMetricSeriesPoint,
@@ -46,6 +47,7 @@ class GoalToServe:
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
         jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
         include_series: bool,
@@ -53,11 +55,13 @@ class GoalToServe:
         """Init the GoalToServe object."""
         self._team_goal_rows = team_goal_rows
         self._prefixer = prefixer
+        self._logical_settings = logical_settings
         self._request, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
             team_goal_rows,
             team_tree,
             team_member_map,
             prefixer,
+            logical_settings,
             jira_config,
             only_with_targets,
             include_series,
@@ -99,6 +103,7 @@ class GoalToServe:
             self._team_goal_rows,
             metric_values,
             self._prefixer,
+            self._logical_settings,
         )
 
     @classmethod
@@ -108,6 +113,7 @@ class GoalToServe:
         team_tree: TeamTree,
         team_member_map: dict[int, list[int]],
         prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
         unchecked_jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
         include_series: bool,
@@ -144,7 +150,9 @@ class GoalToServe:
                 goal_id = team_goal_row[TeamGoal.goal_id.name]
             repositories = team_goal_row[columns[TeamGoal.repositories.name]]
             if repositories is not None:
-                repo_names = resolve_goal_repositories(repositories, prefixer)
+                repo_names = resolve_goal_repositories(
+                    repositories, goal_id, prefixer, logical_settings,
+                )
                 repositories = tuple(name.unprefixed for name in repo_names)
 
             jira_projects = team_goal_row[columns[TeamGoal.jira_projects.name]]
@@ -216,6 +224,7 @@ class GoalTreeGenerator:
         team_goal_rows: Iterable[Row],
         metric_values: _GoalMetricValues,
         prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
     ) -> GoalTree:
         """Compose the GoalTree for a goal from various piece of information."""
         valid_from, expires_at = goal_datetimes_to_dates(
@@ -224,7 +233,12 @@ class GoalTreeGenerator:
         team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
 
         if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
-            repos = [str(repo_name) for repo_name in resolve_goal_repositories(repos, prefixer)]
+            repos = [
+                str(repo_name)
+                for repo_name in resolve_goal_repositories(
+                    repos, goal_row[Goal.id.name], prefixer, logical_settings,
+                )
+            ]
 
         team_goal = self._team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values)
         return GoalTree(

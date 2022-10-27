@@ -12,9 +12,10 @@ from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids, only_god
 from athenian.api.internal.jira import fetch_jira_installation_progress, get_jira_id
 from athenian.api.internal.logical_repos import coerce_logical_repos
+from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import fetch_precomputed_commit_history_dags
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.team_sync import sync_teams
 from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.github import NodeCommit
@@ -239,6 +240,7 @@ async def _reset_releases(
                 GitHubReleaseFacts.repository_full_name.in_(repos),
             ),
         ),
+        BranchMiner.extract_branches.reset_cache(None, None, meta_ids, mdb, cache),
     )
 
 
@@ -297,20 +299,12 @@ async def reset_account(request: AthenianWebRequest, body: dict) -> web.Response
         raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     meta_ids = await get_metadata_account_ids(request_model.account, request.sdb, request.cache)
 
-    async def login_loader() -> str:
-        return (await request.user()).login
-
     repos = (
-        await resolve_repos(
+        await resolve_repos_with_request(
             request_model.repositories,
             request_model.account,
-            request.uid,
-            login_loader,
+            request,
             meta_ids,
-            request.sdb,
-            request.mdb,
-            request.cache,
-            request.app["slack"],
         )
     )[0]
     log.info("reset %s on %s", request_model.targets, repos)

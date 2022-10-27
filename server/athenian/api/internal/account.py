@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from graphlib import CycleError
 from itertools import chain
@@ -59,6 +60,22 @@ from athenian.api.response import ResponseError
 from athenian.api.typing_utils import wraps
 
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryReference:
+    """The identity of a repository, physical or logical."""
+
+    node_id: int
+    """
+    The identifier of the physical repository
+
+    It's a reference to the mdb's `Repository.node_id` column.
+    """
+    logical_name: Optional[str]
+    """
+    The logical name of repository, if this is a logical repository.
+    """
 
 
 @cached(
@@ -356,6 +373,30 @@ def only_god(func):
     return wraps(wrapped_only_god, func)
 
 
+async def get_account_repository_refs(
+    account: int,
+    sdb: DatabaseLike,
+) -> list[RepositoryReference]:
+    """Fetch all the repository references belonging to the account.
+
+    WARNING: this is currently setting the WRONG logical names.
+    FIXME: edit after migrating the release settings format.
+    """
+    repos = await sdb.fetch_val(
+        select(RepositorySet.items).where(
+            RepositorySet.owner_id == account,
+            RepositorySet.name == RepositorySet.ALL,
+        ),
+    )
+    if repos is None:
+        raise ResponseError(
+            NoSourceDataError(
+                detail="The installation of account %d has not finished yet." % account,
+            ),
+        )
+    return [RepositoryReference(node_id, name) for name, node_id in repos]
+
+
 async def get_account_repositories(
     account: int,
     with_prefix: bool,
@@ -363,11 +404,9 @@ async def get_account_repositories(
 ) -> list[str]:
     """Fetch all the repositories belonging to the account."""
     repos = await sdb.fetch_val(
-        select([RepositorySet.items]).where(
-            and_(
-                RepositorySet.owner_id == account,
-                RepositorySet.name == RepositorySet.ALL,
-            ),
+        select(RepositorySet.items).where(
+            RepositorySet.owner_id == account,
+            RepositorySet.name == RepositorySet.ALL,
         ),
     )
     if repos is None:
