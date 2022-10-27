@@ -6,9 +6,11 @@ from typing import Any, Optional
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import delete
 
 from athenian.api.db import Database
-from athenian.api.models.state.models import AccountGitHubAccount, TeamGoal
+from athenian.api.internal.settings import ReleaseMatch
+from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, TeamGoal
 from athenian.api.models.web import (
     AlignGoalsRequest,
     JIRAMetricID,
@@ -23,7 +25,9 @@ from tests.testutils.factory.state import (
     AccountFactory,
     AccountGitHubAccountFactory,
     GoalFactory,
+    LogicalRepositoryFactory,
     MappedJIRAIdentityFactory,
+    ReleaseSettingFactory,
     RepositorySetFactory,
     TeamFactory,
     TeamGoalFactory,
@@ -390,7 +394,13 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
 
         assert [goal["id"] for goal in res] == [20]
 
-    async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
+    async def test_repositories(
+        self,
+        sdb: Database,
+        mdb_rw: Database,
+        release_match_setting_tag_logical_db,
+    ) -> None:
+        await sdb.execute(delete(RepositorySet))
         await models_insert(
             sdb,
             TeamFactory(id=10, members=[39789]),
@@ -398,6 +408,20 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
             GoalFactory(id=21, repositories=[[1, "a"], [1, "b"]]),
             TeamGoalFactory(goal_id=20, team_id=10, target=1),
             TeamGoalFactory(goal_id=21, team_id=10, target=20),
+            *(
+                ReleaseSettingFactory(logical_name=name, repo_id=1, match=ReleaseMatch.tag)
+                for name in "ab"
+            ),
+            *(
+                LogicalRepositoryFactory(name=name, repository_id=1, prs={"title": "x"})
+                for name in "ab"
+            ),
+            RepositorySetFactory(
+                items=[
+                    ["github.com/athenianco/repo/a", 1],
+                    ["github.com/athenianco/repo/b", 1],
+                ],
+            ),
         )
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:

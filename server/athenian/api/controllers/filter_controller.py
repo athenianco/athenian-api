@@ -68,7 +68,7 @@ from athenian.api.internal.miners.types import (
     ReleaseParticipationKind,
 )
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import (
     compile_developers,
@@ -271,23 +271,15 @@ async def _repos_preprocess(
     request: AthenianWebRequest,
     strip_prefix=True,
 ) -> tuple[Set[str], tuple[int, ...], Prefixer, LogicalRepositorySettings]:
-    async def login_loader() -> str:
-        return (await request.user()).login
-
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, account, prefixer)
     logical_settings = await settings.list_logical_repositories()
-    repos, _ = await resolve_repos(
+    repos, _ = await resolve_repos_with_request(
         repos,
         account,
-        request.uid,
-        login_loader,
+        request,
         meta_ids,
-        request.sdb,
-        request.mdb,
-        request.cache,
-        request.app["slack"],
         strip_prefix=strip_prefix,
     )
     return repos, meta_ids, prefixer, logical_settings

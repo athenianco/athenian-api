@@ -36,6 +36,7 @@ from athenian.api.internal.jira import (
     normalize_priority,
 )
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.team_tree import build_team_tree_from_rows
 from athenian.api.internal.with_ import flatten_teams
@@ -220,6 +221,9 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
         fetch_team_goals(goals_request.account, team_ids, request.sdb),
         Prefixer.load(meta_ids, request.mdb, request.cache),
     )
+    logical_settings = await Settings.from_request(
+        request, goals_request.account, prefixer,
+    ).list_logical_repositories()
 
     goals_to_serve = []
     # iter all team goal rows, grouped by goal, to build GoalToServe object for the goal
@@ -231,6 +235,7 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
             team_tree,
             team_member_map,
             prefixer,
+            logical_settings,
             jira_config,
             goals_request.only_with_targets,
             goals_request.include_series,

@@ -11,12 +11,12 @@ from sqlalchemy import select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
-from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.account import RepositoryReference, get_metadata_account_ids
 from athenian.api.models.metadata.github import Repository, User
 from athenian.api.request import AthenianWebRequest
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class RepositoryName:
     """Parsed name of a repository.
 
@@ -87,22 +87,6 @@ class RepositoryName:
     def __sentry_repr__(self) -> str:
         """Format for Sentry the same way as regular str()."""
         return str(self)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RepositoryReference:
-    """The identity of a repository, physical or logical."""
-
-    node_id: int
-    """
-    The identifier of the physical repository
-
-    It's a reference to the mdb's `Repository.node_id` column.
-    """
-    logical_name: Optional[str]
-    """
-    The logical name of repository, if this is a logical repository.
-    """
 
 
 def strip_proto(url: str) -> str:

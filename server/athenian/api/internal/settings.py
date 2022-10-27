@@ -20,10 +20,10 @@ import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
-from athenian.api.internal.account import get_account_repositories
+from athenian.api.internal.account import get_account_repositories, get_account_repository_refs
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     coerce_prefixed_logical_repos,
@@ -902,23 +902,22 @@ class Settings:
         """
         if repos is None:
             try:
-                repos = await get_account_repositories(self._account, False, self._sdb)
+                repos = await get_account_repository_refs(self._account, self._sdb)
             except ResponseError:
                 repos = []
             diff_repos = set()
+            repo_ids = {r.node_id for r in repos}
         else:
             repos = {r.split("/", 1)[1] for r in repos}
             logical_repos = coerce_logical_repos(repos)
             diff_repos = repos - logical_repos.keys()
             repos = logical_repos.keys()
-        repo_name_to_node = self._prefixer.repo_name_to_node.get
-        repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
+            repo_name_to_node = self._prefixer.repo_name_to_node.get
+            repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
         rows = await self._sdb.fetch_all(
-            select([LogicalRepository]).where(
-                and_(
-                    LogicalRepository.account_id == self._account,
-                    LogicalRepository.repository_id.in_(repo_ids),
-                ),
+            select(LogicalRepository).where(
+                LogicalRepository.account_id == self._account,
+                LogicalRepository.repository_id.in_(repo_ids),
             ),
         )
         prs = {}

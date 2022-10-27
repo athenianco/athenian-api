@@ -26,7 +26,7 @@ from athenian.api.internal.account import (
 from athenian.api.internal.logical_repos import coerce_logical_repos, extract_logical_repo
 from athenian.api.internal.miners.access import AccessChecker
 from athenian.api.internal.miners.access_classes import access_classes
-from athenian.api.internal.prefixer import Prefixer, strip_proto
+from athenian.api.internal.prefixer import Prefixer, RepositoryName, strip_proto
 from athenian.api.models.metadata.github import AccountRepository, NodeRepository, NodeUser
 from athenian.api.models.state.models import LogicalRepository, RepositorySet, UserAccount
 from athenian.api.models.web import (
@@ -37,6 +37,7 @@ from athenian.api.models.web import (
     NotFoundError,
 )
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
@@ -134,6 +135,48 @@ async def load_all_reposet(
 
 
 @sentry_span
+async def resolve_repos_with_request(
+    repositories: list[str],
+    account: int,
+    request: AthenianWebRequest,
+    meta_ids: Optional[tuple[int, ...]],
+    strip_prefix=True,
+    separate=False,
+    checkers: Optional[dict[str, AccessChecker]] = None,
+    pointer: Optional[str] = "?",
+) -> tuple[set[str] | list[set[str]], str]:
+    """
+    Dereference all the reposets and produce the joint list of all mentioned repos.
+
+    Alternative to the lower-level resolve_repos().
+
+    :param separate: Value indicating whether to return each reposet separately.
+    :param strip_prefix: Value indicating whether to return repositories without \
+                         the service prefix.
+    :return: (Union of all the mentioned repo names, service prefix).
+    """
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
+    return await resolve_repos(
+        repositories,
+        account,
+        request.uid,
+        login_loader,
+        meta_ids,
+        request.sdb,
+        request.mdb,
+        request.cache,
+        request.app["slack"],
+        strip_prefix=strip_prefix,
+        separate=separate,
+        checkers=checkers,
+        pointer=pointer,
+    )
+
+
+@sentry_span
 async def resolve_repos(
     repositories: list[str],
     account: int,
@@ -157,6 +200,8 @@ async def resolve_repos(
     If `repositories` is empty, we load the "ALL" reposet.
 
     :param separate: Value indicating whether to return each reposet separately.
+    :param strip_prefix: Value indicating whether to return repositories without \
+                         the service prefix.
     :return: (Union of all the mentioned repo names, service prefix).
     """
     if not repositories:
@@ -179,10 +224,11 @@ async def resolve_repos(
         resolved = set()
         for r in reposet:
             try:
-                repo_prefix, repo = r.split("/", 1)
+                repo = RepositoryName.from_prefixed(r)
             except ValueError:
                 wrong_format.add(r)
                 continue
+            repo_prefix, repo = repo.prefix, repo.unprefixed
             if prefix is None:
                 prefix = repo_prefix
             elif prefix != repo_prefix:

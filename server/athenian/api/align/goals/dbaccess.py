@@ -9,6 +9,7 @@ from typing import Any, Iterable, Optional, Sequence
 
 import sqlalchemy as sa
 
+from athenian.api import metadata
 from athenian.api.align.exceptions import (
     GoalMutationError,
     GoalNotFoundError,
@@ -23,6 +24,7 @@ from athenian.api.db import (
     dialect_specific_insert,
 )
 from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.tracing import sentry_span
 
@@ -321,11 +323,14 @@ def dump_goal_repositories(
 
 def resolve_goal_repositories(
     repos: Iterable[tuple[int, Optional[str]]],
+    goal_id: int,
     prefixer: Prefixer,
+    logical_settings: LogicalRepositorySettings,
 ) -> tuple[RepositoryName, ...]:
     """Dereference the repository IDs into a RepositoryName sequence."""
     node_to_prefixed = prefixer.repo_node_to_prefixed_name.__getitem__
     repos, to_resolve = [], repos
+    deleted = []
     for node_id, logical in to_resolve:
         try:
             prefixed = node_to_prefixed(node_id)
@@ -334,7 +339,20 @@ def resolve_goal_repositories(
         name = RepositoryName.from_prefixed(prefixed)
         if logical:
             name = name.with_logical(logical)
+            try:
+                if (
+                    name.unprefixed
+                    not in logical_settings.prs(name.unprefixed_physical).logical_repositories
+                ):
+                    raise KeyError
+            except KeyError:
+                deleted.append(str(name))
+                continue
         repos.append(name)
+    if deleted:
+        logging.getLogger(f"{metadata.__package__}.resolve_goal_repositories").warning(
+            "removed deleted repositories from the goal %d: %s", goal_id, deleted,
+        )
     return tuple(repos)
 
 

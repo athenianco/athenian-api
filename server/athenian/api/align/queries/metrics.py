@@ -46,8 +46,6 @@ from athenian.api.internal.jira import (
     normalize_issue_type,
     normalize_priority,
 )
-from athenian.api.internal.logical_repos import coerce_logical_repos
-from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -57,12 +55,13 @@ from athenian.api.internal.miners.types import (
     PRParticipationKind,
     ReleaseParticipationKind,
 )
-from athenian.api.internal.prefixer import Prefixer, RepositoryName
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import ForbiddenError, InvalidRequestError
+from athenian.api.models.web import InvalidRequestError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -96,7 +95,7 @@ async def resolve_metrics_current_values(
     teams_flat = flatten_teams(team_rows)
 
     repos = await _parse_repositories(params, accountId, meta_ids, info.context)
-    jira_filter = _parse_jira_filter(params, accountId, info.context, jira_config)
+    jira_filter = _parse_jira_filter(params, jira_config)
     teams = [
         RequestedTeamDetails(
             team_id=(row_team_id := row[Team.id.name]),
@@ -134,24 +133,12 @@ async def _parse_repositories(
     request: AthenianWebRequest,
 ) -> Optional[tuple[str, ...]]:
     if (repos := params.get(MetricParamsFields.repositories)) is not None:
-        repos = tuple(RepositoryName.from_prefixed(r).unprefixed for r in repos)
-        checker = access_classes["github"](
-            account_id, meta_ids, request.sdb, request.mdb, request.cache,
-        )
-        await checker.load()
-        if denied := await checker.check(coerce_logical_repos(repos).keys()):
-            raise ResponseError(
-                ForbiddenError(
-                    detail=f"Account {account_id} is access denied to repos {'.'.join(denied)}",
-                ),
-            )
+        repos = tuple((await resolve_repos_with_request(repos, account_id, request, meta_ids))[0])
     return repos
 
 
 def _parse_jira_filter(
     params: Mapping[str, Any],
-    account_id: int,
-    request: AthenianWebRequest,
     unchecked_jira_config: Optional[JIRAConfig],
 ) -> JIRAFilter:
     jira_projects = frozenset(params.get(MetricParamsFields.jiraProjects) or ())

@@ -335,16 +335,16 @@ async def precompute_reposet(
             del facts  # free some memory
             await wait_deferred()
 
-        if not args.skip_releases and not ignored_first_releases.empty:
-            await hide_first_releases(
-                ignored_first_releases,
-                ignored_released_prs,
-                default_branches,
-                release_settings,
-                reposet.owner_id,
-                pdb,
-            )
-            ignored_releases_count = len(ignored_first_releases)
+        if not args.skip_releases:
+            if (ignored_releases_count := len(ignored_first_releases)) > 0:
+                await hide_first_releases(
+                    ignored_first_releases,
+                    ignored_released_prs,
+                    default_branches,
+                    release_settings,
+                    reposet.owner_id,
+                    pdb,
+                )
             del ignored_first_releases, ignored_released_prs
 
         if not args.skip_deployments:

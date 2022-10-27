@@ -6,7 +6,7 @@ from typing import Coroutine, Iterable, Optional, Sequence, Tuple
 
 from aiohttp import web
 from morcilla import Connection
-from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
+from sqlalchemy import and_, delete, distinct, func, insert, join, select, union, update
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -42,11 +42,14 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseMatchTimespan,
 )
 from athenian.api.models.state.models import (
+    Goal,
+    GoalTemplate,
     JIRAProjectSetting,
     LogicalRepository,
     MappedJIRAIdentity,
     ReleaseSetting,
     RepositorySet,
+    TeamGoal,
     WorkType,
 )
 from athenian.api.models.web import (
@@ -134,8 +137,8 @@ async def get_jira_projects(
         jira_id = await get_jira_id(id, sdb, request.cache)
     projects, stats = await gather(
         mdb.fetch_all(
-            select([Project.key, Project.id, Project.name, Project.avatar_url])
-            .where(and_(Project.acc_id == jira_id, Project.is_deleted.is_(False)))
+            select(Project.key, Project.id, Project.name, Project.avatar_url)
+            .where(Project.acc_id == jira_id, Project.is_deleted.is_(False))
             .order_by(Project.key),
         ),
         mdb.fetch_all(
@@ -155,8 +158,8 @@ async def get_jira_projects(
     keys = [r[Project.key.name] for r in projects]
     settings = dict(
         await sdb.fetch_all(
-            select([JIRAProjectSetting.key, JIRAProjectSetting.enabled]).where(
-                and_(JIRAProjectSetting.account_id == id, JIRAProjectSetting.key.in_(keys)),
+            select(JIRAProjectSetting.key, JIRAProjectSetting.enabled).where(
+                JIRAProjectSetting.account_id == id, JIRAProjectSetting.key.in_(keys),
             ),
         ),
     )
@@ -186,9 +189,7 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
     model = JIRAProjectsRequest.from_dict(body)
     jira_id = await get_jira_id(model.account, request.sdb, request.cache)
     projects = await request.mdb.fetch_all(
-        select([Project.key]).where(
-            and_(Project.acc_id == jira_id, Project.is_deleted.is_(False)),
-        ),
+        select(Project.key).where(Project.acc_id == jira_id, Project.is_deleted.is_(False)),
     )
     projects = {r[0] for r in projects}
     if diff := (model.projects.keys() - projects):
@@ -243,17 +244,15 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
     jira_names = [c.jira_name for c in request_model.changes]
     tasks = [
         mdb.fetch_all(
-            select([GitHubUser.node_id, GitHubUser.login]).where(
-                and_(GitHubUser.acc_id.in_(meta_ids), GitHubUser.login.in_(github_logins)),
+            select(GitHubUser.node_id, GitHubUser.login).where(
+                GitHubUser.acc_id.in_(meta_ids), GitHubUser.login.in_(github_logins),
             ),
         ),
         mdb.fetch_all(
-            select([JIRAUser.id, JIRAUser.display_name]).where(
-                and_(
-                    JIRAUser.acc_id == jira_acc,
-                    JIRAUser.type.in_(ALLOWED_USER_TYPES),
-                    JIRAUser.display_name.in_(jira_names),
-                ),
+            select(JIRAUser.id, JIRAUser.display_name).where(
+                JIRAUser.acc_id == jira_acc,
+                JIRAUser.type.in_(ALLOWED_USER_TYPES),
+                JIRAUser.display_name.in_(jira_names),
             ),
         ),
     ]
@@ -418,11 +417,9 @@ async def get_work_type(request: AthenianWebRequest, body: dict) -> web.Response
     """Fetch the definition of the work type given the name."""
     model = WorkTypeGetRequest.from_dict(body)
     row = await request.sdb.fetch_one(
-        select([WorkType]).where(
-            and_(
-                WorkType.account_id == model.account,
-                WorkType.name == model.name,
-            ),
+        select(WorkType).where(
+            WorkType.account_id == model.account,
+            WorkType.name == model.name,
         ),
     )
     if row is None:
@@ -466,21 +463,17 @@ async def delete_work_type(request: AthenianWebRequest, body: dict) -> web.Respo
     """Remove the work type given the name."""
     model = WorkTypeGetRequest.from_dict(body)
     row = await request.sdb.fetch_one(
-        select([WorkType]).where(
-            and_(
-                WorkType.account_id == model.account,
-                WorkType.name == model.name,
-            ),
+        select(WorkType).where(
+            WorkType.account_id == model.account,
+            WorkType.name == model.name,
         ),
     )
     if row is None:
         raise ResponseError(NotFoundError(f'Work type "{model.name}" does not exist.'))
     await request.sdb.execute(
         delete(WorkType).where(
-            and_(
-                WorkType.account_id == model.account,
-                WorkType.name == model.name,
-            ),
+            WorkType.account_id == model.account,
+            WorkType.name == model.name,
         ),
     )
     return web.Response()
@@ -490,7 +483,7 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current work types - rule sets to group PRs, releases, etc. together."""
     account = id
     await get_user_account_status_from_request(request, account)
-    rows = await request.sdb.fetch_all(select([WorkType]).where(WorkType.account_id == account))
+    rows = await request.sdb.fetch_all(select(WorkType).where(WorkType.account_id == account))
     models = [
         WebWorkType(
             name=row[WorkType.name.name],
@@ -511,7 +504,7 @@ async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web
     release_settings, rows = await gather(
         Settings.from_request(request, id, prefixer).list_release_matches(),
         request.sdb.fetch_all(
-            select([LogicalRepository]).where(LogicalRepository.account_id == id),
+            select(LogicalRepository).where(LogicalRepository.account_id == id),
         ),
     )
     models = []
@@ -557,10 +550,10 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         ) from e
     try:
         repo_id = prefixer.repo_name_to_node[repo]
-    except KeyError:
+    except KeyError as e:
         raise ResponseError(
             ForbiddenError(f"Access denied to `{web_model.parent}` or it does not exist."),
-        )
+        ) from e
     if web_model.prs.title:
         try:
             re.compile(web_model.prs.title)
@@ -638,7 +631,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
             )
             # append to repository sets
             rows = await sdb_conn.fetch_all(
-                select([RepositorySet]).where(RepositorySet.owner_id == web_model.account),
+                select(RepositorySet).where(RepositorySet.owner_id == web_model.account),
             )
             for row in rows:
                 if re.fullmatch(row[RepositorySet.tracking_re.name], str(name)):
@@ -689,7 +682,7 @@ async def _find_matching_logical_repository(
             return existing, False
 
     matching_release_setting = await sdb_conn.fetch_val(
-        select([1]).where(
+        select(1).where(
             ReleaseSetting.repo_id == logical_repo.repository_id,
             ReleaseSetting.logical_name == logical_repo.name,
             ReleaseSetting.account_id == logical_repo.account_id,
@@ -711,9 +704,7 @@ async def _delete_logical_repository(
 ) -> None:
     @sentry_span
     async def clean_repository_sets():
-        rows = await sdb.fetch_all(
-            select([RepositorySet]).where(RepositorySet.owner_id == account),
-        )
+        rows = await sdb.fetch_all(select(RepositorySet).where(RepositorySet.owner_id == account))
         for row in rows:
             items = row[RepositorySet.items.name]
             index = bisect_left([r[0] for r in items], str(name))
@@ -731,6 +722,36 @@ async def _delete_logical_repository(
                     ),
                 )
 
+    @sentry_span
+    async def clean_align_model(model, fetch_expr=None, id_columns=None):
+        if id_columns is None:
+            id_columns = [model.id]
+        seed = select(*id_columns)
+        if fetch_expr is None:
+            fetch_expr = seed.where(model.account_id == account)
+        else:
+            fetch_expr = fetch_expr(seed)
+        rows = await sdb.fetch_all(fetch_expr)
+        tasks = []
+        now = datetime.now(timezone.utc)
+        needle = [repo_id, name]
+        for row in rows:
+            for repo in row[model.repositories.name] or []:
+                if repo == needle:
+                    tasks.append(
+                        update(model)
+                        .where(*(c == row[c.name] for c in id_columns))
+                        .values(
+                            {
+                                model.updated_at: now,
+                                model.repositories: [
+                                    p for p in row[model.repositories.name] if p != needle
+                                ],
+                            },
+                        ),
+                    )
+        await gather(*tasks)
+
     tasks = [
         sdb.execute(
             delete(LogicalRepository).where(
@@ -747,6 +768,15 @@ async def _delete_logical_repository(
             ),
         ),
         clean_repository_sets(),
+        clean_align_model(Goal),
+        clean_align_model(GoalTemplate),
+        clean_align_model(
+            TeamGoal,
+            id_columns=(TeamGoal.goal_id, TeamGoal.team_id),
+            fetch_expr=lambda seed: seed.select_from(
+                join(TeamGoal, Goal, TeamGoal.goal_id == Goal.id),
+            ).where(Goal.account_id == account),
+        ),
         *_schedule_pdb_reset_for_logical_repo(name.unprefixed, account, pdb),
     ]
     await gather(*tasks, op="_delete_logical_repository")
@@ -837,12 +867,10 @@ async def delete_logical_repository(request: AthenianWebRequest, body: dict) -> 
             ForbiddenError(f"Access denied to `{physical_name}` or it does not exist."),
         )
     repo = await request.sdb.fetch_one(
-        select([LogicalRepository]).where(
-            and_(
-                LogicalRepository.account_id == model.account,
-                LogicalRepository.name == name.logical,
-                LogicalRepository.repository_id == repo_id,
-            ),
+        select(LogicalRepository).where(
+            LogicalRepository.account_id == model.account,
+            LogicalRepository.name == name.logical,
+            LogicalRepository.repository_id == repo_id,
         ),
     )
     if repo is None:
