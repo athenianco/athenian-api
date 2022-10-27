@@ -419,6 +419,7 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     jira_projects = Column(JSONType, nullable=True)
     jira_priorities = Column(JSONType, nullable=True)
     jira_issue_types = Column(JSONType, nullable=True)
+    metric_params = Column(JSONType, nullable=True)
 
 
 class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -445,6 +446,7 @@ class GoalTemplate(create_time_mixin(created_at=True, updated_at=True), Base):
     jira_projects = Column(JSONType, nullable=True)
     jira_priorities = Column(JSONType, nullable=True)
     jira_issue_types = Column(JSONType, nullable=True)
+    metric_params = Column(JSONType, nullable=True)
 
 
 class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -469,6 +471,7 @@ class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
     jira_projects = Column(JSONType, nullable=True)
     jira_priorities = Column(JSONType, nullable=True)
     jira_issue_types = Column(JSONType, nullable=True)
+    metric_params = Column(JSONType, nullable=True)
 
 
 class Share(create_time_mixin(created_at=True), Base):
