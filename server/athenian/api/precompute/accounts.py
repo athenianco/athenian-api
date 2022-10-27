@@ -12,6 +12,7 @@ import traceback
 from typing import Callable, Optional, Sequence
 
 import aiomcache
+import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import insert, update
@@ -270,22 +271,28 @@ async def precompute_reposet(
                 with_extended_pr_details=False,
                 with_deployments=False,
             )
-            releases_by_tag = (
-                releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag
-            ).sum()
-            releases_by_branch = (
-                releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
-            ).sum()
-            releases_count = len(releases)
-            ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
-                releases,
-            )
+            if (releases_count := len(releases)) > 0:
+                releases_by_tag = (
+                    releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag
+                ).sum()
+                releases_by_branch = (
+                    releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
+                ).sum()
+                ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
+                    releases,
+                )
+            else:
+                releases_by_tag = releases_by_branch = 0
+                ignored_first_releases = pd.DataFrame()
+                ignored_released_prs = {}
             del releases
             _release_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings, matches,
             )
         else:
             _release_settings = release_settings
+            ignored_first_releases = pd.DataFrame()
+            ignored_released_prs = {}
         if not args.skip_prs:
             if reposet.precomputed:
                 log.info("Scanning for force push dropped PRs")
@@ -328,7 +335,7 @@ async def precompute_reposet(
             del facts  # free some memory
             await wait_deferred()
 
-        if not args.skip_releases:
+        if not args.skip_releases and not ignored_first_releases.empty:
             await hide_first_releases(
                 ignored_first_releases,
                 ignored_released_prs,
