@@ -38,182 +38,7 @@ from athenian.api.models.web.goal import (
 from athenian.api.tracing import sentry_span
 
 
-class GoalToServe:
-    """A goal served in the response."""
-
-    def __init__(
-        self,
-        team_goal_rows: Sequence[Row],
-        team_tree: TeamTree,
-        team_member_map: dict[int, list[int]],
-        prefixer: Prefixer,
-        logical_settings: LogicalRepositorySettings,
-        jira_config: Optional[JIRAConfig],
-        only_with_targets: bool,
-        include_series: bool,
-    ):
-        """Init the GoalToServe object."""
-        self._team_goal_rows = team_goal_rows
-        self._prefixer = prefixer
-        self._logical_settings = logical_settings
-        self._request, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
-            team_goal_rows,
-            team_tree,
-            team_member_map,
-            prefixer,
-            logical_settings,
-            jira_config,
-            only_with_targets,
-            include_series,
-        )
-
-    @property
-    def request(self) -> TeamMetricsRequest:
-        """Get the request for calculate_team_metrics to compute the metrics for the goal."""
-        return self._request
-
-    def build_goal_tree(
-        self,
-        metric_values: TeamMetricsResult,
-        generator: GoalTreeGenerator,
-    ) -> GoalTree:
-        """Build the GoalTree combining the teams structure and the metric values."""
-        intervals = self._request.time_intervals
-        metric = self._request.metrics[0]
-
-        # for initial and current metrics the interval is a pair,
-        # we produce and need only one value from TeamMetricsResult
-        initial_metrics_base = metric_values[intervals[0]][metric]
-        initial_metrics = {k: values[0] for k, values in initial_metrics_base.items()}
-        current_metrics_values = metric_values[intervals[1]][metric]
-        current_metrics = {k: values[0] for k, values in current_metrics_values.items()}
-
-        if self._timeseries_spec is None:
-            series = None
-        else:
-            series = metric_values[self._timeseries_spec.intervals][metric]
-
-        metric_values = _GoalMetricValues(
-            initial_metrics, current_metrics, series, self._timeseries_spec,
-        )
-
-        return generator(
-            self._goal_team_tree,
-            self._team_goal_rows[0],
-            self._team_goal_rows,
-            metric_values,
-            self._prefixer,
-            self._logical_settings,
-        )
-
-    @classmethod
-    def _parse_team_goal_rows(
-        cls,
-        team_goal_rows: Sequence[Row],
-        team_tree: TeamTree,
-        team_member_map: dict[int, list[int]],
-        prefixer: Prefixer,
-        logical_settings: LogicalRepositorySettings,
-        unchecked_jira_config: Optional[JIRAConfig],
-        only_with_targets: bool,
-        include_series: bool,
-    ) -> tuple[TeamMetricsRequest, TeamTree, Optional[GoalTimeseriesSpec]]:
-        goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
-        metric = goal_row[Goal.metric.name]
-
-        valid_from = goal_row[Goal.valid_from.name]
-        expires_at = goal_row[Goal.expires_at.name]
-        initial_interval = goal_initial_query_interval(valid_from, expires_at)
-
-        rows_by_team = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
-        if only_with_targets:
-            # prune team tree to keep only branches with assigned teams
-            pruned_tree = _team_tree_prune_empty_branches(team_tree, lambda id: id in rows_by_team)
-            # id in rows_by_team is a non empty subset of all the ids in team_tree,
-            # so the pruned tree is never empty
-            assert pruned_tree is not None
-        else:
-            pruned_tree = team_tree
-
-        # in the metrics requests only ask for teams present in the pruned tree
-        goal_tree_team_ids = pruned_tree.flatten_team_ids()
-        requested_teams = []
-        for team_id in goal_tree_team_ids:
-            try:
-                team_goal_row = rows_by_team[team_id]
-            except KeyError:
-                team_goal_row = goal_row
-                columns = AliasedGoalColumns
-                goal_id = 0  # the filters are shared
-            else:
-                columns = TeamGoalColumns
-                goal_id = team_goal_row[TeamGoal.goal_id.name]
-            repositories = team_goal_row[columns[TeamGoal.repositories.name]]
-            if repositories is not None:
-                repo_names = resolve_goal_repositories(
-                    repositories, goal_id, prefixer, logical_settings,
-                )
-                repositories = tuple(name.unprefixed for name in repo_names)
-
-            jira_projects = team_goal_row[columns[TeamGoal.jira_projects.name]]
-            jira_priorities = team_goal_row[columns[TeamGoal.jira_priorities.name]]
-            jira_issue_types = team_goal_row[columns[TeamGoal.jira_issue_types.name]]
-
-            if jira_projects or jira_priorities or jira_issue_types:
-                jira_config = check_jira_installation(unchecked_jira_config)
-                if jira_projects:
-                    jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
-                    custom_projects = True
-                else:
-                    jira_projects = frozenset(jira_config.projects)
-                    custom_projects = False
-                jira_filter = JIRAFilter(
-                    jira_config.acc_id,
-                    jira_projects,
-                    LabelFilter.empty(),
-                    frozenset(),
-                    frozenset(jira_issue_types or ()),
-                    frozenset(jira_priorities or ()),
-                    custom_projects,
-                    False,
-                )
-            else:
-                jira_filter = JIRAFilter.empty()
-
-            requested_teams.append(
-                RequestedTeamDetails(
-                    team_id=team_id,
-                    goal_id=goal_id,
-                    members=team_member_map[team_id],
-                    repositories=repositories,
-                    jira_filter=jira_filter,
-                ),
-            )
-
-        time_intervals = [initial_interval, (valid_from, expires_at)]
-        if include_series:
-            timeseries_spec = GoalTimeseriesSpec.from_timespan(valid_from, expires_at)
-            time_intervals.append(timeseries_spec.intervals)
-        else:
-            timeseries_spec = None
-
-        team_metrics_request = TeamMetricsRequest(
-            metrics=[metric], time_intervals=time_intervals, teams=requested_teams,
-        )
-        return team_metrics_request, pruned_tree, timeseries_spec
-
-
-@dataclass(slots=True, frozen=True)
-class _GoalMetricValues:
-    """The metric values for a Goal across all teams."""
-
-    initial: Mapping[tuple[int, int], Any]
-    current: Mapping[tuple[int, int], Any]
-    series: Optional[Mapping[tuple[int, int], list[Any]]]
-    series_spec: Optional[GoalTimeseriesSpec]
-
-
-class GoalTreeGenerator:
+class _GoalTreeGenerator:
     """Generate the response GoalTree for a goal."""
 
     @sentry_span
@@ -328,6 +153,179 @@ class GoalTreeGenerator:
         return TeamGoalTree(
             team=team, value=goal_value, metric_params=metric_params, children=children,
         )
+
+
+class GoalToServe:
+    """A goal served in the response."""
+
+    _goal_tree_generator = _GoalTreeGenerator()
+
+    def __init__(
+        self,
+        team_goal_rows: Sequence[Row],
+        team_tree: TeamTree,
+        team_member_map: dict[int, list[int]],
+        prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
+        jira_config: Optional[JIRAConfig],
+        only_with_targets: bool,
+        include_series: bool,
+    ):
+        """Init the GoalToServe object."""
+        self._team_goal_rows = team_goal_rows
+        self._prefixer = prefixer
+        self._logical_settings = logical_settings
+        self._request, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
+            team_goal_rows,
+            team_tree,
+            team_member_map,
+            prefixer,
+            logical_settings,
+            jira_config,
+            only_with_targets,
+            include_series,
+        )
+
+    @property
+    def request(self) -> TeamMetricsRequest:
+        """Get the request for calculate_team_metrics to compute the metrics for the goal."""
+        return self._request
+
+    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
+        """Build the GoalTree combining the teams structure and the metric values."""
+        intervals = self._request.time_intervals
+        metric = self._request.metrics[0]
+
+        # for initial and current metrics the interval is a pair,
+        # we produce and need only one value from TeamMetricsResult
+        initial_metrics_base = metric_values[intervals[0]][metric]
+        initial_metrics = {k: values[0] for k, values in initial_metrics_base.items()}
+        current_metrics_values = metric_values[intervals[1]][metric]
+        current_metrics = {k: values[0] for k, values in current_metrics_values.items()}
+
+        if self._timeseries_spec is None:
+            series = None
+        else:
+            series = metric_values[self._timeseries_spec.intervals][metric]
+
+        metric_values = _GoalMetricValues(
+            initial_metrics, current_metrics, series, self._timeseries_spec,
+        )
+
+        return self._goal_tree_generator(
+            self._goal_team_tree,
+            self._team_goal_rows[0],
+            self._team_goal_rows,
+            metric_values,
+            self._prefixer,
+            self._logical_settings,
+        )
+
+    @classmethod
+    def _parse_team_goal_rows(
+        cls,
+        team_goal_rows: Sequence[Row],
+        team_tree: TeamTree,
+        team_member_map: dict[int, list[int]],
+        prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
+        unchecked_jira_config: Optional[JIRAConfig],
+        only_with_targets: bool,
+        include_series: bool,
+    ) -> tuple[TeamMetricsRequest, TeamTree, Optional[GoalTimeseriesSpec]]:
+        goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
+        metric = goal_row[Goal.metric.name]
+
+        valid_from = goal_row[Goal.valid_from.name]
+        expires_at = goal_row[Goal.expires_at.name]
+        initial_interval = goal_initial_query_interval(valid_from, expires_at)
+
+        rows_by_team = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
+        if only_with_targets:
+            # prune team tree to keep only branches with assigned teams
+            pruned_tree = _team_tree_prune_empty_branches(team_tree, lambda id: id in rows_by_team)
+            # id in rows_by_team is a non empty subset of all the ids in team_tree,
+            # so the pruned tree is never empty
+            assert pruned_tree is not None
+        else:
+            pruned_tree = team_tree
+
+        # in the metrics requests only ask for teams present in the pruned tree
+        goal_tree_team_ids = pruned_tree.flatten_team_ids()
+        requested_teams = []
+        for team_id in goal_tree_team_ids:
+            try:
+                team_goal_row = rows_by_team[team_id]
+            except KeyError:
+                team_goal_row = goal_row
+                columns = AliasedGoalColumns
+                goal_id = 0  # the filters are shared
+            else:
+                columns = TeamGoalColumns
+                goal_id = team_goal_row[TeamGoal.goal_id.name]
+            repositories = team_goal_row[columns[TeamGoal.repositories.name]]
+            if repositories is not None:
+                repo_names = resolve_goal_repositories(
+                    repositories, goal_id, prefixer, logical_settings,
+                )
+                repositories = tuple(name.unprefixed for name in repo_names)
+
+            jira_projects = team_goal_row[columns[TeamGoal.jira_projects.name]]
+            jira_priorities = team_goal_row[columns[TeamGoal.jira_priorities.name]]
+            jira_issue_types = team_goal_row[columns[TeamGoal.jira_issue_types.name]]
+
+            if jira_projects or jira_priorities or jira_issue_types:
+                jira_config = check_jira_installation(unchecked_jira_config)
+                if jira_projects:
+                    jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
+                    custom_projects = True
+                else:
+                    jira_projects = frozenset(jira_config.projects)
+                    custom_projects = False
+                jira_filter = JIRAFilter(
+                    jira_config.acc_id,
+                    jira_projects,
+                    LabelFilter.empty(),
+                    frozenset(),
+                    frozenset(jira_issue_types or ()),
+                    frozenset(jira_priorities or ()),
+                    custom_projects,
+                    False,
+                )
+            else:
+                jira_filter = JIRAFilter.empty()
+
+            requested_teams.append(
+                RequestedTeamDetails(
+                    team_id=team_id,
+                    goal_id=goal_id,
+                    members=team_member_map[team_id],
+                    repositories=repositories,
+                    jira_filter=jira_filter,
+                ),
+            )
+
+        time_intervals = [initial_interval, (valid_from, expires_at)]
+        if include_series:
+            timeseries_spec = GoalTimeseriesSpec.from_timespan(valid_from, expires_at)
+            time_intervals.append(timeseries_spec.intervals)
+        else:
+            timeseries_spec = None
+
+        team_metrics_request = TeamMetricsRequest(
+            metrics=[metric], time_intervals=time_intervals, teams=requested_teams,
+        )
+        return team_metrics_request, pruned_tree, timeseries_spec
+
+
+@dataclass(slots=True, frozen=True)
+class _GoalMetricValues:
+    """The metric values for a Goal across all teams."""
+
+    initial: Mapping[tuple[int, int], Any]
+    current: Mapping[tuple[int, int], Any]
+    series: Optional[Mapping[tuple[int, int], list[Any]]]
+    series_spec: Optional[GoalTimeseriesSpec]
 
 
 @sentry_span
