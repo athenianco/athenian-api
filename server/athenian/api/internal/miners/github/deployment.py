@@ -411,7 +411,6 @@ async def _mine_deployments(
     else:
         extended_prs_task = None
     if with_jira:
-        assert jira_ids is not None
         jira_task = asyncio.create_task(
             _fetch_deployed_jira(facts, jira_ids, meta_ids, mdb),
             name="mine_deployments/_fetch_deployed_jira",
@@ -3215,11 +3214,11 @@ async def _fetch_extended_prs_for_facts(
 
 async def _fetch_deployed_jira(
     facts: pd.DataFrame,
-    jira_ids: JIRAConfig,
+    jira_ids: Optional[JIRAConfig],
     meta_ids: tuple[int, ...],
     mdb: Database,
 ) -> pd.DataFrame:
-    if facts.empty:
+    if facts.empty or jira_ids is None:
         return pd.DataFrame()
     unique_pr_node_ids = np.unique(
         np.concatenate(facts[DeploymentFacts.f.prs].values, dtype=int, casting="unsafe"),
