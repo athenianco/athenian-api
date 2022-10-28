@@ -294,6 +294,7 @@ class ReviewCounterWithQuantiles(Counter):
     deps = (ReviewTimeCalculator,)
 
 
+@register_metric(PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO)
 class ReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_REVIEW_TIME below a given threshold."""
 
@@ -479,6 +480,7 @@ class OpenCounterWithQuantiles(Counter):
     deps = (OpenTimeCalculator,)
 
 
+@register_metric(PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO)
 class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_OPEN_TIME below a given threshold."""
 
@@ -737,6 +739,7 @@ class WaitFirstReviewCounterWithQuantiles(Counter):
     deps = (WaitFirstReviewTimeCalculator,)
 
 
+@register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO)
 class WaitFirstReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_WAIT_FIRST_REVIEW_TIME below a given threshold."""
 
@@ -1008,6 +1011,7 @@ class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
     """Median PR size."""
 
 
+@register_metric(PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO)
 class SizeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a size below a given threshold."""
 
@@ -1221,6 +1225,7 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
         return result
 
 
+@register_metric(PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO)
 class ReviewCommentsAboveThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a number of review comments above a given threshold."""
 
@@ -1593,6 +1598,7 @@ class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
     only_complete = True
 
 
+@register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO)
 class CycleDeploymentTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_CYCLE_DEPLOYMENT_TIME below a given threshold."""
 

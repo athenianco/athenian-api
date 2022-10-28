@@ -12,6 +12,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_REVIEW_PENDING_COUNT = "pr-review-pending-count"
     PR_REVIEW_COUNT = "pr-review-count"
     PR_REVIEW_COUNT_Q = "pr-review-count-q"
+    PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO = "pr-review-time-below-threshold-ratio"
     PR_MERGING_TIME = "pr-merging-time"
     PR_MERGING_PENDING_COUNT = "pr-merging-pending-count"
     PR_MERGING_COUNT = "pr-merging-count"
@@ -23,6 +24,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_OPEN_TIME = "pr-open-time"
     PR_OPEN_COUNT = "pr-open-count"
     PR_OPEN_COUNT_Q = "pr-open-count-q"
+    PR_OPEN_TIME_BELOW_THRESHOLD_RATIO = "pr-open-time-below-threshold-ratio"
     PR_LEAD_TIME = "pr-lead-time"
     PR_LEAD_COUNT = "pr-lead-count"
     PR_LEAD_COUNT_Q = "pr-lead-count-q"
@@ -43,6 +45,9 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_WAIT_FIRST_REVIEW_TIME = "pr-wait-first-review-time"
     PR_WAIT_FIRST_REVIEW_COUNT = "pr-wait-first-review-count"
     PR_WAIT_FIRST_REVIEW_COUNT_Q = "pr-wait-first-review-count-q"
+    PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO = (
+        "pr-wait-first-review-time-below-threshold-ratio"
+    )
     PR_DEPLOYMENT_TIME = "pr-deployment-time"
     PR_DEPLOYMENT_COUNT = "pr-deployment-count"
     PR_DEPLOYMENT_COUNT_Q = "pr-deployment-count-q"
@@ -52,12 +57,17 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_CYCLE_DEPLOYMENT_TIME = "pr-cycle-deployment-time"
     PR_CYCLE_DEPLOYMENT_COUNT = "pr-cycle-deployment-count"
     PR_CYCLE_DEPLOYMENT_COUNT_Q = "pr-cycle-deployment-count-q"
+    PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO = (
+        "pr-cycle-deployment-time-below-threshold-ratio"
+    )
     PR_SIZE = "pr-size"
+    PR_SIZE_BELOW_THRESHOLD_RATIO = "pr-size-below-threshold-ratio"
     PR_MEDIAN_SIZE = "pr-median-size"
     PR_OPENED_MAPPED_TO_JIRA = "pr-opened-mapped-to-jira"
     PR_DONE_MAPPED_TO_JIRA = "pr-done-mapped-to-jira"
     PR_ALL_MAPPED_TO_JIRA = "pr-all-mapped-to-jira"
     PR_PARTICIPANTS_PER = "pr-participants-per"
     PR_REVIEW_COMMENTS_PER = "pr-review-comments-per"
+    PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO = "pr-review-comments-per-above-threshold-ratio"
     PR_REVIEWS_PER = "pr-reviews-per"
     PR_COMMENTS_PER = "pr-comments-per"

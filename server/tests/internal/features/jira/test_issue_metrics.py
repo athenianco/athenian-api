@@ -21,7 +21,7 @@ class TestLeadTimeBelowThresholdRatio:
         issues = [
             [dt(2022, 1, 3, 1), dt(2022, 1, 3, 1, 5)],
             [dt(2022, 1, 3, 22), dt(2022, 1, 4, 2)],
-            [dt(2022, 1, 4), dt(2022, 1, 7)],
+            [dt(2022, 1, 4), dt(2022, 1, 10)],
         ]
         facts = self._gen_facts(*issues)
         groups_mask = np.full((1, len(issues)), True, bool)
@@ -42,7 +42,7 @@ class TestLeadTimeBelowThresholdRatio:
         assert calc.values[0][0].value == pytest.approx(1 / 3)
 
         calc = LeadTimeBelowThresholdRatio(
-            lead_time_calc, quantiles=quantiles, threshold=timedelta(days=5),
+            lead_time_calc, quantiles=quantiles, threshold=timedelta(days=10),
         )
         calc(facts, min_times, max_times, None, groups_mask)
         assert calc.values[0][0].value == 1
