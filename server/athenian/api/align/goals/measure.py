@@ -175,7 +175,7 @@ class GoalToServe:
         self._team_goal_rows = team_goal_rows
         self._prefixer = prefixer
         self._logical_settings = logical_settings
-        self._request, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
+        self._requests, self._goal_team_tree, self._timeseries_spec = self._parse_team_goal_rows(
             team_goal_rows,
             team_tree,
             team_member_map,
@@ -187,14 +187,14 @@ class GoalToServe:
         )
 
     @property
-    def request(self) -> TeamMetricsRequest:
+    def requests(self) -> list[TeamMetricsRequest]:
         """Get the request for calculate_team_metrics to compute the metrics for the goal."""
-        return self._request
+        return self._requests
 
     def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
         """Build the GoalTree combining the teams structure and the metric values."""
-        intervals = self._request.time_intervals
-        metric = self._request.metrics[0]
+        intervals = self._requests[0].time_intervals  # the same in each request
+        metric = self._requests[0].metrics[0]
 
         # for initial and current metrics the interval is a pair,
         # we produce and need only one value from TeamMetricsResult
@@ -232,7 +232,7 @@ class GoalToServe:
         unchecked_jira_config: Optional[JIRAConfig],
         only_with_targets: bool,
         include_series: bool,
-    ) -> tuple[TeamMetricsRequest, TeamTree, Optional[GoalTimeseriesSpec]]:
+    ) -> tuple[list[TeamMetricsRequest], TeamTree, Optional[GoalTimeseriesSpec]]:
         goal_row = team_goal_rows[0]  # could be any, all rows have the joined Goal columns
         metric = goal_row[Goal.metric.name]
 
@@ -252,7 +252,14 @@ class GoalToServe:
 
         # in the metrics requests only ask for teams present in the pruned tree
         goal_tree_team_ids = pruned_tree.flatten_team_ids()
-        requested_teams = []
+        requests = []
+        time_intervals = [initial_interval, (valid_from, expires_at)]
+        if include_series:
+            timeseries_spec = GoalTimeseriesSpec.from_timespan(valid_from, expires_at)
+            time_intervals.append(timeseries_spec.intervals)
+        else:
+            timeseries_spec = None
+
         for team_id in goal_tree_team_ids:
             try:
                 team_goal_row = rows_by_team[team_id]
@@ -295,27 +302,20 @@ class GoalToServe:
             else:
                 jira_filter = JIRAFilter.empty()
 
-            requested_teams.append(
-                RequestedTeamDetails(
-                    team_id=team_id,
-                    goal_id=goal_id,
-                    members=team_member_map[team_id],
-                    repositories=repositories,
-                    jira_filter=jira_filter,
+            team_details = RequestedTeamDetails(
+                team_id=team_id,
+                goal_id=goal_id,
+                members=team_member_map[team_id],
+                repositories=repositories,
+                jira_filter=jira_filter,
+            )
+            requests.append(
+                TeamMetricsRequest(
+                    metrics=[metric], time_intervals=time_intervals, teams=[team_details],
                 ),
             )
 
-        time_intervals = [initial_interval, (valid_from, expires_at)]
-        if include_series:
-            timeseries_spec = GoalTimeseriesSpec.from_timespan(valid_from, expires_at)
-            time_intervals.append(timeseries_spec.intervals)
-        else:
-            timeseries_spec = None
-
-        team_metrics_request = TeamMetricsRequest(
-            metrics=[metric], time_intervals=time_intervals, teams=requested_teams,
-        )
-        return team_metrics_request, pruned_tree, timeseries_spec
+        return requests, pruned_tree, timeseries_spec
 
 
 @dataclass(slots=True, frozen=True)
