@@ -494,6 +494,7 @@ class MetricEntriesCalculator:
                 quantiles,
                 self._quantile_stride,
                 exclude_inactive=exclude_inactive,
+                **request.metric_params,
                 # environments=request.environments,
             )
             results.append(calc(df_facts, request.time_intervals, groups))

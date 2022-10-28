@@ -79,7 +79,10 @@ class BaseMeasureGoalsTest(Requester):
         current: Any,
         target: Any,
     ) -> None:
-        assert team_goal["value"]["target"] == target
+        if target is None:
+            assert "target" not in team_goal["value"]
+        else:
+            assert team_goal["value"]["target"] == target
         assert team_goal["value"]["current"] == current
         assert team_goal["value"]["initial"] == initial
 
@@ -933,3 +936,92 @@ class TestMeasureGoalsTimeseries(BaseMeasureGoalsTest):
 
         expected_values = ["1892185s", None, "536640s", *([None] * 6), "1976780s", *([None] * 3)]
         assert [point["value"] for point in tg_11["value"]["series"]] == expected_values
+
+
+class TestGoalMetricParams(BaseMeasureGoalsTest):
+    async def test_one_goal_two_teams(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2020, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            TeamFactory(id=11, parent_id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric, **dates, metric_params={"threshold": 70}),
+            TeamGoalFactory(goal_id=20, team_id=11, target=0.6, metric_params={"threshold": 30}),
+        )
+        res = await self._request(json=self._body(10))
+        assert len(res) == 1
+        goal = res[0]
+        assert (tg_10 := goal["team_goal"])["team"]["id"] == 10
+        # team 10 uses threshold 70 stored on the goal row
+        self._assert_team_goal_values(tg_10, pytest.approx(0.7), pytest.approx(0.5), None)
+
+        # team 11 uses threshold 30, so values are lower
+        assert (tg_11 := tg_10["children"][0])["team"]["id"] == 11
+        self._assert_team_goal_values(tg_11, pytest.approx(0.2), pytest.approx(0.16666666), 0.6)
+
+    async def test_time_duration_threshold(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2020, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric, **dates),
+            TeamGoalFactory(
+                goal_id=20, team_id=10, target=0.6, metric_params={"threshold": "3600s"},
+            ),
+        )
+
+        res = await self._request(json=self._body(10))
+        assert len(res) == 1
+        goal = res[0]
+        assert (tg_10 := goal["team_goal"])["team"]["id"] == 10
+        self._assert_team_goal_values(tg_10, pytest.approx(0.1), pytest.approx(0.5), 0.6)
+
+    async def test_two_goals_different_metrics(self, sdb: Database) -> None:
+        metric0 = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO
+        metric1 = PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2020, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric0, **dates),
+            GoalFactory(id=21, metric=metric1, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, target=0.6, metric_params={"threshold": 30}),
+            TeamGoalFactory(
+                goal_id=21, team_id=10, target=0.6, metric_params={"threshold": "10000s"},
+            ),
+        )
+
+        res = await self._request(json=self._body(10))
+        assert len(res) == 2
+
+        assert (goal20 := res[0])["id"] == 20
+        tg = goal20["team_goal"]
+        self._assert_team_goal_values(tg, pytest.approx(0.2), pytest.approx(0.166666666), 0.6)
+
+        assert (goal21 := res[1])["id"] == 21
+        tg = goal21["team_goal"]
+        self._assert_team_goal_values(tg, pytest.approx(0.2), pytest.approx(0.5), 0.6)
+
+    async def test_two_goals_same_metric(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO
+        dates = {"valid_from": dt(2019, 1, 1), "expires_at": dt(2020, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020, 40191]),
+            GoalFactory(id=20, metric=metric, **dates),
+            GoalFactory(id=21, metric=metric, **dates),
+            TeamGoalFactory(goal_id=20, team_id=10, target=0.6, metric_params={"threshold": 30}),
+            TeamGoalFactory(goal_id=21, team_id=10, target=0.6, metric_params={"threshold": 55}),
+        )
+
+        res = await self._request(json=self._body(10))
+        assert len(res) == 2
+        assert (goal_20 := res[0])["id"] == 20
+        assert (tg_10 := goal_20["team_goal"])["team"]["id"] == 10
+        self._assert_team_goal_values(tg_10, pytest.approx(0.2), pytest.approx(1 / 6), 0.6)
+
+        assert (goal_21 := res[1])["id"] == 21
+        assert (tg_11 := goal_21["team_goal"])["team"]["id"] == 10
+        self._assert_team_goal_values(tg_11, pytest.approx(0.6), pytest.approx(0.5), 0.6)
