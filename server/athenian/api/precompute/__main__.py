@@ -127,7 +127,7 @@ def _parse_args() -> argparse.Namespace:
         help="Do not sandbox each account in a separate process",
     )
     accounts_parser.add_argument(
-        "--timeout", type=int, default=20 * 60, help="Maximum processing time for one account",
+        "--timeout", type=int, default=55 * 60, help="Maximum processing time for one account",
     )
     return parser.parse_args()
 
