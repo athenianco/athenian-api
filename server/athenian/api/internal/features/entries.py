@@ -1969,6 +1969,7 @@ class MetricsLineRequest:
     metrics: Sequence[str]
     time_intervals: Sequence[Sequence[datetime]]
     teams: Sequence[TeamSpecificFilters]
+    metric_params: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __str__(self) -> str:
         """Summarize the request."""

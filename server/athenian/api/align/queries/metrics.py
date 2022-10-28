@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import chain
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
+from typing import Any, Collection, Hashable, Iterable, Mapping, Optional, Sequence
 
 import aiomcache
 from ariadne import ObjectType
@@ -106,8 +106,10 @@ async def resolve_metrics_current_values(
         )
         for row in team_rows
     ]
+    metrics_w_params = [MetricWithParams(m, {}) for m in params[MetricParamsFields.metrics]]
+
     team_metrics_all_intervals = await calculate_team_metrics(
-        [TeamMetricsRequest(params[MetricParamsFields.metrics], [time_interval], teams)],
+        [TeamMetricsRequest(metrics_w_params, [time_interval], teams)],
         accountId,
         meta_ids,
         info.context.sdb,
@@ -122,7 +124,7 @@ async def resolve_metrics_current_values(
 
     team_tree = GraphQLTeamTree.from_team_tree(build_team_tree_from_rows(team_rows, team_id))
 
-    models = _build_metrics_response(team_tree, params[MetricParamsFields.metrics], team_metrics)
+    models = _build_metrics_response(team_tree, metrics_w_params, team_metrics)
     return [m.to_dict() for m in models]
 
 
@@ -215,14 +217,50 @@ class RequestedTeamDetails:
         return self.team_id == other.team_id and self.goal_id == other.goal_id
 
 
-TeamMetricsResult = dict[Intervals, dict[str, dict[tuple[int, int], list[Any]]]]
+class MetricWithParams:
+    """A metric with the optional associated parameters."""
+
+    def __init__(self, name: str, params: Mapping[str, Hashable]):
+        """Init the MetricWithParams."""
+        self._name = name
+        self._params = params
+        params_tuple = tuple(sorted(self.params.items()))
+        self._hash = hash((name, params_tuple))
+
+    @property
+    def name(self) -> str:
+        """Return the name of the metric."""
+        return self._name
+
+    @property
+    def params(self) -> Mapping[str, Hashable]:
+        """Return the parameters for the metric."""
+        return self._params
+
+    @property
+    def params_key(self) -> Hashable:
+        """Return an opaque object that can be used to refer to metric params identity."""
+        return MetricWithParams("", self._params)
+
+    def __hash__(self) -> int:
+        """Return the MetricWithParams hash."""
+        return self._hash
+
+    def __eq__(self, other: object) -> bool:
+        """Implement == operator."""
+        if not isinstance(other, MetricWithParams):
+            return False
+        return (self.name, self._params) == (other._name, other._params)
+
+
+TeamMetricsResult = dict[Intervals, dict[MetricWithParams, dict[tuple[int, int], list[Any]]]]
 
 
 @dataclass(frozen=True, slots=True)
 class TeamMetricsRequest:
     """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
 
-    metrics: Sequence[str]
+    metrics: Sequence[MetricWithParams]
     time_intervals: Sequence[Intervals]
     teams: Collection[RequestedTeamDetails]
 
@@ -242,15 +280,15 @@ async def calculate_team_metrics(
 ) -> TeamMetricsResult:
     """Calculate a set of metrics for each team and time interval.
 
-    The result will be a nested dict structure indexed first by intervals, then by metric and
-    finally by (team_id, goal_id).
+    The result will be a nested dict structure indexed first by intervals, then by metric
+    (with parameters) and finally by (team_id, goal_id).
     Terminal values in the dict structure will be lists of metric values: a metric value will be
     found for each granularity requested in the given interval - for each list of metric
     values its length will equal len(intervals) - 1.
 
     For example, given the single request:
     TeamMetricsRequest(
-       metrics=["pr-all-count"],
+       metrics=[MetricWithParams("pr-all-count", {})],
        time_intervals=[dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)],
        teams=[RequestedTeamDetails(team_id=10, goal_id=20, ...)]
     )
@@ -259,7 +297,7 @@ async def calculate_team_metrics(
 
     {
         (dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)): {
-          "pr-all-count": {
+          MetricWithParams("pr-all-count", {}): {
             (10, 20): [20, 30],
            }
         }
@@ -299,15 +337,20 @@ async def calculate_team_metrics(
 
     for request in requests:
         team_members = _loginify_teams([td.members for td in request.teams], prefixer)
-        pr_metrics, release_metrics, jira_metrics = _triage_metrics(request.metrics)
+        pr_metric_groups, release_metric_groups, jira_metric_groups = _triage_metrics(
+            request.metrics,
+        )
         goal_ids = [td.goal_id for td in request.teams]
 
-        if pr_metrics:
+        for pr_metrics in pr_metric_groups:
             pr_collector.append(
                 MetricsLineRequest(
-                    pr_metrics,
-                    request.time_intervals,
-                    [
+                    metrics=[m.name for m in pr_metrics],
+                    # metric_params are the same for every MetricWithParams in the group,
+                    # see _triage_metrics
+                    metric_params=pr_metrics[0].params,
+                    time_intervals=request.time_intervals,
+                    teams=[
                         TeamSpecificFilters(
                             team_id=td.team_id,
                             participants={PRParticipationKind.AUTHOR: members},
@@ -322,12 +365,13 @@ async def calculate_team_metrics(
                 goal_ids,
             )
 
-        if release_metrics:
+        for release_metrics in release_metric_groups:
             release_collector.append(
                 MetricsLineRequest(
-                    release_metrics,
-                    request.time_intervals,
-                    [
+                    metrics=[m.name for m in release_metrics],
+                    metric_params=release_metrics[0].params,
+                    time_intervals=request.time_intervals,
+                    teams=[
                         TeamSpecificFilters(
                             team_id=td.team_id,
                             participants={
@@ -346,12 +390,13 @@ async def calculate_team_metrics(
                 goal_ids,
             )
 
-        if jira_metrics:
+        for jira_metrics in jira_metric_groups:
             jira_collector.append(
                 MetricsLineRequest(
-                    jira_metrics,
-                    request.time_intervals,
-                    [
+                    metrics=[m.name for m in jira_metrics],
+                    metric_params=jira_metrics[0].params,
+                    time_intervals=request.time_intervals,
+                    teams=[
                         TeamSpecificFilters(
                             team_id=td.team_id,
                             participants=_jirafy_team(td.members, jira_map),
@@ -424,20 +469,32 @@ async def calculate_team_metrics(
     return team_metrics_res
 
 
-def _triage_metrics(metrics: Sequence[str]) -> tuple[Sequence[str], Sequence[str], Sequence[str]]:
-    pr_metrics = []
-    release_metrics = []
-    jira_metrics = []
+def _triage_metrics(
+    metrics: Sequence[MetricWithParams],
+) -> tuple[
+    tuple[tuple[MetricWithParams]],
+    tuple[tuple[MetricWithParams]],
+    tuple[tuple[MetricWithParams]],
+]:
+    """Partition the metrics in pr, release and jira metrics.
+
+    For each category return a list of groups.
+    Metrics in each group will have the same `metric_params`, so they can be
+    sent together in a `MetricsLineRequest`.
+    """
+    pr_metrics: dict[Hashable, set[MetricWithParams]] = {}
+    release_metrics: dict[Hashable, set[MetricWithParams]] = {}
+    jira_metrics: dict[Hashable, set[MetricWithParams]] = {}
     unidentified = []
-    for metric in metrics:
-        if metric in pr_metric_calculators:
-            pr_metrics.append(metric)
-        elif metric in release_metric_calculators:
-            release_metrics.append(metric)
-        elif metric in jira_metric_calculators:
-            jira_metrics.append(metric)
+    for m in metrics:
+        if m.name in pr_metric_calculators:
+            pr_metrics.setdefault(m.params_key, set()).add(m)
+        elif m.name in release_metric_calculators:
+            release_metrics.setdefault(m.params_key, set()).add(m)
+        elif m.name in jira_metric_calculators:
+            jira_metrics.setdefault(m.params_key, set()).add(m)
         else:
-            unidentified.append(metric)
+            unidentified.append(m.name)
     if unidentified:
         raise ResponseError(
             InvalidRequestError(
@@ -445,7 +502,11 @@ def _triage_metrics(metrics: Sequence[str]) -> tuple[Sequence[str], Sequence[str
                 detail=f"The following metrics are not supported: {', '.join(unidentified)}",
             ),
         )
-    return pr_metrics, release_metrics, jira_metrics
+    return (
+        tuple(tuple(m) for m in pr_metrics.values()),
+        tuple(tuple(m) for m in release_metrics.values()),
+        tuple(tuple(m) for m in jira_metrics.values()),
+    )
 
 
 def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> list[set[str]]:
@@ -475,8 +536,11 @@ def _jirafy_team(team: Collection[int], jira_map: Mapping[int, str]) -> JIRAPart
 @sentry_span
 def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
-    # intervals => team and other filters => metrics
-    requests_tree: dict[tuple[Intervals, ...], dict[RequestedTeamDetails, set[str]]] = {}
+    # intervals => team and other filters => metrics with params
+    requests_tree: dict[
+        tuple[Intervals, ...],
+        dict[RequestedTeamDetails, set[MetricWithParams]],
+    ] = {}
     for req in requests:
         req_time_intervals = tuple(req.time_intervals)
         requests_tree.setdefault(req_time_intervals, {})
@@ -484,19 +548,19 @@ def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetri
             for m in req.metrics:
                 requests_tree[req_time_intervals].setdefault(td, set()).add(m)
 
-    # intervals => metrics => team-specific
+    # intervals => metrics with params => team-specific
     simplified_tree: dict[
         Sequence[Intervals],
-        dict[tuple[str, ...], set[RequestedTeamDetails]],
+        dict[frozenset[MetricWithParams], set[RequestedTeamDetails]],
     ] = {}
     for intervals, intervals_tree in requests_tree.items():
         simplified_tree[intervals] = {}
         for filters, metrics in intervals_tree.items():
-            simplified_tree[intervals].setdefault(tuple(sorted(metrics)), set()).add(filters)
+            simplified_tree[intervals].setdefault(frozenset(metrics), set()).add(filters)
 
     # assemble the final groups
     requests = [
-        TeamMetricsRequest(metrics_, intervals_, grouped_filters)
+        TeamMetricsRequest(tuple(metrics_), intervals_, grouped_filters)
         for intervals_, intervals_tree_ in simplified_tree.items()
         for metrics_, grouped_filters in intervals_tree_.items()
     ]
@@ -534,11 +598,12 @@ class BatchCalcResultCollector:
             for intervals_i, intervals in enumerate(request.time_intervals):
                 team_metrics_res.setdefault(intervals, {})
                 for metric_i, metric in enumerate(request.metrics):
-                    team_metrics_res[intervals].setdefault(metric, {})
+                    metric_w_param = MetricWithParams(metric, request.metric_params)
+                    team_metrics_res[intervals].setdefault(metric_w_param, {})
                     for team_i, (team_filters, goal_id) in enumerate(zip(request.teams, goal_ids)):
                         # collect a value for each granularity
                         values = [ar[metric_i].value for ar in calc_result[team_i][intervals_i]]
-                        team_metrics_res[intervals][metric][
+                        team_metrics_res[intervals][metric_w_param][
                             (team_filters.team_id, goal_id)
                         ] = values
 
@@ -551,12 +616,12 @@ class BatchCalcResultCollector:
 @sentry_span
 def _build_metrics_response(
     team_tree: GraphQLTeamTree,
-    metrics: Sequence[str],
-    triaged: dict[str, dict[tuple[int, int], list[Any]]],
+    metrics: Sequence[MetricWithParams],
+    triaged: dict[MetricWithParams, dict[tuple[int, int], list[Any]]],
 ) -> list[GraphQLMetricValues]:
     return [
         GraphQLMetricValues(
-            metric=metric, value=_build_team_metric_value(team_tree, triaged[metric]),
+            metric=metric.name, value=_build_team_metric_value(team_tree, triaged[metric]),
         )
         for metric in metrics
     ]
