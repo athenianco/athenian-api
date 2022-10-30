@@ -29,6 +29,7 @@ from athenian.api.align.models import (
     UpdateGoalInputFields,
     UpdateRepositoriesInputFields,
 )
+from athenian.api.align.serialization import parse_metric_params, parse_union_value
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
 from athenian.api.controllers.goal_controller import parse_request_repositories
@@ -170,6 +171,8 @@ async def _parse_create_goal_input(
     if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
         raise GoalMutationError("More than one team goal with the same teamId")
 
+    metric_params = parse_metric_params(input.get(CreateGoalInputFields.metricParams))
+
     goal = Goal(
         account_id=account_id,
         name=input[CreateGoalInputFields.name],
@@ -178,6 +181,7 @@ async def _parse_create_goal_input(
         jira_projects=jira_projects,
         jira_priorities=jira_priorities,
         jira_issue_types=jira_issue_types,
+        metric_params=metric_params,
         valid_from=valid_from,
         expires_at=expires_at,
     )
@@ -189,16 +193,13 @@ def _parse_team_goal_input(team_goal_input: dict, **extra: Any) -> TeamGoal:
     """Parse TeamGoalInput into a TeamGoal model."""
     team_id = team_goal_input[TeamGoalInputFields.teamId]
     try:
-        target = _parse_team_goal_target(team_goal_input[TeamGoalInputFields.target])
+        target = parse_union_value(team_goal_input[TeamGoalInputFields.target])
     except StopIteration:
         raise GoalMutationError(f"Invalid target for teamId {team_id}")
 
-    return TeamGoal(team_id=team_id, target=target, **extra)
+    metric_params = parse_metric_params(team_goal_input.get(TeamGoalInputFields.metricParams))
 
-
-def _parse_team_goal_target(team_goal_target: dict) -> int | float | str:
-    """Get the first non null value in GoalTargetInput."""
-    return next(tgt for tgt in team_goal_target.values() if tgt is not None)
+    return TeamGoal(team_id=team_id, target=target, metric_params=metric_params, **extra)
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,7 +259,7 @@ async def _parse_update_goal_input(
             deletions.append(team_id)
         elif change.get(TeamGoalChangeFields.target) is not None:
             try:
-                target = _parse_team_goal_target(change[TeamGoalChangeFields.target])
+                target = parse_union_value(change[TeamGoalChangeFields.target])
             except StopIteration:
                 invalid_targets.append(team_id)
             else:
