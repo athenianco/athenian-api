@@ -1,3 +1,4 @@
+from datetime import timedelta
 from operator import itemgetter
 
 from freezegun import freeze_time
@@ -11,6 +12,7 @@ from athenian.api.align.exceptions import (
 )
 from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
+    convert_metric_params_datatypes,
     create_default_goal_templates,
     delete_empty_goals,
     delete_goal_template_from_db,
@@ -385,3 +387,21 @@ class TestResolveGoalRepositories:
         res = resolve_goal_repositories([(1, None), (2, None)], 1, prefixer, logical_settings)
 
         assert res == (RepositoryName("github.com", "athenianco", "a", None),)
+
+
+class TestConvertMetricParamsDatatypes:
+    def test_none(self) -> None:
+        assert convert_metric_params_datatypes(None) == {}
+
+    def test_empty_dict(self) -> None:
+        assert convert_metric_params_datatypes({}) == {}
+
+    def test_int_threshold(self) -> None:
+        assert convert_metric_params_datatypes({"threshold": 23}) == {"threshold": 23}
+
+    def test_time_duration_threshold(self) -> None:
+        metric_params = {"threshold": "100s"}
+        res = convert_metric_params_datatypes(metric_params)
+
+        assert res == {"threshold": timedelta(seconds=100)}
+        assert res is not metric_params
