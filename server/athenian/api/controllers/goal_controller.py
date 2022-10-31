@@ -20,7 +20,7 @@ from athenian.api.align.goals.dbaccess import (
     parse_goal_repositories,
     update_goal_template_in_db,
 )
-from athenian.api.align.goals.measure import GoalToServe, GoalTreeGenerator
+from athenian.api.align.goals.measure import GoalToServe
 from athenian.api.align.queries.metrics import calculate_team_metrics
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
@@ -258,11 +258,7 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
         unchecked_jira_config=jira_config,
     )
 
-    goal_tree_generator = GoalTreeGenerator()
-    models = [
-        to_serve.build_goal_tree(all_metric_values, goal_tree_generator)
-        for to_serve in goals_to_serve
-    ]
+    models = [to_serve.build_goal_tree(all_metric_values) for to_serve in goals_to_serve]
     return model_response(models)
 
 
@@ -324,7 +320,12 @@ async def _parse_create_request(
         TeamGoal.jira_issue_types.name: jira_issue_types,
     }
     team_goals = [
-        TeamGoal(team_id=tg.team_id, target=tg.target, **extra_team_goal_info)
+        TeamGoal(
+            team_id=tg.team_id,
+            target=tg.target,
+            metric_params=tg.metric_params,
+            **extra_team_goal_info,
+        )
         for tg in creat_req.team_goals
     ]
 
@@ -338,6 +339,7 @@ async def _parse_create_request(
         jira_projects=jira_projects,
         jira_priorities=jira_priorities,
         jira_issue_types=jira_issue_types,
+        metric_params=creat_req.metric_params,
         valid_from=valid_from,
         expires_at=expires_at,
     )

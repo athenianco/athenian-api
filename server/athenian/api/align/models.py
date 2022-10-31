@@ -147,6 +147,7 @@ class CreateGoalInputFields(_BaseGoalInputFields):
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
+    metricParams = "metricParams"
 
 
 class TeamGoalInputFields(metaclass=Enum):
@@ -154,6 +155,7 @@ class TeamGoalInputFields(metaclass=Enum):
 
     teamId = "teamId"
     target = "target"
+    metricParams = "metricParams"
 
 
 class UpdateRepositoriesInputFields(metaclass=Enum):

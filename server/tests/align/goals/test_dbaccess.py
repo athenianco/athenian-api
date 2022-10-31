@@ -181,6 +181,41 @@ class TestFetchTeamGoals:
         assert row[GoalColumnAlias.JIRA_PRIORITIES.value] is None
         assert row[GoalColumnAlias.JIRA_ISSUE_TYPES.value] == ["Task"]
 
+    async def test_metric_params_column(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            GoalFactory(id=20, metric_params=None),
+            GoalFactory(id=21, metric_params={"a": "b"}),
+            TeamGoalFactory(team_id=10, goal_id=20, metric_params=None),
+            TeamGoalFactory(team_id=11, goal_id=20, metric_params={"foo": "bar"}),
+            TeamGoalFactory(team_id=10, goal_id=21, metric_params=None),
+            TeamGoalFactory(team_id=11, goal_id=21, metric_params={"foo0": 1, "foo1": 0}),
+        )
+        rows = await fetch_team_goals(1, [10, 11], sdb)
+        assert len(rows) == 4
+
+        assert rows[0][TeamGoal.goal_id.name] == 20
+        assert rows[0][TeamGoal.team_id.name] == 10
+        assert rows[0][TeamGoal.metric_params.name] is None
+        assert rows[0][GoalColumnAlias.METRIC_PARAMS.value] is None
+
+        assert rows[1][TeamGoal.goal_id.name] == 20
+        assert rows[1][TeamGoal.team_id.name] == 11
+        assert rows[1][TeamGoal.metric_params.name] == {"foo": "bar"}
+        assert rows[1][GoalColumnAlias.METRIC_PARAMS.value] is None
+
+        assert rows[2][TeamGoal.goal_id.name] == 21
+        assert rows[2][TeamGoal.team_id.name] == 10
+        assert rows[2][TeamGoal.metric_params.name] is None
+        assert rows[2][GoalColumnAlias.METRIC_PARAMS.value] == {"a": "b"}
+
+        assert rows[3][TeamGoal.goal_id.name] == 21
+        assert rows[3][TeamGoal.team_id.name] == 11
+        assert rows[3][TeamGoal.metric_params.name] == {"foo0": 1, "foo1": 0}
+        assert rows[3][GoalColumnAlias.METRIC_PARAMS.value] == {"a": "b"}
+
 
 class TestDeleteEmptyGoals:
     async def test_delete(self, sdb: Database) -> None:

@@ -200,6 +200,7 @@ class GoalColumnAlias(Enum):
     JIRA_PROJECTS = f"goal_{Goal.jira_projects.name}"
     JIRA_PRIORITIES = f"goal_{Goal.jira_priorities.name}"
     JIRA_ISSUE_TYPES = f"goal_{Goal.jira_issue_types.name}"
+    METRIC_PARAMS = f"goal_{Goal.metric_params.name}"
 
 
 AliasedGoalColumns = {getattr(Goal, f.value[5:].lower()).name: f.value for f in GoalColumnAlias}
@@ -215,7 +216,7 @@ async def fetch_team_goals(
     """Fetch the TeamGoals from DB related to a set of teams.
 
     TeamGoal linked to archived Goal are not included.
-    Result is ordered by Goal id.
+    Result is ordered by Goal id and team id.
     Columns from joined Goal are included, with `goal_` prefix in case of conflict.
     """
     goal_rows = (
@@ -228,6 +229,7 @@ async def fetch_team_goals(
         Goal.jira_projects.label(GoalColumnAlias.JIRA_PROJECTS.value),
         Goal.jira_priorities.label(GoalColumnAlias.JIRA_PRIORITIES.value),
         Goal.jira_issue_types.label(GoalColumnAlias.JIRA_ISSUE_TYPES.value),
+        Goal.metric_params.label(GoalColumnAlias.METRIC_PARAMS.value),
     )
     stmt = (
         sa.select(TeamGoal, *goal_rows)

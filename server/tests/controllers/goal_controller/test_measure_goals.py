@@ -554,6 +554,28 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
         res = await self._request(json=self._body(10, 33), user_id="gh|XXX")
         assert res[0]["team_goal"]["value"]["initial"] == 0
 
+    async def test_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789]),
+            TeamFactory(id=11, parent_id=10, members=[39789]),
+            GoalFactory(id=20, metric_params={"f": 1}),
+            TeamGoalFactory(goal_id=20, team_id=10, metric_params=None),
+            TeamGoalFactory(goal_id=20, team_id=11, metric_params={"f": 2}),
+        )
+        res = await self._request(json=self._body(10))
+        assert len(res) == 1
+        goal = res[0]
+
+        assert goal["id"] == 20
+        assert goal["metric_params"] == {"f": 1}
+
+        assert (tg_10 := goal["team_goal"])["team"]["id"] == 10
+        assert "metric_params" not in tg_10
+
+        assert (tg_11 := tg_10["children"][0])["team"]["id"] == 11
+        assert tg_11["metric_params"] == {"f": 2}
+
 
 class TestMeasureGoalsJIRAFiltering(BaseMeasureGoalsTest):
     async def test_pr_metric_priority(self, sdb: Database, mdb_rw: Database) -> None:

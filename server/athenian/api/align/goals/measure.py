@@ -38,8 +38,127 @@ from athenian.api.models.web.goal import (
 from athenian.api.tracing import sentry_span
 
 
+class _GoalTreeGenerator:
+    """Generate the response GoalTree for a goal."""
+
+    @sentry_span
+    def __call__(
+        self,
+        team_tree: TeamTree,
+        goal_row: Row,
+        team_goal_rows: Iterable[Row],
+        metric_values: _GoalMetricValues,
+        prefixer: Prefixer,
+        logical_settings: LogicalRepositorySettings,
+    ) -> GoalTree:
+        """Compose the GoalTree for a goal from various piece of information."""
+        valid_from, expires_at = goal_datetimes_to_dates(
+            goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
+        )
+        team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
+
+        if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
+            repos = [
+                str(repo_name)
+                for repo_name in resolve_goal_repositories(
+                    repos, goal_row[Goal.id.name], prefixer, logical_settings,
+                )
+            ]
+
+        team_goal = self._team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values)
+        return GoalTree(
+            id=goal_row[Goal.id.name],
+            name=goal_row[Goal.name.name],
+            metric=goal_row[Goal.metric.name],
+            valid_from=valid_from,
+            expires_at=expires_at,
+            team_goal=team_goal,
+            repositories=repos,
+            jira_projects=goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
+            jira_priorities=goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
+            jira_issue_types=goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
+            metric_params=goal_row[GoalColumnAlias.METRIC_PARAMS.value],
+        )
+
+    @classmethod
+    def _team_tree_to_team_goal_tree(
+        cls,
+        team_tree: TeamTree,
+        team_goal_rows_map: Mapping[int, Row],
+        metric_values: _GoalMetricValues,
+    ) -> TeamGoalTree:
+        team_id = team_tree.id
+        try:
+            team_goal_row = team_goal_rows_map[team_id]
+        except KeyError:
+            # the team can be present in the tree but have no team goal
+            target = metric_params = None
+            goal_id = 0
+        else:
+            goal_id = team_goal_row[TeamGoal.goal_id.name]
+            target = team_goal_row[TeamGoal.target.name]
+            metric_params = team_goal_row[TeamGoal.metric_params.name]
+
+        children = [
+            cls._team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
+            for child in team_tree.children
+        ]
+
+        current = metric_values.current.get((team_id, goal_id))
+        initial = metric_values.initial.get((team_id, goal_id))
+        if metric_values.series is None:
+            series = None
+        else:
+            series = metric_values.series.get((team_id, goal_id))
+
+        return cls._compose_team_goal_tree(
+            team_tree,
+            initial,
+            current,
+            target,
+            metric_params,
+            series,
+            metric_values.series_spec,
+            children,
+        )
+
+    @classmethod
+    def _compose_team_goal_tree(
+        cls,
+        team_tree: TeamTree,
+        initial: MetricValue,
+        current: MetricValue,
+        target: MetricValue,
+        metric_params: Optional[dict],
+        series: Optional[list[MetricValue]],
+        series_spec: Optional[GoalTimeseriesSpec],
+        children: Sequence[TeamGoalTree],
+    ) -> TeamGoalTree:
+        team = team_tree.as_leaf()
+        if series is None or series_spec is None:
+            series = None
+            series_granularity = None
+        else:
+            series_dates = [d.date() for d in series_spec.intervals[:-1]]
+            series = [GoalMetricSeriesPoint(date=d, value=v) for d, v in zip(series_dates, series)]
+            series_granularity = series_spec.granularity
+
+        goal_value = GoalValue(
+            current=current,
+            initial=initial,
+            target=target,
+            series=series,
+            series_granularity=series_granularity,
+        )
+        return TeamGoalTree(
+            team=team, value=goal_value, metric_params=metric_params, children=children,
+        )
+
+
 class GoalToServe:
     """A goal served in the response."""
+
+    _goal_tree_generator = _GoalTreeGenerator()
 
     def __init__(
         self,
@@ -72,11 +191,7 @@ class GoalToServe:
         """Get the request for calculate_team_metrics to compute the metrics for the goal."""
         return self._request
 
-    def build_goal_tree(
-        self,
-        metric_values: TeamMetricsResult,
-        generator: GoalTreeGenerator,
-    ) -> GoalTree:
+    def build_goal_tree(self, metric_values: TeamMetricsResult) -> GoalTree:
         """Build the GoalTree combining the teams structure and the metric values."""
         intervals = self._request.time_intervals
         metric = self._request.metrics[0]
@@ -97,7 +212,7 @@ class GoalToServe:
             initial_metrics, current_metrics, series, self._timeseries_spec,
         )
 
-        return generator(
+        return self._goal_tree_generator(
             self._goal_team_tree,
             self._team_goal_rows[0],
             self._team_goal_rows,
@@ -211,111 +326,6 @@ class _GoalMetricValues:
     current: Mapping[tuple[int, int], Any]
     series: Optional[Mapping[tuple[int, int], list[Any]]]
     series_spec: Optional[GoalTimeseriesSpec]
-
-
-class GoalTreeGenerator:
-    """Generate the response GoalTree for a goal."""
-
-    @sentry_span
-    def __call__(
-        self,
-        team_tree: TeamTree,
-        goal_row: Row,
-        team_goal_rows: Iterable[Row],
-        metric_values: _GoalMetricValues,
-        prefixer: Prefixer,
-        logical_settings: LogicalRepositorySettings,
-    ) -> GoalTree:
-        """Compose the GoalTree for a goal from various piece of information."""
-        valid_from, expires_at = goal_datetimes_to_dates(
-            goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
-        )
-        team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}
-
-        if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
-            repos = [
-                str(repo_name)
-                for repo_name in resolve_goal_repositories(
-                    repos, goal_row[Goal.id.name], prefixer, logical_settings,
-                )
-            ]
-
-        team_goal = self._team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values)
-        return GoalTree(
-            id=goal_row[Goal.id.name],
-            name=goal_row[Goal.name.name],
-            metric=goal_row[Goal.metric.name],
-            valid_from=valid_from,
-            expires_at=expires_at,
-            team_goal=team_goal,
-            repositories=repos,
-            jira_projects=goal_row[GoalColumnAlias.JIRA_PROJECTS.value],
-            jira_priorities=goal_row[GoalColumnAlias.JIRA_PRIORITIES.value],
-            jira_issue_types=goal_row[GoalColumnAlias.JIRA_ISSUE_TYPES.value],
-        )
-
-    @classmethod
-    def _team_tree_to_team_goal_tree(
-        cls,
-        team_tree: TeamTree,
-        team_goal_rows_map: Mapping[int, Row],
-        metric_values: _GoalMetricValues,
-    ) -> TeamGoalTree:
-        team_id = team_tree.id
-        try:
-            team_goal_row = team_goal_rows_map[team_id]
-        except KeyError:
-            # the team can be present in the tree but have no team goal
-            target = None
-            goal_id = 0
-        else:
-            goal_id = team_goal_row[TeamGoal.goal_id.name]
-            target = team_goal_row[TeamGoal.target.name]
-
-        children = [
-            cls._team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
-            for child in team_tree.children
-        ]
-
-        current = metric_values.current.get((team_id, goal_id))
-        initial = metric_values.initial.get((team_id, goal_id))
-        if metric_values.series is None:
-            series = None
-        else:
-            series = metric_values.series.get((team_id, goal_id))
-
-        return cls._compose_team_goal_tree(
-            team_tree, initial, current, target, series, metric_values.series_spec, children,
-        )
-
-    @classmethod
-    def _compose_team_goal_tree(
-        cls,
-        team_tree: TeamTree,
-        initial: MetricValue,
-        current: MetricValue,
-        target: MetricValue,
-        series: Optional[list[MetricValue]],
-        series_spec: Optional[GoalTimeseriesSpec],
-        children: Sequence[TeamGoalTree],
-    ) -> TeamGoalTree:
-        team = team_tree.as_leaf()
-        if series is None or series_spec is None:
-            series = None
-            series_granularity = None
-        else:
-            series_dates = [d.date() for d in series_spec.intervals[:-1]]
-            series = [GoalMetricSeriesPoint(date=d, value=v) for d, v in zip(series_dates, series)]
-            series_granularity = series_spec.granularity
-
-        goal_value = GoalValue(
-            current=current,
-            initial=initial,
-            target=target,
-            series=series,
-            series_granularity=series_granularity,
-        )
-        return TeamGoalTree(team=team, value=goal_value, children=children)
 
 
 @sentry_span

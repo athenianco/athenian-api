@@ -228,6 +228,28 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         assert "repository" in res["errors"][0]["extensions"]["detail"]
         await self._assert_no_goal_exists(sdb)
 
+    async def test_invalid_goal_metric_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10))
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 42}}]
+        variables = {
+            "createGoalInput": self._mk_input(teamGoals=team_goals, metricParams="123"),
+            "accountId": 1,
+        }
+        res = await self._request(variables)
+        assert "metricParams" in res["errors"][0]["message"]
+        await self._assert_no_goal_exists(sdb)
+
+    async def test_invalid_team_goal_metric_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10))
+        team_goals = [{"teamId": 10, "target": {"int": 42}, "metricParams": False}]
+        variables = {
+            "createGoalInput": self._mk_input(teamGoals=team_goals),
+            "accountId": 1,
+        }
+        res = await self._request(variables)
+        assert "teamGoals[0].metricParams" in res["errors"][0]["message"]
+        await self._assert_no_goal_exists(sdb)
+
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, sdb: Database) -> None:
@@ -257,6 +279,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             metric=PullRequestMetricID.PR_COMMENTS_PER,
         )
         assert goal_row[Goal.repositories.name] is None
+        assert goal_row[Goal.metric_params.name] is None
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 1, 1, tzinfo=timezone.utc,
         )
@@ -269,6 +292,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
         assert tg_row[TeamGoal.target.name] == 42
         assert tg_row[TeamGoal.repositories.name] is None
+        assert tg_row[Goal.metric_params.name] is None
 
     async def test_create_multiple_team_goals(self, sdb: Database) -> None:
         await models_insert(
@@ -478,6 +502,28 @@ class TestCreateGoals(BaseCreateGoalTest):
         for col in (TeamGoal.repositories, TeamGoal.jira_projects, TeamGoal.jira_issue_types):
             assert tg_row[col.name] is None
         assert tg_row[TeamGoal.jira_priorities.name] == ["high", "low"]
+
+    async def test_metric_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11, parent_id=10))
+        team_goals = [
+            {"teamId": 10, "target": {"int": 42}},
+            {"teamId": 11, "target": {"int": 43}, "metricParams": {"threshold": {"int": 23}}},
+        ]
+        variables = {
+            "createGoalInput": self._mk_input(
+                teamGoals=team_goals, metricParams={"threshold": {"str": "100s"}},
+            ),
+            "accountId": 1,
+        }
+        new_goal_id = await self._create(variables)
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        assert goal_row[Goal.metric_params.name] == {"threshold": "100s"}
+
+        tg10_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg10_row[TeamGoal.metric_params.name] is None
+
+        tg11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
+        assert tg11_row[TeamGoal.metric_params.name] == {"threshold": 23}
 
     async def _create(self, *args: Any, **kwargs: Any) -> int:
         res = await self._request(*args, **kwargs)
