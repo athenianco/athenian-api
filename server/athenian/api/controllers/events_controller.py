@@ -67,7 +67,6 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseFacts,
 )
 from athenian.api.models.web import (
-    BadRequestError,
     DatabaseConflict,
     DeleteEventsCacheRequest,
     DeploymentNotification as WebDeploymentNotification,
@@ -92,7 +91,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
     try:
         notifications = [WebReleaseNotification.from_dict(n) for n in body]
     except ParseError as e:
-        raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     account = request.account
     sdb, mdb, rdb = request.sdb, request.mdb, request.rdb
     authors = []
@@ -495,7 +494,7 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
     try:
         notifications = [WebDeploymentNotification.from_dict(n) for n in body]
     except ParseError as e:
-        raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     account, sdb, mdb, rdb, cache = (
         request.account,
         request.sdb,
@@ -511,7 +510,11 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
             deployed_repos = {c.repository.split("/", 1)[1] for c in notification.components}
         except IndexError:
             raise ResponseError(
-                BadRequestError(f"[{i}].components contain unprefixed repository names"),
+                InvalidRequestError(
+                    f"[{i}].components",
+                    "repository names must be prefixed (missing `github.com/`?):"
+                    f" {', '.join(c.repository for c in notification.components if len(c.repository.split('/', 1)) < 2)}",  # noqa
+                ),
             ) from None
         if denied_repos := await checker.check(deployed_repos):
             raise ResponseError(
