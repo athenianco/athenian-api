@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence, TypedDict
+from typing import Optional, Sequence, TypedDict
 
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 
@@ -49,11 +49,50 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric": PullRequestMetricID.PR_REVIEWED_RATIO,
         "name": "Increase the proportion of PRs reviewed",
     },
+    {
+        "metric": PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Review Time",
+        "metric_params": {"threshold": "172800s"},
+    },
+    {
+        "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Wait Time for 1st Review",
+        "metric_params": {"threshold": "21600s"},
+    },
+    {
+        "metric": PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
+        "name": "Median PR Size",
+        "metric_params": {"threshold": 100},
+    },
+    {
+        "metric": PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO,
+        "name": "Review Comments / PR",
+        "metric_params": {"threshold": 3},
+    },
+    {
+        "metric": PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "PR Cycle Time",
+        "metric_params": {"threshold": "432000s"},
+    },
+    {
+        "metric": PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "PR Open Time",
+        "metric_params": {"threshold": "259200s"},
+    },
+    {
+        "metric": JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Jira Lead Time",
+        "metric_params": {"threshold": "432000s"},
+    },
 ]
 
 
-class TemplateDefinition(TypedDict):
-    """The definition of a Goal Template."""
-
+class _TemplateDefinitionRequired(TypedDict):
     metric: str
     name: str
+
+
+class TemplateDefinition(_TemplateDefinitionRequired, total=False):
+    """The definition of a Goal Template."""
+
+    metric_params: Optional[dict]
