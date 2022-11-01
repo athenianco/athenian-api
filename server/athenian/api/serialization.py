@@ -66,7 +66,11 @@ def _deserialize(
                 raise ValueError(f"None of the union options fit: {klass.__args__}")
         else:
             return deserialize_model(data, klass, path)
+    except ParseError as e:
+        raise e from None
     except Exception as e:
+        if klass in (date, datetime):
+            klass = "RFC 3339 datetime (https://ijmacd.github.io/rfc3339-iso8601)"
         raise ParseError(f"Failed to parse {data} as {klass}: {e}", path) from e
 
 

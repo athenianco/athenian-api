@@ -53,7 +53,6 @@ from athenian.api.models.state.models import (
     WorkType,
 )
 from athenian.api.models.web import (
-    BadRequestError,
     ForbiddenError,
     InvalidRequestError,
     JIRAProject,
@@ -111,7 +110,7 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
     try:
         rule = ReleaseMatchRequest.from_dict(body)
     except ValueError as e:
-        raise ResponseError(BadRequestError(str(e))) from e
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     meta_ids = await get_metadata_account_ids(rule.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, rule.account, prefixer)
