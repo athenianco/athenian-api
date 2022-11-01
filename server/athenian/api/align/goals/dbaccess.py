@@ -299,7 +299,7 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     log.info("creating for account %d", account)
     models = [
         GoalTemplate(metric=template_def["metric"], name=template_def["name"], account_id=account)
-        for template_def in TEMPLATES_COLLECTION.values()
+        for template_def in TEMPLATES_COLLECTION
     ]
     values = [model.create_defaults().explode(with_primary_keys=False) for model in models]
     # skip existing templates with the same name

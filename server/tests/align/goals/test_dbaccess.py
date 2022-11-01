@@ -303,19 +303,19 @@ class TestCreateDefaultGoalTemplates:
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
         assert sorted(r[GoalTemplate.name.name] for r in rows) == sorted(
-            template_def["name"] for template_def in TEMPLATES_COLLECTION.values()
+            template_def["name"] for template_def in TEMPLATES_COLLECTION
         )
         assert sorted(r[GoalTemplate.metric.name] for r in rows) == sorted(
-            template_def["metric"] for template_def in TEMPLATES_COLLECTION.values()
+            template_def["metric"] for template_def in TEMPLATES_COLLECTION
         )
 
     async def test_ignore_existing_names(self, sdb: Database) -> None:
-        await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[1]["name"], id=555))
+        await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[0]["name"], id=555))
         await create_default_goal_templates(1, sdb)
 
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
-        await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[1]["name"])
+        await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[0]["name"])
 
 
 class TestParseGoalRepositories:
