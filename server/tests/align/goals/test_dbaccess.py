@@ -302,12 +302,13 @@ class TestCreateDefaultGoalTemplates:
         await create_default_goal_templates(1, sdb)
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
-        assert sorted(r[GoalTemplate.name.name] for r in rows) == sorted(
-            template_def["name"] for template_def in TEMPLATES_COLLECTION
-        )
-        assert sorted(r[GoalTemplate.metric.name] for r in rows) == sorted(
-            template_def["metric"] for template_def in TEMPLATES_COLLECTION
-        )
+        row_by_name = {row[GoalTemplate.name.name]: row for row in rows}
+
+        for template_def in TEMPLATES_COLLECTION:
+            row = row_by_name[template_def["name"]]
+            assert row[GoalTemplate.name.name] == template_def["name"]
+            assert row[GoalTemplate.metric.name] == template_def["metric"]
+            assert row[GoalTemplate.metric_params.name] == template_def.get("metric_params")
 
     async def test_ignore_existing_names(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[0]["name"], id=555))

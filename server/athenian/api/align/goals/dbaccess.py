@@ -298,7 +298,12 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     log = logging.getLogger(f"{__name__}.create_default_goal_templates")
     log.info("creating for account %d", account)
     models = [
-        GoalTemplate(metric=template_def["metric"], name=template_def["name"], account_id=account)
+        GoalTemplate(
+            metric=template_def["metric"],
+            name=template_def["name"],
+            account_id=account,
+            metric_params=template_def.get("metric_params"),
+        )
         for template_def in TEMPLATES_COLLECTION
     ]
     values = [model.create_defaults().explode(with_primary_keys=False) for model in models]
