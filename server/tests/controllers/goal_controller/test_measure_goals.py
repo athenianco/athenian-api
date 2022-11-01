@@ -1025,3 +1025,29 @@ class TestGoalMetricParams(BaseMeasureGoalsTest):
         assert (goal_21 := res[1])["id"] == 21
         assert (tg_11 := goal_21["team_goal"])["team"]["id"] == 10
         self._assert_team_goal_values(tg_11, pytest.approx(0.6), pytest.approx(0.5), 0.6)
+
+    async def test_jira_metric(self, sdb: Database) -> None:
+        metric = JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO
+        dates = {"valid_from": dt(2020, 1, 1), "expires_at": dt(2021, 1, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, members=[39789, 40020]),
+            TeamFactory(id=11, parent_id=10, members=[39789, 40020]),
+            GoalFactory(id=20, metric=metric, **dates, metric_params={"threshold": "11400s"}),
+            TeamGoalFactory(
+                goal_id=20, target=0, team_id=11, metric_params={"threshold": "20000s"},
+            ),
+            MappedJIRAIdentityFactory(
+                github_user_id=39789, jira_user_id="5dd58cb9c7ac480ee5674902",
+            ),
+            MappedJIRAIdentityFactory(
+                github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
+            ),
+        )
+        res = await self._request(json=self._body(10))
+        assert len(res) == 1
+        goal = res[0]
+        assert (tg_10 := goal["team_goal"])["team"]["id"] == 10
+        self._assert_team_goal_values(tg_10, 0, pytest.approx(0.46502834), None)
+        assert (tg_11 := tg_10["children"][0])["team"]["id"] == 11
+        self._assert_team_goal_values(tg_11, 0, pytest.approx(0.559546), 0)

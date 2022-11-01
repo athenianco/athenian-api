@@ -35,13 +35,14 @@ register_metric = make_register_metric(metric_calculators, histogram_calculators
 class JIRAMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for JIRA issues."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
+    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int, **kwargs):
         """Initialize a new instance of JIRAMetricCalculatorEnsemble class."""
         super().__init__(
             *metrics,
             quantiles=quantiles,
             quantile_stride=quantile_stride,
             class_mapping=metric_calculators,
+            **kwargs,
         )
 
 

@@ -1340,7 +1340,9 @@ class MetricEntriesCalculator:
                 group_jira_facts_by_jira(jira_grouping, issues),
             ]
             groups = _intersect_items_groups(len(request.teams), len(issues), *group_by)
-            calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            calc = JIRABinnedMetricCalculator(
+                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+            )
             results.append(calc(issues, request.time_intervals, groups))
 
         return results
