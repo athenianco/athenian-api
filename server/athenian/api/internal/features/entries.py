@@ -950,7 +950,9 @@ class MetricEntriesCalculator:
                 deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
                 deduplicate_mask=dedupe_mask,
             )
-            calc = ReleaseBinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            calc = ReleaseBinnedMetricCalculator(
+                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+            )
             results.append(calc(df_facts, request.time_intervals, groups))
 
         return results
