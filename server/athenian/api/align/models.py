@@ -185,8 +185,24 @@ class MetricParamsFields(_GoalMetricFilters):
 
     teamId = "teamId"
     metrics = "metrics"
+    metricsWithParams = "metricsWithParams"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
+
+
+class MetricWithParamsInputFields:
+    """Fields definitions for GraphQL MetricWithParamsInput type."""
+
+    name = "name"
+    metricParams = "metricParams"
+    teamsMetricParams = "teamsMetricParams"
+
+
+class TeamMetricParamsFields:
+    """Fields definitions for GraphQL TeamMetricParams type."""
+
+    teamId = "teamId"
+    metricParams = "metricParams"
 
 
 class Member(Contributor):
