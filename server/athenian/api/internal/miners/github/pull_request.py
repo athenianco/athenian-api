@@ -1872,20 +1872,14 @@ class PullRequestMiner:
                 PRParticipationKind.AUTHOR in participants
                 or PRParticipationKind.MERGER in participants
             ) and pr_blacklist is not None:
-                # exclude account 204, 207 where the hints is harmful
-                # TODO: remove special case for account
-                if (204 not in meta_ids and 207 not in meta_ids) or (
-                    len(participants.get(PRParticipationKind.AUTHOR, ())) < 5
-                    and len(participants.get(PRParticipationKind.MERGER, ())) < 5
-                ):
-                    # another planner fix to join with node_commit *after* all the filters
-                    # fmt: off
-                    query = (
-                        query
-                        .with_statement_hint("IndexScan(pr github_node_pull_request_main)")
-                        .with_statement_hint("Leading(((((pr *VALUES*) repo) ath) math))")
-                    )
-                    # fmt: on
+                # another planner fix to join with node_commit *after* all the filters
+                # fmt: off
+                query = (
+                    query
+                    .with_statement_hint("IndexScan(pr github_node_pull_request_main)")
+                    .with_statement_hint("Leading(((((pr *VALUES*) repo) ath) math))")
+                )
+                # fmt: on
         else:
             query = await generate_jira_prs_query(
                 filters, jira, None, mdb, cache, columns=selected_columns,
