@@ -74,7 +74,7 @@ def group_deployments_by_repositories(
     df_repos_flat[df_commits == 0] = ""
 
     offsets = np.zeros(len(df), dtype=int)
-    np.cumsum([len(c) for c in df_repos[:-1]], out=offsets[1:])
+    np.cumsum(nested_lengths(df_repos[:-1]), out=offsets[1:])
     repositories = [
         np.array(repo_group if not isinstance(repo_group, set) else list(repo_group))
         for repo_group in repositories

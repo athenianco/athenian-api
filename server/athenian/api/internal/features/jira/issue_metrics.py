@@ -319,7 +319,7 @@ class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of issues with a JIRA_LEAD_TIME below a given threshold."""
 
     deps = (LeadTimeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = timedelta(days=5)
 
 
