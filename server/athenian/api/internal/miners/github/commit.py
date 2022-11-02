@@ -685,13 +685,15 @@ async def _fetch_commit_history_dag(
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb,
         )
-        bads, bad_hashes = verify_edges_integrity(new_edges, alloc)
+        bads, bad_seeds, bad_hashes = verify_edges_integrity(new_edges, alloc)
         if bads:
             log.warning(
-                "%d new DAG edges are not consistent (%d commits): %s",
+                "%d @ %d new DAG edges are not consistent (%d commits / %d existing): %s",
                 len(bads),
+                len(bad_seeds),
                 len(bad_hashes),
-                [new_edges[i] for i in bads[:10]],
+                len(hashes),
+                [new_edges[i] for i in bad_seeds[:10]],
             )
             consistent = False
             for i in bads[::-1]:

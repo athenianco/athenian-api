@@ -76,7 +76,8 @@ template<class T> struct mi_heap_stl_allocator {
   mi_heap_stl_allocator(const mi_heap_stl_allocator&) mi_attr_noexcept = default;
   template<class U> mi_heap_stl_allocator(const mi_heap_stl_allocator<U>& other) mi_attr_noexcept : _heap(std::reinterpret_pointer_cast<mi_heap_stl_allocator<T>::managed_heap>(other._heap)) { }
   mi_heap_stl_allocator  select_on_container_copy_construction() const { return *this; }
-  void              deallocate(T* p, size_type) { if (_heap->free_enabled) mi_free(p); }
+  void deallocate(T* p, size_type) { if (_heap->free_enabled) mi_free(p); }
+  void deallocate(T* p) { deallocate(p, 0); }
 
   #if (__cplusplus >= 201703L)  // C++17
   mi_decl_nodiscard T* allocate(size_type count) { return static_cast<T*>(mi_heap_new_n(count, sizeof(T), _heap->heap)); }
