@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 from collections import defaultdict
 import dataclasses
 from datetime import datetime, timedelta
@@ -152,7 +152,7 @@ class MetricCalculator(Generic[T], ABC):
             assert np.datetime_data(min_times.dtype)[0] == "ns"
         except TypeError:
             raise AssertionError("min_times must be of datetime64[ns] dtype")
-        if self._quantiles != (0, 1):
+        if has_quantiles := self._quantiles != (0, 1):
             assert quantiles_mounted_at is not None
         if quantiles_mounted_at is not None:
             assert len(min_times) > quantiles_mounted_at
@@ -166,7 +166,10 @@ class MetricCalculator(Generic[T], ABC):
             self._grouped_notnull = self._grouped_sample_mask = SparseMask(
                 np.empty((len(groups_mask), ts_dim, 0), dtype=bool),
             )
-            self._samples = np.empty((len(groups_mask), ts_dim, 0), self.dtype)
+            if not self.is_pure_dependency:
+                self._split_samples(
+                    np.array([], self.dtype), np.empty((len(groups_mask), ts_dim, 0), bool),
+                )
             return
         assert groups_mask.shape[1] == len(facts)
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
@@ -174,7 +177,7 @@ class MetricCalculator(Generic[T], ABC):
         if self.is_pure_dependency:
             return
         assert peek.shape == (len(min_times), len(facts)), (peek.shape, type(self))
-        if self._quantiles != (0, 1):
+        if has_quantiles:
             discard_mask = self._calculate_discard_mask(peek, quantiles_mounted_at, groups_mask)
         if quantiles_mounted_at is not None:
             peek = peek[:quantiles_mounted_at]
@@ -183,7 +186,7 @@ class MetricCalculator(Generic[T], ABC):
         group_sample_mask = notnull & groups_mask[:, None, :]
         del notnull
         self._grouped_notnull = SparseMask(group_sample_mask)
-        if self._quantiles != (0, 1):
+        if has_quantiles:
             group_sample_mask = group_sample_mask.copy()
             discard_mask = np.broadcast_to(discard_mask[:, None, :], group_sample_mask.shape)
             group_sample_mask[discard_mask] = False
@@ -194,10 +197,13 @@ class MetricCalculator(Generic[T], ABC):
             .astype(self.dtype, copy=False)
             .ravel()
         )
+        self._split_samples(flat_samples, group_sample_mask)
+
+    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: np.ndarray) -> None:
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
-        self._samples = np.full(len(groups_mask) * len(peek), None, object)
+        self._samples = np.full(np.prod(group_sample_mask.shape[:2]), None, object)
         self._samples[:] = np.split(flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
-        self._samples = self._samples.reshape((len(groups_mask), len(peek)))
+        self._samples = self._samples.reshape(group_sample_mask.shape[:2])
 
     @property
     def values(self) -> list[list[Metric[T]]]:
@@ -417,36 +423,49 @@ class MedianMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
 class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
     """Any simple array aggregation calculator."""
 
+    # value indicating whether the behavior of _agg() matches np.*.reduceat()
+    # particularly, carry the previous value if the offsets are equal
+    is_reduceat = False
+
     def _value(self, samples: np.ndarray) -> Metric[T]:
-        exists = len(samples) > 0
-        return self.metric.from_fields(
-            True, self._agg(samples) if exists else np.dtype(self.dtype).type(), None, None,
-        )
+        return self.metric.from_fields(True, samples, None, None)
+
+    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: np.ndarray) -> None:
+        group_sample_lengths = np.trim_zeros(np.sum(group_sample_mask, axis=-1).ravel(), "b")
+        self._samples = np.zeros(group_sample_mask.shape[:2], dtype=self.dtype)
+        if len(group_sample_lengths) == 0:
+            return
+        samples = self._samples.ravel()
+        group_sample_offsets = np.zeros(group_sample_lengths.size + 1, dtype=int)
+        np.cumsum(group_sample_lengths, out=group_sample_offsets[1:])
+        samples[: len(group_sample_lengths)] = self._agg(flat_samples, group_sample_offsets[:-1])
+        if self.is_reduceat:
+            samples[np.flatnonzero(group_sample_lengths == 0)] = np.dtype(self.dtype).type()
 
     @abstractmethod
-    def _agg(self, samples: np.ndarray) -> T:
-        raise NotImplementedError
+    def _agg(self, samples: np.ndarray, offsets: np.ndarray) -> T:
+        raise NotImplementedError()
 
 
 class SumMetricCalculator(AggregationMetricCalculator[T], ABC):
     """Sum calculator."""
 
-    def _agg(self, samples: np.ndarray) -> T:
-        return samples.sum()
+    is_reduceat = True
+    _agg = np.add.reduceat
 
 
 class MaxMetricCalculator(AggregationMetricCalculator[T], ABC):
     """Maximum calculator."""
 
-    def _agg(self, samples: np.ndarray) -> T:
-        return samples.max()
+    is_reduceat = True
+    _agg = np.maximum.reduceat
 
 
 class AnyMetricCalculator(AggregationMetricCalculator[T], ABC):
     """len(samples) > 0 calculator."""
 
-    def _agg(self, samples: np.ndarray) -> T:
-        return len(samples) > 0
+    def _agg(self, samples: np.ndarray, offsets: np.ndarray) -> T:
+        return np.diff(offsets.base) > 0
 
 
 class Counter(MetricCalculator[int], ABC):
@@ -661,18 +680,8 @@ class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
 
     metric = make_metric("MetricComparisonRatio", __name__, np.float32, -1)
 
-    def compare(
-        self,
-        peek: np.ndarray,
-        threshold: Any,
-        *,
-        out: np.ndarray,
-        where: np.ndarray,
-    ) -> np.ndarray:
-        """Compare a metric value against the threshold."""
-        raise NotImplementedError()
-
-    @abstractproperty
+    @property
+    @abstractmethod
     def default_threshold(self) -> Any:
         """Return the default threshold if an explicit one is missing."""
 
@@ -698,12 +707,26 @@ class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
             compare_where = ~np.isnan(peek)
         else:
             compare_where = peek != calc.metric.nan
-        self.compare(calc.peek, self._threshold, out=out, where=compare_where)
+        self._compare(calc.peek, self._threshold, out=out, where=compare_where)
 
         return out
 
-    def _agg(self, samples: np.ndarray) -> float:
-        return samples.sum() / len(samples)
+    def _agg(self, samples: np.ndarray, offsets: np.ndarray) -> float:
+        lengths = np.diff(offsets.base)
+        vec = np.add.reduceat(samples, offsets) / lengths
+        vec[lengths == 0] = 0  # fix NaNs + reduceat copies the previous value
+        return vec
+
+    def _compare(
+        self,
+        peek: np.ndarray,
+        threshold: Any,
+        *,
+        out: np.ndarray,
+        where: np.ndarray,
+    ) -> np.ndarray:
+        """Compare a metric value against the threshold."""
+        raise NotImplementedError()
 
 
 class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):

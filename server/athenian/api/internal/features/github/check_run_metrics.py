@@ -785,8 +785,8 @@ class MaxConcurrencyCalculator(MaxMetricCalculator[int]):
     ) -> np.ndarray:
         return self._calcs[0].peek
 
-    def _agg(self, samples: np.ndarray) -> int:
-        return int(super()._agg(samples))
+    def _agg(self, samples: np.ndarray, offsets: np.ndarray) -> int:
+        return int(super()._agg(samples, offsets))
 
 
 ElapsedTimePerConcurrencyCalculatorDType = np.dtype(

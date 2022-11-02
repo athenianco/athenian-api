@@ -299,7 +299,7 @@ class ReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_REVIEW_TIME below a given threshold."""
 
     deps = (ReviewTimeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = timedelta(days=2)
 
 
@@ -485,7 +485,7 @@ class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_OPEN_TIME below a given threshold."""
 
     deps = (OpenTimeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = timedelta(days=3)
 
 
@@ -744,7 +744,7 @@ class WaitFirstReviewTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator)
     """Calculate the ratio of PRs with a PR_WAIT_FIRST_REVIEW_TIME below a given threshold."""
 
     deps = (WaitFirstReviewTimeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = timedelta(hours=6)
 
 
@@ -1016,7 +1016,7 @@ class SizeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a size below a given threshold."""
 
     deps = (SizeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = 100
 
 
@@ -1230,7 +1230,7 @@ class ReviewCommentsAboveThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a number of review comments above a given threshold."""
 
     deps = (AverageReviewCommentsCalculator,)
-    compare = np.greater_equal
+    _compare = np.greater_equal
     default_threshold = 3
 
 
@@ -1603,7 +1603,7 @@ class CycleDeploymentTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator)
     """Calculate the ratio of PRs with a PR_CYCLE_DEPLOYMENT_TIME below a given threshold."""
 
     deps = (CycleDeploymentTimeCalculator,)
-    compare = np.less_equal
+    _compare = np.less_equal
     default_threshold = timedelta(days=5)
 
 
