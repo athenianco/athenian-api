@@ -13,6 +13,8 @@ cdef extern from "mi_heap_stl_allocator.h" nogil:
     cdef cppclass mi_heap_stl_allocator[T]:
         mi_heap_stl_allocator() except +
         mi_heap_stl_allocator(const mi_heap_stl_allocator &)
+        T* allocate(size_t count) except +
+        void deallocate(T*)
         void disable_free()
         void enable_free()
 

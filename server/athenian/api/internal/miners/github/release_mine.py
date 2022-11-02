@@ -1579,6 +1579,8 @@ async def mine_releases_by_name(
         for depmap, deps in deployments:
             full_depmap.update(depmap)
             full_deployments.update(deps)
+    if releases.empty:
+        return _empty_mined_releases_df(), [], {}
     releases[ReleaseFacts.f.deployments] = [
         full_depmap.get(node_id) for node_id in releases[ReleaseFacts.f.node_id].values
     ]

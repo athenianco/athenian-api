@@ -467,7 +467,7 @@ ctypedef pair[int, const char *] RawEdge
 
 
 @cython.boundscheck(False)
-def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], ndarray]:
+def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], list[int], ndarray]:
     cdef:
         Py_ssize_t size = len(edges)
         Py_ssize_t children_size
@@ -490,25 +490,30 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], n
         size_t edge_i
         bool exists
         list tainted_indexes
+        list bad_seeds
+        char bad_kind
         ndarray tainted_hashes
         char *tainted_hashes_data
 
     if size == 0:
-        return [], np.array([], dtype="S40")
+        return [], [], np.array([], dtype="S40")
+    is_asyncpg = isinstance(edges[0], asyncpg.Record)
+    if not is_asyncpg:
+        assert isinstance(edges[0], tuple)
+
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
         dereference(alloc).disable_free()
-    bads.emplace(size, dereference(alloc))
-    edge_parents.emplace(size, dereference(alloc))
-    children_indexes.emplace(dereference(alloc))
-    edge_parent_map.emplace(dereference(alloc))
-    reversed_edges.emplace(dereference(alloc))
-    is_asyncpg = isinstance(edges[0], asyncpg.Record)
-    if not is_asyncpg:
-        assert isinstance(edges[0], tuple)
+
     with nogil:
+        bads.emplace(size, dereference(alloc))
+        edge_parents.emplace(size, dereference(alloc))
+        children_indexes.emplace(dereference(alloc))
+        edge_parent_map.emplace(dereference(alloc))
+        reversed_edges.emplace(dereference(alloc))
+
         if is_asyncpg:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>edges, i)
@@ -612,17 +617,21 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], n
                             j = edges_data[edge_i]
                             if not dereference(bads)[j]:
                                 dereference(boilerplate).push_back(j)
-                                dereference(bads)[j] = 1
+                                dereference(bads)[j] = 2
 
     tainted_indexes = []
+    bad_seeds = []
     edge_parent_map_end = dereference(edge_parent_map).end()
     for i in range(size):
         oid = dereference(edge_parents)[i]
+        bad_kind = dereference(bads)[i]
         if (
-            dereference(bads)[i]
+            bad_kind
             or
             oid != NULL and dereference(edge_parent_map).find(string_view(oid, 40)) != edge_parent_map_end
         ):
+            if bad_kind < 2:
+                bad_seeds.append(i)
             tainted_indexes.append(i)
 
     tainted_hashes = np.empty(dereference(edge_parent_map).size(), dtype="S40")
@@ -634,7 +643,7 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], n
         i += 40
         postincrement(edge_parent_map_it)
 
-    return tainted_indexes, tainted_hashes
+    return tainted_indexes, bad_seeds, tainted_hashes
 
 
 ctypedef char sha_t[40]
