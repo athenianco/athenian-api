@@ -1594,25 +1594,26 @@ async def _map_releases_to_deployments(
             time_from = time_from.replace(tzinfo=timezone.utc)
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
-    extra_releases, _ = await ReleaseLoader.load_releases(
-        repo_names,
-        branches,
-        default_branches,
-        time_from,
-        max_release_time_to,
-        release_settings,
-        logical_settings,
-        prefixer,
-        account,
-        meta_ids,
-        mdb,
-        pdb,
-        rdb,
-        cache,
-        force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,
-    )
-    if not extra_releases.empty:
-        releases = pd.concat([releases, extra_releases], copy=False, ignore_index=True)
+    if time_from < max_release_time_to:
+        extra_releases, _ = await ReleaseLoader.load_releases(
+            repo_names,
+            branches,
+            default_branches,
+            time_from,
+            max_release_time_to,
+            release_settings,
+            logical_settings,
+            prefixer,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            rdb,
+            cache,
+            force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,
+        )
+        if not extra_releases.empty:
+            releases = pd.concat([releases, extra_releases], copy=False, ignore_index=True)
 
     if releases.empty:
         release_commit_shas = np.ndarray([], dtype="S")
