@@ -1003,10 +1003,7 @@ class ReleaseToPullRequestMapper:
             superset_df = await read_sql_query_with_join_collapse(query, mdb, [NodeCommit.node_id])
             superset_pr_ids = superset_df[NodePullRequest.node_id.name].values
 
-        filters = [
-            PullRequest.hidden.is_(False),
-            PullRequest.acc_id.in_(meta_ids),
-        ]
+        filters = [PullRequest.acc_id.in_(meta_ids)]
         if superset_pr_ids is None:
             filters.extend(
                 [

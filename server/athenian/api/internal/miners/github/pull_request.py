@@ -1813,7 +1813,6 @@ class PullRequestMiner:
                 else sql.true(),
                 PullRequest.created_at < time_to,
                 PullRequest.acc_id == acc_id,
-                PullRequest.hidden.is_(False),
                 PullRequest.repository_full_name.in_(repositories),
             ]
             if exclude_inactive and updated_min is None:

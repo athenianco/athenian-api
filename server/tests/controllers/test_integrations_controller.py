@@ -156,7 +156,6 @@ async def test_get_everything_smoke(
         "deletions",
         "repository_node_id",
         "author",
-        "hidden",
         "merged",
         "merged_at",
         "number",

@@ -115,7 +115,6 @@ async def mine_repositories(
         return await mdb.fetch_all(
             select(distinct(PullRequest.repository_full_name)).where(
                 PullRequest.repository_node_id.in_(repo_ids),
-                PullRequest.hidden.is_(False),
                 PullRequest.acc_id.in_(meta_ids),
                 PullRequest.created_at < time_from,
                 coalesce(PullRequest.closed, False).is_(False),
