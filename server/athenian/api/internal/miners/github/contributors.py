@@ -84,7 +84,6 @@ async def mine_contributors(
 
     common_prs_where = lambda: [  # noqa(E731)
         PullRequest.repository_full_name.in_(repos),
-        PullRequest.hidden.is_(False),
         PullRequest.acc_id.in_(meta_ids),
     ]
     tasks = [

@@ -256,7 +256,6 @@ class PullRequest(
     deletions = Column(BigInteger, nullable=False)
     commits = Column(BigInteger, nullable=False, info={"reset_nulls": True})
     head_ref = Column(Text, nullable=False)
-    hidden = Column(Boolean)
     merge_commit_id = Column(BigInteger, info={"reset_nulls": True})
     merge_commit_sha = Column(Text, info={"dtype": "S40"})
     merged = Column(Boolean)

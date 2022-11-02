@@ -54,7 +54,6 @@ def _benchmark(conn: PostgresConnection) -> None:
         >= datetime(2020, 1, 1),
         PullRequest.created_at < datetime(2022, 1, 1),
         PullRequest.acc_id.in_([1, 2]),
-        PullRequest.hidden.is_(False),
         PullRequest.repository_full_name.in_(["athenianco/athenian-api"] * 500),
         PullRequest.updated_at >= datetime(2020, 1, 1),
         PullRequest.updated_at.between(datetime(2021, 1, 1), datetime(2022, 1, 1)),

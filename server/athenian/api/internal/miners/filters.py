@@ -77,7 +77,7 @@ class LabelFilter:
         return not (self.exclude and self.exclude.intersection(labels))
 
     @classmethod
-    def split(cls, labels: set[str]) -> tuple[list[str], list[list[str]]]:
+    def split(cls, labels: set[str] | frozenset[str]) -> tuple[list[str], list[list[str]]]:
         """Split labels by comma "," and divide into two groups: singles and multiples."""
         singles = []
         multiples = []

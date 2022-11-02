@@ -1785,51 +1785,6 @@ class PullRequestMiner:
         updated_max: Optional[datetime] = None,
     ) -> tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         assert (updated_min is None) == (updated_max is None)
-        filters = [
-            (
-                sql.case(
-                    [(PullRequest.closed, PullRequest.closed_at)],
-                    else_=sql.text("'3000-01-01'"),  # backed up with a DB index
-                )
-                >= time_from
-            )
-            if time_from is not None
-            else sql.true(),
-            PullRequest.created_at < time_to,
-            PullRequest.acc_id.in_(meta_ids),
-            PullRequest.hidden.is_(False),
-            PullRequest.repository_full_name.in_(repositories),
-        ]
-        if exclude_inactive and updated_min is None:
-            # this does not provide 100% guarantee because it can be after time_to,
-            # we need to properly filter later
-            filters.append(PullRequest.updated_at >= time_from)
-        if updated_min is not None:
-            filters.append(PullRequest.updated_at.between(updated_min, updated_max))
-        if pr_blacklist is not None:
-            filters.append(pr_blacklist)
-        if pr_whitelist is not None:
-            filters.append(pr_whitelist)
-        if len(participants) == 1:
-            if PRParticipationKind.AUTHOR in participants:
-                filters.append(
-                    PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
-                )
-            elif PRParticipationKind.MERGER in participants:
-                filters.append(
-                    PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
-                )
-        elif (
-            len(participants) == 2
-            and PRParticipationKind.AUTHOR in participants
-            and PRParticipationKind.MERGER in participants
-        ):
-            filters.append(
-                sql.or_(
-                    PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
-                    PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
-                ),
-            )
         if columns is PullRequest:
             selected_columns = [PullRequest]
             remove_acc_id = False
@@ -1844,40 +1799,77 @@ class PullRequestMiner:
         if labels:
             singles, multiples = LabelFilter.split(labels.include)
             embedded_labels_query = not multiples
-            if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
+        queries = []
+        for acc_id in meta_ids:
+            filters = [
+                (
+                    sql.case(
+                        [(PullRequest.closed, PullRequest.closed_at)],
+                        else_=sql.text("'3000-01-01'"),  # backed up with a DB index
+                    )
+                    >= time_from
+                )
+                if time_from is not None
+                else sql.true(),
+                PullRequest.created_at < time_to,
+                PullRequest.acc_id == acc_id,
+                PullRequest.repository_full_name.in_(repositories),
+            ]
+            if exclude_inactive and updated_min is None:
+                # this does not provide 100% guarantee because it can be after time_to,
+                # we need to properly filter later
+                filters.append(PullRequest.updated_at >= time_from)
+            if updated_min is not None:
+                filters.append(PullRequest.updated_at.between(updated_min, updated_max))
+            if pr_blacklist is not None:
+                filters.append(pr_blacklist)
+            if pr_whitelist is not None:
+                filters.append(pr_whitelist)
+            if len(participants) == 1:
+                if PRParticipationKind.AUTHOR in participants:
+                    filters.append(
+                        PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
+                    )
+                elif PRParticipationKind.MERGER in participants:
+                    filters.append(
+                        PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
+                    )
+            elif (
+                len(participants) == 2
+                and PRParticipationKind.AUTHOR in participants
+                and PRParticipationKind.MERGER in participants
+            ):
                 filters.append(
-                    sql.exists().where(
-                        sql.and_(
+                    sql.or_(
+                        PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
+                        PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
+                    ),
+                )
+            if labels:
+                if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
+                    filters.append(
+                        sql.exists().where(
                             PullRequestLabel.acc_id == PullRequest.acc_id,
                             PullRequestLabel.pull_request_node_id == PullRequest.node_id,
                             sql.func.lower(PullRequestLabel.name).in_(all_in_labels),
                         ),
-                    ),
-                )
-            if labels.exclude:
-                filters.append(
-                    sql.not_(
-                        sql.exists().where(
-                            sql.and_(
+                    )
+                if labels.exclude:
+                    filters.append(
+                        sql.not_(
+                            sql.exists().where(
                                 PullRequestLabel.acc_id == PullRequest.acc_id,
                                 PullRequestLabel.pull_request_node_id == PullRequest.node_id,
                                 sql.func.lower(PullRequestLabel.name).in_(labels.exclude),
                             ),
                         ),
-                    ),
-                )
-        if not jira:
-            query = sql.select(selected_columns).where(*filters)
-            if (
-                PRParticipationKind.AUTHOR in participants
-                or PRParticipationKind.MERGER in participants
-            ) and pr_blacklist is not None:
-                # exclude account 204, 207 where the hints is harmful
-                # TODO: remove special case for account
-                if (204 not in meta_ids and 207 not in meta_ids) or (
-                    len(participants.get(PRParticipationKind.AUTHOR, ())) < 5
-                    and len(participants.get(PRParticipationKind.MERGER, ())) < 5
-                ):
+                    )
+            if not jira:
+                query = sql.select(selected_columns).where(*filters)
+                if (
+                    PRParticipationKind.AUTHOR in participants
+                    or PRParticipationKind.MERGER in participants
+                ) and pr_blacklist is not None:
                     # another planner fix to join with node_commit *after* all the filters
                     # fmt: off
                     query = (
@@ -1886,10 +1878,17 @@ class PullRequestMiner:
                         .with_statement_hint("Leading(((((pr *VALUES*) repo) ath) math))")
                     )
                     # fmt: on
+            else:
+                query = await generate_jira_prs_query(
+                    filters, jira, None, mdb, cache, columns=selected_columns,
+                )
+            queries.append(query)
+        if len(queries) == 1:
+            query = queries[0]
         else:
-            query = await generate_jira_prs_query(
-                filters, jira, None, mdb, cache, columns=selected_columns,
-            )
+            # DEV-5276
+            # acc_id IN (... >=2 items ...) blows PostgreSQL's mind, quite literally
+            query = sql.union_all(*queries)
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
         if remove_acc_id:
             del prs[PullRequest.acc_id.name]
