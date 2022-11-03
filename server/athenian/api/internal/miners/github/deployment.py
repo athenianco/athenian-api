@@ -1134,7 +1134,7 @@ async def _compute_deployment_facts(
         ),
         *jira_map_tasks,
     )
-    if with_jira:
+    if with_jira and jira_ids is not None:
         if jira_maps[1] is not None:
             df_jira_map = pd.concat(jira_maps, ignore_index=True)
         else:
@@ -1904,7 +1904,7 @@ async def _fetch_commit_stats(
         pr_additions = np.array(pr_additions, dtype=int)
         pr_deletions = np.array(pr_deletions, dtype=int)
         pr_createds = np.array(pr_createds, dtype="datetime64[s]")
-    if with_jira:
+    if with_jira and jira_ids is not None:
         jira_task = asyncio.create_task(
             fetch_jira_issues_by_prs(pr_ids, jira_ids, meta_ids, mdb),
             name="mine_deployments/_fetch_commit_stats/jira",
@@ -2114,7 +2114,7 @@ async def _fetch_commit_stats(
         extra_pr_deletions = np.array(extra_pr_deletions, dtype=int)
         extra_pr_createds = np.array(extra_pr_createds, dtype="datetime64[s]")
     if extra_merges:
-        if with_jira:
+        if with_jira and jira_ids is not None:
             extra_jira_task = asyncio.create_task(
                 fetch_jira_issues_by_prs(extra_pr_ids, jira_ids, meta_ids, mdb),
                 name="mine_deployments/_fetch_commit_stats/extra_jira",
