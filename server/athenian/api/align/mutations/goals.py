@@ -261,8 +261,10 @@ async def _parse_update_goal_input(
                 target = parse_union_value(change[TeamGoalChangeFields.target])
             except StopIteration:
                 invalid_targets.append(team_id)
-            else:
-                assignments.append(TeamGoalTargetAssignment(team_id, target))
+                continue
+
+            metric_params = parse_metric_params(change.get(TeamGoalChangeFields.metricParams))
+            assignments.append(TeamGoalTargetAssignment(team_id, target, metric_params))
         else:
             invalid_targets.append(team_id)
 

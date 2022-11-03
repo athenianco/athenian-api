@@ -12,6 +12,8 @@ from athenian.api.align.exceptions import (
 )
 from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
+    TeamGoalTargetAssignment,
+    assign_team_goals,
     convert_metric_params_datatypes,
     create_default_goal_templates,
     delete_empty_goals,
@@ -85,6 +87,34 @@ class TestDeleteTeamGoals:
 
         await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20)
         await assert_missing_row(sdb, TeamGoal, team_id=11, goal_id=20)
+
+
+class TestAssignTeamGoals:
+    async def test_update_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=20),
+            TeamFactory(id=10),
+            TeamFactory(id=11),
+            TeamFactory(id=12),
+            TeamGoalFactory(team_id=10, goal_id=20, metric_params=None),
+        )
+        assignments = [
+            TeamGoalTargetAssignment(10, 1, {"threshold": 2}),
+            TeamGoalTargetAssignment(11, 1, {"threshold": 3}),
+            TeamGoalTargetAssignment(12, 1, None),
+        ]
+        async with transaction_conn(sdb) as sdb_conn:
+            await assign_team_goals(1, 20, assignments, sdb_conn)
+
+        await assert_existing_row(
+            sdb, TeamGoal, team_id=10, goal_id=20, metric_params={"threshold": 2},
+        )
+        await assert_existing_row(
+            sdb, TeamGoal, team_id=11, goal_id=20, metric_params={"threshold": 3},
+        )
+        row_12 = await assert_existing_row(sdb, TeamGoal, team_id=12, goal_id=20)
+        assert row_12[TeamGoal.metric_params.name] is None
 
 
 class TestUpdateGoal:

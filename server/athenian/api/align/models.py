@@ -177,6 +177,7 @@ class TeamGoalChangeFields(metaclass=Enum):
 
     teamId = "teamId"
     target = "target"
+    metricParams = "metricParams"
     remove = "remove"
 
 
