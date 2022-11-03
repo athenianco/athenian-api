@@ -1046,6 +1046,7 @@ async def fetch_jira_issues_by_prs(
     mdb: DatabaseLike,
 ) -> pd.DataFrame:
     """Load brief information about JIRA issues mapped to the given PRs."""
+    assert jira_ids is not None
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Issue, name="epic")
     prmap = aliased(NodePullRequestJiraIssues, name="m")
