@@ -20,6 +20,7 @@ def model_insert_stmt(model: BaseType, *, with_primary_keys=True) -> Insert:
     table = cast(Selectable, type(model))
 
     values = explode_model(model, with_primary_keys=with_primary_keys)
+    values = {k: v for k, v in values.items() if v is not SKIP_MODEL_FIELD}
     return sa.insert(table).values(values)
 
 
@@ -39,6 +40,13 @@ async def models_insert_auto_pk(db: Database, *models: BaseType) -> list[Any]:
             stmt = model_insert_stmt(model, with_primary_keys=False)
             results.append(await conn.execute(stmt))
     return results
+
+
+SKIP_MODEL_FIELD = object()
+"""Set a model field to this value avoid propagating it to DB on model insertion.
+
+For instance, this is needed to insert a SQL NULL into a JSONB column.
+"""
 
 
 async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any) -> None:
