@@ -138,12 +138,12 @@ class _GoalMetricFilters(metaclass=Enum):  # noqa: PIE795
 
 class _BaseGoalInputFields(_GoalMetricFilters):
     name = "name"
-    metric = "metric"
 
 
 class CreateGoalInputFields(_BaseGoalInputFields):
     """Fields definitions for GraphQL CreateGoalInput type."""
 
+    metric = "metric"
     teamGoals = "teamGoals"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
