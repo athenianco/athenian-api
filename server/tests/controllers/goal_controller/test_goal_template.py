@@ -1,6 +1,6 @@
 """Test for the goal template related controllers."""
 
-from typing import Any
+from typing import Any, Optional
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import GoalTemplate
@@ -10,7 +10,13 @@ from athenian.api.models.web import (
     GoalTemplateUpdateRequest,
     PullRequestMetricID,
 )
-from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.db import (
+    SKIP_MODEL_FIELD,
+    DBCleaner,
+    assert_existing_row,
+    assert_missing_row,
+    models_insert,
+)
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import AccountFactory, GoalTemplateFactory
 from tests.testutils.requester import Requester
@@ -98,12 +104,39 @@ class TestListGoalTemplates(Requester):
         assert "repositories" not in res[0]
         assert res[1]["repositories"] == ["github.com/athenianco/repo-A"]
 
+    async def test_include_tlo_false(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=1002, metric_params=SKIP_MODEL_FIELD),
+            GoalTemplateFactory(id=1001, metric_params={"foo": 0}),
+        )
+        res = await self._request(1, include_tlo=False)
+        assert [r["id"] for r in res] == [1002]
+
+    async def test_include_tlo_default(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=1002, metric_params=SKIP_MODEL_FIELD),
+            GoalTemplateFactory(id=1003),
+            GoalTemplateFactory(id=1001, metric_params={"foo": 0}),
+        )
+        res = await self._request(1, include_tlo=None)
+        assert [r["id"] for r in res] == [1002, 1003]
+
     async def test_wrong_account(self) -> None:
         await self._request(3, 404)
 
-    async def _request(self, account: int, assert_status: int = 200) -> dict:
+    async def _request(
+        self,
+        account: int,
+        assert_status: int = 200,
+        include_tlo: Optional[bool] = True,
+    ) -> dict:
         path = f"/v1/goal_templates/{account}"
-        response = await self.client.request(method="GET", path=path, headers=self.headers)
+        params = None if include_tlo is None else {"include_tlo": str(include_tlo).lower()}
+        response = await self.client.request(
+            method="GET", path=path, headers=self.headers, params=params,
+        )
         assert response.status == assert_status
         return await response.json()
 

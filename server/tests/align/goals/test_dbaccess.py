@@ -35,6 +35,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.controllers.test_prefixer import mk_prefixer
 from tests.testutils.db import (
+    SKIP_MODEL_FIELD,
     assert_existing_row,
     assert_existing_rows,
     assert_missing_row,
@@ -251,8 +252,20 @@ class TestGetGoalTemplateFromDB:
 class TestGetGoalTemplatesFromDB:
     async def test_base(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=102), GoalTemplateFactory(id=103))
-        rows = await get_goal_templates_from_db(1, sdb)
+        rows = await get_goal_templates_from_db(1, False, sdb)
         assert len(rows) == 2
+        assert {r[GoalTemplate.id.name] for r in rows} == {102, 103}
+
+    async def test_exclude_with_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=102, metric_params=SKIP_MODEL_FIELD),
+            GoalTemplateFactory(id=103, metric_params={"threshold": 2}),
+            GoalTemplateFactory(id=104),
+        )
+        rows = await get_goal_templates_from_db(1, True, sdb)
+        assert len(rows) == 2
+        assert {r[GoalTemplate.id.name] for r in rows} == {102, 104}
 
 
 class TestInsertGoalTemplate:

@@ -261,6 +261,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             metric=PullRequestMetricID.PR_COMMENTS_PER,
         )
         assert goal_row[Goal.repositories.name] is None
+        assert goal_row[Goal.metric_params.name] is None
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == dt(2022, 1, 1)
 
         # expires_at is moved to the day after the one received in api
