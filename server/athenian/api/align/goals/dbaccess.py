@@ -16,6 +16,7 @@ from athenian.api.align.exceptions import (
     GoalTemplateNotFoundError,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
+from athenian.api.align.models import MetricParamNames
 from athenian.api.db import (
     Connection,
     DatabaseLike,
@@ -26,6 +27,7 @@ from athenian.api.db import (
 from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
+from athenian.api.serialization import deserialize_timedelta
 from athenian.api.tracing import sentry_span
 
 
@@ -356,6 +358,16 @@ def resolve_goal_repositories(
             "removed deleted repositories from the goal %d: %s", goal_id, deleted,
         )
     return tuple(repos)
+
+
+def convert_metric_params_datatypes(metric_params: Optional[dict]) -> dict:
+    """Convert the metric_params column to the format used in MetricWithParams and calculation."""
+    if not metric_params:
+        return {}
+    parsed = metric_params.copy()
+    if isinstance(threshold := metric_params.get(MetricParamNames.threshold), str):
+        parsed[MetricParamNames.threshold] = deserialize_timedelta(threshold)
+    return parsed
 
 
 @sentry_span

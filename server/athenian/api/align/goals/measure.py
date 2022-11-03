@@ -14,9 +14,9 @@ from athenian.api.align.goals.dbaccess import (
     AliasedGoalColumns,
     GoalColumnAlias,
     TeamGoalColumns,
+    convert_metric_params_datatypes,
     resolve_goal_repositories,
 )
-from athenian.api.align.models import MetricParamNames
 from athenian.api.align.queries.metrics import (
     MetricWithParams,
     RequestedTeamDetails,
@@ -37,7 +37,6 @@ from athenian.api.models.web.goal import (
     TeamGoalTree,
     TeamTree,
 )
-from athenian.api.serialization import deserialize_timedelta
 from athenian.api.tracing import sentry_span
 
 
@@ -316,7 +315,7 @@ class GoalToServe:
                 repositories=repositories,
                 jira_filter=jira_filter,
             )
-            metric_params = _parse_metric_params(
+            metric_params = convert_metric_params_datatypes(
                 team_goal_row[columns[TeamGoal.metric_params.name]],
             )
             metric_w_params = MetricWithParams(metric, metric_params)
@@ -365,12 +364,3 @@ def _team_tree_prune_empty_branches(
         return team_tree.with_children(kept_children)
     else:
         return None
-
-
-def _parse_metric_params(metric_params: Optional[dict]) -> dict:
-    if not metric_params:
-        return {}
-    parsed = metric_params.copy()
-    if isinstance(threshold := metric_params.get(MetricParamNames.threshold), str):
-        parsed[MetricParamNames.threshold] = deserialize_timedelta(threshold)
-    return parsed

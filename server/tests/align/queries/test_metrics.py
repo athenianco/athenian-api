@@ -1,6 +1,6 @@
 from datetime import date
 from functools import partial
-from typing import Any
+from typing import Any, Optional
 
 from freezegun import freeze_time
 import pytest
@@ -49,7 +49,8 @@ class BaseMetricsTest(Requester):
             + f"""
             query ($accountId: Int!,
                    $teamId: Int!,
-                   $metrics: [String!]!,
+                   $metrics: [String!],
+                   $metricsWithParams: [MetricWithParamsInput!],
                    $validFrom: Date!,
                    $expiresAt: Date!,
                    $repositories: [String!],
@@ -60,6 +61,7 @@ class BaseMetricsTest(Requester):
               metricsCurrentValues(accountId: $accountId, params: {{
                 teamId: $teamId,
                 metrics: $metrics,
+                metricsWithParams: $metricsWithParams,
                 validFrom: $validFrom,
                 expiresAt: $expiresAt,
                 repositories: $repositories,
@@ -80,12 +82,11 @@ class BaseMetricsTest(Requester):
         self,
         account_id: int,
         team_id: int,
-        metrics: list[str],
+        metrics: Optional[list[str]],
         validFrom: date,
         expiresAt: date,
         **extra: Any,  # other MetricParamsFields
     ) -> dict:
-        assert isinstance(metrics, list)
         body = {
             "query": self._query(),
             "variables": {
@@ -113,12 +114,7 @@ async def sample_teams(sdb: Database) -> None:
 
 
 class TestMetrics(BaseMetricsTest):
-    async def test_fetch_all_kinds(
-        self,
-        sample_teams,
-        mdb,
-        precomputed_dead_prs,
-    ) -> None:
+    async def test_fetch_all_kinds(self, sample_teams, mdb, precomputed_dead_prs) -> None:
         metrics = [
             PullRequestMetricID.PR_LEAD_TIME,
             ReleaseMetricID.RELEASE_PRS,
@@ -487,7 +483,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 23, "column": 15}],
+                    "locations": [{"line": 24, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -510,7 +506,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Team not found",
-                    "locations": [{"line": 23, "column": 15}],
+                    "locations": [{"line": 24, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 404,
@@ -533,7 +529,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 23, "column": 15}],
+                    "locations": [{"line": 24, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
@@ -556,7 +552,7 @@ class TestMetricsNasty(BaseMetricsTest):
             "errors": [
                 {
                     "message": "Bad Request",
-                    "locations": [{"line": 23, "column": 15}],
+                    "locations": [{"line": 24, "column": 15}],
                     "path": ["metricsCurrentValues"],
                     "extensions": {
                         "status": 400,
@@ -614,12 +610,73 @@ class TestMetricsNasty(BaseMetricsTest):
             repositories=["github.com/src-d/not-existing"],
         )
         assert res["errors"][0]["message"] == "Forbidden"
-        print(res)
         assert_extension_error(
             res,
             'The following repositories are access denied for account 1 (missing "github.com/"'
             " prefix?): {'src-d/not-existing'}",
         )
+
+    async def test_neither_metrics_or_metric_with_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        res = await self._request(1, 1, None, date(2016, 1, 1), date(2017, 1, 1))
+        assert res["errors"][0]["message"] == "Bad Request"
+        assert_extension_error(res, "Use metrics or metricsWithParams")
+
+    async def test_both_metrics_and_metric_with_params(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        with_params = [{"name": PullRequestMetricID.PR_LEAD_COUNT}]
+        dates = (date(2016, 1, 1), date(2017, 1, 1))
+        res = await self._request(
+            1, 1, [PullRequestMetricID.PR_OPEN_COUNT], *dates, metricsWithParams=with_params,
+        )
+        assert res["errors"][0]["message"] == "Bad Request"
+        assert_extension_error(res, "Use metrics or metricsWithParams")
+
+
+class TestMetricsWithParams(BaseMetricsTest):
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020, 39789]))
+        metric = PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO
+        request = partial(self._request, 1, 1, None, date(2016, 1, 1), date(2017, 1, 1))
+
+        metrics_w_params = [{"name": metric, "metricParams": {"threshold": {"int": 5}}}]
+        res = await request(metricsWithParams=metrics_w_params)
+        val_threshold_5 = res["data"]["metricsCurrentValues"][0]["value"]["value"]["float"]
+
+        metrics_w_params[0]["metricParams"]["threshold"]["int"] = 8
+        res = await request(metricsWithParams=metrics_w_params)
+        val_threshold_8 = res["data"]["metricsCurrentValues"][0]["value"]["value"]["float"]
+
+        assert 0 < val_threshold_8 < val_threshold_5 < 1
+
+    async def test_teams_overrides(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[40020, 39789]),
+            TeamFactory(id=2, parent_id=1, members=[40020, 39789]),
+        )
+        dates = (date(2016, 1, 1), date(2017, 1, 1))
+        metric = PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO
+
+        metrics_w_params = [
+            {
+                "name": metric,
+                "metricParams": {"threshold": {"str": "172800s"}},
+                "teamsMetricParams": [
+                    {"teamId": 2, "metricParams": {"threshold": {"str": "123000s"}}},
+                ],
+            },
+        ]
+        res = await self._request(1, 1, None, *dates, metricsWithParams=metrics_w_params)
+        metric_values = res["data"]["metricsCurrentValues"][0]["value"]
+
+        # teams are the same, but team 2 is computed with a lower threshold due to
+        # teamsMetricParams so will have a lower metric value
+        assert metric_values["team"]["id"] == 1
+        assert metric_values["value"]["float"] == pytest.approx(0.6923077)
+
+        assert metric_values["children"][0]["team"]["id"] == 2
+        assert metric_values["children"][0]["value"]["float"] == pytest.approx(0.653846)
 
 
 class TestSimplifyRequests:

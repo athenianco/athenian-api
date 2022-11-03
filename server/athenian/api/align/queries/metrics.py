@@ -14,14 +14,18 @@ import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
 from athenian.api.align.goals.dates import Intervals, goal_dates_to_datetimes
+from athenian.api.align.goals.dbaccess import convert_metric_params_datatypes
 from athenian.api.align.models import (
     GraphQLMetricValue,
     GraphQLMetricValues,
     GraphQLTeamMetricValue,
     GraphQLTeamTree,
     MetricParamsFields,
+    MetricWithParamsInputFields,
+    TeamMetricParamsFields,
 )
 from athenian.api.align.queries.teams import build_team_tree_from_rows
+from athenian.api.align.serialization import parse_metric_params
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
@@ -96,20 +100,28 @@ async def resolve_metrics_current_values(
 
     repos = await _parse_repositories(params, accountId, meta_ids, info.context)
     jira_filter = _parse_jira_filter(params, jira_config)
-    teams = [
-        RequestedTeamDetails(
-            team_id=(row_team_id := row[Team.id.name]),
-            goal_id=0,  # change to unique number if the filters are no longer shared
-            members=teams_flat[row_team_id],
-            repositories=repos,
-            jira_filter=jira_filter,
-        )
-        for row in team_rows
-    ]
-    metrics_w_params = [MetricWithParams(m, {}) for m in params[MetricParamsFields.metrics]]
+    requests = []
+
+    requested_metrics = _parse_requested_metrics(params)
+    for requested_metric in requested_metrics:
+        for row in team_rows:
+            team_detail = RequestedTeamDetails(
+                team_id=(row_team_id := row[Team.id.name]),
+                goal_id=0,  # change to unique number if the filters are no longer shared
+                members=teams_flat[row_team_id],
+                repositories=repos,
+                jira_filter=jira_filter,
+            )
+            requests.append(
+                TeamMetricsRequest(
+                    [requested_metric.resolve_for_team(row_team_id)],
+                    [time_interval],
+                    [team_detail],
+                ),
+            )
 
     team_metrics_all_intervals = await calculate_team_metrics(
-        [TeamMetricsRequest(metrics_w_params, [time_interval], teams)],
+        requests,
         accountId,
         meta_ids,
         info.context.sdb,
@@ -124,7 +136,7 @@ async def resolve_metrics_current_values(
 
     team_tree = GraphQLTeamTree.from_team_tree(build_team_tree_from_rows(team_rows, team_id))
 
-    models = _build_metrics_response(team_tree, metrics_w_params, team_metrics)
+    models = _build_metrics_response(team_tree, requested_metrics, team_metrics)
     return [m.to_dict() for m in models]
 
 
@@ -192,6 +204,62 @@ def _parse_time_interval(params: Mapping[str, Any]) -> Intervals:
             ),
         )
     return goal_dates_to_datetimes(date_from, date_to)
+
+
+def _parse_requested_metrics(params: Mapping[str, Any]) -> list[_RequestedMetric]:
+    metrics = params.get(MetricParamsFields.metrics)
+    metrics_w_params = params.get(MetricParamsFields.metricsWithParams)
+
+    if bool(metrics) == bool(metrics_w_params):
+        fields = [MetricParamsFields.metrics, MetricParamsFields.metricsWithParams]
+        raise ResponseError(
+            InvalidRequestError(
+                pointer=" or ".join(f".{f}" for f in fields), detail=f"Use {' or '.join(fields)}",
+            ),
+        )
+
+    if metrics:
+        return [_RequestedMetric(m, None, None) for m in metrics]
+
+    assert metrics_w_params  # mypy
+    req_metrics = []
+    for m_w_params in metrics_w_params:
+        name = m_w_params[MetricWithParamsInputFields.name]
+        metric_params = convert_metric_params_datatypes(
+            parse_metric_params(m_w_params.get(MetricWithParamsInputFields.metricParams)),
+        )
+        raw_teams_params = m_w_params.get(MetricWithParamsInputFields.teamsMetricParams) or ()
+        team_params = {
+            p[TeamMetricParamsFields.teamId]: convert_metric_params_datatypes(
+                parse_metric_params(p[TeamMetricParamsFields.metricParams]),
+            )
+            for p in raw_teams_params
+        }
+        req_metrics.append(_RequestedMetric(name, metric_params, team_params))
+    return req_metrics
+
+
+class _RequestedMetric:
+    """A metric requested, with optional params and params override per team."""
+
+    def __init__(self, name: str, params: Optional[dict], teams_params: Optional[dict[int, dict]]):
+        self._name = name
+        self._params = params or {}
+        self._teams_params = teams_params or {}
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def resolve_for_team(self, team_id: int) -> MetricWithParams:
+        resolved_params = self._params
+        try:
+            team_params = self._teams_params[team_id]
+        except KeyError:
+            pass
+        else:
+            resolved_params = resolved_params | team_params
+        return MetricWithParams(self._name, resolved_params)
 
 
 @dataclass(frozen=True, slots=True)
@@ -616,25 +684,32 @@ class BatchCalcResultCollector:
 @sentry_span
 def _build_metrics_response(
     team_tree: GraphQLTeamTree,
-    metrics: Sequence[MetricWithParams],
+    req_metrics: Sequence[_RequestedMetric],
     triaged: dict[MetricWithParams, dict[tuple[int, int], list[Any]]],
 ) -> list[GraphQLMetricValues]:
     return [
         GraphQLMetricValues(
-            metric=metric.name, value=_build_team_metric_value(team_tree, triaged[metric]),
+            metric=req_m.name, value=_build_team_metric_value(team_tree, req_m, triaged),
         )
-        for metric in metrics
+        for req_m in req_metrics
     ]
 
 
 def _build_team_metric_value(
     team_tree: GraphQLTeamTree,
-    metric_values: dict[tuple[int, int], list[Any]],
+    requested_metric: _RequestedMetric,
+    metric_values: dict[MetricWithParams, dict[tuple[int, int], list[Any]]],
 ) -> GraphQLTeamMetricValue:
+    metric_w_params = requested_metric.resolve_for_team(team_tree.id)
+    # intervals used in the metric computation are of length 2, so metric_values dict
+    # will include just one value
+    value = metric_values[metric_w_params][(team_tree.id, 0)][0]
+
     return GraphQLTeamMetricValue(
         team=team_tree,
-        # intervals used in the metric computation are of length 2, so metric_values dict
-        # will include just one value
-        value=GraphQLMetricValue(metric_values[(team_tree.id, 0)][0]),
-        children=[_build_team_metric_value(child, metric_values) for child in team_tree.children],
+        value=GraphQLMetricValue(value),
+        children=[
+            _build_team_metric_value(child, requested_metric, metric_values)
+            for child in team_tree.children
+        ],
     )
