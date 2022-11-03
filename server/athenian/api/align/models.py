@@ -199,3 +199,9 @@ class Member(Contributor):
     def jiraUser(self) -> Optional[str]:
         """Alias of self.jira_user."""
         return self.jira_user
+
+
+class MetricParamNames(metaclass=Enum):
+    """Names of the possible parameters for a metric."""
+
+    threshold = "threshold"

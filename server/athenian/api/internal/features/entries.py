@@ -494,6 +494,7 @@ class MetricEntriesCalculator:
                 quantiles,
                 self._quantile_stride,
                 exclude_inactive=exclude_inactive,
+                **request.metric_params,
                 # environments=request.environments,
             )
             results.append(calc(df_facts, request.time_intervals, groups))
@@ -949,7 +950,9 @@ class MetricEntriesCalculator:
                 deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
                 deduplicate_mask=dedupe_mask,
             )
-            calc = ReleaseBinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            calc = ReleaseBinnedMetricCalculator(
+                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+            )
             results.append(calc(df_facts, request.time_intervals, groups))
 
         return results
@@ -1339,7 +1342,9 @@ class MetricEntriesCalculator:
                 group_jira_facts_by_jira(jira_grouping, issues),
             ]
             groups = _intersect_items_groups(len(request.teams), len(issues), *group_by)
-            calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            calc = JIRABinnedMetricCalculator(
+                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+            )
             results.append(calc(issues, request.time_intervals, groups))
 
         return results
@@ -1969,6 +1974,7 @@ class MetricsLineRequest:
     metrics: Sequence[str]
     time_intervals: Sequence[Sequence[datetime]]
     teams: Sequence[TeamSpecificFilters]
+    metric_params: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __str__(self) -> str:
         """Summarize the request."""

@@ -1,4 +1,4 @@
-from itertools import groupby
+from itertools import chain, groupby
 from operator import itemgetter
 from typing import Optional
 
@@ -246,7 +246,7 @@ async def measure_goals(request: AthenianWebRequest, body: dict) -> web.Response
         goals_to_serve.append(goal_to_serve)
 
     all_metric_values = await calculate_team_metrics(
-        [g.request for g in goals_to_serve],
+        list(chain.from_iterable(g.requests for g in goals_to_serve)),
         account=goals_request.account,
         meta_ids=meta_ids,
         sdb=request.sdb,

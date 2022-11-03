@@ -85,13 +85,14 @@ def calculate_logical_release_duplication_mask(
 class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for releases."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
+    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int, **kwargs):
         """Initialize a new instance of ReleaseMetricCalculatorEnsemble class."""
         super().__init__(
             *metrics,
             quantiles=quantiles,
             quantile_stride=quantile_stride,
             class_mapping=metric_calculators,
+            **kwargs,
         )
 
 
