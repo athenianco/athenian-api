@@ -51,20 +51,19 @@ async def test_delete_repository_set_bad_account(client, reposet, headers, disab
 
 
 @pytest.mark.parametrize(
-    "reposet,checked",
-    [(1, "github.com/src-d/go-git"), (2, "github.com/src-d/hercules")],
+    "reposet,checked,status",
+    [(1, "github.com/src-d/go-git", 200), (2, "github.com/src-d/hercules", 422)],
 )
-async def test_get_repository_set_smoke(client, reposet, headers, checked):
-    response = await client.request(
-        method="GET", path="/v1/reposet/%d" % reposet, headers=headers,
-    )
+async def test_get_repository_set_smoke(client, reposet, headers, checked, status):
+    response = await client.request(method="GET", path=f"/v1/reposet/{reposet}", headers=headers)
     body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    body = RepositorySetWithName.from_dict(json.loads(body))
-    assert len(body.items) == 2
-    assert checked in body.items
-    assert body.name == "all"
-    assert body.precomputed == (reposet == 1)
+    assert response.status == status, "Response body is : " + body
+    if status == 200:
+        body = RepositorySetWithName.from_dict(json.loads(body))
+        assert len(body.items) == 2
+        assert checked in body.items
+        assert body.name == "all"
+        assert body.precomputed == (reposet == 1)
 
 
 async def test_get_repository_set_logical(client, headers, logical_settings_db):

@@ -524,14 +524,13 @@ async def _extract_repos(
         for_set,
         account,
         request,
-        meta_ids,
-        strip_prefix=False,
+        meta_ids=meta_ids,
         separate=True,
         checkers=checkers,
         pointer=pointer,
     )
-    all_repos.update(chain.from_iterable(resolved))
-    resolved = [{r.split("/", 1)[1] for r in rs} for rs in resolved]
+    all_repos.update(map(str, chain.from_iterable(resolved)))
+    resolved = [{r.unprefixed for r in rs} for rs in resolved]
     # FIXME(vmarkovtsev): yeah, hardcode "github" because this is the only one we really support
     return resolved, prefix, "github"
 
@@ -548,7 +547,9 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    repos, _ = await resolve_repos_with_request(filt.in_, filt.account, request, meta_ids)
+    repos, _ = await resolve_repos_with_request(
+        filt.in_, filt.account, request, meta_ids=meta_ids, prefixer=prefixer, pointer=".in",
+    )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone,
     )
@@ -560,7 +561,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS,
         time_intervals,
-        repos,
+        [r.unprefixed for r in repos],
         with_author,
         with_committer,
         filt.only_default_branch,

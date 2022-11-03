@@ -300,14 +300,18 @@ async def reset_account(request: AthenianWebRequest, body: dict) -> web.Response
         raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
     meta_ids = await get_metadata_account_ids(request_model.account, request.sdb, request.cache)
 
-    repos = (
-        await resolve_repos_with_request(
-            request_model.repositories,
-            request_model.account,
-            request,
-            meta_ids,
-        )
-    )[0]
+    repos = [
+        r.unprefixed
+        for r in (
+            await resolve_repos_with_request(
+                request_model.repositories,
+                request_model.account,
+                request,
+                meta_ids=meta_ids,
+                pointer=".repositories",
+            )
+        )[0]
+    ]
     log.info("reset %s on %s", request_model.targets, repos)
     await gather(
         *(

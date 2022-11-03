@@ -46,7 +46,7 @@ class TestRepositoryName:
         assert name.prefix == "github.com"
         assert name.owner == "org"
         assert name.physical == "repo"
-        assert name.logical is None
+        assert name.logical == ""
         assert not name.is_logical
         assert str(name) == "github.com/org/repo"
 
@@ -81,29 +81,33 @@ class TestRepositoryName:
 class TestRepoIdentitiesMapper:
     def test_prefixed_names_to_identities(self) -> None:
         prefixer = mk_prefixer(repo_name_to_node={"org/repo1": 1, "org/repo2": 2})
-        idents = prefixer.prefixed_repo_names_to_identities(
+        idents = prefixer.reference_repositories(
             ["github.com/org/repo1", "github.com/org/repo2/log"],
         )
-        assert idents == [RepositoryReference(1, None), RepositoryReference(2, "log")]
+        assert idents == [
+            RepositoryReference("github.com", 1, ""),
+            RepositoryReference("github.com", 2, "log"),
+        ]
 
     def test_prefixed_names_to_identities_invalid_repo(self) -> None:
         prefixer = mk_prefixer(repo_name_to_node={"org/repo1": 1})
         with pytest.raises(ValueError):
-            prefixer.prefixed_repo_names_to_identities(["github.com/org/repo2"])
+            prefixer.reference_repositories(["github.com/org/repo2"])
 
     def test_identities_to_prefixed_names(self) -> None:
-        prefixer = mk_prefixer(
-            repo_node_to_prefixed_name={1: "github.com/org/repo1", 2: "github.com/org/repo2"},
+        prefixer = mk_prefixer(repo_node_to_name={1: "org/repo1", 2: "org/repo2"})
+        names = prefixer.dereference_repositories(
+            [RepositoryReference("github.com", 1, ""), RepositoryReference("github.com", 1, "l")],
         )
-        names = prefixer.repo_identities_to_prefixed_names(
-            [RepositoryReference(1, None), RepositoryReference(1, "l")],
-        )
-        assert names == ["github.com/org/repo1", "github.com/org/repo1/l"]
+        assert names == [
+            RepositoryName.from_prefixed(r)
+            for r in ("github.com/org/repo1", "github.com/org/repo1/l")
+        ]
 
     def test_identities_to_prefixed_names_invalid_identities(self) -> None:
         prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/org/repo1"})
         with pytest.raises(ValueError):
-            prefixer.repo_identities_to_prefixed_names([RepositoryReference(2, None)])
+            prefixer.dereference_repositories([RepositoryReference("github.com", 2, "")])
 
     async def test_with_real_prefixer(self, mdb_rw: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
@@ -115,23 +119,29 @@ class TestRepoIdentitiesMapper:
             await models_insert(mdb_rw, *mdb_models)
             prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
 
-        names = prefixer.repo_identities_to_prefixed_names(
+        names = prefixer.dereference_repositories(
             [
-                RepositoryReference(1, None),
-                RepositoryReference(2, "l1"),
-                RepositoryReference(2, "l2"),
+                RepositoryReference("github.com", 1, ""),
+                RepositoryReference("github.com", 2, "l1"),
+                RepositoryReference("github.com", 2, "l2"),
             ],
         )
         assert names == [
-            "github.com/athenianco/repo-A",
-            "github.com/athenianco/repo-B/l1",
-            "github.com/athenianco/repo-B/l2",
+            RepositoryName.from_prefixed(r)
+            for r in (
+                "github.com/athenianco/repo-A",
+                "github.com/athenianco/repo-B/l1",
+                "github.com/athenianco/repo-B/l2",
+            )
         ]
 
-        identities = prefixer.prefixed_repo_names_to_identities(
+        identities = prefixer.reference_repositories(
             ["github.com/athenianco/repo-A/l", "github.com/athenianco/repo-B"],
         )
-        assert identities == [RepositoryReference(1, "l"), RepositoryReference(2, None)]
+        assert identities == [
+            RepositoryReference("github.com", 1, "l"),
+            RepositoryReference("github.com", 2, ""),
+        ]
 
 
 def mk_prefixer(**kwargs: Any) -> Prefixer:

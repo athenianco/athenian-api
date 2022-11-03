@@ -1,5 +1,4 @@
 import asyncio
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from graphlib import CycleError
 from itertools import chain
@@ -10,7 +9,7 @@ import pickle
 from sqlite3 import IntegrityError
 import struct
 import time
-from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence
+from typing import Any, Callable, Collection, Coroutine, Mapping, NamedTuple, Optional, Sequence
 from urllib.parse import urlparse
 
 from aiohttp import web
@@ -62,20 +61,64 @@ from athenian.api.typing_utils import wraps
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 
-@dataclass(frozen=True, slots=True)
-class RepositoryReference:
-    """The identity of a repository, physical or logical."""
+class RepositoryReference(NamedTuple):
+    """
+    The identity of a repository, physical or logical.
 
+    We inherit from NamedTuple on purpose to be compatible with JSON.
+    """
+
+    prefix: str
+    """
+    The service prefix of the repository, e.g. "github.com".
+    It defines which DB domain `node_id` belongs to.
+    Currently, doesn't really influence on anything.
+    """
     node_id: int
     """
-    The identifier of the physical repository
-
+    The identifier of the physical repository.
     It's a reference to the mdb's `Repository.node_id` column.
     """
-    logical_name: Optional[str]
+    logical_name: str
     """
     The logical name of repository, if this is a logical repository.
+    An empty string means a physical repository.
     """
+
+    def __eq__(self, other: Sequence[str | int]) -> bool:
+        """Override == to support a wider set of types."""
+        if not isinstance(other, Sequence) or len(other) != 3:
+            return False
+        for i in range(3):
+            if self[i] != other[i]:
+                return False
+        return True
+
+    def __lt__(self, other: Sequence[str | int]) -> bool:
+        """Override < to support a wider set of types."""
+        if not isinstance(other, Sequence) or len(other) != 3:
+            raise TypeError(
+                f"'<' not supported between instances of '{type(other).__name__}' and"
+                f" '{type(self).__name__}'",
+            )
+        for i in range(3):
+            if self[i] == other[i]:
+                continue
+            return self[i] < other[i]
+        return False
+
+    def __gt__(self, other: Sequence[str | int]) -> bool:
+        """Override > to support a wider set of types."""
+        if not isinstance(other, Sequence) or len(other) != 3:
+            raise TypeError(
+                f"'>' not supported between instances of '{type(other).__name__}' and"
+                f" '{type(self).__name__}'",
+            )
+        for i in range(3):
+            if self[i] == other[i]:
+                continue
+            return self[i] > other[i]
+        return False
 
 
 @cached(
@@ -236,7 +279,7 @@ async def get_account_name(
     if meta_ids is None:
         meta_ids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(
-        select([MetadataAccount.name]).where(MetadataAccount.id.in_(meta_ids)),
+        select(MetadataAccount.name).where(MetadataAccount.id.in_(meta_ids)),
     )
     return ", ".join(r[0] for r in rows)
 
@@ -394,32 +437,7 @@ async def get_account_repository_refs(
                 detail="The installation of account %d has not finished yet." % account,
             ),
         )
-    return [RepositoryReference(node_id, name) for name, node_id in repos]
-
-
-async def get_account_repositories(
-    account: int,
-    with_prefix: bool,
-    sdb: DatabaseLike,
-) -> list[str]:
-    """Fetch all the repositories belonging to the account."""
-    repos = await sdb.fetch_val(
-        select(RepositorySet.items).where(
-            RepositorySet.owner_id == account,
-            RepositorySet.name == RepositorySet.ALL,
-        ),
-    )
-    if repos is None:
-        raise ResponseError(
-            NoSourceDataError(
-                detail="The installation of account %d has not finished yet." % account,
-            ),
-        )
-    if not with_prefix:
-        repos = [r[0].split("/", 1)[1] for r in repos]
-    else:
-        repos = [r[0] for r in repos]
-    return repos
+    return [RepositoryReference(*r) for r in repos]
 
 
 @cached(

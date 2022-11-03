@@ -14,6 +14,7 @@ from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
 from athenian.api.internal.account import (
+    RepositoryReference,
     get_metadata_account_ids,
     get_user_account_status_from_request,
     only_admin,
@@ -539,7 +540,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
     meta_ids = await get_metadata_account_ids(web_model.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     try:
-        repo = web_model.parent.split("/", 1)[1]
+        prefix, repo = web_model.parent.split("/", 1)
     except IndexError as e:
         raise ResponseError(
             InvalidRequestError(
@@ -632,13 +633,11 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
             rows = await sdb_conn.fetch_all(
                 select(RepositorySet).where(RepositorySet.owner_id == web_model.account),
             )
+            ref = RepositoryReference(prefix, repo_id, web_model.name)
             for row in rows:
                 if re.fullmatch(row[RepositorySet.tracking_re.name], str(name)):
                     items = row[RepositorySet.items.name]
-                    items.insert(
-                        bisect_right([r[0] for r in items], str(name)),
-                        (str(name), repo_id),
-                    )
+                    items.insert(bisect_right(items, ref), ref)
                     await sdb_conn.execute(
                         update(RepositorySet)
                         .where(RepositorySet.id == row[RepositorySet.id.name])
@@ -704,10 +703,11 @@ async def _delete_logical_repository(
     @sentry_span
     async def clean_repository_sets():
         rows = await sdb.fetch_all(select(RepositorySet).where(RepositorySet.owner_id == account))
+        ref = RepositoryReference(name.prefix, repo_id, name.logical)
         for row in rows:
             items = row[RepositorySet.items.name]
-            index = bisect_left([r[0] for r in items], str(name))
-            if index < len(items) and items[index][0] == str(name):
+            index = bisect_left(items, ref)
+            if index < len(items) and items[index] == ref:
                 items.pop(index)
                 await sdb.execute(
                     update(RepositorySet)
@@ -861,7 +861,7 @@ async def delete_logical_repository(request: AthenianWebRequest, body: dict) -> 
     try:
         repo_id = prefixer.repo_name_to_node[name.unprefixed_physical]
     except KeyError:
-        physical_name = name.with_logical(None)
+        physical_name = name.with_logical("")
         raise ResponseError(
             ForbiddenError(f"Access denied to `{physical_name}` or it does not exist."),
         )

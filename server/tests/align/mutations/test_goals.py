@@ -943,7 +943,7 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         res = await self._request(variables)
         assert "errors" not in res
         row = await assert_existing_row(sdb, Goal, id=100)
-        assert row[Goal.repositories.name] == [[40550, None]]
+        assert row[Goal.repositories.name] == [[40550, ""]]
 
         variables = {
             "accountId": 1,
@@ -952,7 +952,7 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         res = await self._request(variables)
         assert "errors" not in res
         row = await assert_existing_row(sdb, Goal, id=100)
-        assert row[Goal.repositories.name] == [[40550, None]]
+        assert row[Goal.repositories.name] == [[40550, ""]]
 
         variables = {
             "accountId": 1,
@@ -995,13 +995,13 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert res["data"]["updateGoal"]["goal"]["id"] == 100
 
         row = await assert_existing_row(sdb, Goal, id=100)
-        assert row[Goal.repositories.name] == [[40550, None]]
+        assert row[Goal.repositories.name] == [[40550, ""]]
 
         team_goal_row_10 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
-        assert team_goal_row_10[TeamGoal.repositories.name] == [[40550, None]]
+        assert team_goal_row_10[TeamGoal.repositories.name] == [[40550, ""]]
 
         team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
-        assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, None]]
+        assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, ""]]
 
     async def test_update_jira_fields(self, sdb: Database) -> None:
         await models_insert(

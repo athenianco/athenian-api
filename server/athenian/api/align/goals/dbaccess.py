@@ -327,7 +327,9 @@ def parse_goal_repositories(val: Optional[list[list]]) -> Optional[list[Reposito
     """Parse the raw value in DB repositories JSON column as list of `RepositoryReference`."""
     if val is None:
         return val
-    return [RepositoryReference(repo_id, logical_name) for repo_id, logical_name in val]
+    return [
+        RepositoryReference("github.com", repo_id, logical_name) for repo_id, logical_name in val
+    ]
 
 
 def dump_goal_repositories(

@@ -80,10 +80,10 @@ class TestSettingsListReleaseMatches:
             LogicalRepositoryFactory(name="beta", repository_id=40550),
             RepositorySetFactory(
                 items=[
-                    ["github.com/src-d/gitbase", 40550],
-                    ["github.com/src-d/go-git", 39652769],
-                    ["github.com/src-d/go-git/alpha", 40550],
-                    ["github.com/src-d/go-git/beta", 40550],
+                    ["github.com", 40550, ""],
+                    ["github.com", 40550, "alpha"],
+                    ["github.com", 40550, "beta"],
+                    ["github.com", 39652769, ""],
                 ],
             ),
             ReleaseSettingFactory(repo_id=40550, branches="prod", tags="^v.*", match=self._BRANCH),

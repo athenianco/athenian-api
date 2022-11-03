@@ -4,10 +4,11 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
-from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.internal.miners.github.contributors import mine_contributors
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import Settings
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import UserAccount
@@ -34,18 +35,17 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
                 f"Account {account_id} does not exist or user {request.uid} is not a member."
             )
             raise ResponseError(NotFoundError(detail=err_detail))
-        tasks = [
-            get_account_repositories(id, True, sdb_conn),
-            #                            not sdb_conn! we must go parallel
-            get_metadata_account_ids(id, request.sdb, request.cache),
-        ]
-        repos, meta_ids = await gather(*tasks)
+        meta_ids = await get_metadata_account_ids(id, sdb_conn, request.cache)
         prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+        repos = await get_account_repositories(id, prefixer, sdb_conn)
+        unprefixed = [r.unprefixed for r in repos]
+        repos = [str(r) for r in repos]
+
         settings = Settings.from_request(request, account_id, prefixer)
         release_settings, logical_settings = await gather(
             settings.list_release_matches(repos), settings.list_logical_repositories(repos),
         )
-        repos = logical_settings.append_logical_prs([r.split("/", 1)[1] for r in repos])
+        repos = logical_settings.append_logical_prs(unprefixed)
         users = await mine_contributors(
             repos,
             None,

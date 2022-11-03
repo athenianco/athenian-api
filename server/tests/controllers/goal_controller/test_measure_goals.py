@@ -421,8 +421,8 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
             ),
             RepositorySetFactory(
                 items=[
-                    ["github.com/athenianco/repo/a", 1],
-                    ["github.com/athenianco/repo/b", 1],
+                    ["github.com", 1, "a"],
+                    ["github.com", 1, "b"],
                 ],
             ),
         )
@@ -552,7 +552,7 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
             TeamFactory(id=10, members=[39789, 40020, 40191], owner_id=33),
             GoalFactory(id=20, metric=metric, account_id=33, **dates),
             TeamGoalFactory(goal_id=20, team_id=10),
-            RepositorySetFactory(id=100, owner_id=33, items=[["github.com/a/b", 1]]),
+            RepositorySetFactory(id=100, owner_id=33, items=[["github.com", 39652769, ""]]),
         )
         res = await self._request(json=self._body(10, 33), user_id="gh|XXX")
         assert res[0]["team_goal"]["value"]["initial"] == 0

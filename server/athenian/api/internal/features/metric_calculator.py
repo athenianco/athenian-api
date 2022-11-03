@@ -355,7 +355,7 @@ class MetricCalculator(Generic[T], ABC):
             for i, slen in enumerate(group_sample_lengths.ravel()):
                 if slen > 0:
                     cut_values[i] = np.quantile(
-                        flat_samples[pos : pos + slen], self._quantiles, interpolation="nearest",
+                        flat_samples[pos : pos + slen], self._quantiles, method="nearest",
                     )
                     pos += slen
         cut_values = cut_values.reshape((*group_sample_lengths.shape, 2))

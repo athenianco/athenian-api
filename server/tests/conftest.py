@@ -1096,10 +1096,10 @@ async def logical_settings_db(sdb):
         .values(
             {
                 RepositorySet.items: [
-                    ["github.com/src-d/gitbase", 39652769],
-                    ["github.com/src-d/go-git", 40550],
-                    ["github.com/src-d/go-git/alpha", 40550],
-                    ["github.com/src-d/go-git/beta", 40550],
+                    ["github.com", 40550, ""],
+                    ["github.com", 40550, "alpha"],
+                    ["github.com", 40550, "beta"],
+                    ["github.com", 39652769, ""],
                 ],
                 RepositorySet.updates_count: RepositorySet.updates_count + 1,
                 RepositorySet.updated_at: datetime.now(timezone.utc),

@@ -41,7 +41,7 @@ from athenian.api.internal.miners.github.release_mine import (
 )
 from athenian.api.internal.miners.types import PullRequestFacts, ReleaseFacts
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import refresh_repository_names
+from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
@@ -203,16 +203,15 @@ async def precompute_reposet(
         context.slack,
     )
     try:
-        prefixer, bots, new_items = await gather(
+        prefixer, bots = await gather(
             Prefixer.load(meta_ids, mdb, cache),
             fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
-            refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb, None),
         )
     except Exception as e:
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
         return
-    reposet.items = new_items
+    deref_items = prefixer.dereference_repositories(reposet_items_to_refs(reposet.items))
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
         num_teams, num_bots = await ensure_teams(
@@ -236,14 +235,15 @@ async def precompute_reposet(
         "Heating reposet %d of account %d (%d repos)",
         reposet.id,
         reposet.owner_id,
-        len(reposet.items),
+        len(deref_items),
     )
     try:
         settings = Settings.from_account(reposet.owner_id, prefixer, sdb, mdb, cache, None)
-        repos = {r.split("/", 1)[1] for r in reposet.items}
+        repos = {r.unprefixed for r in deref_items}
+        prefixed_repos = [str(r) for r in deref_items]
         logical_settings, release_settings, (branches, default_branches) = await gather(
-            settings.list_logical_repositories(reposet.items),
-            settings.list_release_matches(reposet.items),
+            settings.list_logical_repositories(prefixed_repos),
+            settings.list_release_matches(prefixed_repos),
             BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
         )
         branches_count = len(branches)
@@ -384,7 +384,7 @@ async def precompute_reposet(
                 await slack.post_install(
                     "precomputed_account.jinja2",
                     account=reposet.owner_id,
-                    prefixes={r.split("/", 2)[1] for r in reposet.items},
+                    prefixes={r.prefix for r in deref_items},
                     prs=prs,
                     prs_done=prs_done,
                     prs_merged=prs_merged,
