@@ -20,6 +20,7 @@ def model_insert_stmt(model: BaseType, *, with_primary_keys=True) -> Insert:
     table = cast(Selectable, type(model))
 
     values = explode_model(model, with_primary_keys=with_primary_keys)
+    values = {k: v for k, v in values.items() if v is not SKIP_MODEL_FIELD}
     return sa.insert(table).values(values)
 
 
@@ -41,10 +42,18 @@ async def models_insert_auto_pk(db: Database, *models: BaseType) -> list[Any]:
     return results
 
 
+SKIP_MODEL_FIELD = object()
+"""Set a model field to this value avoid propagating it to DB on model insertion.
+
+For instance, this is needed to insert a SQL NULL into a JSONB column.
+"""
+
+
 async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any) -> None:
     """Assert that a row with the given properties doesn't exist."""
-    where_clause = _build_table_where_clause(table, **kwargs)
-    stmt = sa.select(table).where(where_clause)
+    stmt = sa.select(table)
+    if kwargs:
+        stmt = stmt.where(_build_table_where_clause(table, **kwargs))
     row = await db.fetch_one(stmt)
     assert row is None
 
@@ -62,8 +71,9 @@ async def assert_existing_rows(
     table: DeclarativeMeta,
     **kwargs: Any,
 ) -> Sequence[Row]:
-    where_clause = _build_table_where_clause(table, **kwargs)
-    stmt = sa.select(table).where(where_clause)
+    stmt = sa.select(table)
+    if kwargs:
+        stmt = stmt.where(_build_table_where_clause(table, **kwargs))
     rows = await db.fetch_all(stmt)
     if not rows:
         raise AssertionError("No row returned")
@@ -116,8 +126,10 @@ class DBCleaner:
 
     async def _clean(self) -> None:
         for table, params in self._to_clean:
-            where_clause = _build_table_where_clause(table, **params)
-            await self._db.execute(sa.delete(table).where(where_clause))
+            stmt = sa.delete(table)
+            if params:
+                stmt = stmt.where(_build_table_where_clause(table, **params))
+            await self._db.execute(stmt)
 
 
 @contextlib.asynccontextmanager
@@ -129,7 +141,6 @@ async def transaction_conn(db: Database) -> AsyncIterator[Connection]:
 
 
 def _build_table_where_clause(table: DeclarativeMeta, **kwargs: Any) -> ClauseElement:
-    return cast(
-        ClauseElement,
-        sa.and_(*(getattr(table, key) == val for key, val in kwargs.items())),
-    )
+    assert kwargs
+    where = sa.and_(*(getattr(table, key) == val for key, val in kwargs.items()))
+    return cast(ClauseElement, where)

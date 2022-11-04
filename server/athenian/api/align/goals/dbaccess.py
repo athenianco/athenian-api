@@ -23,6 +23,7 @@ from athenian.api.db import (
     Row,
     conn_in_transaction,
     dialect_specific_insert,
+    is_postgresql,
 )
 from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
 from athenian.api.internal.settings import LogicalRepositorySettings
@@ -265,11 +266,20 @@ async def get_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> Row:
     return template
 
 
-async def get_goal_templates_from_db(account: int, sdb: DatabaseLike) -> list[Row]:
+async def get_goal_templates_from_db(
+    account: int,
+    exclude_with_metric_params: bool,
+    sdb: DatabaseLike,
+) -> list[Row]:
     """Return all account GoalTemplate-s, ordered by id."""
-    stmt = (
-        sa.select(GoalTemplate).where(GoalTemplate.account_id == account).order_by(GoalTemplate.id)
-    )
+    where = GoalTemplate.account_id == account
+    if exclude_with_metric_params:
+        exclude_expr = GoalTemplate.metric_params.is_(None)
+        # with sqlite both SQL NULL and JSON null can be found on db
+        if not await is_postgresql(sdb):
+            exclude_expr = sa.or_(exclude_expr, GoalTemplate.metric_params == sa.JSON.NULL)
+        where = sa.and_(where, exclude_expr)
+    stmt = sa.select(GoalTemplate).where(where).order_by(GoalTemplate.id)
     return await sdb.fetch_all(stmt)
 
 
@@ -298,8 +308,13 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     log = logging.getLogger(f"{__name__}.create_default_goal_templates")
     log.info("creating for account %d", account)
     models = [
-        GoalTemplate(metric=template_def["metric"], name=template_def["name"], account_id=account)
-        for template_def in TEMPLATES_COLLECTION.values()
+        GoalTemplate(
+            metric=template_def["metric"],
+            name=template_def["name"],
+            account_id=account,
+            metric_params=template_def.get("metric_params"),
+        )
+        for template_def in TEMPLATES_COLLECTION
     ]
     values = [model.create_defaults().explode(with_primary_keys=False) for model in models]
     # skip existing templates with the same name

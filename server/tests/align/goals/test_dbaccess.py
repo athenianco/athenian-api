@@ -35,6 +35,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
 from tests.controllers.test_prefixer import mk_prefixer
 from tests.testutils.db import (
+    SKIP_MODEL_FIELD,
     assert_existing_row,
     assert_existing_rows,
     assert_missing_row,
@@ -251,8 +252,20 @@ class TestGetGoalTemplateFromDB:
 class TestGetGoalTemplatesFromDB:
     async def test_base(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=102), GoalTemplateFactory(id=103))
-        rows = await get_goal_templates_from_db(1, sdb)
+        rows = await get_goal_templates_from_db(1, False, sdb)
         assert len(rows) == 2
+        assert {r[GoalTemplate.id.name] for r in rows} == {102, 103}
+
+    async def test_exclude_with_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=102, metric_params=SKIP_MODEL_FIELD),
+            GoalTemplateFactory(id=103, metric_params={"threshold": 2}),
+            GoalTemplateFactory(id=104),
+        )
+        rows = await get_goal_templates_from_db(1, True, sdb)
+        assert len(rows) == 2
+        assert {r[GoalTemplate.id.name] for r in rows} == {102, 104}
 
 
 class TestInsertGoalTemplate:
@@ -302,20 +315,21 @@ class TestCreateDefaultGoalTemplates:
         await create_default_goal_templates(1, sdb)
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
-        assert sorted(r[GoalTemplate.name.name] for r in rows) == sorted(
-            template_def["name"] for template_def in TEMPLATES_COLLECTION.values()
-        )
-        assert sorted(r[GoalTemplate.metric.name] for r in rows) == sorted(
-            template_def["metric"] for template_def in TEMPLATES_COLLECTION.values()
-        )
+        row_by_name = {row[GoalTemplate.name.name]: row for row in rows}
+
+        for template_def in TEMPLATES_COLLECTION:
+            row = row_by_name[template_def["name"]]
+            assert row[GoalTemplate.name.name] == template_def["name"]
+            assert row[GoalTemplate.metric.name] == template_def["metric"]
+            assert row[GoalTemplate.metric_params.name] == template_def.get("metric_params")
 
     async def test_ignore_existing_names(self, sdb: Database) -> None:
-        await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[1]["name"], id=555))
+        await models_insert(sdb, GoalTemplateFactory(name=TEMPLATES_COLLECTION[0]["name"], id=555))
         await create_default_goal_templates(1, sdb)
 
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
-        await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[1]["name"])
+        await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[0]["name"])
 
 
 class TestParseGoalRepositories:

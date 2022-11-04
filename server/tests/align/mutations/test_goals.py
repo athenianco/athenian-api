@@ -78,12 +78,9 @@ class BaseCreateGoalTest(BaseGoalTest):
 
     @classmethod
     def _mk_input(cls, **kwargs: Any) -> dict:
-        kwargs.setdefault(
-            CreateGoalInputFields.name, TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
-        )
-        kwargs.setdefault(
-            CreateGoalInputFields.metric, TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
-        )
+        template = TEMPLATES_COLLECTION[0]
+        kwargs.setdefault(CreateGoalInputFields.name, template[CreateGoalInputFields.name])
+        kwargs.setdefault(CreateGoalInputFields.metric, template[CreateGoalInputFields.metric])
         kwargs.setdefault(CreateGoalInputFields.validFrom, "2022-01-01")
         kwargs.setdefault(CreateGoalInputFields.expiresAt, "2022-03-31")
         kwargs.setdefault(CreateGoalInputFields.teamGoals, [])
@@ -357,10 +354,11 @@ class TestCreateGoals(BaseCreateGoalTest):
         )
 
         # same interval, different name
+        template = TEMPLATES_COLLECTION[1]
         variables: dict = {
             "createGoalInput": self._mk_input(
-                name=TEMPLATES_COLLECTION[2][CreateGoalInputFields.name],
-                metric=TEMPLATES_COLLECTION[2][CreateGoalInputFields.metric],
+                name=template[CreateGoalInputFields.name],
+                metric=template[CreateGoalInputFields.metric],
                 validFrom="2022-01-01",
                 expiresAt="2022-03-31",
                 teamGoals=[
@@ -372,10 +370,11 @@ class TestCreateGoals(BaseCreateGoalTest):
         await self._create(variables)
 
         # same name, different interval
-        variables["createGoalInput"][CreateGoalInputFields.name] = TEMPLATES_COLLECTION[1][
+        template = TEMPLATES_COLLECTION[0]
+        variables["createGoalInput"][CreateGoalInputFields.name] = template[
             CreateGoalInputFields.name
         ]
-        variables["createGoalInput"][CreateGoalInputFields.metric] = TEMPLATES_COLLECTION[1][
+        variables["createGoalInput"][CreateGoalInputFields.metric] = template[
             CreateGoalInputFields.metric
         ]
         variables["createGoalInput"][CreateGoalInputFields.expiresAt] = "2022-06-30"
@@ -402,8 +401,8 @@ class TestCreateGoals(BaseCreateGoalTest):
         await models_insert(sdb, TeamFactory(id=100))
         variables: dict = {
             "createGoalInput": self._mk_input(
-                name=TEMPLATES_COLLECTION[1][CreateGoalInputFields.name],
-                metric=TEMPLATES_COLLECTION[1][CreateGoalInputFields.metric],
+                name=TEMPLATES_COLLECTION[0][CreateGoalInputFields.name],
+                metric=TEMPLATES_COLLECTION[0][CreateGoalInputFields.metric],
                 validFrom="2023-01-01",
                 expiresAt="2023-12-31",
                 teamGoals=[

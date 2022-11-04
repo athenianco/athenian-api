@@ -89,14 +89,18 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
     return model_response(model)
 
 
-async def list_goal_templates(request: AthenianWebRequest, id: int) -> web.Response:
+async def list_goal_templates(
+    request: AthenianWebRequest,
+    id: int,
+    include_tlo: bool,
+) -> web.Response:
     """List the goal templates for the account.
 
     :param id: Numeric identifier of the account.
     :type id: int
     """
     await get_user_account_status_from_request(request, id)
-    rows = await get_goal_templates_from_db(id, request.sdb)
+    rows = await get_goal_templates_from_db(id, not include_tlo, request.sdb)
 
     prefixer = await Prefixer.from_request(request, id)
     models = []
