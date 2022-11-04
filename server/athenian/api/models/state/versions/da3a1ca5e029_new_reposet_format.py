@@ -30,9 +30,7 @@ class RepositorySet(declarative_base()):
     )
 
     id = sa.Column(sa.Integer(), primary_key=True)
-    owner_id = sa.Column(
-        sa.Integer(), sa.ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False,
-    )
+    owner_id = sa.Column(sa.Integer(), nullable=False)
     name = sa.Column(sa.String(), nullable=False)
     items = sa.Column(JSONB().with_variant(sa.JSON(), sqlite.dialect.name), nullable=False)
     created_at = sa.Column(
