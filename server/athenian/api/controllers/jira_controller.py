@@ -20,7 +20,7 @@ from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
 from athenian.api.db import Database
-from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
 from athenian.api.internal.features.github.pull_request_filter import (
@@ -55,6 +55,7 @@ from athenian.api.internal.miners.jira.issue import (
 )
 from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import fetch_teams_map
 from athenian.api.models.metadata.github import Branch, PullRequest
@@ -1183,13 +1184,14 @@ async def _collect_ids(
     Optional[LogicalRepositorySettings],
     Prefixer,
 ]:
-    repos, jira_ids, meta_ids = await gather(
-        get_account_repositories(account, True, sdb),
+    meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    prefixer = await Prefixer.load(meta_ids, mdb, cache)
+    repos, jira_ids = await gather(
+        get_account_repositories(account, prefixer, sdb),
         get_jira_installation(account, sdb, mdb, cache),
-        get_metadata_account_ids(account, sdb, cache),
         op="sdb/ids",
     )
-    prefixer = await Prefixer.load(meta_ids, mdb, cache)
+    repos = [str(r) for r in repos]
     if with_branches_and_settings:
         settings = Settings.from_request(request, account, prefixer)
         (branches, default_branches), logical_settings = await gather(

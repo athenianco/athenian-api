@@ -355,8 +355,11 @@ class TestDumpGoalRepositories:
         assert dump_goal_repositories(None) is None
 
     def test_some_identities(self) -> None:
-        idents = [RepositoryReference(1, "a"), RepositoryReference(2, None)]
-        assert dump_goal_repositories(idents) == [(1, "a"), (2, None)]
+        idents = [
+            RepositoryReference("github.com", 1, "a"),
+            RepositoryReference("github.com", 2, ""),
+        ]
+        assert dump_goal_repositories(idents) == [(1, "a"), (2, "")]
 
 
 class TestResolveGoalRepositories:
@@ -385,8 +388,8 @@ class TestResolveGoalRepositories:
         )
 
         assert res == (
-            RepositoryName("github.com", "athenianco", "a", None),
-            RepositoryName("github.com", "athenianco", "b", None),
+            RepositoryName("github.com", "athenianco", "a", ""),
+            RepositoryName("github.com", "athenianco", "b", ""),
             RepositoryName("github.com", "athenianco", "b", "logic"),
         )
 
@@ -400,7 +403,7 @@ class TestResolveGoalRepositories:
         )
         res = resolve_goal_repositories([(1, None), (2, None)], 1, prefixer, logical_settings)
 
-        assert res == (RepositoryName("github.com", "athenianco", "a", None),)
+        assert res == (RepositoryName("github.com", "athenianco", "a", ""),)
 
 
 class TestConvertMetricParamsDatatypes:

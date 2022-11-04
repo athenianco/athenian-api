@@ -22,27 +22,27 @@ class RepositoryName:
 
     Possible formats:
 
-    - repository name: "owner/reponame"
-    - logical repository name: "owner/reponame/logicalname".
-    - prefixed repository name: "provider.com/owner/reponame"
-    - prefixed logical repository name: "provider.com/owner/reponame/logicalname"
+    - `unprefixed_physical`: "owner/reponame"
+    - `unprefixed`: "owner/reponame/logicalname".
+    - `with_logical("")`: "prefix/owner/reponame"
+    - `str()`: "prefix/owner/reponame/logicalname"
     """
 
-    prefix: Optional[str]
+    prefix: str
     owner: str
     physical: str
-    logical: Optional[str]
+    logical: str
 
     @classmethod
     def from_prefixed(cls, prefixed_name: str) -> RepositoryName:
         """Build the name one of the "prefixed" formats."""
         if prefixed_name.count("/") < 2:
-            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
+            raise ValueError(f"Invalid prefixed repo name {prefixed_name}")
 
         prefix, rest = prefixed_name.split("/", 1)
 
         if "." not in prefix:
-            raise ValueError(f"Invalid  prefixed repo name {prefixed_name}")
+            raise ValueError(f"Invalid prefixed repo name {prefixed_name}")
 
         org, rest = rest.split("/", 1)
 
@@ -50,17 +50,16 @@ class RepositoryName:
             physical, logical = rest.split("/", 1)
         else:
             physical = rest
-            logical = None
+            logical = ""
         return RepositoryName(prefix, org, physical, logical)
 
     @property
     def is_logical(self) -> bool:
         """Whether the name refers to a logical repository."""
-        return self.logical is not None
+        return bool(self.logical)
 
-    def with_logical(self, logical: Optional[str]) -> RepositoryName:
-        """Return a new RepositoryName for the same physical repository with an optional logical \
-        name."""
+    def with_logical(self, logical: str) -> RepositoryName:
+        """Return a new RepositoryName for the same physical repository with a logical name."""
         return dataclasses.replace(self, logical=logical)
 
     @property
@@ -72,14 +71,14 @@ class RepositoryName:
     def unprefixed(self) -> str:
         """Return the unprefixed name of the repository."""
         name = self.unprefixed_physical
-        if self.logical is not None:
+        if self.logical:
             name = f"{name}/{self.logical}"
         return name
 
     def __str__(self) -> str:
         """Return the canonical full repository name."""
         return (
-            f"{(self.prefix + '/') if self.prefix else ''}"
+            f"{self.prefix}/"
             f"{self.owner}/{self.physical}"
             f"{('/' + self.logical) if self.logical else ''}"
         )
@@ -215,7 +214,7 @@ class Prefixer:
         except KeyError:
             return None
 
-    def prefixed_repo_names_to_identities(
+    def reference_repositories(
         self,
         repo_names: Iterable[str],
     ) -> list[RepositoryReference]:
@@ -228,23 +227,24 @@ class Prefixer:
                 physical_id = repo_name_to_node(name.unprefixed_physical)
             except KeyError:
                 raise ValueError(f"Unknown repository {repo_name}") from None
-            repos.append(RepositoryReference(physical_id, name.logical))
+            repos.append(RepositoryReference(name.prefix, physical_id, name.logical))
         return repos
 
-    def repo_identities_to_prefixed_names(
+    def dereference_repositories(
         self,
-        repo_identities: Iterable[RepositoryReference],
-    ) -> list[str]:
+        repo_refs: Iterable[RepositoryReference],
+    ) -> list[RepositoryName]:
         """Convert a list of RepositoryReference to a list of prefixed repository names."""
         repo_names = []
-        repo_node_to_prefixed_name = self.repo_node_to_prefixed_name.__getitem__
-        for repo in repo_identities:
+        repo_node_to_name = self.repo_node_to_name.__getitem__
+        for repo in repo_refs:
             try:
-                physical_name = repo_node_to_prefixed_name(repo.node_id)
+                physical_name = repo.prefix + "/" + repo_node_to_name(repo.node_id)
             except KeyError:
                 raise ValueError(f"Invalid repo_id {repo.node_id}") from None
-            name = RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name)
-            repo_names.append(str(name))
+            repo_names.append(
+                RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name),
+            )
         return repo_names
 
     def __str__(self) -> str:

@@ -35,7 +35,7 @@ def create_collection_mixin(name: str) -> type:
     """Create the collections mixin according to the required column name."""
 
     class CollectionMixin:
-        name = Column(String(256), nullable=False)
+        name = Column(String(), nullable=False)
 
     setattr(
         CollectionMixin,

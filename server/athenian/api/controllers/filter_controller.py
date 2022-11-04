@@ -274,14 +274,20 @@ async def _repos_preprocess(
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, account, prefixer)
-    logical_settings = await settings.list_logical_repositories()
-    repos, _ = await resolve_repos_with_request(
-        repos,
-        account,
-        request,
-        meta_ids,
-        strip_prefix=strip_prefix,
+    (repos, _), logical_settings = await gather(
+        resolve_repos_with_request(
+            repos,
+            account,
+            request,
+            meta_ids=meta_ids,
+            prefixer=prefixer,
+        ),
+        settings.list_logical_repositories(),
     )
+    if strip_prefix:
+        repos = [r.unprefixed for r in repos]
+    else:
+        repos = [str(r) for r in repos]
     return repos, meta_ids, prefixer, logical_settings
 
 
@@ -885,7 +891,7 @@ async def _check_github_repos(
         ) from None
 
     async def check():
-        checker = access_classes["github"](
+        checker = access_classes["github.com"](
             account, meta_ids, request.sdb, request.mdb, request.cache,
         )
         await checker.load()

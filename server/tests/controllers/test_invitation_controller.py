@@ -104,7 +104,7 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
     assert response.status == 200
     reposets = await sdb.fetch_all(select([RepositorySet]))
     assert len(reposets) == 1
-    assert "github.com/src-d/go-git" in {r[0] for r in reposets[0]["items"]}
+    assert ["github.com", 40550, ""] in reposets[0]["items"]
 
 
 async def test_gen_user_invitation_new(client, headers, sdb, app):

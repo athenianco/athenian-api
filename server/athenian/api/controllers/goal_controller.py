@@ -82,7 +82,7 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
         raise GoalTemplateNotFoundError(id)
     if (db_repos := parse_goal_repositories(row[DBGoalTemplate.repositories.name])) is not None:
         prefixer = await Prefixer.from_request(request, account)
-        repositories = prefixer.repo_identities_to_prefixed_names(db_repos)
+        repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
     else:
         repositories = None
     model = _goal_template_from_row(row, repositories=repositories)
@@ -107,7 +107,7 @@ async def list_goal_templates(
     for row in rows:
         raw_db_repos = row[DBGoalTemplate.repositories.name]
         if (db_repos := parse_goal_repositories(raw_db_repos)) is not None:
-            repositories = prefixer.repo_identities_to_prefixed_names(db_repos)
+            repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
         else:
             repositories = None
         models.append(_goal_template_from_row(row, repositories=repositories))
@@ -197,7 +197,7 @@ async def parse_request_repositories(
         return None
     prefixer = await Prefixer.from_request(request, account_id)
     try:
-        return dump_goal_repositories(prefixer.prefixed_repo_names_to_identities(repo_names))
+        return dump_goal_repositories(prefixer.reference_repositories(repo_names))
     except ValueError as e:
         raise ResponseError(InvalidRequestError(".repositories", str(e)))
 

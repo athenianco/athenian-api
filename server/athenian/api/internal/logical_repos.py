@@ -21,14 +21,6 @@ def coerce_logical_repos(repos: Iterable[str]) -> dict[str, set[str]]:
     return result
 
 
-def coerce_prefixed_logical_repos(repos: Iterable[str]) -> dict[str, set[str]]:
-    """Remove the logical part of the prefixed repository names + deduplicate."""
-    result: dict[str, set[str]] = {}
-    for r in repos:
-        result.setdefault(drop_prefixed_logical_repo(r), set()).add(r)
-    return result
-
-
 def contains_logical_repos(repos: Iterable[str]) -> bool:
     """Check whether at least one repository name is logical."""
     return any(r.count("/") > 1 for r in repos)

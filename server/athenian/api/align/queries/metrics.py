@@ -147,7 +147,12 @@ async def _parse_repositories(
     request: AthenianWebRequest,
 ) -> Optional[tuple[str, ...]]:
     if (repos := params.get(MetricParamsFields.repositories)) is not None:
-        repos = tuple((await resolve_repos_with_request(repos, account_id, request, meta_ids))[0])
+        repos = tuple(
+            r.unprefixed
+            for r in (
+                await resolve_repos_with_request(repos, account_id, request, meta_ids=meta_ids)
+            )[0]
+        )
     return repos
 
 

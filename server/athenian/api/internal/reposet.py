@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence, Type
+from typing import Any, Callable, Coroutine, Iterator, Mapping, Optional, Sequence, Type
 
 import aiomcache
 from asyncpg import UniqueViolationError
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, desc, insert, select, update
+from sqlalchemy import and_, desc, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -19,15 +18,17 @@ from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.internal.account import (
+    RepositoryReference,
     fetch_github_installation_progress,
+    get_account_name,
     get_metadata_account_ids,
     match_metadata_installation,
 )
-from athenian.api.internal.logical_repos import coerce_logical_repos, extract_logical_repo
+from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.access import AccessChecker
 from athenian.api.internal.miners.access_classes import access_classes
-from athenian.api.internal.prefixer import Prefixer, RepositoryName, strip_proto
-from athenian.api.models.metadata.github import AccountRepository, NodeRepository, NodeUser
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
+from athenian.api.models.metadata.github import AccountRepository, NodeUser
 from athenian.api.models.state.models import LogicalRepository, RepositorySet, UserAccount
 from athenian.api.models.web import (
     ForbiddenError,
@@ -42,14 +43,21 @@ from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
 
+def reposet_items_to_refs(items: list[tuple[int, str, str]]) -> Iterator[RepositoryReference]:
+    """Convert the raw DB repository tuples to RepositoryReference."""
+    for i in items:
+        yield RepositoryReference(*i)
+
+
 async def resolve_reposet(
     repo: str,
+    wrong_format: set[str],
     pointer: str,
     uid: str,
     account: int,
-    sdb: Connection | Database,
-    cache: Optional[aiomcache.Client],
-) -> Collection[str]:
+    prefixer: Prefixer,
+    sdb: DatabaseLike,
+) -> list[RepositoryName]:
     """
     Dereference the repository sets.
 
@@ -57,11 +65,15 @@ async def resolve_reposet(
     repositories by the parsed ID from the database.
     """
     if not repo.startswith("{"):
-        return [repo]
+        try:
+            return [RepositoryName.from_prefixed(repo)]
+        except ValueError:
+            wrong_format.add(repo)
+            return []
     if not repo.endswith("}"):
         raise ResponseError(
             InvalidRequestError(
-                detail="repository set format is invalid: %s" % repo,
+                detail=f"repository set format is invalid: {repo}",
                 pointer=pointer,
             ),
         )
@@ -70,7 +82,7 @@ async def resolve_reposet(
     except ValueError:
         raise ResponseError(
             InvalidRequestError(
-                detail="repository set identifier is invalid: %s" % repo,
+                detail=f"repository set identifier is invalid: {repo}",
                 pointer=pointer,
             ),
         )
@@ -78,11 +90,10 @@ async def resolve_reposet(
     if rs.owner_id != account:
         raise ResponseError(
             ForbiddenError(
-                detail="User %s is not allowed to reference reposet %d in this query"
-                % (uid, set_id),
+                detail=f"User {uid} is not allowed to reference reposet {set_id} in this query",
             ),
         )
-    return [r[0] for r in rs.items]
+    return prefixer.dereference_repositories(reposet_items_to_refs(rs.items))
 
 
 @sentry_span
@@ -110,49 +121,22 @@ async def fetch_reposet(
 
 
 @sentry_span
-async def load_all_reposet(
-    account: int,
-    login: Callable[[], Coroutine[None, None, str]],
-    sdb: Database,
-    mdb: Database,
-    cache: Optional[aiomcache.Client],
-    slack: Optional[SlackWebClient],
-) -> list[int]:
-    """Fetch the contents (items) of the main reposet with all the repositories to consider."""
-    rss = await load_account_reposets(
-        account,
-        login,
-        [RepositorySet.id, RepositorySet.name, RepositorySet.items, RepositorySet.tracking_re],
-        sdb,
-        mdb,
-        cache,
-        slack,
-    )
-    for rs in rss:
-        if rs[RepositorySet.name.name] == RepositorySet.ALL:
-            return [r[0] for r in rs[RepositorySet.items.name]]
-    raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
-
-
-@sentry_span
 async def resolve_repos_with_request(
     repositories: list[str],
     account: int,
     request: AthenianWebRequest,
-    meta_ids: Optional[tuple[int, ...]],
-    strip_prefix=True,
     separate=False,
+    meta_ids: Optional[tuple[int, ...]] = None,
+    prefixer: Optional[Prefixer] = None,
     checkers: Optional[dict[str, AccessChecker]] = None,
     pointer: Optional[str] = "?",
-) -> tuple[set[str] | list[set[str]], str]:
+) -> tuple[set[RepositoryName] | list[set[RepositoryName]], str]:
     """
     Dereference all the reposets and produce the joint list of all mentioned repos.
 
     Alternative to the lower-level resolve_repos().
 
     :param separate: Value indicating whether to return each reposet separately.
-    :param strip_prefix: Value indicating whether to return repositories without \
-                         the service prefix.
     :return: (Union of all the mentioned repo names, service prefix).
     """
 
@@ -164,12 +148,12 @@ async def resolve_repos_with_request(
         account,
         request.uid,
         login_loader,
+        prefixer,
         meta_ids,
         request.sdb,
         request.mdb,
         request.cache,
         request.app["slack"],
-        strip_prefix=strip_prefix,
         separate=separate,
         checkers=checkers,
         pointer=pointer,
@@ -182,16 +166,16 @@ async def resolve_repos(
     account: int,
     uid: str,
     login: Callable[[], Coroutine[None, None, str]],
+    prefixer: Optional[Prefixer],
     meta_ids: Optional[tuple[int, ...]],
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
-    strip_prefix=True,
     separate=False,
     checkers: Optional[dict[str, AccessChecker]] = None,
     pointer: Optional[str] = "?",
-) -> tuple[set[str] | list[set[str]], str]:
+) -> tuple[set[RepositoryName] | list[set[RepositoryName]], str]:
     """
     Dereference all the reposets and produce the joint list of all mentioned repos.
 
@@ -200,49 +184,63 @@ async def resolve_repos(
     If `repositories` is empty, we load the "ALL" reposet.
 
     :param separate: Value indicating whether to return each reposet separately.
-    :param strip_prefix: Value indicating whether to return repositories without \
-                         the service prefix.
     :return: (Union of all the mentioned repo names, service prefix).
     """
+    wrong_format = set()
     if not repositories:
-        # this may initialize meta_ids, so execute serialized
-        reposets = [await load_all_reposet(account, login, sdb, mdb, cache, slack)]
+        # this may initialize meta_ids, so must execute serialized
+        reposets = await load_account_reposets(
+            account,
+            login,
+            [RepositorySet.id, RepositorySet.name, RepositorySet.items, RepositorySet.tracking_re],
+            sdb,
+            mdb,
+            cache,
+            slack,
+        )
         if meta_ids is None:
             meta_ids = await get_metadata_account_ids(account, sdb, cache)
+        if prefixer is None:
+            prefixer = await Prefixer.load(meta_ids, mdb, cache)
+        for reposet in reposets:
+            if reposet[RepositorySet.name.name] == RepositorySet.ALL:
+                reposets = [
+                    prefixer.dereference_repositories(
+                        reposet_items_to_refs(reposet[RepositorySet.items.name]),
+                    ),
+                ]
+                break
+        else:
+            raise ResponseError(
+                NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'),
+            )
     else:
         assert meta_ids is not None
+        if prefixer is None:
+            prefixer = await Prefixer.load(meta_ids, mdb, cache)
         tasks = [
-            resolve_reposet(r, f"{pointer}[{i}]", uid, account, sdb, cache)
+            resolve_reposet(r, wrong_format, f"{pointer}[{i}]", uid, account, prefixer, sdb)
             for i, r in enumerate(repositories)
         ]
         reposets = await gather(*tasks, op="resolve_reposet-s + meta_ids")
     repos = []
     checked_repos = set()
-    wrong_format = set()
     prefix = None
     for reposet in reposets:
         resolved = set()
-        for r in reposet:
-            try:
-                repo = RepositoryName.from_prefixed(r)
-            except ValueError:
-                wrong_format.add(r)
-                continue
-            repo_prefix, repo = repo.prefix, repo.unprefixed
+        for repo_name in reposet:
+            repo_prefix, repo = repo_name.prefix, repo_name.unprefixed
             if prefix is None:
                 prefix = repo_prefix
             elif prefix != repo_prefix:
                 raise ResponseError(
                     InvalidRequestError(
-                        detail=f'Mixed services are not allowed: "{prefix}" vs. "{r}"',
+                        detail=f'Mixed services are not allowed: "{prefix}" vs. "{repo_prefix}"',
                         pointer=pointer,
                     ),
                 )
             checked_repos.add(repo)
-            if strip_prefix:
-                resolved.add(repo)
-            else:
-                resolved.add(r)
+            resolved.add(repo_name)
         if separate:
             repos.append(resolved)
         else:
@@ -260,7 +258,7 @@ async def resolve_repos(
         )
     checkers = checkers or {}
     if (checker := checkers.get(prefix)) is None:
-        checkers[prefix] = checker = await access_classes["github"](
+        checkers[prefix] = checker = await access_classes["github.com"](
             account, meta_ids, sdb, mdb, cache,
         ).load()
     if denied := await checker.check(coerce_logical_repos(checked_repos).keys()):
@@ -282,10 +280,7 @@ async def resolve_repos(
             ),
         )
     if not separate:
-        if strip_prefix:
-            repos = checked_repos
-        else:
-            repos = set(repos)
+        repos = set(repos)
     return repos, prefix + "/"
 
 
@@ -391,12 +386,12 @@ async def _load_account_reposets(
             repos = []
             missing = []
             for r in repo_node_ids:
-                try:
-                    repos.append([prefixer.repo_node_to_prefixed_name[r[0]], r[0]])
-                except KeyError:
+                if r[0] in prefixer.repo_node_to_prefixed_name:
+                    repos.append(RepositoryReference("github.com", r[0], ""))
+                else:
                     missing.append(r[0])
             if missing:
-                log.error("account_repos_log does not agree with api_repositories: %s", missing)
+                log.error("account_repos does not agree with api_repositories: %s", missing)
             if not repos:
                 raise_no_source_data()
 
@@ -409,17 +404,18 @@ async def _load_account_reposets(
 
             wrong_references = []
             for name, physical_repo_id in logical_repos:
-                try:
-                    physical_name = prefixer.repo_node_to_prefixed_name[physical_repo_id]
-                except KeyError:
-                    wrong_references.append((name, physical_repo_id))
+                ref = RepositoryReference("github.com", physical_repo_id, name)
+                if physical_repo_id in prefixer.repo_node_to_prefixed_name:
+                    repos.append(ref)
                 else:
-                    repos.append([f"{physical_name}/{name}", physical_repo_id])
+                    wrong_references.append(ref)
             if wrong_references:
-                wrong_refs_repr = "; ".join(f"{name} => {repo}" for name, repo in wrong_references)
+                wrong_refs_repr = "; ".join(
+                    f"{r.logical_name} => {r.node_id}" for r in wrong_references
+                )
                 log.error("logical repos point to not existing repos: %s", wrong_refs_repr)
 
-            # sort repositories by name
+            # sort repositories by node ID, then logical name
             repos.sort()
 
             rs = RepositorySet(
@@ -433,13 +429,13 @@ async def _load_account_reposets(
                 len(repos),
             )
         if slack is not None:
-            prefixes = {r[0].split("/", 2)[1] for r in repos}
+            name = await get_account_name(account, sdb_conn, mdb, cache, meta_ids=meta_ids)
             await defer(
                 slack.post_install(
                     "installation_goes_on.jinja2",
                     account=account,
                     repos=len(repos),
-                    prefixes=prefixes,
+                    name=name,
                     all_reposet_name=RepositorySet.ALL,
                     reposet=rs.id,
                 ),
@@ -544,88 +540,22 @@ async def load_account_state(
     return None
 
 
-async def refresh_repository_names(
+async def get_account_repositories(
     account: int,
-    meta_ids: tuple[int, ...],
+    prefixer: Prefixer,
     sdb: DatabaseLike,
-    mdb: DatabaseLike,
-    cache: Optional[aiomcache.Client],
-) -> list[str]:
-    """
-    Update repository names in the account's reposets according to github.node_repository.
-
-    github.account_repos updates faster but we don't care if we are missing some rename during one
-    hour.
-
-    :return: List of repository names belonging to the "ALL" reposet.
-    """
-    log = logging.getLogger(f"{metadata.__package__}.refresh_repository_names")
-    reposet_rows, access_checker = await gather(
-        sdb.fetch_all(
-            select([RepositorySet.id, RepositorySet.items, RepositorySet.name]).where(
-                RepositorySet.owner_id == account,
+) -> list[RepositoryName]:
+    """Fetch all the repositories belonging to the account."""
+    repos = await sdb.fetch_val(
+        select(RepositorySet.items).where(
+            RepositorySet.owner_id == account,
+            RepositorySet.name == RepositorySet.ALL,
+        ),
+    )
+    if repos is None:
+        raise ResponseError(
+            NoSourceDataError(
+                detail="The installation of account %d has not finished yet." % account,
             ),
-        ),
-        access_classes["github"](account, meta_ids, sdb, mdb, cache).load(),
-    )
-    registered_node_ids = set(access_checker.installed_repos.values())
-    repo_ids = set()
-    for row in reposet_rows:
-        repo_ids.update(r[1] for r in row[RepositorySet.items.name])
-    name_rows = await mdb.fetch_all(
-        select([NodeRepository.node_id, NodeRepository.url]).where(
-            NodeRepository.acc_id.in_(meta_ids),
-            NodeRepository.node_id.in_(repo_ids),
-            NodeRepository.url.isnot(None),
-        ),
-    )
-    name_map = {r[0]: strip_proto(r[1]) for r in name_rows}
-    updates = []
-    all_reposet_names = []
-    for row in reposet_rows:
-        dirty = False
-        new_items = []
-        is_all = row[RepositorySet.name.name] == RepositorySet.ALL
-        removed = set()
-        for old_name, node_id in row[RepositorySet.items.name]:
-            try:
-                new_name = name_map[node_id]
-            except KeyError:
-                new_name = old_name
-            if node_id not in registered_node_ids:
-                removed.add(node_id)
-                dirty = True
-                continue
-            if logical := extract_logical_repo(old_name, 3):
-                new_name += "/" + logical
-            if old_name != new_name:
-                dirty = True
-                log.info("[%d] rename %s -> %s", account, old_name, new_name)
-            new_items.append([new_name, node_id])
-            if is_all:
-                all_reposet_names.append(new_name)
-        if removed:
-            log.error(
-                'reposet-sync didn\'t delete some repos [acc %d, "%s"]: %s',
-                account,
-                row[RepositorySet.name.name],
-                removed,
-            )
-        if dirty:
-            new_items.sort()
-            updates.append(
-                sdb.execute(
-                    update(RepositorySet)
-                    .where(RepositorySet.id == row[RepositorySet.id.name])
-                    .values(
-                        {
-                            RepositorySet.items: new_items,
-                            RepositorySet.updates_count: RepositorySet.updates_count + 1,
-                            RepositorySet.updated_at: datetime.now(timezone.utc),
-                        },
-                    ),
-                ),
-            )
-    await gather(*updates)
-    all_reposet_names.sort()
-    return all_reposet_names
+        )
+    return prefixer.dereference_repositories(reposet_items_to_refs(repos))

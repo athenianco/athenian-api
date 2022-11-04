@@ -230,7 +230,7 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
             res = await self._request(json=req.to_dict())
         template_id = res["id"]
         row = await assert_existing_row(sdb, GoalTemplate, id=template_id, account_id=1, name="T0")
-        assert row[GoalTemplate.repositories.name] == [[200, None], [201, "l"], [201, "l2"]]
+        assert row[GoalTemplate.repositories.name] == [[200, ""], [201, "l"], [201, "l2"]]
 
     async def test_same_name_different_account(self, sdb: Database) -> None:
         await models_insert(
@@ -399,8 +399,8 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
 
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
         assert row[GoalTemplate.repositories.name] == [
-            [20, None],
-            [21, None],
+            [20, ""],
+            [21, ""],
             [22, "l1"],
             [22, "l2"],
         ]

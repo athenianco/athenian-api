@@ -1,6 +1,7 @@
+import asyncio
 from datetime import timezone
 from sqlite3 import IntegrityError, OperationalError
-from typing import List, Optional, Sequence, Tuple, Type, Union
+from typing import Optional, Sequence, Type
 
 from aiohttp import web
 import aiomcache
@@ -8,16 +9,23 @@ from asyncpg import UniqueViolationError
 from sqlalchemy import and_, delete, insert, select, update
 from sqlalchemy.orm import InstrumentedAttribute
 
+from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import (
+    RepositoryReference,
     get_metadata_account_ids,
     get_user_account_status,
     get_user_account_status_from_request,
     only_admin,
 )
 from athenian.api.internal.miners.access_classes import access_classes
-from athenian.api.internal.reposet import fetch_reposet, load_account_reposets
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
+from athenian.api.internal.reposet import (
+    fetch_reposet,
+    load_account_reposets,
+    reposet_items_to_refs,
+)
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import (
     CreatedIdentifier,
@@ -30,6 +38,7 @@ from athenian.api.models.web.repository_set_create_request import RepositorySetC
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
+from athenian.api.tracing import sentry_span
 
 
 @disable_default_user
@@ -37,7 +46,7 @@ from athenian.api.response import ResponseError, model_response
 async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a repository set.
 
-    :param body: List of repositories to group.
+    :param body: list of repositories to group.
     """
     body = RepositorySetCreateRequest.from_dict(body)
     account = body.account
@@ -68,11 +77,11 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
 
 async def _fetch_reposet_with_owner(
     id: int,
-    columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
+    columns: Sequence[Type[RepositorySet]] | Sequence[InstrumentedAttribute],
     uid: str,
     sdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-):
+) -> tuple[RepositorySet, bool]:
     rs = await fetch_reposet(id, columns, sdb)
     is_admin = await get_user_account_status(uid, rs.owner_id, sdb, None, None, None, cache)
     return rs, is_admin
@@ -97,41 +106,64 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     """List a repository set.
 
     :param id: Numeric identifier of the repository set to list.
-    :type id: repository set ID.
     """
     rs_cols = [
         RepositorySet.name,
         RepositorySet.items,
+        RepositorySet.owner_id,
         RepositorySet.precomputed,
         RepositorySet.tracking_re,
     ]
     rs, _ = await _fetch_reposet_with_owner(id, rs_cols, request.uid, request.sdb, request.cache)
+    meta_ids = await get_metadata_account_ids(rs.owner_id, request.sdb, request.cache)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    items = prefixer.dereference_repositories(reposet_items_to_refs(rs.items))
     return model_response(
         RepositorySetWithName(
-            name=rs.name, items=[r[0] for r in rs.items], precomputed=rs.precomputed,
+            name=rs.name,
+            items=sorted(str(r) for r in items),
+            precomputed=rs.precomputed,
         ),
     )
 
 
 async def _ensure_reposet(
     account: int,
-    body: List[str],
+    body: list[str],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> List[Tuple[str, int]]:
-    repos = {repo.split("/", 1)[1] for repo in body}
+) -> list[RepositoryReference]:
+    try:
+        repos = {RepositoryName.from_prefixed(repo) for repo in body}
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError("items", str(e))) from None
+    grouped = {}
+    for name in repos:
+        grouped.setdefault(name.prefix, set()).add(name.unprefixed)
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
-    checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
-    denied = await checker.check(repos)
-    if denied:
-        raise ResponseError(
-            ForbiddenError(
-                detail="the following repositories are access denied for account %d: %s"
-                % (account, denied),
-            ),
+    checkers = {}
+
+    async def check_access(prefix: str, unprefixed: set[str]):
+        checkers[prefix] = checker = await access_classes[prefix](
+            account, meta_ids, sdb, mdb, cache,
+        ).load()
+        denied = await checker.check(unprefixed)
+        if denied:
+            raise ResponseError(
+                ForbiddenError(
+                    detail="the following repositories are access denied for account %d: %s"
+                    % (account, denied),
+                ),
+            )
+
+    await gather(*(check_access(*pair) for pair in grouped.items()))
+    return sorted(
+        RepositoryReference(
+            name.prefix, checkers[name.prefix].installed_repos[name.unprefixed], name.logical,
         )
-    return sorted((name, checker.installed_repos[name.split("/", 1)[1]]) for name in set(body))
+        for name in repos
+    )
 
 
 @disable_default_user
@@ -139,7 +171,6 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
     """Update a repository set.
 
     :param id: Numeric identifier of the repository set to update.
-    :type id: int
     :param body: New reposet definition.
     """
     body = RepositorySetWithName.from_dict(body)
@@ -157,6 +188,12 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
                 pointer=".name",
             ),
         )
+
+    @sentry_span
+    async def load_prefixer(account: int) -> Prefixer:
+        meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
+        return await Prefixer.load(meta_ids, request.mdb, request.cache)
+
     async with request.sdb.connection() as sdb_conn:
         rs, is_admin = await _fetch_reposet_with_owner(
             id, [RepositorySet], request.uid, sdb_conn, request.cache,
@@ -165,45 +202,53 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
             raise ResponseError(
                 ForbiddenError(detail="User %s may not modify reposet %d" % (request.uid, id)),
             )
-        if body.items is not None:
-            new_items = await _ensure_reposet(
-                rs.owner_id, body.items, sdb_conn, request.mdb, request.cache,
-            )
-        else:
-            new_items = None
-        changed = False
-        if body.name is not None and body.name != rs.name:
-            dupe_id = await sdb_conn.fetch_val(
-                select([RepositorySet.id]).where(
-                    and_(RepositorySet.owner_id == rs.owner_id, RepositorySet.name == body.name),
-                ),
-            )
-            if dupe_id is not None:
-                raise ResponseError(
-                    DatabaseConflict(
-                        detail="there is an existing reposet %s with the same name" % dupe_id,
+        prefix_loader = asyncio.create_task(load_prefixer(rs.owner_id), name="load_prefixer")
+        try:
+            if body.items is not None:
+                new_items = await _ensure_reposet(
+                    rs.owner_id, body.items, sdb_conn, request.mdb, request.cache,
+                )
+            else:
+                new_items = None
+            changed = False
+            if body.name is not None and body.name != rs.name:
+                dupe_id = await sdb_conn.fetch_val(
+                    select(RepositorySet.id).where(
+                        RepositorySet.owner_id == rs.owner_id, RepositorySet.name == body.name,
                     ),
                 )
-            rs.name = body.name
-            changed = True
-        if new_items is not None and new_items != rs.items:
-            rs.items = new_items
-            rs.precomputed = False
-            rs.refresh()
-            changed = True
-        if changed:
-            try:
-                await sdb_conn.execute(
-                    update(RepositorySet).where(RepositorySet.id == id).values(rs.explode()),
-                )
-            except (UniqueViolationError, IntegrityError, OperationalError):
-                raise ResponseError(
-                    DatabaseConflict(detail="there is an existing reposet with the same items"),
-                )
+                if dupe_id is not None:
+                    raise ResponseError(
+                        DatabaseConflict(
+                            detail=f"there is an existing reposet {dupe_id} with the same name",
+                        ),
+                    )
+                rs.name = body.name
+                changed = True
+            if new_items is not None and new_items != rs.items:
+                rs.items = new_items
+                rs.precomputed = False
+                rs.refresh()
+                changed = True
+            if changed:
+                try:
+                    await sdb_conn.execute(
+                        update(RepositorySet).where(RepositorySet.id == id).values(rs.explode()),
+                    )
+                except (UniqueViolationError, IntegrityError, OperationalError):
+                    raise ResponseError(
+                        DatabaseConflict(
+                            detail="there is an existing reposet with the same items",
+                        ),
+                    )
+        finally:
+            await prefix_loader
+        prefixer = prefix_loader.result()
+        items = prefixer.dereference_repositories(reposet_items_to_refs(rs.items))
         return model_response(
             RepositorySetWithName(
                 name=rs.name,
-                items=[r[0] for r in rs.items],
+                items=sorted(str(r) for r in items),
                 precomputed=rs.precomputed,
             ),
         )

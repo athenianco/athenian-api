@@ -128,6 +128,10 @@ class RepositorySetFactory(SQLAlchemyModelFactory):
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
     items = []
 
+    @classmethod
+    def _after_postgeneration(cls, instance, create, results=None):
+        assert instance.items == sorted(instance.items)
+
 
 class TeamFactory(SQLAlchemyModelFactory):
     class Meta:

@@ -1164,9 +1164,9 @@ async def test_delete_logical_repository_smoke(
     assert rows[0][0] == "beta"
     row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name] == [
-        ["github.com/src-d/gitbase", 39652769],
-        ["github.com/src-d/go-git", 40550],
-        ["github.com/src-d/go-git/beta", 40550],
+        ["github.com", 40550, ""],
+        ["github.com", 40550, "beta"],
+        ["github.com", 39652769, ""],
     ]
     await assert_missing_row(sdb, ReleaseSetting, repo_id=40550, logical_name="alpha")
 
@@ -1256,8 +1256,8 @@ async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sd
         .values(
             {
                 RepositorySet.items: [
-                    ["github.com/src-d/go-git", 40550],
-                    ["github.com/src-d/go-git/alpha", 40550],
+                    ["github.com", 40550, ""],
+                    ["github.com", 40550, "alpha"],
                 ],
                 RepositorySet.updated_at: datetime.now(timezone.utc),
                 RepositorySet.updates_count: RepositorySet.updates_count + 1,
@@ -1410,7 +1410,12 @@ class TestSetLogicalRepository(Requester):
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_replace(self, logical_settings_db, release_match_setting_tag_logical_db, sdb):
+    async def test_replace_smoke(
+        self,
+        logical_settings_db,
+        release_match_setting_tag_logical_db,
+        sdb,
+    ):
         await self._test_set_logical_repository(sdb, 2)
 
     # TODO: fix response validation against the schema
@@ -1532,12 +1537,14 @@ class TestSetLogicalRepository(Requester):
             "title": title,
             "labels": [v.lower() for v in labels],
         }
-        row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
-        assert row[RepositorySet.items.name][:3] == [
-            ["github.com/src-d/gitbase", 39652769],
-            ["github.com/src-d/go-git", 40550],
-            ["github.com/src-d/go-git/alpha", 40550],
-        ]
+        row = await sdb.fetch_one(select(RepositorySet).where(RepositorySet.id == 1))
+        for item in (
+            ["github.com", 40550, ""],
+            ["github.com", 40550, "alpha"],
+            ["github.com", 39652769, ""],
+        ):
+            assert item in row[RepositorySet.items.name]
+        assert sorted(row[RepositorySet.items.name]) == row[RepositorySet.items.name]
         assert len(row[RepositorySet.items.name]) == 2 + n
         await assert_existing_row(
             sdb,

@@ -23,14 +23,10 @@ import sqlalchemy as sa
 from sqlalchemy import select
 
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
-from athenian.api.internal.account import get_account_repositories, get_account_repository_refs
-from athenian.api.internal.logical_repos import (
-    coerce_logical_repos,
-    coerce_prefixed_logical_repos,
-    drop_logical_repo,
-)
+from athenian.api.internal.account import get_account_repository_refs
+from athenian.api.internal.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.internal.prefixer import Prefixer, RepositoryName
-from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.reposet import get_account_repositories, resolve_repos
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
@@ -712,16 +708,16 @@ class Settings:
                       belonging to the account.
         """
         if repos is None:
-            repos = await get_account_repositories(self._account, True, self._sdb)
+            repos = await get_account_repositories(self._account, self._prefixer, self._sdb)
+        else:
+            repos = [RepositoryName.from_prefixed(r) for r in repos]
 
         # collect also physical repositories for requested logical repositories
-        repos_to_collect = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
-
-        repo_names_to_collect = {RepositoryName.from_prefixed(repo) for repo in repos_to_collect}
+        repos_to_collect = set(repos).union(r.with_logical("") for r in repos)
 
         name_to_node = self._prefixer.repo_name_to_node.get
         all_repo_ids = {
-            id_ for r in repo_names_to_collect if (id_ := name_to_node(r.unprefixed_physical))
+            id_ for r in repos_to_collect if (id_ := name_to_node(r.unprefixed_physical))
         }
 
         # query is approximate, not requested logical repos are selected
@@ -742,7 +738,7 @@ class Settings:
             if logical_name := row[ReleaseSetting.logical_name.name]:
                 row_repo_name = row_repo_name.with_logical(logical_name)
 
-            if row_repo_name not in repo_names_to_collect:
+            if row_repo_name not in repos_to_collect:
                 # not requested logical repos
                 continue
 
@@ -760,7 +756,7 @@ class Settings:
                 ),
             )
         missing_logical = []
-        for r in repo_names_to_collect:
+        for r in repos_to_collect:
             if r in loaded:
                 continue
             if r.is_logical:
@@ -800,7 +796,7 @@ class Settings:
         dereference: bool = True,
         pointer_root: str = "",
     ) -> set[str]:
-        """Set the release matching rule for a list of repositories."""
+        """Set the release matching rule for a list of *prefixed* repositories."""
         for propname, s in (
             ("branches", ReleaseMatch.branch),
             ("tags", ReleaseMatch.tag),
@@ -838,19 +834,23 @@ class Settings:
                 self._account,
                 self._user_id,
                 self._login,
+                self._prefixer,
                 meta_ids,
                 self._sdb,
                 self._mdb,
                 self._cache,
                 self._slack,
-                strip_prefix=False,
             )
+        else:
+            try:
+                repos = {RepositoryName.from_prefixed(r) for r in repos}
+            except ValueError as e:
+                raise ResponseError(InvalidRequestError("?", str(e))) from None
         values = []
-        for repo in repos:
-            repo_name = RepositoryName.from_prefixed(repo)
+        for repo_name in repos:
             if repo_name.is_logical and match not in (ReleaseMatch.tag, ReleaseMatch.event):
                 msg = (
-                    f"Logical repository {repo} must be released either by tag or by "
+                    f"Logical repository {repo_name} must be released either by tag or by "
                     "submitted event."
                 )
                 raise ResponseError(InvalidRequestError(f"{pointer_root}.{match}", detail=msg))
@@ -886,7 +886,7 @@ class Settings:
                     await sdb_conn.execute_many(query, values)
         else:
             await self._sdb.execute_many(query, values)
-        return repos
+        return {str(r) for r in repos}
 
     async def list_logical_repositories(
         self,

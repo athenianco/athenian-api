@@ -34,7 +34,7 @@ class TestGetGoalTemplate(Requester):
         await models_insert(
             sdb,
             GoalTemplateFactory(
-                id=200, repositories=[[1000, None], [1001, "logical0"], [1001, "logical1"]],
+                id=200, repositories=[[1000, ""], [1001, "logical0"], [1001, "logical1"]],
             ),
         )
         async with DBCleaner(mdb_rw) as mdb_cleaner:
@@ -192,7 +192,7 @@ class TestCreateGoalTemplate(BaseCreateGoalTemplateTest):
             res = await self._request(json=req.to_dict())
         template_id = res["id"]
         row = await assert_existing_row(sdb, GoalTemplate, id=template_id, account_id=1, name="T0")
-        assert row[GoalTemplate.repositories.name] == [[200, None], [201, "l"], [201, "l2"]]
+        assert row[GoalTemplate.repositories.name] == [[200, ""], [201, "l"], [201, "l2"]]
 
     async def test_same_name_different_account(self, sdb: Database) -> None:
         await models_insert(
@@ -276,7 +276,7 @@ class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
 
     async def test_invalid_repositories(self, sdb: Database) -> None:
         await models_insert(
-            sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, repositories=[[1, None]]),
+            sdb, AccountFactory(id=10), GoalTemplateFactory(id=111, repositories=[[1, ""]]),
         )
         req_body = GoalTemplateUpdateRequest(
             name="T", metric=PullRequestMetricID.PR_DONE,
@@ -288,7 +288,7 @@ class TestUpdateGoalTemplateErrors(BaseUpdateGoalTemplateTest):
         await self._request(111, 400, json=req_body)
 
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
-        assert row[GoalTemplate.repositories.name] == [[1, None]]
+        assert row[GoalTemplate.repositories.name] == [[1, ""]]
 
 
 class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
@@ -302,7 +302,7 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
         await models_insert(
             sdb,
             AccountFactory(id=10),
-            GoalTemplateFactory(id=111, repositories=[[10, None]]),
+            GoalTemplateFactory(id=111, repositories=[[10, ""]]),
         )
         req = GoalTemplateUpdateRequest(name="T1", metric=PullRequestMetricID.PR_MERGED)
         await self._request(111, json=req.to_dict())
@@ -313,7 +313,7 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
         await models_insert(
             sdb,
             AccountFactory(id=10),
-            GoalTemplateFactory(id=111, repositories=[[10, None]]),
+            GoalTemplateFactory(id=111, repositories=[[10, ""]]),
         )
         req = GoalTemplateUpdateRequest(
             name="T1",
@@ -334,8 +334,8 @@ class TestUpdateGoalTemplate(BaseUpdateGoalTemplateTest):
 
         row = await assert_existing_row(sdb, GoalTemplate, id=111)
         assert row[GoalTemplate.repositories.name] == [
-            [20, None],
-            [21, None],
+            [20, ""],
+            [21, ""],
             [22, "l1"],
             [22, "l2"],
         ]

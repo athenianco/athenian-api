@@ -212,27 +212,21 @@ def fill_state_session(session: sqlalchemy.orm.Session):
             owner_id=1,
             precomputed=os.getenv("PRECOMPUTED", "1") == "1",
             tracking_re=".*alpha",
-            items=[["github.com/src-d/gitbase", 39652769], ["github.com/src-d/go-git", 40550]],
+            items=[["github.com", 40550, ""], ["github.com", 39652769, ""]],
         ),
     )
     session.add(
         RepositorySet(
             name="all",
             owner_id=2,
-            items=[
-                ["github.com/src-d/hercules", 39652771],
-                ["github.com/athenianco/athenian-api", 0],
-            ],
+            items=[["github.com", 0, ""], ["github.com", 39652771, ""]],
         ),
     )
     session.add(
         RepositorySet(
             name="all",
             owner_id=3,
-            items=[
-                ["github.com/athenianco/athenian-webapp", 0],
-                ["github.com/athenianco/athenian-api", 0],
-            ],
+            items=[["github.com", 0, ""], ["github.com", 1, ""]],
         ),
     )
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))

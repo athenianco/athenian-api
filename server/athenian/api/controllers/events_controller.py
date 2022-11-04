@@ -131,7 +131,9 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 continue
             unique_notifications.add(key)
         meta_ids = await get_metadata_account_ids(account, sdb, request.cache)
-        checker = await access_classes["github"](account, meta_ids, sdb, mdb, request.cache).load()
+        checker = await access_classes["github.com"](
+            account, meta_ids, sdb, mdb, request.cache,
+        ).load()
         if denied := await checker.check(repos):
             raise ResponseError(
                 ForbiddenError(
@@ -454,18 +456,21 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, model.account, prefixer)
-    logical_settings = await settings.list_logical_repositories()
-    prefixed_repos, _ = await resolve_repos_with_request(
-        model.repositories,
-        model.account,
-        request,
-        meta_ids,
-        strip_prefix=False,
+    (prefixed_repos, _), logical_settings = await gather(
+        resolve_repos_with_request(
+            model.repositories,
+            model.account,
+            request,
+            meta_ids=meta_ids,
+            prefixer=prefixer,
+            pointer=".repositories",
+        ),
+        settings.list_logical_repositories(),
     )
-    repos = [r.split("/", 1)[1] for r in prefixed_repos]
+    repos = [r.unprefixed for r in prefixed_repos]
     (branches, default_branches), release_settings = await gather(
         BranchMiner.extract_branches(repos, prefixer, meta_ids, request.mdb, request.cache),
-        settings.list_release_matches(prefixed_repos),
+        settings.list_release_matches([str(r) for r in prefixed_repos]),
     )
     tasks = [
         droppers[t](
@@ -503,7 +508,7 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
         request.cache,
     )
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
-    checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
+    checker = await access_classes["github.com"](account, meta_ids, sdb, mdb, cache).load()
     for i, notification in enumerate(notifications):
         notification.validate_timestamps()
         try:
