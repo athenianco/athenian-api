@@ -725,7 +725,7 @@ async def _delete_logical_repository(
     async def clean_align_model(model, fetch_expr=None, id_columns=None):
         if id_columns is None:
             id_columns = [model.id]
-        seed = select(*id_columns)
+        seed = select(model.repositories, *id_columns)
         if fetch_expr is None:
             fetch_expr = seed.where(model.account_id == account)
         else:
