@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, TeamGoal
-from athenian.api.models.web import GoalCreateRequest, GoalCreationTeamGoal, PullRequestMetricID
+from athenian.api.models.web import GoalCreateRequest, PullRequestMetricID, TeamGoalAssociation
 from athenian.api.models.web.goal import MetricValue
 from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
@@ -137,7 +137,7 @@ class BaseCreateGoalTest(BaseGoalTest):
             valid_from=valid_from,
             expires_at=expires_at,
             team_goals=[
-                GoalCreationTeamGoal(team_id=t_id, target=target, metric_params=params)
+                TeamGoalAssociation(team_id=t_id, target=target, metric_params=params)
                 for t_id, target, params in normalized_team_goals
             ],
             **kwargs,

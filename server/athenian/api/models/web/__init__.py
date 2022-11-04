@@ -121,11 +121,11 @@ from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.goal import (
     AlignGoalsRequest,
     GoalCreateRequest,
-    GoalCreationTeamGoal,
     GoalMetricSeriesPoint,
     GoalSeriesGranularity,
     GoalTree,
     GoalValue,
+    TeamGoalAssociation,
     TeamGoalTree,
 )
 from athenian.api.models.web.goal_template import GoalTemplate, GoalTemplateCommon
