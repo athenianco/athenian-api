@@ -46,12 +46,7 @@ class RepositorySet(declarative_base()):
         server_default=sa.func.now(),
         onupdate=lambda ctx: datetime.now(timezone.utc),
     )
-    updates_count = sa.Column(
-        sa.Integer(),
-        nullable=False,
-        default=1,
-        onupdate=lambda ctx: ctx.get_current_parameters()["updates_count"] + 1,
-    )
+    updates_count = sa.Column(sa.Integer(), nullable=False, default=1)
     tracking_re = sa.Column(sa.Text(), nullable=False, default=".*", server_default=".*")
     precomputed = sa.Column(sa.Boolean(), nullable=False, default=False, server_default="false")
 
