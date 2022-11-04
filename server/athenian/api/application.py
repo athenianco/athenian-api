@@ -36,6 +36,7 @@ import especifico.lifecycle
 import especifico.security
 from especifico.spec import OpenAPISpecification
 from flogging import flogging
+from jsonschema import RefResolver
 import prometheus_client
 import psutil
 import sentry_sdk
@@ -906,9 +907,9 @@ class AthenianApp(especifico.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    def add_api(self, specification: str, **kwargs):
+    def add_api(self, specification: str, ref_resolver_store: Optional[dict] = None, **kwargs):
         """Load the API spec and add the defined routes."""
-        api = super().add_api(specification, **kwargs)
+        api = super().add_api(specification, ref_resolver_store=ref_resolver_store, **kwargs)
         api.subapp["aiohttp_jinja2_environment"].autoescape = False
         api.jsonifier.json = FriendlyJson
         for k, v in api.subapp.items():
@@ -923,9 +924,11 @@ class AthenianApp(especifico.AioHttpApp):
             method = route.method.lower()
             path = route.resource.canonical
             try:
-                route_spec[path] = api.specification.get_operation(path[base_offset:], method)
+                op = api.specification.get_operation(path[base_offset:], method)
             except KeyError:
                 continue
+            route_spec[path] = _resolve_operation_req_body(op, components, ref_resolver_store)
+
         self.app["route_spec"] = route_spec
 
     async def _sample_stack(self):
@@ -1039,3 +1042,26 @@ class AthenianApp(especifico.AioHttpApp):
 
             cls._ref_resolver_store = {public_schema_url: public_schema}
         return cls._ref_resolver_store
+
+
+def _resolve_operation_req_body(
+    operation: dict,
+    components: dict,
+    ref_resolver_store: Optional[dict],
+) -> dict:
+    """Resolve the request body schema inside an OpenAPI operation and return the operation."""
+    # request body is resolved since it's inspected by AthenianAioHttpSecurityHandlerFactory
+    # to have an implicit account in request if implied by authentication
+
+    # only shallow ref resolving is done, to never create cycles
+    try:
+        schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        ref = schema["$ref"]
+    except KeyError:
+        return operation
+
+    schema = schema | {"components": components}
+    resolver = RefResolver.from_schema(schema, store=ref_resolver_store)
+    with resolver.resolving(ref) as resolved:
+        operation["requestBody"]["content"]["application/json"]["schema"] = resolved
+    return operation
