@@ -86,3 +86,15 @@ class GoalCreateRequest(_BaseGoal):
 
     account: int
     team_goals: list[TeamGoalAssociation]
+
+
+class GoalUpdateRequest(Model):
+    """Goal update request."""
+
+    archived: bool
+    name: str
+    repositories: Optional[list[str]]
+    jira_projects: Optional[list[str]]
+    jira_priorities: Optional[list[str]]
+    jira_issue_types: Optional[list[str]]
+    team_goals: list[TeamGoalAssociation]
