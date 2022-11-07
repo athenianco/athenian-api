@@ -4,7 +4,7 @@ from typing import Optional
 
 from aiohttp import web
 
-from athenian.api.align.exceptions import GoalTemplateNotFoundError
+from athenian.api.align.exceptions import GoalNotFoundError, GoalTemplateNotFoundError
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
     GoalCreationInfo,
@@ -264,7 +264,8 @@ async def delete_goal(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             account = await fetch_goal_account(id, sdb_conn)
-            await get_user_account_status_from_request(request, account)
+            if not await request_user_belongs_to_account(request, account):
+                raise GoalNotFoundError(id)
             await db_delete_goal(account, id, sdb_conn)
 
     return web.Response(status=204)

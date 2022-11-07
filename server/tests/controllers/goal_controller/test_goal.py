@@ -64,7 +64,9 @@ class TestDeleteGoalErrors(BaseDeleteGoalTest):
 
     async def test_account_mismatch(self, sdb: Database) -> None:
         await models_insert(sdb, AccountFactory(id=99), GoalFactory(id=100, account_id=99))
-        await self._request(100, 404)
+        res = await self._request(100, 404)
+        assert res is not None
+        assert "99" not in res["detail"]
         await assert_existing_row(sdb, Goal, id=100)
 
     async def test_default_user_forbidden(self, sdb: Database) -> None:
