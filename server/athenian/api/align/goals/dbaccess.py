@@ -50,6 +50,7 @@ class TeamGoalTargetAssignment:
 
     team_id: int
     target: int | float | str
+    metric_params: Optional[dict]
 
 
 @sentry_span
@@ -139,6 +140,7 @@ async def assign_team_goals(
             TeamGoal.goal_id.name: goal_id,
             TeamGoal.team_id.name: assign.team_id,
             TeamGoal.target.name: assign.target,
+            TeamGoal.metric_params.name: assign.metric_params,
             TeamGoal.created_at.name: now,
             TeamGoal.updated_at.name: now,
         }
@@ -151,6 +153,7 @@ async def assign_team_goals(
         index_elements=TeamGoal.__table__.primary_key.columns,
         set_={
             TeamGoal.target.name: stmt.excluded.target,
+            TeamGoal.metric_params.name: stmt.excluded.metric_params,
             TeamGoal.updated_at.name: stmt.excluded.updated_at,
         },
     )

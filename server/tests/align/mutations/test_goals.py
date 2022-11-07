@@ -1069,3 +1069,36 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         team_11_row = await assert_existing_row(sdb, TeamGoal, team_id=11, goal_id=20)
         assert team_11_row[TeamGoal.target.name] == 2
         await assert_missing_row(sdb, TeamGoal, team_id=10, goal_id=20)
+
+    async def test_set_teams_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, metric_params={"threshold": 1}),
+            *[TeamFactory(id=id_) for id_ in (10, 20, 30)],
+            TeamGoalFactory(team_id=10, goal_id=100, metric_params={"threshold": 2}),
+            TeamGoalFactory(team_id=30, goal_id=100, metric_params={"threshold": 3}),
+        )
+
+        team_changes = [
+            {"teamId": 10, "target": {"int": 1}, "metricParams": {"threshold": {"int": 10}}},
+            {"teamId": 20, "target": {"int": 1}, "metricParams": None},
+            {"teamId": 30, "target": {"int": 1}, "metricParams": {"threshold": {"int": 20}}},
+        ]
+        variables = {
+            "accountId": 1,
+            "input": {
+                UpdateGoalInputFields.goalId: 100,
+                UpdateGoalInputFields.teamGoalChanges: team_changes,
+            },
+        }
+        res = await self._request(variables)
+        assert "errors" not in res
+        assert res["data"]["updateGoal"]["goal"]["id"] == 100
+        await assert_existing_row(
+            sdb, TeamGoal, goal_id=100, team_id=10, metric_params={"threshold": 10},
+        )
+        row_20 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=20)
+        assert row_20[TeamGoal.metric_params.name] is None
+        await assert_existing_row(
+            sdb, TeamGoal, goal_id=100, team_id=30, metric_params={"threshold": 20},
+        )

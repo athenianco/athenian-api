@@ -56,7 +56,7 @@ class BaseDeleteGoalTest(BaseGoalTest):
         return await response.json()
 
 
-class TestRemoveGoalErrors(BaseDeleteGoalTest):
+class TestDeleteGoalErrors(BaseDeleteGoalTest):
     async def test_non_existing_goal(self) -> None:
         res = await self._request(999, 404)
         assert res is not None

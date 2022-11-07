@@ -226,7 +226,6 @@ class GoalUpdateInfo:
     team_goal_assignments: Sequence[TeamGoalTargetAssignment]
     archived: Optional[bool]
     name: Optional[str]
-    metric: Optional[str]
     repositories: Optional[RepositoriesUpdateInfo]
     jira_projects: Optional[StringsListUpdateInfo]
     jira_priorities: Optional[StringsListUpdateInfo]
@@ -262,8 +261,10 @@ async def _parse_update_goal_input(
                 target = parse_union_value(change[TeamGoalChangeFields.target])
             except StopIteration:
                 invalid_targets.append(team_id)
-            else:
-                assignments.append(TeamGoalTargetAssignment(team_id, target))
+                continue
+
+            metric_params = parse_metric_params(change.get(TeamGoalChangeFields.metricParams))
+            assignments.append(TeamGoalTargetAssignment(team_id, target, metric_params))
         else:
             invalid_targets.append(team_id)
 
@@ -303,7 +304,6 @@ async def _parse_update_goal_input(
         team_goal_assignments=assignments,
         archived=input.get(UpdateGoalInputFields.archived),
         name=input.get(UpdateGoalInputFields.name),
-        metric=input.get(UpdateGoalInputFields.metric),
         repositories=repositories,
         jira_projects=jira_projects,
         jira_priorities=jira_priorities,

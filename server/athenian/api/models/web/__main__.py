@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 from typing import TypeVar
 
@@ -32,8 +33,11 @@ def main():
         imports.sort(key=str.casefold)
         all_imports.append("from %s import %s\n" % (ip, ", ".join(imports)))
     all_imports.sort()
-    with open(root / "__init__.py", "w") as fout:
+
+    fpath = root / "__init__.py"
+    with open(fpath, "w") as fout:
         fout.writelines(all_imports)
+    subprocess.check_call(["isort", "-q", fpath])
 
 
 if __name__ == "__main__":
