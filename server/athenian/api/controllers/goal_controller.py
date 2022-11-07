@@ -1,6 +1,7 @@
+import dataclasses
 from itertools import chain, groupby
 from operator import itemgetter
-from typing import Optional
+from typing import Optional, Sequence
 
 from aiohttp import web
 
@@ -8,6 +9,7 @@ from athenian.api.align.exceptions import GoalNotFoundError, GoalTemplateNotFoun
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
     GoalCreationInfo,
+    TeamGoalTargetAssignment,
     delete_goal as db_delete_goal,
     delete_goal_template_from_db,
     dump_goal_repositories,
@@ -18,6 +20,8 @@ from athenian.api.align.goals.dbaccess import (
     insert_goal,
     insert_goal_template,
     parse_goal_repositories,
+    replace_team_goals,
+    update_goal as update_goal_in_db,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.measure import GoalToServe
@@ -51,6 +55,7 @@ from athenian.api.models.web import (
     GoalTemplate,
     GoalTemplateCreateRequest,
     GoalTemplateUpdateRequest,
+    GoalUpdateRequest,
     InvalidRequestError,
 )
 from athenian.api.request import AthenianWebRequest
@@ -287,6 +292,34 @@ async def create_goal(request: AthenianWebRequest, body: dict) -> web.Response:
     return model_response(CreatedIdentifier(id=new_goal_id))
 
 
+@disable_default_user
+async def update_goal(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
+    """Update an existing goal."""
+    try:
+        update_req = GoalUpdateRequest.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
+
+    async with request.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            account = await fetch_goal_account(id, sdb_conn)
+            if not await request_user_belongs_to_account(request, account):
+                raise GoalNotFoundError(id)
+            update_info = await _parse_update_request(account, request, update_req)
+            await replace_team_goals(account, id, update_info.team_goals, sdb_conn)
+            kw = {
+                Goal.repositories.name: update_info.repositories,
+                Goal.jira_projects.name: update_info.jira_projects,
+                Goal.jira_priorities.name: update_info.jira_priorities,
+                Goal.jira_issue_types.name: update_info.jira_issue_types,
+                Goal.archived.name: update_info.archived,
+                Goal.name.name: update_info.name,
+            }
+            await update_goal_in_db(account, id, sdb_conn, **kw)
+
+    return model_response(CreatedIdentifier(id=id))
+
+
 @sentry_span
 async def _parse_create_request(
     request: AthenianWebRequest,
@@ -341,3 +374,58 @@ async def _parse_create_request(
         expires_at=expires_at,
     )
     return GoalCreationInfo(goal, team_goals)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _GoalUpdateInfo:
+    archived: bool
+    name: str
+    team_goals: Sequence[TeamGoalTargetAssignment]
+    repositories: Optional[list[tuple[int, str]]]
+    jira_projects: Optional[list[str]]
+    jira_priorities: Optional[list[str]]
+    jira_issue_types: Optional[list[str]]
+
+
+@sentry_span
+async def _parse_update_request(
+    account_id: int,
+    request: AthenianWebRequest,
+    update_req: GoalUpdateRequest,
+):
+    duplicates = []
+    seen = set()
+    team_goals = []
+    for tg in update_req.team_goals:
+        if tg.team_id in seen:
+            duplicates.append(tg.team_id)
+        else:
+            team_goals.append(TeamGoalTargetAssignment(tg.team_id, tg.target, tg.metric_params))
+
+        seen.add(tg.team_id)
+
+    if duplicates:
+        duplicated_repr = ",".join(map(str, duplicates))
+        raise ResponseError(
+            InvalidRequestError(".team_goals", f"Duplicated teams: {duplicated_repr}"),
+        )
+
+    repositories = await parse_request_repositories(update_req.repositories, request, account_id)
+    if update_req.jira_priorities is None:
+        jira_priorities = None
+    else:
+        jira_priorities = sorted({normalize_priority(p) for p in update_req.jira_priorities})
+    if update_req.jira_issue_types is None:
+        jira_issue_types = None
+    else:
+        jira_issue_types = sorted({normalize_issue_type(t) for t in update_req.jira_issue_types})
+
+    return _GoalUpdateInfo(
+        archived=update_req.archived,
+        name=update_req.name,
+        team_goals=team_goals,
+        repositories=repositories,
+        jira_projects=update_req.jira_projects,
+        jira_priorities=jira_priorities,
+        jira_issue_types=jira_issue_types,
+    )
