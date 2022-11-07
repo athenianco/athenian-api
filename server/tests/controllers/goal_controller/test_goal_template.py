@@ -63,7 +63,8 @@ class TestGetGoalTemplate(Requester):
 
     async def test_account_mismatch(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=101, account_id=3))
-        await self._request(101, 404)
+        res = await self._request(101, 404)
+        assert "3" not in res["detail"]  # do not leak account id
 
     async def _request(self, template: int, assert_status: int = 200) -> dict:
         path = f"/v1/goal_template/{template}"
@@ -272,7 +273,8 @@ class TestDeleteGoalTemplateErrors(BaseDeleteGoalTemplateTest):
         await models_insert(
             sdb, AccountFactory(id=10), GoalTemplateFactory(id=1121, account_id=10),
         )
-        await self._request(1121, 404)
+        res = await self._request(1121, 404)
+        assert "10" not in res["detail"]
         await assert_existing_row(sdb, GoalTemplate, account_id=10, id=1121)
 
 

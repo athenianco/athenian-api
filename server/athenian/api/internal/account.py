@@ -348,6 +348,15 @@ async def get_user_account_status_from_request(request: AthenianWebRequest, acco
     )
 
 
+async def request_user_belongs_to_account(request: AthenianWebRequest, account: int) -> bool:
+    """Return whether the requesting user belongs to the given account."""
+    try:
+        await get_user_account_status_from_request(request, account)
+    except ResponseError:
+        return False
+    return True
+
+
 @cached(
     exptime=60,
     serialize=lambda is_admin: b"1" if is_admin else b"0",

@@ -4,7 +4,7 @@ from typing import Optional
 
 from aiohttp import web
 
-from athenian.api.align.exceptions import GoalTemplateNotFoundError
+from athenian.api.align.exceptions import GoalNotFoundError, GoalTemplateNotFoundError
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
     GoalCreationInfo,
@@ -29,6 +29,7 @@ from athenian.api.db import Row, integrity_errors
 from athenian.api.internal.account import (
     get_metadata_account_ids,
     get_user_account_status_from_request,
+    request_user_belongs_to_account,
 )
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
@@ -75,9 +76,7 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
     """
     row = await get_goal_template_from_db(id, request.sdb)
     account = row[DBGoalTemplate.account_id.name]
-    try:
-        await get_user_account_status_from_request(request, account)
-    except ResponseError:
+    if not await request_user_belongs_to_account(request, account):
         # do not leak the account that owns this template
         raise GoalTemplateNotFoundError(id)
     if (db_repos := parse_goal_repositories(row[DBGoalTemplate.repositories.name])) is not None:
@@ -149,11 +148,8 @@ async def delete_goal_template(request: AthenianWebRequest, id: int) -> web.Resp
     :param id: Numeric identifier of the goal template.
     """
     template = await get_goal_template_from_db(id, request.sdb)
-    try:
-        await get_user_account_status_from_request(
-            request, template[DBGoalTemplate.account_id.name],
-        )
-    except ResponseError:
+    account = template[DBGoalTemplate.account_id.name]
+    if not await request_user_belongs_to_account(request, account):
         raise GoalTemplateNotFoundError(id) from None
     await delete_goal_template_from_db(id, request.sdb)
     return web.json_response({})
@@ -168,11 +164,7 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     update_request = GoalTemplateUpdateRequest.from_dict(body)
     template = await get_goal_template_from_db(id, request.sdb)
     account_id = template[DBGoalTemplate.account_id.name]
-    try:
-        await get_user_account_status_from_request(
-            request, template[DBGoalTemplate.account_id.name],
-        )
-    except ResponseError:
+    if not await request_user_belongs_to_account(request, account_id):
         raise GoalTemplateNotFoundError(id) from None
     repositories = await parse_request_repositories(
         update_request.repositories, request, account_id,
@@ -272,7 +264,8 @@ async def delete_goal(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             account = await fetch_goal_account(id, sdb_conn)
-            await get_user_account_status_from_request(request, account)
+            if not await request_user_belongs_to_account(request, account):
+                raise GoalNotFoundError(id)
             await db_delete_goal(account, id, sdb_conn)
 
     return web.Response(status=204)
