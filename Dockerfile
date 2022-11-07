@@ -15,7 +15,7 @@ echo\n' > /browser && \
     chmod +x /browser
 
 # matches our production except -march=haswell, we have to downgrade -march because of GHA
-ENV OPT="-fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
+ENV OPT="-Wl,--emit-relocs -fno-reorder-blocks-and-partition -fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
 
 # runtime environment
 RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \

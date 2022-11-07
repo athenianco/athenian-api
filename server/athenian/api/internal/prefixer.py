@@ -233,18 +233,26 @@ class Prefixer:
     def dereference_repositories(
         self,
         repo_refs: Iterable[RepositoryReference],
-    ) -> list[RepositoryName]:
+        return_missing: bool = False,
+    ) -> list[RepositoryName] | tuple[list[RepositoryName], list[int]]:
         """Convert a list of RepositoryReference to a list of prefixed repository names."""
         repo_names = []
         repo_node_to_name = self.repo_node_to_name.__getitem__
-        for repo in repo_refs:
+        missing = []
+        for i, repo in enumerate(repo_refs):
             try:
                 physical_name = repo.prefix + "/" + repo_node_to_name(repo.node_id)
             except KeyError:
-                raise ValueError(f"Invalid repo_id {repo.node_id}") from None
+                if return_missing:
+                    missing.append(i)
+                    continue
+                else:
+                    raise ValueError(f"Invalid repo_id {repo.node_id}") from None
             repo_names.append(
                 RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name),
             )
+        if return_missing:
+            return repo_names, missing
         return repo_names
 
     def __str__(self) -> str:

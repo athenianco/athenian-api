@@ -15,7 +15,6 @@ import aiomcache
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import insert, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
@@ -211,7 +210,29 @@ async def precompute_reposet(
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
         return
-    deref_items = prefixer.dereference_repositories(reposet_items_to_refs(reposet.items))
+    deref_items, missing = prefixer.dereference_repositories(
+        reposet_items_to_refs(reposet.items), return_missing=True,
+    )
+    if missing:
+        log.error(
+            "reposet-sync did not delete %d repositories in account %d: %s",
+            len(missing),
+            reposet.owner_id,
+            ", ".join(reposet.items[i] for i in missing),
+        )
+        await sdb.execute(
+            sa.update(RepositorySet)
+            .where(RepositorySet.id == reposet.id)
+            .values(
+                {
+                    RepositorySet.updates_count: RepositorySet.updates_count + 1,
+                    RepositorySet.updated_at: datetime.now(timezone.utc),
+                    RepositorySet.items: [
+                        r for i, r in enumerate(reposet.items) if i not in missing
+                    ],
+                },
+            ),
+        )
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
         num_teams, num_bots = await ensure_teams(
@@ -415,7 +436,7 @@ async def precompute_reposet(
     else:
         if not reposet.precomputed:
             await sdb.execute(
-                update(RepositorySet)
+                sa.update(RepositorySet)
                 .where(RepositorySet.id == reposet.id)
                 .values(
                     {
@@ -538,7 +559,7 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
         return team_row[Team.id.name]
 
     team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
-    return await sdb.execute(insert(Team).values(team.create_defaults().explode()))
+    return await sdb.execute(sa.insert(Team).values(team.create_defaults().explode()))
 
 
 class _DurationTracker:
