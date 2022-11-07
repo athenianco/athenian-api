@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from http import HTTPStatus
 import logging
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import sqlalchemy as sa
 
@@ -51,6 +51,13 @@ class TeamGoalTargetAssignment:
     team_id: int
     target: int | float | str
     metric_params: Optional[dict]
+
+    def equals_db_row(self, row: Mapping[str, Any]) -> bool:
+        """Return True if this assignment is already equal to the DB row."""
+        return (
+            row[TeamGoal.target.name] == self.target
+            and row[TeamGoal.metric_params.name] == self.metric_params
+        )
 
 
 @sentry_span
@@ -158,6 +165,38 @@ async def assign_team_goals(
         },
     )
     await sdb_conn.execute_many(upsert_stmt, values)
+
+
+@sentry_span
+async def replace_team_goals(
+    account_id: int,
+    goal_id: int,
+    assignments: Sequence[TeamGoalTargetAssignment],
+    sdb_conn: Connection,
+) -> None:
+    """Replace the TeamGoal-s assigned to a Goal."""
+    current_stmt = (
+        sa.select(TeamGoal.team_id, TeamGoal.target, TeamGoal.metric_params)
+        .join_from(TeamGoal, Goal, TeamGoal.goal_id == Goal.id)
+        .where(Goal.account_id == account_id, TeamGoal.goal_id == goal_id)
+    )
+    current = {r[TeamGoal.team_id.name]: r for r in await sdb_conn.fetch_all(current_stmt)}
+    new_teams = {assign.team_id for assign in assignments}
+    to_delete = [t for t in current if t not in new_teams]
+
+    changed = []
+    for assign in assignments:
+        try:
+            existing_row = current[assign.team_id]
+        except KeyError:
+            changed.append(assign)  # newly assigned team
+        else:
+            if not assign.equals_db_row(existing_row):
+                changed.append(assign)  # team goal must be updated
+
+    await assign_team_goals(account_id, goal_id, changed, sdb_conn)
+    if to_delete:
+        await delete_team_goals(account_id, goal_id, to_delete, sdb_conn)
 
 
 @sentry_span
