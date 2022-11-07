@@ -1,12 +1,25 @@
+from typing import Any
+from unittest import mock
+
 import sqlalchemy as sa
 
 from athenian.api.db import Database
-from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
+from athenian.api.internal.account import (
+    copy_teams_as_needed,
+    get_multiple_metadata_account_ids,
+    request_user_belongs_to_account,
+)
 from athenian.api.models.metadata.github import Team as MetaTeam
 from athenian.api.models.state.models import Team
+from athenian.api.request import AthenianWebRequest
 from tests.testutils.db import DBCleaner, assert_existing_row, models_insert, models_insert_auto_pk
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import AccountFactory, AccountGitHubAccountFactory, TeamFactory
+from tests.testutils.factory.state import (
+    AccountFactory,
+    AccountGitHubAccountFactory,
+    TeamFactory,
+    UserAccountFactory,
+)
 
 
 class TestGetMultipleMetadataMetadataIds:
@@ -74,3 +87,53 @@ class TestCopyTeamsAsNeeded:
             await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb_rw, None)
 
         await assert_existing_row(sdb, Team, name="T", origin_node_id=101, parent_id=root_team_id)
+
+
+class TestRequestUserBelongsToAccount:
+    async def test_regular_user(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            UserAccountFactory(account_id=33, user_id="github|123", is_admin=False),
+        )
+        req = _request_mock(sdb=sdb, uid="github|123")
+        assert await request_user_belongs_to_account(req, 33)
+
+    async def test_admin_user(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            UserAccountFactory(account_id=33, user_id="github|123", is_admin=True),
+        )
+        req = _request_mock(sdb=sdb, uid="github|123")
+        assert await request_user_belongs_to_account(req, 33)
+
+    async def test_doesnt_belong(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            UserAccountFactory(account_id=33, user_id="github|123", is_admin=True),
+        )
+        req = _request_mock(sdb=sdb, uid="github|123")
+        assert not await request_user_belongs_to_account(req, 34)
+
+        req = _request_mock(sdb=sdb, uid="github|456")
+        assert not await request_user_belongs_to_account(req, 33)
+
+
+def _request_mock(**kwargs: Any) -> AthenianWebRequest:
+    req = mock.MagicMock(spec=AthenianWebRequest)
+
+    defaults = {
+        "uid": "XX",
+        "sdb": None,
+        "mdb": None,
+        "cache": None,
+        "user": None,
+        "is_god": False,
+        "app": {"slack": None},
+    }
+    for field, default in defaults.items():
+        val = kwargs.get(field, default)
+        setattr(req, field, val)
+    return req
