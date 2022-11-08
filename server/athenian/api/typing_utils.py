@@ -36,7 +36,7 @@ import sentry_sdk
 from athenian.api.to_object_arrays import array_from_buffer, is_not_null
 from athenian.api.tracing import sentry_span
 
-OriginalSpecialForm = type(Any)
+OriginalSpecialForm = type(Union)
 
 
 class _VerbatimUnion(OriginalSpecialForm, _root=True):
@@ -45,6 +45,8 @@ class _VerbatimUnion(OriginalSpecialForm, _root=True):
     def __init__(self):
         self._getitem = Union._getitem
         self._name = Union._name
+        # read-only on < 3.11
+        # self.__doc__ = Union.__doc__
         self.__verbatim__ = True
 
 
