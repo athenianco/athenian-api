@@ -231,7 +231,7 @@ async def precompute_reposet(
             "reposet-sync did not delete %d repositories in account %d: %s",
             len(missing),
             reposet.owner_id,
-            ", ".join("(%s, %d, %s)" % reposet.items[i] for i in missing),
+            ", ".join("(%s, %d, %s)" % tuple(reposet.items[i]) for i in missing),
         )
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
