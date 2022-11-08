@@ -214,12 +214,6 @@ async def precompute_reposet(
         reposet_items_to_refs(reposet.items), return_missing=True,
     )
     if missing:
-        log.error(
-            "reposet-sync did not delete %d repositories in account %d: %s",
-            len(missing),
-            reposet.owner_id,
-            ", ".join(reposet.items[i] for i in missing),
-        )
         await sdb.execute(
             sa.update(RepositorySet)
             .where(RepositorySet.id == reposet.id)
@@ -232,6 +226,12 @@ async def precompute_reposet(
                     ],
                 },
             ),
+        )
+        log.error(
+            "reposet-sync did not delete %d repositories in account %d: %s",
+            len(missing),
+            reposet.owner_id,
+            ", ".join("(%s, %d, %s)" % reposet.items[i] for i in missing),
         )
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
