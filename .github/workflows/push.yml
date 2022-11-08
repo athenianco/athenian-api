@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-  pull_request_target:
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -220,12 +220,16 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.11
     - name: cache pip
       uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
-        restore-keys: ubuntu-22.04-pip-main-
+        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
+        restore-keys: ubuntu-22.04-3.11-pip-main-
     - name: chown /usr/local
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
     - name: cache libs

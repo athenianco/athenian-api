@@ -1,5 +1,8 @@
 import json
+import sys
 
+import objgraph
+from packaging.version import Version
 import pytest
 
 from athenian.api import metadata
@@ -50,6 +53,10 @@ class Foo:
     pass
 
 
+@pytest.mark.skipif(
+    Version(objgraph.__version__) <= Version("3.5.0") and sys.version_info[:2] >= (3, 11),
+    reason="https://github.com/mgedmin/objgraph/issues/68",
+)
 async def test_objgraph_smoke(client, headers):
     _ = Foo()
     response = await client.request(

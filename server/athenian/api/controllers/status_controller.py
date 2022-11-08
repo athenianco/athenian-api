@@ -105,9 +105,7 @@ async def graph_type_memory(request: web.Request) -> web.Response:
     roots = [obj for obj in all_objects if pympler.summary._repr(obj) == typename]
     buf = io.StringIO()
     objgraph.show_backrefs(roots, output=buf, max_depth=max_depth, refcounts=True)
-    resp = web.Response(text=buf.getvalue())
-    resp.content_type = "text/vnd.graphviz; charset=utf-8"
-    return resp
+    return web.Response(text=buf.getvalue(), content_type="text/vnd.graphviz")
 
 
 async def render_status(request: web.Request) -> web.Response:

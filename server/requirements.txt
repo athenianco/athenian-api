@@ -4,12 +4,12 @@ jsonschema==4.17.0
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
 sqlalchemy==1.4.41
-asyncpg-rkt==0.26.1
-morcilla[sqlite,postgresql]==0.5.23
+asyncpg-rkt==0.26.2
+morcilla[sqlite,postgresql]==0.5.26
 psycopg2-binary==2.9.5
 xxhash==3.1.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
-numpy==1.23.3
+numpy==1.23.4
 scipy==1.9.2
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.10.1
@@ -34,14 +34,17 @@ pympler==1.0.1
 objgraph==3.5.0
 lz4==4.0.2
 jinja2==3.1.2
-git+ssh://git@github.com:/athenianco/precomputer@v0.3.27#egg=athenian-precomputer==0.3.27
+git+ssh://git@github.com:/athenianco/precomputer@v0.3.33#egg=athenian-precomputer==0.3.33
 rsa>=4.7 # not directly required, pinned by Snyk to avoid a vulnerability
-names_matcher==2.0.11
+names_matcher==2.0.13
 psutil==5.9.3
 flogging==0.0.21
 unidecode==1.3.6
 pluralizer==1.2.0
-pyarrow==10.0.0
+--extra-index-url https://pypi.fury.io/arrow-nightlies
+--prefer-binary
+--pre
+pyarrow==11.0.0.dev65
 email-validator==1.3.0
 ariadne==0.16.1
 aiomonitor==0.4.5
