@@ -1,5 +1,6 @@
 import asyncio
 from datetime import timezone
+import logging
 from sqlite3 import IntegrityError, OperationalError
 from typing import Optional, Sequence, Type
 
@@ -9,6 +10,7 @@ from asyncpg import UniqueViolationError
 from sqlalchemy import and_, delete, insert, select, update
 from sqlalchemy.orm import InstrumentedAttribute
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.db import DatabaseLike
@@ -117,7 +119,17 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     rs, _ = await _fetch_reposet_with_owner(id, rs_cols, request.uid, request.sdb, request.cache)
     meta_ids = await get_metadata_account_ids(rs.owner_id, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    items = prefixer.dereference_repositories(reposet_items_to_refs(rs.items))
+    items, missing = prefixer.dereference_repositories(
+        reposet_items_to_refs(rs.items), return_missing=True,
+    )
+    if missing:
+        log = logging.getLogger(f"{metadata.__package__}.get_reposet")
+        log.error(
+            "reposet-sync did not delete %d repositories in account %d: %s",
+            len(missing),
+            rs.owner_id,
+            ", ".join("(%s, %d, %s)" % tuple(rs.items[i]) for i in missing),
+        )
     return model_response(
         RepositorySetWithName(
             name=rs.name,
