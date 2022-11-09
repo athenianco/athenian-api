@@ -16,18 +16,6 @@ class TeamMetricWithParams(Model):
     metric_params: Optional[dict[str, Any]]
     teams_metric_params: Optional[list[_TeamMetricParams]]
 
-    def params_for_team(self, team_id: int) -> dict:
-        """Return the parameters to use for the given team."""
-        params = self.metric_params.copy() if self.metric_params else {}
-        if self.teams_metric_params:
-            try:
-                team_params = self.teams_metric_params[team_id]
-            except KeyError:
-                pass
-            else:
-                params |= team_params
-        return params
-
 
 class TeamMetricsRequest(Model):
     """Request the metrics values for a team."""
