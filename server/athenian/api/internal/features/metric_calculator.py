@@ -667,6 +667,9 @@ class MetricCalculatorEnsemble:
         [c.reset() for c in self._calcs]
 
 
+MetricComparisonRatio = make_metric("MetricComparisonRatio", __name__, np.float32, -1)
+
+
 class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
     """Calculate the ratio of metric values satisfying a given threshold.
 
@@ -678,7 +681,7 @@ class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
 
     """
 
-    metric = make_metric("MetricComparisonRatio", __name__, np.float32, -1)
+    metric = MetricComparisonRatio
 
     @property
     @abstractmethod
