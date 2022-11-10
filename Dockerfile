@@ -5,7 +5,9 @@ ENV BROWSER=/browser \
     SETUPTOOLS_USE_DISTUTILS=stdlib \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Europe/Madrid \
-    PYTHON_TARGET_VERSION="3.10.4 1~22.04.0"
+    PYTHON_TARGET_VERSION="3.11.0-1+jammy1" \
+    PYTHON_VERSION=3.11 \
+    MKL=2020.4-304
 
 RUN echo '#!/bin/bash\n\
 \n\
@@ -14,58 +16,9 @@ echo "  $@"\n\
 echo\n' > /browser && \
     chmod +x /browser
 
-# matches our production except -march=haswell, we have to downgrade -march because of GHA
-ENV OPT="-Wl,--emit-relocs -fno-reorder-blocks-and-partition -fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
-
-# runtime environment
-RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \
-    echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted' >>/etc/apt/sources.list && \
-    apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install --no-install-suggests --no-install-recommends -y \
-      ca-certificates apt-utils wget git locales python3-dev python3-distutils dpkg-dev devscripts && \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
-    locale-gen && \
-    mkdir /cpython && \
-    cd /cpython && \
-    apt-get source python3.10 && \
-    apt-get -s build-dep python3.10 | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
-    DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python3.10 && \
-    wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
-    cd python3.10* && \
-    sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
-    sed -i 's/__main__/__skip__/g' Lib/test/regrtest.py && \
-    dch --bin-nmu -Dunstable "Optimized build" && \
-    DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
-    cd .. && \
-    apt-get remove -y $(cat build_bloat) && \
-    rm -f libpython3.10-testsuite* python3.10-examples* python3.10-doc* idle-python3.10* python3.10-venv* python3.10-full* && \
-    apt-get remove -y dpkg-dev devscripts && \
-    apt-get autoremove -y && \
-    dpkg -i *.deb && \
-    cd / && \
-    rm -rf /cpython && \
-    apt-mark hold python3.10 python3.10-minimal libpython3.10 libpython3.10-minimal && \
-    pip3 install --no-cache-dir 'cython>=0.29.30' && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-ADD Makefile /
-
-RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
-    make prodfiler-symbols && \
-    apt-get purge -y curl binutils elfutils make && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm Makefile
-
-ENV MKL=2020.4-304
-
 # Intel MKL
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends gnupg gcc && \
+    apt-get install -y --no-install-suggests --no-install-recommends gnupg gcc ca-certificates wget && \
     echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
     wget -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
     apt-key add - && \
@@ -93,6 +46,90 @@ RUN apt-get update && \
     apt-get autoremove -y --purge && \
     rm -rf /var/lib/apt/lists/*
 
+# matches our production except -march=haswell, we have to downgrade -march because of GHA
+ENV OPT="-fno-semantic-interposition -Wl,--emit-relocs -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
+# Bolt: -fno-reorder-blocks-and-partition
+
+# runtime environment
+RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \
+    echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted' >>/etc/apt/sources.list && \
+    apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install --no-install-suggests --no-install-recommends -y \
+      apt-utils git locales dpkg-dev devscripts software-properties-common \
+      libexpat1-dev tzdata mime-support libsqlite3-0 libreadline8 \
+      python3-distutils html2text libjs-sphinxdoc && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen && \
+    add-apt-repository -s ppa:deadsnakes/ppa && \
+    mkdir /cpython && \
+    cd /cpython && \
+    apt-get source python$PYTHON_VERSION && \
+    apt-get -s build-dep python$PYTHON_VERSION | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
+    DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python$PYTHON_VERSION && \
+    rm /etc/apt/sources.list.d/deadsnakes* && \
+    cd python$PYTHON_VERSION* && \
+    sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
+    dch --bin-nmu -Dunstable "Optimized build" && \
+    echo 11 >debian/compat && \
+    sed -i 's/debhelper (>= 9)/debhelper (>= 11)/g' debian/control.in && \
+    DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j$(getconf _NPROCESSORS_ONLN) && \
+    cd .. && \
+	apt-get source python3 && \
+    cd python3-defaults-*/debian && \
+    for f in debian_defaults control control.in rules; do sed -i -e 's/3.10.6/3.11.0/g' -e 's/3.10/3.11/g' $f; done && \
+    sed -i 's/python3.11:any (>= 3.11.0/python3.10:any (>= 3.10.0/g' control && \
+    sed -i 's/python3-distutils (>= @STDLIBVER@/python3-distutils (>= 3.10.6-1~/g' control.in && \
+    cd /cpython/python3-defaults-* && \
+    dch -v "3.11.0-1+jammy1+b1" -Dunstable "3.11" && \
+    dpkg-buildpackage -uc -b && \
+    cd .. && \
+    rm -f \
+      2to3* \
+      idle* \
+      libpython3-all* \
+      python3-all* \
+      python3-examples* \
+      python3-doc* \
+      python3-full* \
+      python3-nopie* \
+      python3-venv* \
+      libpython$PYTHON_VERSION-testsuite* \
+      python$PYTHON_VERSION-examples* \
+      python$PYTHON_VERSION-doc* \
+      idle-python$PYTHON_VERSION* \
+      python$PYTHON_VERSION-venv* \
+      python$PYTHON_VERSION-full* && \
+    echo "========" && ls && \
+    apt-get purge -y dpkg-dev devscripts software-properties-common html2text $(cat build_bloat) && \
+    apt-get autoremove -y && \
+    dpkg -i *python3.11*.deb && \
+    dpkg -i python3-minimal*.deb libpython3-stdlib*.deb && \
+    rm -f python3-minimal*.deb libpython3-stdlib*.deb && \
+    dpkg -i python3_*.deb && \
+    dpkg -i *python3-*.deb && \
+    apt-get purge -y python3.10* libpython3.10* && \
+    apt-get autoremove -y && \
+    echo "========" && python3 --version && ls /etc/python3* && \
+    cd / && \
+    rm -rf /cpython && \
+    apt-mark hold python$PYTHON_VERSION python$PYTHON_VERSION-minimal libpython$PYTHON_VERSION libpython$PYTHON_VERSION-minimal && \
+    wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
+    python3 -m pip install --no-cache-dir 'cython>=0.29.30' && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ADD Makefile /
+
+RUN apt-get update && \
+    apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
+    make prodfiler-symbols && \
+    apt-get purge -y curl binutils elfutils make && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm Makefile
+
 # numpy
 RUN echo '[ALL]\n\
 extra_compile_args = -O3 -fopenmp -flto -ftree-vectorize OPT\n\
@@ -114,7 +151,7 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     pip3 install 'setuptools<60.0.0' && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir scipy==1.9.2 numpy==1.23.4 --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir numpy==1.23.4 --no-binary numpy && \
     apt-get purge -y libfftw3-dev gfortran gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \
@@ -153,13 +190,13 @@ ADD server /server
 ADD README.md /
 
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev && \
+    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev zlib1g-dev && \
     echo "Building native libraries" && \
     make -C /server install-native-user && \
     make -C /server clean-native && \
     rm -rf /usr/local/lib/cmake && \
     pip3 install --no-deps -e /server && \
-    apt-get purge -y gcc g++ cmake make libcurl4-openssl-dev libssl-dev && \
+    apt-get purge -y gcc g++ cmake make libcurl4-openssl-dev libssl-dev zlib1g-dev && \
     apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
     apt-get clean
