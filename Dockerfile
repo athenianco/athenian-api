@@ -47,8 +47,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # matches our production except -march=haswell, we have to downgrade -march because of GHA
-ENV OPT="-fno-semantic-interposition -Wl,--emit-relocs -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
-# Bolt: -fno-reorder-blocks-and-partition
+ENV OPT="-pipe -fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
+# Bolt: -Wl,--emit-relocs -fno-reorder-blocks-and-partition
 
 # runtime environment
 RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \
@@ -132,8 +132,8 @@ RUN apt-get update && \
 
 # numpy
 RUN echo '[ALL]\n\
-extra_compile_args = -O3 -fopenmp -flto -ftree-vectorize OPT\n\
-extra_link_args = -O3 -fopenmp -flto -ftree-vectorize OPT\n\
+extra_compile_args = -O3 -fopenmp -flto OPT\n\
+extra_link_args = -O3 -fopenmp -flto OPT\n\
 \n\
 [fftw]\n\
 libraries = fftw3\n\
