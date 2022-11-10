@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import partial
 from operator import itemgetter
 
 from freezegun import freeze_time
@@ -26,6 +27,7 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_templates_from_db,
     insert_goal_template,
     parse_goal_repositories,
+    replace_team_goals,
     resolve_goal_repositories,
     update_goal,
     update_goal_template_in_db,
@@ -115,6 +117,94 @@ class TestAssignTeamGoals:
         )
         row_12 = await assert_existing_row(sdb, TeamGoal, team_id=12, goal_id=20)
         assert row_12[TeamGoal.metric_params.name] is None
+
+
+class TestReplaceTeamGoals:
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=20),
+            *[TeamFactory(id=_id) for _id in (10, 11, 12)],
+            TeamGoalFactory(team_id=10, goal_id=20, target=1, metric_params={"threshold": 1}),
+            TeamGoalFactory(team_id=11, goal_id=20),
+        )
+
+        assignments = [
+            TeamGoalTargetAssignment(10, 2, None),
+            TeamGoalTargetAssignment(12, 2, {"threshold": 2}),
+        ]
+        async with transaction_conn(sdb) as sdb_conn:
+            await replace_team_goals(1, 20, assignments, sdb_conn)
+
+        tg_10 = await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20)
+        assert tg_10[TeamGoal.target.name] == 2
+        assert tg_10[TeamGoal.metric_params.name] is None
+
+        await assert_missing_row(sdb, TeamGoal, team_id=11, goal_id=20)
+
+        tg_12 = await assert_existing_row(sdb, TeamGoal, team_id=12, goal_id=20)
+        assert tg_12[TeamGoal.target.name] == 2
+        assert tg_12[TeamGoal.metric_params.name] == {"threshold": 2}
+
+    async def test_goal_of_different_account(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=20),
+            TeamFactory(id=10),
+            TeamFactory(id=11),
+            TeamGoalFactory(team_id=10, goal_id=20, target=1),
+        )
+        assignments = [TeamGoalTargetAssignment(11, 2, None)]
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(GoalMutationError):
+                await replace_team_goals(2, 20, assignments, sdb_conn)
+
+        await assert_missing_row(sdb, TeamGoal, team_id=11)
+        await assert_existing_row(sdb, TeamGoal, team_id=10)
+
+    @freeze_time("2022-10-26")
+    async def test_updated_not_changed_if_unmodified(self, sdb: Database) -> None:
+        TGF = partial(
+            TeamGoalFactory, goal_id=20, created_at=dt(2001, 1, 1), updated_at=dt(2002, 1, 1),
+        )
+
+        await models_insert(
+            sdb,
+            GoalFactory(id=20),
+            *[TeamFactory(id=_id) for _id in (10, 11, 12, 13)],
+            *[
+                TGF(team_id=tid, target=1, metric_params={"threshold": "1s"})
+                for tid in (10, 11, 12)
+            ],
+        )
+        assignments = [
+            TeamGoalTargetAssignment(10, 1, {"threshold": "1s"}),  # not changed
+            TeamGoalTargetAssignment(11, 1, {"threshold": "2s"}),  # params changed
+            TeamGoalTargetAssignment(12, 2, {"threshold": "1s"}),  # target changed
+            TeamGoalTargetAssignment(13, 1, {"threshold": "1s"}),  # added
+        ]
+        async with transaction_conn(sdb) as sdb_conn:
+            await replace_team_goals(1, 20, assignments, sdb_conn)
+
+        tg_10 = await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20, target=1)
+        assert tg_10[TeamGoal.metric_params.name] == {"threshold": "1s"}
+        assert ensure_db_datetime_tz(tg_10[TeamGoal.created_at.name], sdb) == dt(2001, 1, 1)
+        assert ensure_db_datetime_tz(tg_10[TeamGoal.updated_at.name], sdb) == dt(2002, 1, 1)
+
+        tg_11 = await assert_existing_row(sdb, TeamGoal, team_id=11, goal_id=20, target=1)
+        assert tg_11[TeamGoal.metric_params.name] == {"threshold": "2s"}
+        assert ensure_db_datetime_tz(tg_11[TeamGoal.created_at.name], sdb) == dt(2001, 1, 1)
+        assert ensure_db_datetime_tz(tg_11[TeamGoal.updated_at.name], sdb) == dt(2022, 10, 26)
+
+        tg_12 = await assert_existing_row(sdb, TeamGoal, team_id=12, goal_id=20, target=2)
+        assert tg_12[TeamGoal.metric_params.name] == {"threshold": "1s"}
+        assert ensure_db_datetime_tz(tg_12[TeamGoal.created_at.name], sdb) == dt(2001, 1, 1)
+        assert ensure_db_datetime_tz(tg_12[TeamGoal.updated_at.name], sdb) == dt(2022, 10, 26)
+
+        tg_13 = await assert_existing_row(sdb, TeamGoal, team_id=13, goal_id=20, target=1)
+        assert tg_13[TeamGoal.metric_params.name] == {"threshold": "1s"}
+        assert ensure_db_datetime_tz(tg_13[TeamGoal.created_at.name], sdb) == dt(2022, 10, 26)
+        assert ensure_db_datetime_tz(tg_13[TeamGoal.updated_at.name], sdb) == dt(2022, 10, 26)
 
 
 class TestUpdateGoal:

@@ -73,7 +73,7 @@ class GoalTree(_BaseGoal):
     team_goal: TeamGoalTree
 
 
-class GoalCreationTeamGoal(Model):
+class TeamGoalAssociation(Model):
     """Team-goal association when creating a goal."""
 
     team_id: int
@@ -85,4 +85,16 @@ class GoalCreateRequest(_BaseGoal):
     """Goal creation request."""
 
     account: int
-    team_goals: list[GoalCreationTeamGoal]
+    team_goals: list[TeamGoalAssociation]
+
+
+class GoalUpdateRequest(Model):
+    """Goal update request."""
+
+    archived: bool
+    name: str
+    repositories: Optional[list[str]]
+    jira_projects: Optional[list[str]]
+    jira_priorities: Optional[list[str]]
+    jira_issue_types: Optional[list[str]]
+    team_goals: list[TeamGoalAssociation]

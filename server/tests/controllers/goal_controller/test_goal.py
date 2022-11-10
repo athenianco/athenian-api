@@ -8,8 +8,13 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import Goal, TeamGoal
-from athenian.api.models.web import GoalCreateRequest, GoalCreationTeamGoal, PullRequestMetricID
+from athenian.api.models.state.models import Base, Goal, Team, TeamGoal
+from athenian.api.models.web import (
+    GoalCreateRequest,
+    GoalUpdateRequest,
+    PullRequestMetricID,
+    TeamGoalAssociation,
+)
 from athenian.api.models.web.goal import MetricValue
 from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
@@ -103,6 +108,16 @@ class TestDeleteGoal(BaseDeleteGoalTest):
         await assert_existing_row(sdb, TeamGoal, goal_id=200)
 
 
+def _team_goals_assoc_from_tuples(
+    *raw_team_goals: tuple[int, MetricValue] | tuple[int, MetricValue, dict],
+) -> list[TeamGoalAssociation]:
+    normalized_team_goals = [tg if len(tg) > 2 else (*tg, None) for tg in raw_team_goals]
+    return [
+        TeamGoalAssociation(team_id=t_id, target=target, metric_params=params)
+        for t_id, target, params in normalized_team_goals
+    ]
+
+
 class BaseCreateGoalTest(BaseGoalTest):
     async def _request(
         self,
@@ -129,17 +144,13 @@ class BaseCreateGoalTest(BaseGoalTest):
         team_goals: Sequence[tuple[int, MetricValue] | tuple[int, MetricValue, dict]] = (),
         **kwargs,
     ) -> dict:
-        normalized_team_goals = [tg if len(tg) > 2 else (*tg, None) for tg in team_goals]
         request = GoalCreateRequest(
             account=account,
             name=name,
             metric=metric,
             valid_from=valid_from,
             expires_at=expires_at,
-            team_goals=[
-                GoalCreationTeamGoal(team_id=t_id, target=target, metric_params=params)
-                for t_id, target, params in normalized_team_goals
-            ],
+            team_goals=_team_goals_assoc_from_tuples(*team_goals),
             **kwargs,
         )
         body = request.to_dict()
@@ -384,3 +395,266 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         tg_11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
         assert tg_11_row[TeamGoal.metric_params.name] == {"p1": 2}
+
+
+class BaseUpdateGoalTest(BaseGoalTest):
+    async def _request(
+        self,
+        goal_id: int,
+        assert_status: int = 200,
+        user_id: Optional[str] = _USER_ID,
+        **kwargs: Any,
+    ) -> dict:
+        path = f"/private/align/goal/{goal_id}"
+        with force_request_auth(user_id, self.headers) as headers:
+            response = await self.client.request(
+                method="PUT", path=path, headers=headers, **kwargs,
+            )
+        assert response.status == assert_status
+        return await response.json()
+
+    def _body(
+        self,
+        name: str = "My Goal",
+        archived: bool = False,
+        team_goals: Sequence[tuple[int, MetricValue] | tuple[int, MetricValue, dict]] = (),
+        **kwargs,
+    ) -> dict:
+        request = GoalUpdateRequest(
+            name=name,
+            archived=archived,
+            team_goals=_team_goals_assoc_from_tuples(*team_goals),
+            **kwargs,
+        )
+        return request.to_dict()
+
+
+class TestUpdateGoalErrors(BaseUpdateGoalTest):
+    async def test_not_found(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        res = await self._request(101, 404, json=self._body(team_goals=[(10, 1)]))
+        assert res["detail"] == "Goal 101 not found or access denied."
+
+    async def test_dupl_team_ids(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, 10), (10, 20)])
+        res = await self._request(100, 400, json=body)
+        assert res["detail"] == "Duplicated teams: 10"
+        assert res["title"] == "Bad Request"
+
+    async def test_invalid_team_target(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, False)])
+        res = await self._request(100, 400, json=body)
+        assert res["title"] == "Bad Request"
+
+    async def test_goal_account_mismatch(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100, account_id=2), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, 10)])
+        res = await self._request(100, 404, json=body)
+        assert res["detail"] == "Goal 100 not found or access denied."
+        assert res["title"] == "Goal not found"
+
+    async def test_team_account_mismatch(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100, name="G0"), TeamFactory(id=10, owner_id=2))
+        body = self._body(team_goals=[(10, 10)])
+        res = await self._request(100, 404, json=body)
+        assert res["detail"] == "Team-s don't exist or access denied: 10"
+        await assert_missing_row(sdb, TeamGoal, team_id=10)
+
+    async def test_invalid_team_id(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100, name="G0"), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, 1), (11, 1), (12, 1)])
+        res = await self._request(100, 404, json=body)
+        assert res["detail"] == "Team-s don't exist or access denied: 11,12"
+        await assert_missing_row(sdb, TeamGoal, team_id=10)
+
+    async def test_default_user_forbidden(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, 1)])
+        res = await self._request(100, 403, user_id=None, json=body)
+        assert res["title"] == "Forbidden"
+
+    async def test_bad_repositories(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        body = self._body(team_goals=[(10, 1)], repositories=["github.com/athenianco/xxx"])
+        res = await self._request(100, 400, json=body)
+        assert res["pointer"] == ".repositories"
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] is None
+
+    async def test_no_team_goals(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=100), TeamFactory(id=10), TeamGoalFactory(team_id=10, goal_id=100),
+        )
+        body = self._body(team_goals=[])
+        res = await self._request(100, 400, json=body)
+        assert res["title"] == "Bad Request"
+        assert "team_goals" in res["detail"]
+
+
+class TestUpdateGoal(BaseUpdateGoalTest):
+    async def test_deletions(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            *[TeamFactory(id=_id) for _id in (10, 20, 30)],
+            GoalFactory(id=101, name="G0"),
+            TeamGoalFactory(team_id=10, goal_id=101),
+            TeamGoalFactory(team_id=20, goal_id=101),
+            TeamGoalFactory(team_id=30, goal_id=101, target=41),
+        )
+        body = self._body(name="G1", team_goals=((30, 42),))
+        await self._request(101, json=body)
+        await assert_missing_row(sdb, TeamGoal, team_id=10)
+        await assert_missing_row(sdb, TeamGoal, team_id=20)
+        await assert_existing_row(sdb, Goal, name="G1", id=101)
+        await assert_existing_row(sdb, Team, id=10)
+        await assert_existing_row(sdb, Team, id=20)
+        await assert_existing_row(sdb, TeamGoal, team_id=30, target=42)
+
+    @freeze_time("2022-04-01T09:30:00")
+    async def test_some_changes(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, archived=False),
+            *[TeamFactory(id=_id) for _id in (10, 20, 30)],
+            TeamGoalFactory(team_id=10, goal_id=100),
+            TeamGoalFactory(
+                team_id=20, goal_id=100, target=1, created_at=dt(1, 1, 2), updated_at=dt(1, 1, 3),
+            ),
+        )
+        body = self._body(team_goals=[(20, 8), (30, 7)])
+        res = await self._request(100, json=body)
+        assert res == {"id": 100}
+
+        await assert_existing_row(sdb, Goal, id=100, archived=False)
+        await assert_missing_row(sdb, TeamGoal, team_id=10, goal_id=100)
+
+        team_goal_20_row = await assert_existing_row(sdb, TeamGoal, team_id=20, goal_id=100)
+        assert team_goal_20_row[TeamGoal.target.name] == 8
+        assert ensure_db_datetime_tz(team_goal_20_row[TeamGoal.created_at.name], sdb) == dt(
+            1, 1, 2,
+        )
+        assert ensure_db_datetime_tz(team_goal_20_row[TeamGoal.updated_at.name], sdb) == dt(
+            2022, 4, 1, 9, 30,
+        )
+
+        team_goal_30_row = await assert_existing_row(sdb, TeamGoal, team_id=30, goal_id=100)
+        assert team_goal_30_row[TeamGoal.target.name] == 7
+
+    async def test_update_archived(self, sdb: Database) -> None:
+        await models_insert(sdb, *self._sample_goal_models(archived=False))
+        body = self._body(archived=True, team_goals=[(10, 1)])
+        await self._request(2, json=body)
+        await assert_existing_row(sdb, Goal, id=2, archived=True)
+        await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=2)
+
+    async def test_update_name(self, sdb: Database) -> None:
+        await models_insert(sdb, *self._sample_goal_models(name="G0"))
+        body = self._body(name="G1", team_goals=[(10, 1)])
+        await self._request(2, json=body)
+        await assert_existing_row(sdb, Goal, id=2, name="G1")
+
+    async def test_update_repositories(self, sdb: Database) -> None:
+        await models_insert(sdb, *self._sample_goal_models())
+        body = self._body(team_goals=[(10, 1)], repositories=["github.com/src-d/go-git"])
+        await self._request(2, json=body)
+        row = await assert_existing_row(sdb, Goal, id=2)
+        assert row[Goal.repositories.name] == [[40550, ""]]
+
+        body = self._body(team_goals=[(10, 1)], repositories=None)
+        await self._request(2, json=body)
+        row = await assert_existing_row(sdb, Goal, id=2)
+        assert row[Goal.repositories.name] is None
+
+    async def test_update_repos_and_change_team_goals(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100),
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            TeamGoalFactory(team_id=10, goal_id=100, target=1, repositories=[[40550, "alpha"]]),
+        )
+        body = self._body(
+            repositories=["github.com/src-d/go-git", "github.com/src-d/lapjv"],
+            team_goals=[(10, 2), (11, 3)],
+        )
+        res = await self._request(100, json=body)
+        assert res == {"id": 100}
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, ""], [39652768, ""]]
+
+        tg_10 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        assert tg_10[TeamGoal.repositories.name] == [[40550, ""], [39652768, ""]]
+
+        tg_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
+        assert tg_11[TeamGoal.repositories.name] == [[40550, ""], [39652768, ""]]
+
+    async def test_update_jira_fields(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, jira_priorities=["high"]),
+            TeamFactory(id=10),
+            TeamGoalFactory(
+                team_id=10, goal_id=100, jira_projects=["P2"], jira_priorities=["high"],
+            ),
+        )
+        body = self._body(
+            team_goals=[(10, 2)],
+            jira_projects=["P0", "P1"],
+            jira_priorities=None,
+            jira_issue_types=["Tasks", "bugs"],
+        )
+        await self._request(100, json=body)
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.jira_projects.name] == ["P0", "P1"]
+        assert row[Goal.jira_priorities.name] is None
+        assert row[Goal.jira_issue_types.name] == ["bug", "task"]
+
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        # team goal jira_projects are overwritten
+        assert tg_row[TeamGoal.jira_projects.name] == ["P0", "P1"]
+        assert tg_row[TeamGoal.jira_priorities.name] is None
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]
+
+    async def test_change_unique_team_goal(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=20), TeamFactory(id=10), TeamGoalFactory(team_id=10, goal_id=20),
+        )
+        body = self._body(team_goals=[(10, 2, {"threshold": 1.5})])
+        await self._request(20, json=body)
+        team_10_row = await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20)
+        assert team_10_row[TeamGoal.target.name] == 2
+        assert team_10_row[TeamGoal.metric_params.name] == {"threshold": 1.5}
+
+    async def test_set_teams_metric_params(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, metric_params={"threshold": 1}),
+            *[TeamFactory(id=id_) for id_ in (10, 20, 30)],
+            TeamGoalFactory(team_id=10, goal_id=100, metric_params={"threshold": 2}),
+            TeamGoalFactory(team_id=30, goal_id=100, metric_params={"threshold": 3}),
+        )
+
+        body = self._body(
+            team_goals=[(10, 1, {"threshold": 10}), (20, 1), (30, 1, {"threshold": 20})],
+        )
+        res = await self._request(100, json=body)
+        assert res["id"] == 100
+        await assert_existing_row(
+            sdb, TeamGoal, goal_id=100, team_id=10, metric_params={"threshold": 10},
+        )
+        row_20 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=20)
+        assert row_20[TeamGoal.metric_params.name] is None
+        await assert_existing_row(
+            sdb, TeamGoal, goal_id=100, team_id=30, metric_params={"threshold": 20},
+        )
+
+    @classmethod
+    def _sample_goal_models(cls, **kwargs: Any) -> Sequence[Base]:
+        return (
+            GoalFactory(id=2, **kwargs),
+            TeamFactory(id=10),
+            TeamGoalFactory(team_id=10, goal_id=2),
+        )
