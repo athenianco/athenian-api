@@ -18,9 +18,9 @@ from athenian.api.align.goals.dbaccess import (
     resolve_goal_repositories,
 )
 from athenian.api.align.queries.metrics import (
+    CalcTeamMetricsRequest,
     MetricWithParams,
     RequestedTeamDetails,
-    TeamMetricsRequest,
     TeamMetricsResult,
 )
 from athenian.api.db import Row
@@ -189,7 +189,7 @@ class GoalToServe:
         )
 
     @property
-    def requests(self) -> list[TeamMetricsRequest]:
+    def requests(self) -> list[CalcTeamMetricsRequest]:
         """Get the request for calculate_team_metrics to compute the metrics for the goal."""
         return self._requests
 
@@ -323,7 +323,7 @@ class GoalToServe:
             # build a different request for every team
             # requests will be then simplified by calculate_team_metrics
             requests.append(
-                TeamMetricsRequest(
+                CalcTeamMetricsRequest(
                     metrics=[metric_w_params],
                     time_intervals=time_intervals,
                     teams=[team_details],

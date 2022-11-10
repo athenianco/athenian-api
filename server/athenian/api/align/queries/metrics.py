@@ -113,7 +113,7 @@ async def resolve_metrics_current_values(
                 jira_filter=jira_filter,
             )
             requests.append(
-                TeamMetricsRequest(
+                CalcTeamMetricsRequest(
                     [requested_metric.resolve_for_team(row_team_id)],
                     [time_interval],
                     [team_detail],
@@ -327,7 +327,7 @@ TeamMetricsResult = dict[Intervals, dict[MetricWithParams, dict[tuple[int, int],
 
 
 @dataclass(frozen=True, slots=True)
-class TeamMetricsRequest:
+class CalcTeamMetricsRequest:
     """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
 
     metrics: Sequence[MetricWithParams]
@@ -337,7 +337,7 @@ class TeamMetricsRequest:
 
 @sentry_span
 async def calculate_team_metrics(
-    requests: Sequence[TeamMetricsRequest],
+    requests: Sequence[CalcTeamMetricsRequest],
     account: int,
     meta_ids: tuple[int, ...],
     sdb: Database,
@@ -357,7 +357,7 @@ async def calculate_team_metrics(
     values its length will equal len(intervals) - 1.
 
     For example, given the single request:
-    TeamMetricsRequest(
+    CalcTeamMetricsRequest(
        metrics=[MetricWithParams("pr-all-count", {})],
        time_intervals=[dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)],
        teams=[RequestedTeamDetails(team_id=10, goal_id=20, ...)]
@@ -604,7 +604,7 @@ def _jirafy_team(team: Collection[int], jira_map: Mapping[int, str]) -> JIRAPart
 
 
 @sentry_span
-def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetricsRequest]:
+def _simplify_requests(requests: Sequence[CalcTeamMetricsRequest]) -> list[CalcTeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
     # intervals => team and other filters => metrics with params
     requests_tree: dict[
@@ -630,7 +630,7 @@ def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetri
 
     # assemble the final groups
     requests = [
-        TeamMetricsRequest(tuple(metrics_), intervals_, grouped_filters)
+        CalcTeamMetricsRequest(tuple(metrics_), intervals_, grouped_filters)
         for intervals_, intervals_tree_ in simplified_tree.items()
         for metrics_, grouped_filters in intervals_tree_.items()
     ]
