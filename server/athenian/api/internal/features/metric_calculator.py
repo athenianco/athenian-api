@@ -715,9 +715,11 @@ class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
         return out
 
     def _agg(self, samples: np.ndarray, offsets: np.ndarray) -> float:
-        lengths = np.diff(offsets.base)
-        vec = np.add.reduceat(samples, offsets) / lengths
-        vec[lengths == 0] = 0  # fix NaNs + reduceat copies the previous value
+        lenghts = np.diff(offsets.base)
+        reduced_samples = np.add.reduceat(samples, offsets)
+        # avoid zero division + reduceat copies the previous value
+        vec = np.zeros(reduced_samples.shape, dtype=self.dtype)
+        np.divide(reduced_samples, lenghts, where=lenghts != 0, out=vec)
         return vec
 
     def _compare(

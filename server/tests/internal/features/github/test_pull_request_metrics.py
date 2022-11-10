@@ -207,6 +207,45 @@ class TestReviewTimeBelowThresholdRatio:
         assert calc.values[1][0].value == pytest.approx(1 / 2)
         assert calc.values[2][0].value == pytest.approx(0)
 
+    def test_empty_groups_in_the_middle(self) -> None:
+        quantiles = (0, 1)
+        threshold = timedelta(hours=3)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 4, 1))
+
+        review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
+        calc = ReviewTimeBelowThresholdRatio(
+            review_time_calc, quantiles=quantiles, threshold=threshold,
+        )
+
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 5), dt(2022, 1, 1, 10)),
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 5)),
+            self._mk_pr(dt(2022, 1, 1, 3), dt(2022, 1, 1, 4)),
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.array(
+            [
+                [True, True, False],
+                [True, False, False],
+                [False, False, False],
+                [False, True, True],
+            ],
+            dtype=bool,
+        )
+
+        review_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 4
+        assert all(len(v) == 1 for v in calc.values)
+
+        assert calc.values[0][0].value == pytest.approx(1 / 2)
+        assert calc.values[1][0].value == pytest.approx(0)
+        assert calc.values[2][0].value == pytest.approx(0)
+        assert calc.values[3][0].value == pytest.approx(1)
+
     @classmethod
     def _mk_pr(cls, review_request: datetime, approved: Optional[datetime]) -> PullRequestFacts:
         return PullRequestFactsFactory(
