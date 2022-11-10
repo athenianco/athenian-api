@@ -450,6 +450,59 @@ class TestBatchCalcPullRequestMetrics:
         calc_mock.assert_not_called()
         assert second_calc_res[0][0][0][0][0].value == pr_all_count
 
+    @with_defer
+    async def test_with_cache_threshold_comparison_metric(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        shared_kwargs = await _calc_shared_kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb, sdb)
+        requests = [
+            MetricsLineRequest(
+                [PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO],
+                [[dt(2017, 1, 1), dt(2018, 9, 1)]],
+                [
+                    TeamSpecificFilters(
+                        1,
+                        ["src-d/go-git"],
+                        {PRParticipationKind.AUTHOR: {"mcuadros"}},
+                        JIRAFilter.empty(),
+                    ),
+                ],
+            ),
+        ]
+        calculator = MetricEntriesCalculator(
+            1, (DEFAULT_MD_ACCOUNT_ID,), DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
+        )
+        calc = partial(
+            calculator.batch_calc_pull_request_metrics_line_github,
+            requests,
+            quantiles=(0, 1),
+            exclude_inactive=False,
+            bots=set(),
+            fresh=False,
+            jira_acc_id=None,
+            **shared_kwargs,
+        )
+
+        calc_res = await calc()
+        ratio = calc_res[0][0][0][0][0].value
+        await wait_deferred()
+
+        # the second time the cache is used and the underlying calc function must not be called
+        with mock.patch.object(
+            calculator,
+            "calc_pull_request_facts_github",
+            wraps=calculator.calc_pull_request_facts_github,
+        ) as calc_mock:
+            second_calc_res = await calc()
+
+        calc_mock.assert_not_called()
+        assert second_calc_res[0][0][0][0][0].value == ratio
+
 
 class TestCalcReleaseMetricsLineGithub:
     @with_defer
