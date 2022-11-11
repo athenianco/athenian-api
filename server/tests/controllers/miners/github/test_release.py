@@ -2332,13 +2332,13 @@ async def test_override_first_releases_smoke(
     prefixer,
     branches,
     default_branches,
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     bots,
 ):
     time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=12, day=1, tzinfo=timezone.utc)
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
+    await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},

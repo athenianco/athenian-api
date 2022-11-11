@@ -34,7 +34,7 @@ from athenian.api.balancing import weight
 from athenian.api.db import Connection, Database, dialect_specific_insert
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.internal.account import get_installation_url_prefix, get_metadata_account_ids
-from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
@@ -421,9 +421,7 @@ async def _drop_precomputed_event_releases(
         with_extended_pr_details=False,
     )
     await gather(wait_deferred(), bots_task)
-    await MetricEntriesCalculator(
-        account, meta_ids, 0, mdb, pdb, rdb, None,
-    ).calc_pull_request_facts_github(
+    await PRFactsCalculator(account, meta_ids, mdb, pdb, rdb, cache=None)(
         time_from,
         time_to,
         set(repos),

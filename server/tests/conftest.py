@@ -22,7 +22,7 @@ import sentry_sdk
 import sqlalchemy as sa
 
 from athenian.api.async_utils import read_sql_query
-from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.entries import MetricEntriesCalculator, PRFactsCalculator
 from tests.testutils.factory.miners import PullRequestFactsFactory
 
 try:
@@ -985,6 +985,21 @@ async def metrics_calculator_factory(mdb, pdb, rdb, cache):
             c = None
 
         return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
+
+    return build
+
+
+@pytest.fixture(scope="function")
+async def pr_facts_calculator_factory(mdb, pdb, rdb, cache):
+    def build(account_id, meta_ids, with_cache=False, cache_only=False) -> PRFactsCalculator:
+        if cache_only:
+            return PRFactsCalculator(account_id, meta_ids, None, None, None, cache=cache)
+        if with_cache:
+            c = cache
+        else:
+            c = None
+
+        return PRFactsCalculator(account_id, meta_ids, mdb, pdb, rdb, cache=c)
 
     return build
 

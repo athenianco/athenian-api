@@ -20,7 +20,7 @@ from athenian.api.models.precomputed.models import (
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_smoke(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_tag,
     mdb,
     pdb,
@@ -29,10 +29,10 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     bots,
     precomputed_deployments,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    facts_fresh = await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},
@@ -60,7 +60,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
-        facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        facts_unfresh = await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git"},
@@ -84,7 +84,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_labels(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_tag,
     mdb,
     pdb,
@@ -92,11 +92,11 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     label_filter = LabelFilter({"enhancement", "bug"}, set())
-    facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    facts_fresh = await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},
@@ -117,7 +117,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
-        facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        facts_unfresh = await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git"},
@@ -141,7 +141,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_jira(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_tag,
     mdb,
     pdb,
@@ -149,7 +149,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     jira_filter = JIRAFilter(
@@ -162,7 +162,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         False,
         False,
     )
-    facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    facts_fresh = await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},
@@ -211,7 +211,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
-        facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        facts_unfresh = await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git"},
@@ -254,7 +254,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
 # there are no precomputed PRs before `time_from`so count-s stay the same
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_logical_title(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_tag_logical,
     mdb,
     pdb,
@@ -266,10 +266,10 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
     exclude_inactive,
     count,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    facts_fresh = await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         repos,
@@ -301,7 +301,7 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
-        facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        facts_unfresh = await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             repos,

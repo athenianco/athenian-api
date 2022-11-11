@@ -1955,7 +1955,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
 
 @with_defer
 async def test_mine_pull_requests_event_releases(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_event,
     mdb,
     pdb,
@@ -1995,8 +1995,8 @@ async def test_mine_pull_requests_event_releases(
         False,
         0,
     )
-    calc = metrics_calculator_factory(1, (6366825,))
-    facts1 = await calc.calc_pull_request_facts_github(*args)
+    calc = pr_facts_calculator_factory(1, (6366825,))
+    facts1 = await calc(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     await pdb.execute(
@@ -2012,6 +2012,6 @@ async def test_mine_pull_requests_event_releases(
             },
         ),
     )
-    facts2 = await calc.calc_pull_request_facts_github(*args)
+    facts2 = await calc(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     assert_frame_equal(facts1.iloc[1:], facts2.iloc[1:])

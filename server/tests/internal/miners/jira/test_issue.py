@@ -45,7 +45,7 @@ class TestFetchJIRAIssues:
     @with_defer
     async def test_releases(
         self,
-        metrics_calculator_factory,
+        pr_facts_calculator_factory,
         mdb,
         pdb,
         rdb,
@@ -55,10 +55,10 @@ class TestFetchJIRAIssues:
         bots,
         cache,
     ):
-        metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+        pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
         time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
         time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
-        await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git"},

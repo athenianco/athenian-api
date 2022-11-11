@@ -13,15 +13,21 @@ from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
     MetricEntriesCalculator,
     MetricsLineRequest,
+    PRFactsCalculator,
     TeamSpecificFilters,
     make_calculator,
+)
+from athenian.api.internal.features.github.unfresh_pull_request_metrics import (
+    UnfreshPullRequestFactsFetcher,
 )
 from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
-from athenian.api.internal.miners.jira.issue import fetch_jira_issues
+from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, fetch_jira_issues
 from athenian.api.internal.miners.types import (
     JIRAEntityToFetch,
     JIRAParticipationKind,
@@ -44,7 +50,7 @@ class TestMakeCalculator:
         assert isinstance(calc, MetricEntriesCalculator)
 
 
-class TestCalcPullRequestFactsGithub:
+class TestPRFactsCalculator:
     @with_defer
     async def test_gaetano_bug(
         self,
@@ -54,27 +60,20 @@ class TestCalcPullRequestFactsGithub:
         sdb: Database,
         release_match_setting_tag: ReleaseSettings,
     ) -> None:
-        meta_ids = (6366825,)
-        calculator = MetricEntriesCalculator(
-            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = PRFactsCalculator(
+            1, meta_ids, mdb, pdb, rdb, **self._init_kwargs(), cache=None,
         )
-        base_kwargs = await self._kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb, sdb)
-        facts = await calculator.calc_pull_request_facts_github(
-            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
-        )
+
+        base_kwargs = await self._kwargs(meta_ids, mdb, sdb)
+        facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
         last_review = facts[facts.node_id == 163078].last_review.values[0]
 
-        await calculator.calc_pull_request_facts_github(
-            time_from=dt(2017, 8, 10), time_to=dt(2017, 8, 20), **base_kwargs,
-        )
-        facts = await calculator.calc_pull_request_facts_github(
-            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
-        )
+        await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 8, 20), **base_kwargs)
+        facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
-        facts = await calculator.calc_pull_request_facts_github(
-            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
-        )
+        facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
     @with_defer
@@ -86,9 +85,10 @@ class TestCalcPullRequestFactsGithub:
         sdb: Database,
         release_match_setting_tag: ReleaseSettings,
     ) -> None:
-        calculator = MetricEntriesCalculator(
-            1, (DEFAULT_MD_ACCOUNT_ID,), DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, None,
+        calculator = PRFactsCalculator(
+            1, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw, pdb, rdb, **self._init_kwargs(), cache=None,
         )
+
         kwargs = await self._kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, sdb)
         kwargs.update(
             time_from=dt(2017, 8, 10),
@@ -109,7 +109,7 @@ class TestCalcPullRequestFactsGithub:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            facts = await calculator.calc_pull_request_facts_github(**kwargs)
+            facts = await calculator(**kwargs)
 
         pr_facts = facts[facts.node_id == 162990]
         assert sorted(pr_facts.jira_ids.iloc[0]) == ["I1", "I2"]
@@ -126,15 +126,15 @@ class TestCalcPullRequestFactsGithub:
         sdb: Database,
         release_match_setting_tag: ReleaseSettings,
     ) -> None:
-        meta_ids = (6366825,)
-        calculator = MetricEntriesCalculator(
-            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, build_fake_cache(),
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        cache = build_fake_cache()
+        calculator = PRFactsCalculator(
+            1, meta_ids, mdb_rw, pdb, rdb, **self._init_kwargs(), cache=cache,
         )
+
         base_kw = await self._kwargs(meta_ids, mdb_rw, sdb)
         base_kw.update(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1))
         base_kw.pop("with_jira")
-
-        calc = calculator.calc_pull_request_facts_github
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
@@ -149,18 +149,18 @@ class TestCalcPullRequestFactsGithub:
 
             # spy called load_precomputed_done_facts_filters() to verify cache hits/misses
             with mock.patch.object(
-                calculator.done_prs_facts_loader,
+                calculator._done_prs_facts_loader,
                 "load_precomputed_done_facts_filters",
-                wraps=calculator.done_prs_facts_loader.load_precomputed_done_facts_filters,
+                wraps=calculator._done_prs_facts_loader.load_precomputed_done_facts_filters,
             ) as load_pdb_mock:
-                r_jira0 = await calc(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
+                r_jira0 = await calculator(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
 
                 assert sorted(r_jira0[r_jira0.node_id == 162990].jira_ids.values[0]) == ["1", "2"]
                 assert r_jira0[r_jira0.node_id == 163027].jira_ids.values[0] == ["1"]
 
-                r_jira1 = await calc(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
+                r_jira1 = await calculator(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
                 assert sorted(r_jira1[r_jira1.node_id == 162990].jira_ids.values[0]) == [
@@ -169,7 +169,7 @@ class TestCalcPullRequestFactsGithub:
                 ]
                 assert r_jira1[r_jira1.node_id == 163027].jira_ids.values[0] == ["1"]
 
-                await calc(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
+                await calculator(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
                 assert load_pdb_mock.call_count == 1
 
     async def _kwargs(self, meta_ids: tuple[int, ...], mdb: Database, sdb: Database) -> dict:
@@ -184,6 +184,17 @@ class TestCalcPullRequestFactsGithub:
             "fresh": False,
             "with_jira": JIRAEntityToFetch.NOTHING,
             **shared_kwargs,
+        }
+
+    @classmethod
+    def _init_kwargs(cls, **extra) -> dict:
+        return {
+            "pr_miner": PullRequestMiner,
+            "branch_miner": BranchMiner,
+            "done_prs_facts_loader": DonePRFactsLoader,
+            "unfresh_pr_facts_fetcher": UnfreshPullRequestFactsFetcher,
+            "pr_jira_mapper": PullRequestJiraMapper,
+            **extra,
         }
 
 
@@ -225,9 +236,10 @@ class TestCalcPullRequestMetricsLineGithub:
         metrics = [PullRequestMetricID.PR_REVIEW_TIME, PullRequestMetricID.PR_REVIEW_COUNT]
 
         with mock.patch.object(
-            calculator,
-            "calc_pull_request_facts_github",
-            wraps=calculator.calc_pull_request_facts_github,
+            PRFactsCalculator,
+            "__call__",
+            side_effect=PRFactsCalculator.__call__,
+            autospec=True,
         ) as calc_mock:
             res0 = await calculator.calc_pull_request_metrics_line_github(
                 metrics=metrics, **kwargs,
@@ -238,7 +250,7 @@ class TestCalcPullRequestMetricsLineGithub:
                 metrics=list(reversed(metrics)), **kwargs,
             )
 
-        # result must be cached, so calc_pull_request_facts_github only called once
+        # result must be cached, so PRFactsCalculator.__call__ only called once
         calc_mock.assert_called_once()
 
         assert res1[0][0][0][0][0][0].value == res0[0][0][0][0][0][1].value
@@ -281,9 +293,7 @@ class TestCalcPullRequestMetricsLineGithub:
         ]
 
         with mock.patch.object(
-            calculator,
-            "calc_pull_request_facts_github",
-            wraps=calculator.calc_pull_request_facts_github,
+            PRFactsCalculator, "__call__", side_effect=PRFactsCalculator.__call__, autospec=True,
         ) as calc_mock:
             res0 = await calculator.calc_pull_request_metrics_line_github(
                 metrics=metrics0, **kwargs,
@@ -441,9 +451,10 @@ class TestBatchCalcPullRequestMetrics:
 
         # the second time the cache is used and the underlying calc function must not be called
         with mock.patch.object(
-            calculator,
-            "calc_pull_request_facts_github",
-            wraps=calculator.calc_pull_request_facts_github,
+            PRFactsCalculator,
+            "__call__",
+            side_effect=PRFactsCalculator.__call__,
+            autospec=True,
         ) as calc_mock:
             second_calc_res = await calc()
 
@@ -494,9 +505,7 @@ class TestBatchCalcPullRequestMetrics:
 
         # the second time the cache is used and the underlying calc function must not be called
         with mock.patch.object(
-            calculator,
-            "calc_pull_request_facts_github",
-            wraps=calculator.calc_pull_request_facts_github,
+            PRFactsCalculator, "__call__", side_effect=PRFactsCalculator.__call__, autospec=True,
         ) as calc_mock:
             second_calc_res = await calc()
 

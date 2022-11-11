@@ -9,7 +9,7 @@ from itertools import chain
 import logging
 import operator
 import pickle
-from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, TypeVar
+from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, Type, TypeVar
 
 import aiomcache
 import numpy as np
@@ -340,7 +340,7 @@ class MetricEntriesCalculator:
         """
         assert isinstance(repositories, (tuple, list))
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = self._merge_pr_participants(participants)
+        all_participants = _merge_pr_participants(participants)
         calc = PullRequestBinnedMetricCalculator(
             metrics,
             quantiles,
@@ -349,7 +349,8 @@ class MetricEntriesCalculator:
             environments=environments,
         )
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        df_facts = await self.calc_pull_request_facts_github(
+        pr_facts_calc = self._build_pr_facts_calculator()
+        df_facts = await pr_facts_calc(
             time_from,
             time_to,
             all_repositories,
@@ -381,14 +382,6 @@ class MetricEntriesCalculator:
             deduplicate_mask=dedupe_mask,
         )
         return calc(df_facts, time_intervals, groups)
-
-    @staticmethod
-    def _merge_pr_participants(participants: Iterable[PRParticipants]) -> PRParticipants:
-        all_participants: dict[PRParticipationKind, set[str]] = {}
-        for p in participants:
-            for k, v in p.items():
-                all_participants.setdefault(k, set()).update(v)
-        return all_participants
 
     @sentry_span
     @cached(
@@ -430,7 +423,7 @@ class MetricEntriesCalculator:
         all_repositories = set(
             chain.from_iterable(t.repositories for request in requests for t in request.teams),
         )
-        all_participants = self._merge_pr_participants(
+        all_participants = _merge_pr_participants(
             t.participants for request in requests for t in request.teams
         )
         assert all_repositories
@@ -447,7 +440,8 @@ class MetricEntriesCalculator:
 
         jira_entities_to_fetch = self._get_jira_entities_to_fetch(jira_filters, all_metrics)
 
-        df_facts = await self.calc_pull_request_facts_github(
+        pr_facts_calc = self._build_pr_facts_calculator()
+        df_facts = await pr_facts_calc(
             time_from,
             time_to,
             all_repositories,
@@ -550,14 +544,15 @@ class MetricEntriesCalculator:
         :return: defs x lines x repositories x participants -> list[tuple[metric ID, Histogram]].
         """
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = self._merge_pr_participants(participants)
+        all_participants = _merge_pr_participants(participants)
         try:
             calc = PullRequestBinnedHistogramCalculator(
                 defs.values(), quantiles, environments=[environment],
             )
         except KeyError as e:
             raise UnsupportedMetricError() from e
-        df_facts = await self.calc_pull_request_facts_github(
+        pr_facts_calc = self._build_pr_facts_calculator()
+        df_facts = await pr_facts_calc(
             time_from,
             time_to,
             all_repositories,
@@ -1516,349 +1511,20 @@ class MetricEntriesCalculator:
                 flat_group_suite_counts[i] = len(np.unique(suite_node_ids[group]))
         return df_check_runs, groups, group_suite_counts, suite_sizes
 
-    async def calc_pull_request_facts_github(
-        self,
-        time_from: datetime,
-        time_to: datetime,
-        repositories: set[str],
-        participants: PRParticipants,
-        labels: LabelFilter,
-        jira: JIRAFilter,
-        exclude_inactive: bool,
-        bots: set[str],
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        prefixer: Prefixer,
-        fresh: bool,
-        with_jira: JIRAEntityToFetch | int,
-        branches: Optional[pd.DataFrame] = None,
-        default_branches: Optional[dict[str, str]] = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate facts about pull request on GitHub.
-
-        :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
-        :param fresh: If the number of done PRs for the time period and filters exceeds \
-                      `unfresh_mode_threshold`, force querying mdb instead of pdb only.
-        :param with_jira: JIRA information to load for each PR.
-        :return: PullRequestFacts packed in a Pandas DataFrame.
-        """
-        df, *_ = await self._calc_pull_request_facts_github(
-            time_from,
-            time_to,
-            repositories,
-            participants,
-            labels,
-            jira,
-            exclude_inactive,
-            bots,
-            release_settings,
-            logical_settings,
-            prefixer,
-            fresh,
-            with_jira,
-            branches=branches,
-            default_branches=default_branches,
+    def _build_pr_facts_calculator(self) -> PRFactsCalculator:
+        return PRFactsCalculator(
+            self._account,
+            self._meta_ids,
+            self._mdb,
+            self._pdb,
+            self._rdb,
+            self.pr_miner,
+            self.branch_miner,
+            self.done_prs_facts_loader,
+            self.unfresh_pr_facts_fetcher,
+            self.pr_jira_mapper,
+            self._cache,
         )
-        if df.empty:
-            df = pd.DataFrame(columns=PullRequestFacts.f)
-        return df
-
-    @sentry_span
-    @cached(
-        exptime=short_term_exptime,
-        serialize=serialize_args,
-        deserialize=deserialize_args,
-        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, **_: (  # noqa
-            time_from,
-            time_to,
-            ",".join(sorted(repositories)),
-            ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-            labels,
-            jira,
-            exclude_inactive,
-            release_settings,
-            logical_settings,
-            fresh,
-        ),
-        postprocess=_postprocess_cached_facts,
-        cache=lambda self, **_: self._cache,
-    )
-    async def _calc_pull_request_facts_github(
-        self,
-        time_from: datetime,
-        time_to: datetime,
-        repositories: set[str],
-        participants: PRParticipants,
-        labels: LabelFilter,
-        jira: JIRAFilter,
-        exclude_inactive: bool,
-        bots: set[str],
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        prefixer: Prefixer,
-        fresh: bool,
-        with_jira: JIRAEntityToFetch | int,
-        branches: Optional[pd.DataFrame],
-        default_branches: Optional[dict[str, str]],
-    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
-        assert isinstance(repositories, set)
-        if branches is None or default_branches is None:
-            branches, default_branches = await self.branch_miner.extract_branches(
-                repositories, prefixer, self._meta_ids, self._mdb, self._cache,
-            )
-        precomputed_tasks = [
-            self.done_prs_facts_loader.load_precomputed_done_facts_filters(
-                time_from,
-                time_to,
-                repositories,
-                participants,
-                labels,
-                default_branches,
-                exclude_inactive,
-                release_settings,
-                prefixer,
-                self._account,
-                self._pdb,
-            ),
-        ]
-        if exclude_inactive:
-            precomputed_tasks.append(
-                self.done_prs_facts_loader.load_precomputed_done_candidates(
-                    time_from,
-                    time_to,
-                    repositories,
-                    default_branches,
-                    release_settings,
-                    self._account,
-                    self._pdb,
-                ),
-            )
-        # augment blacklist with deployed PRs
-        (precomputed_facts, ambiguous), *blacklist = await gather(*precomputed_tasks)
-        precomputed_node_ids = {node_id for node_id, _ in precomputed_facts}
-        if blacklist:
-            blacklist = (blacklist[0][0] | precomputed_node_ids, blacklist[0][1])
-        else:
-            blacklist = (precomputed_node_ids, ambiguous)
-        add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
-
-        prpk = PRParticipationKind
-        if (
-            (
-                len(precomputed_facts) > unfresh_prs_threshold
-                or len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold
-            )
-            and not fresh
-            and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER})
-        ):
-            facts = await self.unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
-                self.pr_miner,
-                precomputed_facts,
-                ambiguous,
-                time_from,
-                time_to,
-                repositories,
-                participants,
-                labels,
-                jira,
-                self.pr_jira_mapper if with_jira else None,
-                with_jira,
-                exclude_inactive,
-                branches,
-                default_branches,
-                release_settings,
-                logical_settings,
-                prefixer,
-                self._account,
-                self._meta_ids,
-                self._mdb,
-                self._pdb,
-                self._rdb,
-                self._cache,
-            )
-            return df_from_structs(facts.values()), with_jira
-
-        if with_jira:
-            # schedule loading the PR->JIRA mapping
-            done_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.load(
-                    precomputed_node_ids, with_jira, self._meta_ids, self._mdb,
-                ),
-                name="load_pr_jira_mapping/done",
-            )
-        done_deployments_task = asyncio.create_task(
-            self.pr_miner.fetch_pr_deployments(
-                precomputed_node_ids, self._account, self._pdb, self._rdb,
-            ),
-            name="fetch_pr_deployments/done",
-        )
-        add_pdb_misses(self._pdb, "fresh", 1)
-        date_from, date_to = coarsen_time_interval(time_from, time_to)
-        # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
-        # are effectively discarded later in BinnedMetricCalculator
-        tasks = [
-            self.pr_miner.mine(
-                date_from,
-                date_to,
-                time_from,
-                time_to,
-                repositories,
-                participants,
-                labels,
-                jira,
-                with_jira,
-                branches,
-                default_branches,
-                exclude_inactive,
-                release_settings,
-                logical_settings,
-                prefixer,
-                self._account,
-                self._meta_ids,
-                self._mdb,
-                self._pdb,
-                self._rdb,
-                self._cache,
-                pr_blacklist=blacklist,
-            ),
-        ]
-        if jira and precomputed_facts:
-            tasks.append(
-                self.pr_miner.filter_jira(
-                    precomputed_node_ids,
-                    jira,
-                    self._meta_ids,
-                    self._mdb,
-                    self._cache,
-                    columns=[PullRequest.node_id],
-                ),
-            )
-            (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = await gather(
-                *tasks, op="PullRequestMiner",
-            )
-            filtered_node_ids = set(filtered.index.values)
-            precomputed_facts = {
-                key: val for key, val in precomputed_facts.items() if key[0] in filtered_node_ids
-            }
-        else:
-            miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
-
-        new_deps = miner.dfs.deployments.copy()
-
-        # used later to retrieve jira mapping for mined prs
-        if with_jira:
-            columns = JIRAEntityToFetch.to_columns(with_jira & ~JIRAEntityToFetch.ISSUES)
-            new_jira = miner.dfs.jiras[[c.name for c in columns]].copy(deep=False)
-            new_jira.index = new_jira.index.copy()
-            if with_jira & JIRAEntityToFetch.ISSUES:
-                new_jira[
-                    JIRAEntityToFetch.to_columns(JIRAEntityToFetch.ISSUES)[0].name
-                ] = new_jira.index.get_level_values(1).values
-
-        precomputed_unreleased_prs = miner.drop(unreleased_facts)
-        remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
-        add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
-        for key in precomputed_unreleased_prs:
-            precomputed_facts[key] = unreleased_facts[key]
-        facts_miner = PullRequestFactsMiner(bots)
-        mined_prs = []
-        mined_facts = {}
-        open_pr_facts = []
-        merged_unreleased_pr_facts = []
-        done_count = 0
-        with sentry_sdk.start_span(
-            op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__",
-            description=str(len(miner)),
-        ):
-            for i, pr in enumerate(miner):
-                if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
-                    await asyncio.sleep(0)
-                try:
-                    facts = facts_miner(pr)
-                except ImpossiblePullRequest:
-                    continue
-                mined_prs.append(pr)
-                mined_facts[
-                    (
-                        pr.pr[PullRequest.node_id.name],
-                        pr.pr[PullRequest.repository_full_name.name],
-                    )
-                ] = facts
-                if facts.done:
-                    done_count += 1
-                elif not facts.closed:
-                    open_pr_facts.append((pr, facts))
-                else:
-                    merged_unreleased_pr_facts.append((pr, facts))
-        add_pdb_misses(self._pdb, "precomputed_done_facts", done_count)
-        add_pdb_misses(self._pdb, "precomputed_open_facts", len(open_pr_facts))
-        add_pdb_misses(
-            self._pdb, "precomputed_merged_unreleased_facts", len(merged_unreleased_pr_facts),
-        )
-        add_pdb_misses(self._pdb, "facts", len(miner))
-        if done_count > 0:
-            # we don't care if exclude_inactive is True or False here
-            # also, we dump all the `mined_facts`, the called function will figure out who's
-            # released
-            await defer(
-                store_precomputed_done_facts(
-                    mined_prs,
-                    mined_facts.values(),
-                    time_to,
-                    default_branches,
-                    release_settings,
-                    self._account,
-                    self._pdb,
-                ),
-                "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)),
-            )
-        if len(open_pr_facts) > 0:
-            await defer(
-                store_open_pull_request_facts(open_pr_facts, self._account, self._pdb),
-                "store_open_pull_request_facts(%d)" % len(open_pr_facts),
-            )
-        if len(merged_unreleased_pr_facts) > 0:
-            await defer(
-                store_merged_unreleased_pull_request_facts(
-                    merged_unreleased_pr_facts,
-                    time_to,
-                    matched_bys,
-                    default_branches,
-                    release_settings,
-                    self._account,
-                    self._pdb,
-                    unreleased_prs_event,
-                ),
-                "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts),
-            )
-        tasks = [done_deployments_task]
-        if with_jira:
-            tasks.append(done_jira_map_task)
-        done_deps, *done_jira_map = await gather(*tasks)
-        if with_jira:
-            jira_map = done_jira_map[0]
-            self.pr_jira_mapper.append_from_df(jira_map, new_jira)
-            self.pr_jira_mapper.apply_to_pr_facts(precomputed_facts, jira_map)
-        else:
-            self.pr_jira_mapper.apply_empty_to_pr_facts(precomputed_facts)
-
-        # TODO: miner returns in dfs.deployments some PRs included in blacklist,
-        # so some PRs can be both in done_deps and new_deps, find out why
-        dupl_new_deps = np.intersect1d(
-            new_deps.index.values, done_deps.index.values, assume_unique=True,
-        )
-        if dupl_new_deps.size > 0:
-            new_deps.drop(dupl_new_deps, inplace=True)
-
-        self.unfresh_pr_facts_fetcher.append_deployments(
-            precomputed_facts, pd.concat([done_deps, new_deps]), self._log,
-        )
-        all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
-        all_facts_df = df_from_structs(
-            all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
-        )
-        return all_facts_df, with_jira
 
 
 class _JIRAFilterToGroupingConverter:
@@ -1880,7 +1546,7 @@ class _JIRAFilterToGroupingConverter:
         account: int,
         jira_acc_id: Optional[int],
         mdb: Database,
-        cache,
+        cache: Optional[aiomcache.Client],
     ) -> _JIRAFilterToGroupingConverter:
         if any((f.priorities or f.issue_types) for f in all_filters):
             if jira_acc_id is None:
@@ -2014,3 +1680,390 @@ class TeamSpecificFilters:
         dikt = dataclasses.asdict(self)
         del dikt["participants"]  # fully defined by the team ID
         return str(dikt)
+
+
+class PRFactsCalculator:
+    """Calculator for Pull Requests facts."""
+
+    _log = logging.getLogger(f"{metadata.__package__}.PRFactsCalculator")
+
+    def __init__(
+        self,
+        account: int,
+        meta_ids: tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        pr_miner: Type[PullRequestMiner] = PullRequestMiner,
+        branch_miner: Type[BranchMiner] = BranchMiner,
+        done_prs_facts_loader: Type[DonePRFactsLoader] = DonePRFactsLoader,
+        unfresh_pr_facts_fetcher: Type[
+            UnfreshPullRequestFactsFetcher
+        ] = UnfreshPullRequestFactsFetcher,
+        pr_jira_mapper: Type[PullRequestJiraMapper] = PullRequestJiraMapper,
+        cache: Optional[aiomcache.Client] = None,
+    ):
+        """Init the `PRFactsCalculator`."""
+        self._account = account
+        self._meta_ids = meta_ids
+        self._mdb = mdb
+        self._pdb = pdb
+        self._rdb = rdb
+        self._pr_miner = pr_miner
+        self._branch_miner = branch_miner
+        self._done_prs_facts_loader = done_prs_facts_loader
+        self._unfresh_pr_facts_fetcher = unfresh_pr_facts_fetcher
+        self._pr_jira_mapper = pr_jira_mapper
+        self._cache = cache
+
+    async def __call__(
+        self,
+        time_from: datetime,
+        time_to: datetime,
+        repositories: set[str],
+        participants: PRParticipants,
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        exclude_inactive: bool,
+        bots: set[str],
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        fresh: bool,
+        with_jira: JIRAEntityToFetch | int,
+        branches: Optional[pd.DataFrame] = None,
+        default_branches: Optional[dict[str, str]] = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate facts about pull request on GitHub.
+
+        :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
+        :param fresh: If the number of done PRs for the time period and filters exceeds \
+                      `unfresh_mode_threshold`, force querying mdb instead of pdb only.
+        :param with_jira: JIRA information to load for each PR.
+        :return: PullRequestFacts packed in a Pandas DataFrame.
+        """
+        df, *_ = await self._call_cached(
+            time_from,
+            time_to,
+            repositories,
+            participants,
+            labels,
+            jira,
+            exclude_inactive,
+            bots,
+            release_settings,
+            logical_settings,
+            prefixer,
+            fresh,
+            with_jira,
+            branches=branches,
+            default_branches=default_branches,
+        )
+        if df.empty:
+            df = pd.DataFrame(columns=PullRequestFacts.f)
+        return df
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=serialize_args,
+        deserialize=deserialize_args,
+        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, logical_settings, fresh, **_: (  # noqa
+            time_from,
+            time_to,
+            ",".join(sorted(repositories)),
+            ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+            labels,
+            jira,
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+            fresh,
+        ),
+        postprocess=_postprocess_cached_facts,
+        cache=lambda self, **_: self._cache,
+    )
+    async def _call_cached(
+        self,
+        time_from: datetime,
+        time_to: datetime,
+        repositories: set[str],
+        participants: PRParticipants,
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        exclude_inactive: bool,
+        bots: set[str],
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        fresh: bool,
+        with_jira: JIRAEntityToFetch | int,
+        branches: Optional[pd.DataFrame],
+        default_branches: Optional[dict[str, str]],
+    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
+        assert isinstance(repositories, set)
+        if branches is None or default_branches is None:
+            branches, default_branches = await self._branch_miner.extract_branches(
+                repositories, prefixer, self._meta_ids, self._mdb, self._cache,
+            )
+        precomputed_tasks = [
+            self._done_prs_facts_loader.load_precomputed_done_facts_filters(
+                time_from,
+                time_to,
+                repositories,
+                participants,
+                labels,
+                default_branches,
+                exclude_inactive,
+                release_settings,
+                prefixer,
+                self._account,
+                self._pdb,
+            ),
+        ]
+        if exclude_inactive:
+            precomputed_tasks.append(
+                self._done_prs_facts_loader.load_precomputed_done_candidates(
+                    time_from,
+                    time_to,
+                    repositories,
+                    default_branches,
+                    release_settings,
+                    self._account,
+                    self._pdb,
+                ),
+            )
+        # augment blacklist with deployed PRs
+        (precomputed_facts, ambiguous), *blacklist = await gather(*precomputed_tasks)
+        precomputed_node_ids = {node_id for node_id, _ in precomputed_facts}
+        if blacklist:
+            blacklist = (blacklist[0][0] | precomputed_node_ids, blacklist[0][1])
+        else:
+            blacklist = (precomputed_node_ids, ambiguous)
+        add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
+
+        prpk = PRParticipationKind
+        if (
+            (
+                len(precomputed_facts) > unfresh_prs_threshold
+                or len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold
+            )
+            and not fresh
+            and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER})
+        ):
+            facts = await self._unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
+                self._pr_miner,
+                precomputed_facts,
+                ambiguous,
+                time_from,
+                time_to,
+                repositories,
+                participants,
+                labels,
+                jira,
+                self._pr_jira_mapper if with_jira else None,
+                with_jira,
+                exclude_inactive,
+                branches,
+                default_branches,
+                release_settings,
+                logical_settings,
+                prefixer,
+                self._account,
+                self._meta_ids,
+                self._mdb,
+                self._pdb,
+                self._rdb,
+                self._cache,
+            )
+            return df_from_structs(facts.values()), with_jira
+
+        if with_jira:
+            # schedule loading the PR->JIRA mapping
+            done_jira_map_task = asyncio.create_task(
+                self._pr_jira_mapper.load(
+                    precomputed_node_ids, with_jira, self._meta_ids, self._mdb,
+                ),
+                name="load_pr_jira_mapping/done",
+            )
+        done_deployments_task = asyncio.create_task(
+            self._pr_miner.fetch_pr_deployments(
+                precomputed_node_ids, self._account, self._pdb, self._rdb,
+            ),
+            name="fetch_pr_deployments/done",
+        )
+        add_pdb_misses(self._pdb, "fresh", 1)
+        date_from, date_to = coarsen_time_interval(time_from, time_to)
+        # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
+        # are effectively discarded later in BinnedMetricCalculator
+        tasks = [
+            self._pr_miner.mine(
+                date_from,
+                date_to,
+                time_from,
+                time_to,
+                repositories,
+                participants,
+                labels,
+                jira,
+                with_jira,
+                branches,
+                default_branches,
+                exclude_inactive,
+                release_settings,
+                logical_settings,
+                prefixer,
+                self._account,
+                self._meta_ids,
+                self._mdb,
+                self._pdb,
+                self._rdb,
+                self._cache,
+                pr_blacklist=blacklist,
+            ),
+        ]
+        if jira and precomputed_facts:
+            tasks.append(
+                self._pr_miner.filter_jira(
+                    precomputed_node_ids,
+                    jira,
+                    self._meta_ids,
+                    self._mdb,
+                    self._cache,
+                    columns=[PullRequest.node_id],
+                ),
+            )
+            (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = await gather(
+                *tasks, op="PullRequestMiner",
+            )
+            filtered_node_ids = set(filtered.index.values)
+            precomputed_facts = {
+                key: val for key, val in precomputed_facts.items() if key[0] in filtered_node_ids
+            }
+        else:
+            miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
+
+        new_deps = miner.dfs.deployments.copy()
+
+        # used later to retrieve jira mapping for mined prs
+        if with_jira:
+            columns = JIRAEntityToFetch.to_columns(with_jira & ~JIRAEntityToFetch.ISSUES)
+            new_jira = miner.dfs.jiras[[c.name for c in columns]].copy(deep=False)
+            new_jira.index = new_jira.index.copy()
+            if with_jira & JIRAEntityToFetch.ISSUES:
+                new_jira[
+                    JIRAEntityToFetch.to_columns(JIRAEntityToFetch.ISSUES)[0].name
+                ] = new_jira.index.get_level_values(1).values
+
+        precomputed_unreleased_prs = miner.drop(unreleased_facts)
+        remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
+        add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
+        for key in precomputed_unreleased_prs:
+            precomputed_facts[key] = unreleased_facts[key]
+        facts_miner = PullRequestFactsMiner(bots)
+        mined_prs = []
+        mined_facts = {}
+        open_pr_facts = []
+        merged_unreleased_pr_facts = []
+        done_count = 0
+        with sentry_sdk.start_span(
+            op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__",
+            description=str(len(miner)),
+        ):
+            for i, pr in enumerate(miner):
+                if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                    await asyncio.sleep(0)
+                try:
+                    facts = facts_miner(pr)
+                except ImpossiblePullRequest:
+                    continue
+                mined_prs.append(pr)
+                mined_facts[
+                    (
+                        pr.pr[PullRequest.node_id.name],
+                        pr.pr[PullRequest.repository_full_name.name],
+                    )
+                ] = facts
+                if facts.done:
+                    done_count += 1
+                elif not facts.closed:
+                    open_pr_facts.append((pr, facts))
+                else:
+                    merged_unreleased_pr_facts.append((pr, facts))
+        add_pdb_misses(self._pdb, "precomputed_done_facts", done_count)
+        add_pdb_misses(self._pdb, "precomputed_open_facts", len(open_pr_facts))
+        add_pdb_misses(
+            self._pdb, "precomputed_merged_unreleased_facts", len(merged_unreleased_pr_facts),
+        )
+        add_pdb_misses(self._pdb, "facts", len(miner))
+        if done_count > 0:
+            # we don't care if exclude_inactive is True or False here
+            # also, we dump all the `mined_facts`, the called function will figure out who's
+            # released
+            await defer(
+                store_precomputed_done_facts(
+                    mined_prs,
+                    mined_facts.values(),
+                    time_to,
+                    default_branches,
+                    release_settings,
+                    self._account,
+                    self._pdb,
+                ),
+                "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)),
+            )
+        if len(open_pr_facts) > 0:
+            await defer(
+                store_open_pull_request_facts(open_pr_facts, self._account, self._pdb),
+                "store_open_pull_request_facts(%d)" % len(open_pr_facts),
+            )
+        if len(merged_unreleased_pr_facts) > 0:
+            await defer(
+                store_merged_unreleased_pull_request_facts(
+                    merged_unreleased_pr_facts,
+                    time_to,
+                    matched_bys,
+                    default_branches,
+                    release_settings,
+                    self._account,
+                    self._pdb,
+                    unreleased_prs_event,
+                ),
+                "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts),
+            )
+        tasks = [done_deployments_task]
+        if with_jira:
+            tasks.append(done_jira_map_task)
+        done_deps, *done_jira_map = await gather(*tasks)
+        if with_jira:
+            jira_map = done_jira_map[0]
+            self._pr_jira_mapper.append_from_df(jira_map, new_jira)
+            self._pr_jira_mapper.apply_to_pr_facts(precomputed_facts, jira_map)
+        else:
+            self._pr_jira_mapper.apply_empty_to_pr_facts(precomputed_facts)
+
+        # TODO: miner returns in dfs.deployments some PRs included in blacklist,
+        # so some PRs can be both in done_deps and new_deps, find out why
+        dupl_new_deps = np.intersect1d(
+            new_deps.index.values, done_deps.index.values, assume_unique=True,
+        )
+        if dupl_new_deps.size > 0:
+            new_deps.drop(dupl_new_deps, inplace=True)
+
+        self._unfresh_pr_facts_fetcher.append_deployments(
+            precomputed_facts, pd.concat([done_deps, new_deps]), self._log,
+        )
+        all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
+        all_facts_df = df_from_structs(
+            all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
+        )
+        return all_facts_df, with_jira
+
+
+def _merge_pr_participants(participants: Iterable[PRParticipants]) -> PRParticipants:
+    all_participants: dict[PRParticipationKind, set[str]] = {}
+    for p in participants:
+        for k, v in p.items():
+            all_participants.setdefault(k, set()).update(v)
+    return all_participants
