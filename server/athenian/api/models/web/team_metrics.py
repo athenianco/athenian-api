@@ -1,7 +1,9 @@
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.goal import MetricValue
+from athenian.api.typing_utils import VerbatimOptional
 
 
 class _TeamMetricParams(Model):
@@ -28,3 +30,19 @@ class TeamMetricsRequest(Model):
     jira_priorities: Optional[list[str]]
     jira_issue_types: Optional[list[str]]
     metrics_with_params: list[TeamMetricWithParams]
+
+
+class TeamMetricValueNode(Model):
+    """A node of the tree returned in TeamMetricResponse, with team id and metric value."""
+
+    team: int
+    children: Sequence["TeamMetricValueNode"]
+    # see comment for GoalValue.current field about string type reference
+    value: VerbatimOptional["MetricValue"]
+
+
+class TeamMetricResponseElement(Model):
+    """Computed metric values for the team and its child teams."""
+
+    metric: str
+    value: TeamMetricValueNode
