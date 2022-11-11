@@ -23,7 +23,12 @@ from tests.testutils.db import (
     models_insert,
     transaction_conn,
 )
-from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
+from tests.testutils.factory.state import (
+    GoalFactory,
+    TeamFactory,
+    TeamGoalFactory,
+    UserAccountFactory,
+)
 
 
 class TestGetRootTeam:
@@ -44,15 +49,52 @@ class TestGetRootTeam:
 
 
 class TestGetTeamFromDB:
-    async def test_found(self, sdb: Database) -> None:
+    async def test_found_by_account(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=99, name="TEAM 99"))
-        team = await get_team_from_db(1, 99, sdb)
-        assert team["name"] == "TEAM 99"
+        team = await get_team_from_db(99, 1, None, sdb)
+        assert team[Team.name.name] == "TEAM 99"
 
-    async def test_not_found(self, sdb: Database) -> None:
+    async def test_not_found_by_account(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=99, owner_id=2))
         with pytest.raises(TeamNotFoundError):
-            await get_team_from_db(1, 99, sdb)
+            await get_team_from_db(99, 1, None, sdb)
+
+    async def test_found_by_uid(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, TeamFactory(id=99, owner_id=2), UserAccountFactory(user_id="u0", account_id=2),
+        )
+        team = await get_team_from_db(99, None, "u0", sdb)
+        assert team[Team.id.name] == 99
+
+    async def test_not_found_by_uid(self, sdb: Database) -> None:
+        await models_insert(sdb, UserAccountFactory(user_id="u0", account_id=2))
+        with pytest.raises(TeamNotFoundError):
+            await get_team_from_db(99, None, "u0", sdb)
+
+    async def test_not_found_by_uid_not_owned_team(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, TeamFactory(id=99, owner_id=1), UserAccountFactory(user_id="u0", account_id=2),
+        )
+        with pytest.raises(TeamNotFoundError):
+            await get_team_from_db(99, None, "u0", sdb)
+
+    async def test_both_filters(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, TeamFactory(id=9, owner_id=2), UserAccountFactory(user_id="u0", account_id=2),
+        )
+        team = await get_team_from_db(9, 2, "u0", sdb)
+        assert team[Team.id.name] == 9
+
+        with pytest.raises(TeamNotFoundError):
+            await get_team_from_db(9, 1, "u0", sdb)
+
+        with pytest.raises(TeamNotFoundError):
+            await get_team_from_db(9, 2, "u1", sdb)
+
+    async def test_no_filter(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9))
+        with pytest.raises(ValueError):
+            await get_team_from_db(9, None, None, sdb)
 
 
 class TestGetBotsTeam:

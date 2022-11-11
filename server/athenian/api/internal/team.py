@@ -13,7 +13,7 @@ from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.models.metadata.github import User
-from athenian.api.models.state.models import Team
+from athenian.api.models.state.models import Team, UserAccount
 from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -77,9 +77,30 @@ async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Row:
 
 
 @sentry_span
-async def get_team_from_db(account_id: int, team_id: int, sdb_conn: DatabaseLike) -> Row:
-    """Return a team owned by an account."""
-    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.id == team_id))
+async def get_team_from_db(
+    team_id: int,
+    account_id: Optional[int],
+    user_id: Optional[str],
+    sdb_conn: DatabaseLike,
+) -> Row:
+    """Return a team owned by an account.
+
+    Team can be filtered by owner account and/or user id with access to team.
+    At least one of the two filtering conditions must be specified.
+
+    """
+    if account_id is None and user_id is None:
+        raise ValueError("At least one between account_id and user_id must be specified")
+
+    where = Team.id == team_id
+    if account_id is not None:
+        where = sa.and_(where, Team.owner_id == account_id)
+        from_ = Team
+    if user_id is not None:
+        from_ = sa.join(Team, UserAccount, Team.owner_id == UserAccount.account_id)
+        where = sa.and_(where, UserAccount.user_id == user_id)
+
+    stmt = sa.select(Team).select_from(from_).where(where)
     team = await sdb_conn.fetch_one(stmt)
     if team is None:
         raise TeamNotFoundError(team_id)
