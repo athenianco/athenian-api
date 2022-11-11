@@ -2258,6 +2258,71 @@ async def test_mine_releases_twins(
 
 
 @with_defer
+async def test_mine_releases_unicode_match(
+    mdb_rw,
+    pdb,
+    rdb,
+    prefixer,
+):
+    release_match_setting_tag = ReleaseSettings(
+        {
+            "github.com/src-d/go-git": ReleaseMatchSetting(
+                branches="", tags=r".*\+Юникод", events=".*", match=ReleaseMatch.tag,
+            ),
+        },
+    )
+    time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2018, month=2, day=1, tzinfo=timezone.utc)
+    await mdb_rw.execute(
+        insert(Release).values(
+            {
+                Release.node_id: 100501,
+                Release.acc_id: 6366825,
+                Release.repository_full_name: "src-d/go-git",
+                Release.repository_node_id: 40550,
+                Release.author: "mcuadros",
+                Release.author_node_id: 39789,
+                Release.name: "v4.0.0+Юникод",
+                Release.published_at: datetime(2018, 1, 12, tzinfo=timezone.utc),
+                Release.tag: "v4.0.0+Юникод",
+                Release.url: "https://github.com/src-d/go-git/commit/tag/v4.0.0+Юникод",
+                Release.sha: "71e438ee1c3bdca714f138fcc6bb8c084989a521",
+                Release.commit_id: 2756486,
+                Release.type: "Tag",
+            },
+        ),
+    )
+    try:
+        for _ in range(2):
+            releases, _, _, _ = await mine_releases(
+                ["src-d/go-git"],
+                {},
+                None,
+                {},
+                time_from,
+                time_to,
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                release_match_setting_tag,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                1,
+                (6366825,),
+                mdb_rw,
+                pdb,
+                rdb,
+                None,
+                with_deployments=False,
+            )
+            assert len(releases) == 1
+            assert releases.iloc[0][Release.node_id.name] == 100501
+            assert releases.iloc[0][Release.name.name] == "v4.0.0+Юникод"
+            await wait_deferred()
+    finally:
+        await mdb_rw.execute(delete(Release).where(Release.node_id == 100501))
+
+
+@with_defer
 async def test_override_first_releases_smoke(
     mdb,
     pdb,
