@@ -89,6 +89,7 @@ from athenian.api.internal.miners.types import (
     Deployment,
     JIRAEntityToFetch,
     Label,
+    LoadedJIRADetails,
     MinedPullRequest,
     PRParticipants,
     PullRequestEvent,
@@ -1293,6 +1294,10 @@ async def unwrap_pull_requests(
     for k, v in unreleased.items():
         if k not in facts:
             facts[k] = v
+    empty_jira = LoadedJIRADetails.empty()
+    for v in facts.values():
+        if v.jira is None:
+            v.jira = empty_jira
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df,
         unreleased,

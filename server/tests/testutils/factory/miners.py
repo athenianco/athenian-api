@@ -7,7 +7,7 @@ import faker
 import numpy as np
 import pandas as pd
 
-from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.miners.types import LoadedJIRADetails, PullRequestFacts
 
 _faker = faker.Faker()
 _dt_between = partial(_faker.date_time_between, tzinfo=timezone.utc)
@@ -19,6 +19,7 @@ class PullRequestFactsFactory(factory.Factory):
 
     force_push_dropped = False
     release_ignored = False
+    jira = LoadedJIRADetails.empty()
 
     @factory.lazy_attribute
     def created(self) -> pd.Timestamp:
