@@ -660,12 +660,19 @@ class _NumpyStructInspector:
         direct_columns = []
         dtype = [(f, v[0]) for f, v in first_item.dtype.fields.items()]
         direct_nested_fields = first_item.nested_dtypes
+        side_fields = {}
+        try:
+            side_fields |= first_item.Optional.__annotations__
+            side_fields |= first_item.Virtual.__annotations__
+        except AttributeError:
+            pass
         coerced_datas = [first_item.coerced_data]
         indirect_columns = {}
 
         for k, v in first_item.items():
             if k not in first_item.dtype.names or k in direct_nested_fields:
-                if dataclasses.is_dataclass(v):
+                if dataclasses.is_dataclass(side_fields.get(k)):
+                    assert v is not None, f"{type(first_item).__name__}.{k} may not be None"
                     for subfield, subvalue in dataclass_asdict(v).items():
                         full_k = f"{k}_{subfield}"
                         indirect_columns.setdefault(k, []).append((full_k, subfield))

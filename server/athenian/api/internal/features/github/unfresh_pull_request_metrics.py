@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import logging
 from typing import Dict, KeysView, List, Optional, Set, Tuple, Type, Union
 
@@ -206,6 +207,7 @@ class UnfreshPullRequestFactsFetcher:
         merged_prs = unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(
             inactive_merged_prs,
         )
+        del unreleased_prs
         tasks = [
             cls.open_prs_facts_loader.load_open_pull_request_facts_unfresh(
                 open_prs,
@@ -254,10 +256,10 @@ class UnfreshPullRequestFactsFetcher:
         if pr_jira_mapper is not None:
             unreleased_jira_map = unreleased_jira_map[0]
             empty_jira = LoadedJIRADetails.empty()
-            for node_id, repo in zip(
-                unreleased_prs.index.get_level_values(0).values,
-                unreleased_prs.index.get_level_values(1).values,
-            ):
+            # it's not enough to iterate over unreleased_prs.index
+            # we can catch a not yet precomputed pair (logical repository, node_id)
+            # which has (physical repository, node_id) precomputed and existing in the facts
+            for node_id, repo in chain(open_facts.keys(), merged_facts.keys()):
                 try:
                     jira = unreleased_jira_map[node_id]
                 except KeyError:

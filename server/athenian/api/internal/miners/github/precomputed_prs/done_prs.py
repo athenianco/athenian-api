@@ -3,19 +3,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import (
-    Any,
-    Callable,
-    Collection,
-    Dict,
-    Iterable,
-    KeysView,
-    List,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-)
+from typing import Any, Callable, Collection, Iterable, KeysView, Mapping, Optional
 
 import aiomcache
 import morcilla
@@ -87,11 +75,11 @@ class DonePRFactsLoader:
         time_from: datetime,
         time_to: datetime,
         repos: Collection[str],
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         account: int,
         pdb: morcilla.Database,
-    ) -> Tuple[Set[int], Dict[str, List[int]]]:
+    ) -> tuple[set[int], dict[str, list[int]]]:
         """
         Load the set of done PR identifiers and specifically ambiguous PR node IDs.
 
@@ -134,13 +122,13 @@ class DonePRFactsLoader:
         repos: Collection[str],
         participants: PRParticipants,
         labels: LabelFilter,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
-    ) -> Tuple[PullRequestFactsMap, Dict[str, List[int]]]:
+    ) -> tuple[PullRequestFactsMap, dict[str, list[int]]]:
         """
         Fetch precomputed done PR facts.
 
@@ -188,13 +176,13 @@ class DonePRFactsLoader:
     async def load_precomputed_done_facts_all(
         cls,
         repos: Collection[str],
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
         extra: Iterable[InstrumentedAttribute] = (),
-    ) -> Tuple[PullRequestFactsMap, Dict[str, Mapping[str, Any]]]:
+    ) -> tuple[PullRequestFactsMap, dict[str, Mapping[str, Any]]]:
         """
         Fetch all the precomputed done PR facts we have.
 
@@ -240,13 +228,13 @@ class DonePRFactsLoader:
         repos: Collection[str],
         participants: PRParticipants,
         labels: LabelFilter,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
-    ) -> Tuple[Dict[PullRequestID, datetime], Dict[str, List[int]]]:
+    ) -> tuple[dict[PullRequestID, datetime], dict[str, list[int]]]:
         """
         Fetch precomputed done PR "pr_done_at" timestamps.
 
@@ -278,13 +266,13 @@ class DonePRFactsLoader:
     @sentry_span
     async def load_precomputed_done_facts_reponums(
         cls,
-        repos: Dict[str, Set[int]],
-        default_branches: Dict[str, str],
+        repos: dict[str, set[int]],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
-    ) -> Tuple[PullRequestFactsMap, Dict[str, List[int]]]:
+    ) -> tuple[PullRequestFactsMap, dict[str, list[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
@@ -380,13 +368,13 @@ class DonePRFactsLoader:
     async def load_precomputed_done_facts_ids(
         cls,
         node_ids: Iterable[int],
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
         panic_on_missing_repositories: bool = True,
-    ) -> Tuple[PullRequestFactsMap, Dict[str, List[int]]]:
+    ) -> tuple[PullRequestFactsMap, dict[str, list[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
@@ -464,8 +452,8 @@ class DonePRFactsLoader:
         cls,
         prs: pd.DataFrame,
         time_to: datetime,
-        matched_bys: Dict[str, ReleaseMatch],
-        default_branches: Dict[str, str],
+        matched_bys: dict[str, ReleaseMatch],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
@@ -566,19 +554,19 @@ class DonePRFactsLoader:
     @sentry_span
     async def _load_precomputed_done_filters(
         cls,
-        columns: List[InstrumentedAttribute],
+        columns: list[InstrumentedAttribute],
         time_from: Optional[datetime],
         time_to: Optional[datetime],
         repos: Collection[str],
         participants: PRParticipants,
         labels: LabelFilter,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
         pdb: morcilla.Database,
-    ) -> Tuple[Dict[PullRequestID, Mapping[str, Any]], Dict[str, List[int]]]:
+    ) -> tuple[dict[PullRequestID, Mapping[str, Any]], dict[str, list[int]]]:
         """
         Load some data belonging to released or rejected PRs from the precomputed DB.
 
@@ -685,8 +673,8 @@ class DonePRFactsLoader:
     @classmethod
     async def _compose_query_filters_undeployed(
         cls,
-        selected: Set[InstrumentedAttribute],
-        or_items: Callable[[], List[ClauseElement]],
+        selected: set[InstrumentedAttribute],
+        or_items: Callable[[], list[ClauseElement]],
         time_from: Optional[datetime],
         time_to: Optional[datetime],
         participants: PRParticipants,
@@ -695,7 +683,7 @@ class DonePRFactsLoader:
         prefixer: Prefixer,
         account: int,
         postgres: bool,
-    ) -> Tuple[List[Select], Set[datetime]]:
+    ) -> tuple[list[Select], set[datetime]]:
         ghprt = GitHubDonePullRequestFacts
         filters = cls._create_common_filters(time_from, time_to, None, account)
         selected = selected.copy()
@@ -734,8 +722,8 @@ class DonePRFactsLoader:
     @classmethod
     async def _compose_query_filters_deployed(
         cls,
-        selected: Set[InstrumentedAttribute],
-        or_items: Callable[[], List[ClauseElement]],
+        selected: set[InstrumentedAttribute],
+        or_items: Callable[[], list[ClauseElement]],
         time_from: Optional[datetime],
         time_to: Optional[datetime],
         participants: PRParticipants,
@@ -744,7 +732,7 @@ class DonePRFactsLoader:
         prefixer: Prefixer,
         account: int,
         postgres: bool,
-    ) -> List[Select]:
+    ) -> list[Select]:
         ghprt = GitHubDonePullRequestFacts
         filters = cls._create_common_filters(None, time_to, None, account)
         selected = selected.copy()
@@ -780,7 +768,7 @@ class DonePRFactsLoader:
         time_to: Optional[datetime],
         repos: Optional[Collection[str]],
         account: int,
-    ) -> List[ClauseElement]:
+    ) -> list[ClauseElement]:
         assert isinstance(time_from, (datetime, type(None)))
         assert isinstance(time_to, (datetime, type(None)))
         ghprt = GitHubDonePullRequestFacts
@@ -799,9 +787,9 @@ class DonePRFactsLoader:
     @classmethod
     def _post_process_ambiguous_done_prs(
         cls,
-        result: Dict[Tuple[int, str], Mapping[str, Any]],
-        ambiguous: Dict[ReleaseMatch, Dict[Tuple[int, str], Mapping[str, Any]]],
-    ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]], Dict[str, List[int]]]:
+        result: dict[tuple[int, str], Mapping[str, Any]],
+        ambiguous: dict[ReleaseMatch, dict[tuple[int, str], Mapping[str, Any]]],
+    ) -> tuple[dict[tuple[int, str], Mapping[str, Any]], dict[str, list[int]]]:
         """Figure out what to do with uncertain `tag_or_branch` release matches."""
         result.update(ambiguous[ReleaseMatch.tag.name])
         # we've found PRs released by tag belonging to these repos.
@@ -821,7 +809,7 @@ class DonePRFactsLoader:
         cls,
         participants: PRParticipants,
         filters: list,
-        selected: Set[InstrumentedAttribute],
+        selected: set[InstrumentedAttribute],
         postgres: bool,
         prefixer: Prefixer,
     ) -> None:
@@ -872,7 +860,7 @@ class DonePRFactsLoader:
         cls,
         participants: PRParticipants,
         prefixer: Prefixer,
-    ) -> Tuple[list, list]:
+    ) -> tuple[list, list]:
         user_login_to_node_get = prefixer.user_login_to_node.get
 
         def _build_conditions(roles):
@@ -945,7 +933,7 @@ async def store_precomputed_done_facts(
     prs: Iterable[MinedPullRequest],
     pr_facts: Iterable[Optional[PullRequestFacts]],
     time_to: datetime,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: morcilla.Database,
@@ -1053,7 +1041,7 @@ async def delete_force_push_dropped_prs(
     repos: Iterable[str],
     branches: pd.DataFrame,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
