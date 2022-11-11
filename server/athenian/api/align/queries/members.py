@@ -32,7 +32,9 @@ async def resolve_members(
 
     team, meta_ids = await gather(
         # teamId 0 means root team
-        get_root_team(accountId, sdb) if teamId == 0 else get_team_from_db(accountId, teamId, sdb),
+        get_root_team(accountId, sdb)
+        if teamId == 0
+        else get_team_from_db(teamId, accountId, None, sdb),
         get_metadata_account_ids(accountId, sdb, cache),
     )
 
