@@ -24,3 +24,8 @@ class TestTeamTree:
             assert new_tree.children[i] == new_tree.children[i]
 
         assert tree.children == []
+
+    def test_members_not_exported(self) -> None:
+        tree = TeamTree(1, "t", [], [10])
+        tree_dict = tree.to_dict()
+        assert "members" not in tree_dict
