@@ -1110,7 +1110,11 @@ def set_matched_by_from_release_match(
                                            "tag_or_branch" precomputed releases.
     :param repo_column: Required if `remove_ambiguous_tag_or_branch` is True.
     """
-    release_matches = df[PrecomputedRelease.release_match.name].values.astype("S")
+    release_matches = df[PrecomputedRelease.release_match.name].values
+    try:
+        release_matches = release_matches.astype("S")
+    except UnicodeEncodeError:
+        release_matches = np.char.encode(release_matches.astype("U", copy=False), "UTF-8")
     matched_by_tag_mask = np.char.startswith(
         release_matches, compose_release_match(ReleaseMatch.tag, "").encode(),
     )
