@@ -1,0 +1,33 @@
+name: 👤 Review
+
+on:
+  pull_request:
+  pull_request_review:
+
+jobs:
+  require_reviewer:
+    name: require
+    runs-on: ubuntu-latest
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: false
+    - uses: Automattic/action-required-review@v3
+      with:
+        requirements-file: .github/require-review-rules.yml
+        status: Review by athenianco/api-admin is required
+        fail: true
+        token: ${{ secrets.GKWILLIE_REVIEW_TOKEN }}
+  assign_reviewer:
+    name: request
+    runs-on: ubuntu-latest
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: false
+    - uses: shufo/auto-assign-reviewer-by-files@v1.1.4
+      with:
+        config: .github/request-review-rules.yml
+        token: ${{ secrets.GKWILLIE_REVIEW_TOKEN }}
