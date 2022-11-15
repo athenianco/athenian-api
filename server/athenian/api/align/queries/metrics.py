@@ -113,7 +113,7 @@ async def resolve_metrics_current_values(
                 jira_filter=jira_filter,
             )
             requests.append(
-                TeamMetricsRequest(
+                CalcTeamMetricsRequest(
                     [requested_metric.resolve_for_team(row_team_id)],
                     [time_interval],
                     [team_detail],
@@ -211,7 +211,7 @@ def _parse_time_interval(params: Mapping[str, Any]) -> Intervals:
     return goal_dates_to_datetimes(date_from, date_to)
 
 
-def _parse_requested_metrics(params: Mapping[str, Any]) -> list[_RequestedMetric]:
+def _parse_requested_metrics(params: Mapping[str, Any]) -> list[TeamRequestedMetric]:
     metrics = params.get(MetricParamsFields.metrics)
     metrics_w_params = params.get(MetricParamsFields.metricsWithParams)
 
@@ -224,7 +224,7 @@ def _parse_requested_metrics(params: Mapping[str, Any]) -> list[_RequestedMetric
         )
 
     if metrics:
-        return [_RequestedMetric(m, None, None) for m in metrics]
+        return [TeamRequestedMetric(m, None, None) for m in metrics]
 
     assert metrics_w_params  # mypy
     req_metrics = []
@@ -240,31 +240,28 @@ def _parse_requested_metrics(params: Mapping[str, Any]) -> list[_RequestedMetric
             )
             for p in raw_teams_params
         }
-        req_metrics.append(_RequestedMetric(name, metric_params, team_params))
+        req_metrics.append(TeamRequestedMetric(name, metric_params, team_params))
     return req_metrics
 
 
-class _RequestedMetric:
+class TeamRequestedMetric:
     """A metric requested, with optional params and params override per team."""
 
     def __init__(self, name: str, params: Optional[dict], teams_params: Optional[dict[int, dict]]):
+        """Init the TeamRequestedMetric."""
         self._name = name
         self._params = params or {}
         self._teams_params = teams_params or {}
 
     @property
     def name(self) -> str:
+        """Get the name of the metric."""
         return self._name
 
     def resolve_for_team(self, team_id: int) -> MetricWithParams:
-        resolved_params = self._params
-        try:
-            team_params = self._teams_params[team_id]
-        except KeyError:
-            pass
-        else:
-            resolved_params = resolved_params | team_params
-        return MetricWithParams(self._name, resolved_params)
+        """Resolve the requested metric for a specific team."""
+        params = self._teams_params.get(team_id, self._params)
+        return MetricWithParams(self._name, params)
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,7 +327,7 @@ TeamMetricsResult = dict[Intervals, dict[MetricWithParams, dict[tuple[int, int],
 
 
 @dataclass(frozen=True, slots=True)
-class TeamMetricsRequest:
+class CalcTeamMetricsRequest:
     """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
 
     metrics: Sequence[MetricWithParams]
@@ -340,7 +337,7 @@ class TeamMetricsRequest:
 
 @sentry_span
 async def calculate_team_metrics(
-    requests: Sequence[TeamMetricsRequest],
+    requests: Sequence[CalcTeamMetricsRequest],
     account: int,
     meta_ids: tuple[int, ...],
     sdb: Database,
@@ -360,7 +357,7 @@ async def calculate_team_metrics(
     values its length will equal len(intervals) - 1.
 
     For example, given the single request:
-    TeamMetricsRequest(
+    CalcTeamMetricsRequest(
        metrics=[MetricWithParams("pr-all-count", {})],
        time_intervals=[dt(2010, 1, 1), dt(2010, 2, 1), dt(2010, 3, 1)],
        teams=[RequestedTeamDetails(team_id=10, goal_id=20, ...)]
@@ -545,9 +542,9 @@ async def calculate_team_metrics(
 def _triage_metrics(
     metrics: Sequence[MetricWithParams],
 ) -> tuple[
-    tuple[tuple[MetricWithParams]],
-    tuple[tuple[MetricWithParams]],
-    tuple[tuple[MetricWithParams]],
+    tuple[tuple[MetricWithParams, ...], ...],
+    tuple[tuple[MetricWithParams, ...], ...],
+    tuple[tuple[MetricWithParams, ...], ...],
 ]:
     """Partition the metrics in pr, release and jira metrics.
 
@@ -607,7 +604,7 @@ def _jirafy_team(team: Collection[int], jira_map: Mapping[int, str]) -> JIRAPart
 
 
 @sentry_span
-def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetricsRequest]:
+def _simplify_requests(requests: Sequence[CalcTeamMetricsRequest]) -> list[CalcTeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
     # intervals => team and other filters => metrics with params
     requests_tree: dict[
@@ -633,7 +630,7 @@ def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> list[TeamMetri
 
     # assemble the final groups
     requests = [
-        TeamMetricsRequest(tuple(metrics_), intervals_, grouped_filters)
+        CalcTeamMetricsRequest(tuple(metrics_), intervals_, grouped_filters)
         for intervals_, intervals_tree_ in simplified_tree.items()
         for metrics_, grouped_filters in intervals_tree_.items()
     ]
@@ -689,7 +686,7 @@ class BatchCalcResultCollector:
 @sentry_span
 def _build_metrics_response(
     team_tree: GraphQLTeamTree,
-    req_metrics: Sequence[_RequestedMetric],
+    req_metrics: Sequence[TeamRequestedMetric],
     triaged: dict[MetricWithParams, dict[tuple[int, int], list[Any]]],
 ) -> list[GraphQLMetricValues]:
     return [
@@ -702,7 +699,7 @@ def _build_metrics_response(
 
 def _build_team_metric_value(
     team_tree: GraphQLTeamTree,
-    requested_metric: _RequestedMetric,
+    requested_metric: TeamRequestedMetric,
     metric_values: dict[MetricWithParams, dict[tuple[int, int], list[Any]]],
 ) -> GraphQLTeamMetricValue:
     metric_w_params = requested_metric.resolve_for_team(team_tree.id)

@@ -8,8 +8,8 @@ import sqlalchemy as sa
 
 from athenian.api.align.models import MetricParamsFields
 from athenian.api.align.queries.metrics import (
+    CalcTeamMetricsRequest,
     RequestedTeamDetails,
-    TeamMetricsRequest,
     _simplify_requests,
 )
 from athenian.api.db import Database
@@ -588,18 +588,6 @@ class TestMetricsNasty(BaseMetricsTest):
         assert_extension_error(res, "validFrom cannot be in the future")
         assert res.get("data") is None
 
-    async def test_fetch_invalid_metric(self, sample_teams) -> None:
-        res = await self._request(
-            1,
-            1,
-            ["whatever"],
-            date(2019, 1, 1),
-            date(2022, 1, 1),
-            repositories=["github.com/src-d/go-git"],
-        )
-        assert res["errors"][0]["message"] == "Bad Request"
-        assert_extension_error(res, "The following metrics are not supported: whatever")
-
     async def test_fetch_bad_repository(self, sample_teams) -> None:
         res = await self._request(
             1,
@@ -684,7 +672,7 @@ class TestSimplifyRequests:
 
     def test_single_request(self) -> None:
         requests = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 ((dt(2001, 1, 1), dt(2001, 2, 1)),),
                 {RequestedTeamDetails(1, 0, [10]), RequestedTeamDetails(2, 0, [10, 20])},
@@ -696,7 +684,7 @@ class TestSimplifyRequests:
     def test_metrics_merged(self) -> None:
         INTERVALS = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
         requests = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS,
                 [
@@ -704,7 +692,7 @@ class TestSimplifyRequests:
                     RequestedTeamDetails(2, 0, [10, 2]),
                 ],
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME,),
                 INTERVALS,
                 [
@@ -715,7 +703,7 @@ class TestSimplifyRequests:
         ]
         simplified = _simplify_requests(requests)
         assert len(simplified) == 1
-        expected = TeamMetricsRequest(
+        expected = CalcTeamMetricsRequest(
             (PullRequestMetricID.PR_CLOSED, PullRequestMetricID.PR_RELEASE_TIME),
             INTERVALS,
             {
@@ -729,12 +717,12 @@ class TestSimplifyRequests:
     def test_teams_merged(self) -> None:
         INTERVALS = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
         requests = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS,
                 {RequestedTeamDetails(1, 0, [10])},
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME,),
                 INTERVALS,
                 {
@@ -742,7 +730,7 @@ class TestSimplifyRequests:
                     RequestedTeamDetails(2, 0, [10, 20]),
                 },
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_REVIEW_COUNT,),
                 INTERVALS,
                 {RequestedTeamDetails(2, 0, [10, 20])},
@@ -753,12 +741,12 @@ class TestSimplifyRequests:
             _simplify_requests(requests), key=lambda r: {t.team_id for t in r.teams} == {2},
         )
         expected = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_CLOSED),
                 INTERVALS,
                 {RequestedTeamDetails(1, 0, [10])},
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_REVIEW_COUNT),
                 INTERVALS,
                 {RequestedTeamDetails(2, 0, [10, 20])},
@@ -773,17 +761,17 @@ class TestSimplifyRequests:
         INTERVALS_0 = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
         INTERVALS_1 = ((dt(2011, 1, 1), dt(2021, 2, 1)),)
         requests = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
                 {RequestedTeamDetails(1, 0, [1])},
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_OPENED,),
                 INTERVALS_1,
                 {RequestedTeamDetails(1, 0, [1])},
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
                 {RequestedTeamDetails(2, 0, [2])},
@@ -795,7 +783,7 @@ class TestSimplifyRequests:
         assert len(simplified) == 2
 
         expected = [
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_CLOSED,),
                 INTERVALS_0,
                 {
@@ -803,7 +791,7 @@ class TestSimplifyRequests:
                     RequestedTeamDetails(2, 0, [2]),
                 },
             ),
-            TeamMetricsRequest(
+            CalcTeamMetricsRequest(
                 (PullRequestMetricID.PR_OPENED,),
                 INTERVALS_1,
                 {RequestedTeamDetails(1, 0, [1])},
@@ -813,7 +801,11 @@ class TestSimplifyRequests:
         self._assert_team_requests_equal(simplified[1], expected[1])
 
     @classmethod
-    def _assert_team_requests_equal(cls, tr0: TeamMetricsRequest, tr1: TeamMetricsRequest) -> None:
+    def _assert_team_requests_equal(
+        cls,
+        tr0: CalcTeamMetricsRequest,
+        tr1: CalcTeamMetricsRequest,
+    ) -> None:
         assert sorted(tr0.metrics) == sorted(tr1.metrics)
         assert sorted(tr0.time_intervals) == sorted(tr0.time_intervals)
         assert tr0.teams == tr1.teams

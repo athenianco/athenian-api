@@ -225,6 +225,12 @@ from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.models.web.team import Team
 from athenian.api.models.web.team_create_request import TeamCreateRequest
+from athenian.api.models.web.team_metrics import (
+    TeamMetricResponseElement,
+    TeamMetricsRequest,
+    TeamMetricValueNode,
+    TeamMetricWithParams,
+)
 from athenian.api.models.web.team_tree import TeamTree, TeamTreeLeaf
 from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.models.web.user import User
