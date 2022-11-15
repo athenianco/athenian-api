@@ -204,12 +204,12 @@ class Prefixer:
         ]
 
     def prefix_logical_repo(self, repo: str) -> Optional[str]:
-        """Lookup the repository name prefix for the given logical repository."""
-        *physical_repo, logical_name = repo.split("/", 2)
+        """Lookup the repository name prefix for the given repository, logical or not."""
+        *physical_repo_parts, logical_name = repo.split("/", 2)
         try:
-            if len(physical_repo) == 1:
+            if len(physical_repo_parts) == 1:  # physical repo
                 return self.repo_name_to_prefixed_name[repo]
-            physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo)]
+            physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo_parts)]
             return "/".join([physical_repo, logical_name])
         except KeyError:
             return None

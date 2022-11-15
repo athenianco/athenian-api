@@ -28,7 +28,7 @@ from athenian.api.internal.jira import (
     get_jira_installation_or_none,
     load_mapped_jira_users,
 )
-from athenian.api.internal.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
@@ -453,15 +453,9 @@ def web_pr_from_struct(
     for pr in prs:
         props = dict(dataclass_asdict(pr))
         del props["node_id"]
-        repo = props["repository"]
-        physical_repo = drop_logical_repo(repo)
-        if physical_repo != repo:
-            append = repo[len(physical_repo) :]
-        else:
-            append = ""
-        try:
-            props["repository"] = prefixer.repo_name_to_prefixed_name[physical_repo] + append
-        except KeyError:
+
+        props["repository"] = prefixer.prefix_logical_repo(props["repository"])
+        if props["repository"] is None:
             # deleted repository
             continue
         if pr.events_time_machine is not None:
