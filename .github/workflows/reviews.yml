@@ -9,11 +9,20 @@ jobs:
     name: require
     runs-on: ubuntu-latest
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
+      with:
+        username: ${{ github.actor }}
+        team: 'api-admin'
+        GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
+      if: ${{ github.actor == 'dependabot[bot]' || !steps.membership.outputs.isTeamMember }}
       with:
         submodules: false
     - uses: Automattic/action-required-review@v3
+      if: ${{ github.actor == 'dependabot[bot]' || !steps.membership.outputs.isTeamMember }}
       with:
         requirements-file: .github/require-review-rules.yml
         status: Review by athenianco/api-admin is required
@@ -23,11 +32,20 @@ jobs:
     name: request
     runs-on: ubuntu-latest
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
+      with:
+        username: ${{ github.actor }}
+        team: 'api-admin'
+        GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
+      if: ${{ github.actor == 'dependabot[bot]' || !steps.membership.outputs.isTeamMember }}
       with:
         submodules: false
     - uses: shufo/auto-assign-reviewer-by-files@v1.1.4
+      if: ${{ github.actor == 'dependabot[bot]' || !steps.membership.outputs.isTeamMember }}
       with:
         config: .github/request-review-rules.yml
         token: ${{ secrets.GKWILLIE_REVIEW_TOKEN }}
