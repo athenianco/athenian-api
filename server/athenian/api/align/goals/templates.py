@@ -60,7 +60,7 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": 100},
     },
     {
-        "metric": PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO,
+        "metric": PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO,
         "name": "Ensure pull requests are delivered on time",
         "metric_params": {"threshold": "432000s"},
     },
