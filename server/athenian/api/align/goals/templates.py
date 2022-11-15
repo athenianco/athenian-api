@@ -51,37 +51,27 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
     },
     {
         "metric": PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
-        "name": "Review Time",
+        "name": "Ensure pull requests are reviewed on time",
         "metric_params": {"threshold": "172800s"},
     },
     {
-        "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
-        "name": "Wait Time for 1st Review",
-        "metric_params": {"threshold": "21600s"},
-    },
-    {
         "metric": PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
-        "name": "Median PR Size",
+        "name": "Ensure work is delivered via small pull requests",
         "metric_params": {"threshold": 100},
     },
     {
-        "metric": PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO,
-        "name": "Review Comments / PR",
-        "metric_params": {"threshold": 3},
-    },
-    {
         "metric": PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO,
-        "name": "PR Cycle Time",
+        "name": "Ensure pull requests are delivered on time",
         "metric_params": {"threshold": "432000s"},
     },
     {
         "metric": PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO,
-        "name": "PR Open Time",
+        "name": "Ensure pull requests do not stay open for too long",
         "metric_params": {"threshold": "259200s"},
     },
     {
         "metric": JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO,
-        "name": "Jira Lead Time",
+        "name": "Ensure rational time to resolve Jira issues",
         "metric_params": {"threshold": "432000s"},
     },
 ]
