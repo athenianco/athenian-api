@@ -6,13 +6,15 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
-from typing import Collection, Generator, Iterable, Iterator, KeysView, Mapping, Optional, Union
+from typing import Collection, Generator, Iterable, Iterator, KeysView, Mapping, Optional
 
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from pandas.core.common import flatten
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -26,6 +28,7 @@ from athenian.api.db import (
     DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
+    column_values_condition,
     dialect_specific_insert,
 )
 from athenian.api.defer import AllEvents, defer
@@ -93,6 +96,7 @@ from athenian.api.models.metadata.github import (
     Base,
     CheckRun,
     NodeCommit,
+    NodePullRequest,
     NodePullRequestCommit,
     NodePullRequestJiraIssues,
     PullRequest,
@@ -817,7 +821,7 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         unreleased: Collection[PullRequestID],
-        logical_repositories: Union[set[str], KeysView[str]],
+        logical_repositories: set[str] | KeysView[str],
         time_to: datetime,
         releases: pd.DataFrame,
         matched_bys: dict[str, ReleaseMatch],
@@ -835,7 +839,7 @@ class PullRequestMiner:
         cache: Optional[aiomcache.Client],
         truncate: bool = True,
         with_jira: JIRAEntityToFetch | int = JIRAEntityToFetch.ISSUES,
-        physical_repositories: Optional[Union[set[str], KeysView[str]]] = None,
+        physical_repositories: Optional[set[str] | KeysView[str]] = None,
     ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         """
         Fetch PR metadata for certain PRs.
@@ -880,7 +884,7 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         unreleased: Collection[PullRequestID],
-        logical_repositories: Union[set[str], KeysView[str]],
+        logical_repositories: set[str] | KeysView[str],
         time_to: datetime,
         releases: pd.DataFrame,
         matched_bys: dict[str, ReleaseMatch],
@@ -899,7 +903,7 @@ class PullRequestMiner:
         truncate: bool = True,
         with_jira: JIRAEntityToFetch | int = JIRAEntityToFetch.ISSUES,
         extra_releases_task: Optional[asyncio.Task] = None,
-        physical_repositories: Optional[Union[set[str], KeysView[str]]] = None,
+        physical_repositories: Optional[set[str] | KeysView[str]] = None,
     ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         assert prs.index.nlevels == 1
         node_ids = prs.index if len(prs) > 0 else pd.Series([], dtype=int)
@@ -1367,7 +1371,7 @@ class PullRequestMiner:
         cls,
         time_from: Optional[datetime],
         time_to: datetime,
-        repositories: Union[set[str], KeysView[str]],
+        repositories: set[str] | KeysView[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
@@ -1919,7 +1923,7 @@ class PullRequestMiner:
         cls,
         time_from: datetime,
         time_to: datetime,
-        repos: Union[set[str], KeysView[str]],
+        repos: set[str] | KeysView[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
@@ -2615,7 +2619,7 @@ class PullRequestMiner:
     @sentry_span
     async def map_deployments_to_prs(
         cls,
-        repositories: Union[set[str], KeysView[str]],
+        repositories: set[str] | KeysView[str],
         time_from: datetime,
         time_to: datetime,
         participants: PRParticipants,
@@ -3102,3 +3106,39 @@ class PullRequestFactsMiner:
                 facts.released - facts.merged,
             )
             raise ImpossiblePullRequest()
+
+
+async def fetch_prs_numbers(
+    node_ids: npt.NDArray[int],
+    meta_ids: tuple[int],
+    mdb: DatabaseLike,
+) -> npt.NDArray[int]:
+    """Given an array of PR node identifiers return an array with their PR numbers.
+
+    The result array will have the same length of input array: unmatched PR will
+    have `0` as number in the result.
+    """
+    selects = []
+    node_id_cond, hints = column_values_condition(NodePullRequest.node_id, node_ids)
+    columns = [NodePullRequest.node_id, NodePullRequest.number]
+    selects = [
+        sa.select(*columns).where(NodePullRequest.acc_id == meta_id, node_id_cond)
+        for meta_id in meta_ids
+    ]
+    stmt = selects[0] if len(selects) == 1 else sa.union_all(*selects)
+
+    for hint in hints:
+        stmt = stmt.with_statement_hint(hint)
+
+    db_df = await read_sql_query(stmt, mdb, columns)
+    db_node_ids = db_df[NodePullRequest.node_id.name].values
+    db_numbers = db_df[NodePullRequest.number.name].values
+
+    # indexes selecting from db_node_ids and db_numbers in the same order as node_ids
+    db_sorted_indexes = searchsorted_inrange(db_node_ids, node_ids)
+
+    numbers = db_numbers[db_sorted_indexes]
+    # db_sorted_index will also have an index for node_ids not present in db_node_ids
+    # (i.e. for node_ids not found in DB): these positions must be set to 0
+    numbers[db_node_ids[db_sorted_indexes] != node_ids] = 0
+    return numbers

@@ -7,7 +7,7 @@ import re
 import sqlite3
 import threading
 import time
-from typing import Any, Callable, List, Mapping, Optional, Union
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Union
 from urllib.parse import quote
 
 import aiohttp.web
@@ -19,6 +19,7 @@ import morcilla.core
 from morcilla.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.compiler import compiles
@@ -481,3 +482,19 @@ def ensure_db_datetime_tz(dt: datetime, db: Database) -> datetime:
     if db.url.dialect == "sqlite":
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def column_values_condition(
+    column,
+    values: Sequence[Any],
+) -> tuple[sa.sql.ClauseElement, tuple[str, ...]]:
+    """Return a SQL condition to match the values in the table column.
+
+    Return the condition and the planner hints to apply to the query.
+    """
+    if len(values) > 100:
+        cond = column.in_any_values(values)
+        hints = (f"Rows({column.table.name} *VALUES* #{len(values)})",)
+        return cond, hints
+    else:
+        return column.in_(values), ()
