@@ -516,6 +516,15 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
         return result
 
 
+@register_metric(PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO)
+class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_LEAD_TIME below the threshold."""
+
+    deps = (LeadTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(days=5)
+
+
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
 class LeadCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME disregarding \

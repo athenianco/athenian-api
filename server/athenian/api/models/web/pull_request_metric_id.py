@@ -26,6 +26,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_OPEN_COUNT_Q = "pr-open-count-q"
     PR_OPEN_TIME_BELOW_THRESHOLD_RATIO = "pr-open-time-below-threshold-ratio"
     PR_LEAD_TIME = "pr-lead-time"
+    PR_LEAD_TIME_BELOW_THRESHOLD_RATIO = "pr-lead-time-below-threshold-ratio"
     PR_LEAD_COUNT = "pr-lead-count"
     PR_LEAD_COUNT_Q = "pr-lead-count-q"
     PR_CYCLE_TIME = "pr-cycle-time"

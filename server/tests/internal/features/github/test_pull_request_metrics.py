@@ -9,6 +9,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
     AverageReviewCommentsCalculator,
     ClosedCalculator,
+    LeadTimeBelowThresholdRatio,
+    LeadTimeCalculator,
     NotReviewedCalculator,
     OpenTimeBelowThresholdRatio,
     OpenTimeCalculator,
@@ -445,3 +447,31 @@ class TestOpenTimeBelowThresholdRatio:
         return PullRequestFactsFactory(
             created=created, closed=None if closed is None else pd.Timestamp(closed),
         )
+
+
+class TestLeadTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 1, 20))
+        prs = [
+            self._mk_pr(dt(2022, 1, 1), dt(2022, 1, 4)),
+            self._mk_pr(dt(2022, 1, 2), dt(2022, 1, 4)),
+            self._mk_pr(dt(2022, 1, 1), dt(2022, 1, 10)),
+            self._mk_pr(dt(2022, 2, 1), dt(2022, 2, 10)),
+        ]
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        facts = df_from_structs(prs)
+
+        lead_time_calc = LeadTimeCalculator(quantiles=quantiles)
+        calc = LeadTimeBelowThresholdRatio(lead_time_calc, quantiles=quantiles)
+
+        lead_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert len(calc.values) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+
+    @classmethod
+    def _mk_pr(cls, work_began: datetime, released: datetime) -> PullRequestFacts:
+        return PullRequestFactsFactory(released=released, work_began=work_began)
