@@ -340,7 +340,7 @@ class MetricEntriesCalculator:
         """
         assert isinstance(repositories, (tuple, list))
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = _merge_pr_participants(participants)
+        all_participants = ParticipantsMerge.pr(participants)
         calc = PullRequestBinnedMetricCalculator(
             metrics,
             quantiles,
@@ -423,7 +423,7 @@ class MetricEntriesCalculator:
         all_repositories = set(
             chain.from_iterable(t.repositories for request in requests for t in request.teams),
         )
-        all_participants = _merge_pr_participants(
+        all_participants = ParticipantsMerge.pr(
             t.participants for request in requests for t in request.teams
         )
         assert all_repositories
@@ -544,7 +544,7 @@ class MetricEntriesCalculator:
         :return: defs x lines x repositories x participants -> list[tuple[metric ID, Histogram]].
         """
         all_repositories = set(chain.from_iterable(repositories))
-        all_participants = _merge_pr_participants(participants)
+        all_participants = ParticipantsMerge.pr(participants)
         try:
             calc = PullRequestBinnedHistogramCalculator(
                 defs.values(), quantiles, environments=[environment],
@@ -781,7 +781,7 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        all_participants = self._merge_release_participants(participants)
+        all_participants = ParticipantsMerge.release(participants)
         df_facts, _, matched_bys, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -839,16 +839,6 @@ class MetricEntriesCalculator:
                 jira_entities_to_fetch |= JIRAEntityToFetch.PRIORITIES
         return jira_entities_to_fetch
 
-    @staticmethod
-    def _merge_release_participants(
-        participants: Iterable[ReleaseParticipants],
-    ) -> ReleaseParticipants:
-        merged: dict[ReleaseParticipationKind, set[int]] = {}
-        for dikt in participants:
-            for k, v in dikt.items():
-                merged.setdefault(k, set()).update(v)
-        return {k: list(v) for k, v in merged.items()}
-
     @sentry_span
     @cached(
         exptime=short_term_exptime,
@@ -887,7 +877,7 @@ class MetricEntriesCalculator:
         all_repositories = set(
             chain.from_iterable(t.repositories for request in requests for t in request.teams),
         )
-        all_participants = self._merge_release_participants(
+        all_participants = ParticipantsMerge.release(
             t.participants for request in requests for t in request.teams
         )
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
@@ -1225,7 +1215,7 @@ class MetricEntriesCalculator:
                  2. Labels by which we grouped the issues.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        reporters, assignees, commenters = self._merge_jira_participants(participants)
+        reporters, assignees, commenters = ParticipantsMerge.jira(participants)
         jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
             labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
         )
@@ -1294,7 +1284,7 @@ class MetricEntriesCalculator:
         all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
         time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
         extra_columns = list(participant_columns)
-        reporters, assignees, commenters = self._merge_jira_participants(
+        reporters, assignees, commenters = ParticipantsMerge.jira(
             [t.participants for request in requests for t in request.teams],
         )
 
@@ -1387,7 +1377,7 @@ class MetricEntriesCalculator:
         jira_ids: Optional[JIRAConfig],
     ) -> np.ndarray:
         """Calculate histograms over JIRA issues."""
-        reporters, assignees, commenters = self._merge_jira_participants(participants)
+        reporters, assignees, commenters = ParticipantsMerge.jira(participants)
         jira_filters = JIRAFilter.from_jira_config(jira_ids).replace(
             labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
         )
@@ -1416,39 +1406,6 @@ class MetricEntriesCalculator:
             raise UnsupportedMetricError() from e
         with_groups = group_to_indexes(issues, partial(split_issues_by_participants, participants))
         return calc(issues, [[time_from, time_to]], with_groups, defs)
-
-    @staticmethod
-    def _merge_jira_participants(
-        participants: Collection[JIRAParticipants],
-    ) -> tuple[Collection[str], Collection[str], Collection[str]]:
-        reporters = list(
-            set(
-                chain.from_iterable(
-                    [p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])]
-                    for g in participants
-                ),
-            ),
-        )
-        assignees = list(
-            set(
-                chain.from_iterable(
-                    [
-                        (p.lower() if p is not None else None)
-                        for p in g.get(JIRAParticipationKind.ASSIGNEE, [])
-                    ]
-                    for g in participants
-                ),
-            ),
-        )
-        commenters = list(
-            set(
-                chain.from_iterable(
-                    [p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])]
-                    for g in participants
-                ),
-            ),
-        )
-        return reporters, assignees, commenters
 
     async def _mine_and_group_check_runs(
         self,
@@ -2061,9 +2018,57 @@ class PRFactsCalculator:
         return all_facts_df, with_jira
 
 
-def _merge_pr_participants(participants: Iterable[PRParticipants]) -> PRParticipants:
-    all_participants: dict[PRParticipationKind, set[str]] = {}
-    for p in participants:
-        for k, v in p.items():
-            all_participants.setdefault(k, set()).update(v)
-    return all_participants
+class ParticipantsMerge:
+    """Utilities to merge multiple collections of participants."""
+
+    @staticmethod
+    def pr(participants: Iterable[PRParticipants]) -> PRParticipants:
+        """Merge a set of `PRParticipants`."""
+        all_participants: dict[PRParticipationKind, set[str]] = {}
+        for p in participants:
+            for k, v in p.items():
+                all_participants.setdefault(k, set()).update(v)
+        return all_participants
+
+    @staticmethod
+    def release(participants: Iterable[ReleaseParticipants]) -> ReleaseParticipants:
+        """Merge a set of `ReleaseParticipants`."""
+        merged: dict[ReleaseParticipationKind, set[int]] = {}
+        for dikt in participants:
+            for k, v in dikt.items():
+                merged.setdefault(k, set()).update(v)
+        return {k: list(v) for k, v in merged.items()}
+
+    @staticmethod
+    def jira(
+        participants: Collection[JIRAParticipants],
+    ) -> tuple[Collection[str], Collection[str], Collection[str]]:
+        """Merge a collection of `JIRAParticipants`."""
+        reporters = list(
+            set(
+                chain.from_iterable(
+                    [p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])]
+                    for g in participants
+                ),
+            ),
+        )
+        assignees = list(
+            set(
+                chain.from_iterable(
+                    [
+                        (p.lower() if p is not None else None)
+                        for p in g.get(JIRAParticipationKind.ASSIGNEE, [])
+                    ]
+                    for g in participants
+                ),
+            ),
+        )
+        commenters = list(
+            set(
+                chain.from_iterable(
+                    [p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])]
+                    for g in participants
+                ),
+            ),
+        )
+        return reporters, assignees, commenters
