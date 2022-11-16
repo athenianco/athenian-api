@@ -2,6 +2,7 @@ name: do-not-merge
 
 on:
   pull_request:
+    types: [opened, reopened, labeled, unlabeled]
 
 jobs:
   do-not-merge:
