@@ -728,7 +728,8 @@ async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping
 @pytest.mark.parametrize(
     "account, github, jira, code",
     [
-        [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 403],
+        # we no longer require admin
+        # [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 403],
         [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 422],
         [3, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
         [4, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
