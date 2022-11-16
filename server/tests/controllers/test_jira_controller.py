@@ -1179,7 +1179,7 @@ async def test_filter_jira_issue_prs_deployments(
     mdb_rw,
     precomputed_deployments,
     with_pdb,
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     prefixer,
     release_match_setting_tag,
     bots,
@@ -1208,7 +1208,7 @@ async def test_filter_jira_issue_prs_deployments(
             False,
             0,
         )
-        await metrics_calculator_factory(1, (6366825,)).calc_pull_request_facts_github(*args)
+        await pr_facts_calculator_factory(1, (6366825,))(*args)
         await wait_deferred()
     await mdb_rw.execute_many(
         insert(NodePullRequestJiraIssues),
@@ -1781,12 +1781,12 @@ async def test_jira_metrics_bug_times(
     score,
     cmin,
     cmax,
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     release_match_setting_tag,
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = (
@@ -1804,7 +1804,7 @@ async def test_jira_metrics_bug_times(
         False,
         0,
     )
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await pr_facts_calculator_no_cache(*args)
     await wait_deferred()
     np.random.seed(7)
     body = {

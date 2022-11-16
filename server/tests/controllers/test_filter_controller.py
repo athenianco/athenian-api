@@ -92,7 +92,7 @@ async def test_filter_repositories_no_repos(client, headers):
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_smoke(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     client,
     headers,
     mdb,
@@ -102,7 +102,7 @@ async def test_filter_repositories_smoke(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (
@@ -120,7 +120,7 @@ async def test_filter_repositories_smoke(
         False,
         0,
     )
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await pr_facts_calculator_no_cache(*args)
     await wait_deferred()
     body = {
         "date_from": "2017-09-16",
@@ -145,14 +145,14 @@ async def test_filter_repositories_smoke(
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_exclude_inactive_precomputed(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     client,
     headers,
     release_match_setting_tag,
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (
@@ -170,7 +170,7 @@ async def test_filter_repositories_exclude_inactive_precomputed(
         False,
         0,
     )
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await pr_facts_calculator_no_cache(*args)
     await wait_deferred()
     body = {
         "date_from": "2017-09-16",
@@ -280,7 +280,7 @@ async def test_filter_repositories_nasty_input(client, headers, account, date_to
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_logical(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     client,
     headers,
     mdb,
@@ -293,7 +293,7 @@ async def test_filter_repositories_logical(
     logical_settings,
     logical_settings_db,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2018, 1, 18, tzinfo=timezone.utc)
     args = (
@@ -311,7 +311,7 @@ async def test_filter_repositories_logical(
         False,
         0,
     )
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await pr_facts_calculator_no_cache(*args)
     await wait_deferred()
     body = {
         "date_from": "2017-09-16",
@@ -1960,13 +1960,13 @@ async def test_filter_prs_release_ignored(
     prefixer,
     branches,
     default_branches,
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     bots,
 ):
     time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=12, day=1, tzinfo=timezone.utc)
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
+    await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},

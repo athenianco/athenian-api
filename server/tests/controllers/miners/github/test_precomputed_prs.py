@@ -725,7 +725,7 @@ async def test_load_precomputed_done_times_reponums_smoke(
 @pytest.mark.parametrize("exclude_inactive", [False, True])
 @with_defer
 async def test_load_precomputed_done_times_deployments(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -740,10 +740,10 @@ async def test_load_precomputed_done_times_deployments(
     precomputed_deployments,
     exclude_inactive,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
-    await metrics_calculator.calc_pull_request_facts_github(
+    await pr_facts_calculator(
         time_from,
         time_to,
         {"src-d/go-git"},
@@ -1671,7 +1671,7 @@ async def test_discover_update_unreleased_prs_deployments(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1683,10 +1683,10 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     release_loader,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
-    await metrics_calculator.calc_pull_request_facts_github(
+    await pr_facts_calculator(
         metrics_time_from,
         metrics_time_to,
         {"src-d/go-git"},
@@ -1804,7 +1804,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_labels(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1813,10 +1813,10 @@ async def test_discover_old_merged_unreleased_prs_labels(
     bots,
     cache,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
-    await metrics_calculator.calc_pull_request_facts_github(
+    await pr_facts_calculator(
         metrics_time_from,
         metrics_time_to,
         {"src-d/go-git"},

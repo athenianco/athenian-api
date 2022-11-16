@@ -1359,7 +1359,7 @@ class TestSetLogicalRepository(Requester):
     @with_defer
     async def test_smoke(
         self,
-        metrics_calculator_factory,
+        pr_facts_calculator_factory,
         sdb,
         mdb,
         bots,
@@ -1367,11 +1367,11 @@ class TestSetLogicalRepository(Requester):
         prefixer,
         with_precomputed_reset_check,
     ):
-        metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+        pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
         time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
         time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
         if with_precomputed_reset_check:
-            await metrics_calculator_no_cache.calc_pull_request_facts_github(
+            await pr_facts_calculator_no_cache(
                 time_from,
                 time_to,
                 {"src-d/go-git"},
@@ -1389,7 +1389,7 @@ class TestSetLogicalRepository(Requester):
             await wait_deferred()
         await self._test_set_logical_repository(sdb, 1)
         settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
-        df_post = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        df_post = await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git", "src-d/go-git/alpha"},

@@ -767,7 +767,7 @@ async def test_pr_list_miner_filter_labels_cache_exclude(
 
 @with_defer
 async def test_pr_list_miner_filter_labels_pdb(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -775,10 +775,10 @@ async def test_pr_list_miner_filter_labels_pdb(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},
@@ -855,7 +855,7 @@ async def test_pr_list_miner_filter_labels_pdb(
 @pytest.mark.parametrize("with_precomputed", [True, False])
 @with_defer
 async def test_pr_list_miner_deployments_production(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -869,8 +869,8 @@ async def test_pr_list_miner_deployments_production(
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 12, 19, tzinfo=timezone.utc)
     if with_precomputed:
-        metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
-        await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
+        await pr_facts_calculator_no_cache(
             time_from,
             time_to,
             {"src-d/go-git"},
@@ -1143,7 +1143,7 @@ async def test_pr_list_miner_logical(
 
 @with_defer
 async def test_fetch_pull_requests_smoke(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1152,10 +1152,10 @@ async def test_fetch_pull_requests_smoke(
     bots,
     cache,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+    await pr_facts_calculator_no_cache(
         time_from,
         time_to,
         {"src-d/go-git"},

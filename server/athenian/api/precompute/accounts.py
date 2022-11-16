@@ -22,7 +22,7 @@ from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
 from athenian.api.internal.account_feature import is_feature_enabled
-from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.jira import disable_empty_projects, match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
@@ -321,15 +321,15 @@ async def precompute_reposet(
                     repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
                 )
             log.info("Extracting PR facts")
-            facts = await MetricEntriesCalculator(
+            pr_facts_calc = PRFactsCalculator(
                 reposet.owner_id,
                 meta_ids,
-                0,
                 mdb,
                 pdb,
                 rdb,
-                None,  # yes, disable the cache
-            ).calc_pull_request_facts_github(
+                cache=None,  # yes, disable the cache
+            )
+            facts = await pr_facts_calc(
                 time_from,
                 time_to,
                 repos,

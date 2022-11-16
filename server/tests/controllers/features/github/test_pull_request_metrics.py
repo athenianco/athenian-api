@@ -464,7 +464,7 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
         factory = metrics_calculator_factory_memcached
     else:
         factory = metrics_calculator_factory
-    metrics_calculator = factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = (
@@ -486,11 +486,11 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
         default_branches,
         False,
     )
-    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics1 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     await wait_deferred()
-    assert await metrics_calculator.calc_pull_request_metrics_line_github.reset_cache(*args)
+    assert await pr_facts_calculator.calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await pr_miner._mine.reset_cache(
             None,
@@ -518,9 +518,9 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
             rdb,
             cache,
         )
-    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics2 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
@@ -536,7 +536,7 @@ async def test_calc_pull_request_metrics_line_github_cache_lines(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = [
@@ -558,14 +558,14 @@ async def test_calc_pull_request_metrics_line_github_cache_lines(
         default_branches,
         False,
     ]
-    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics1 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     await wait_deferred()
     args[3] = []
-    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics2 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     assert metrics1 != metrics2
 
 
@@ -582,7 +582,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
     args = [
@@ -604,9 +604,9 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
         default_branches,
         False,
     ]
-    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics1 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     await wait_deferred()
     release_match_setting_tag = ReleaseSettings(
         {
@@ -616,9 +616,9 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
         },
     )
     args[-6] = release_match_setting_tag
-    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics2 = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][
         0
-    ][0]
+    ][0][0]
     assert metrics1 != metrics2
 
 
@@ -719,7 +719,7 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
     args = [
@@ -741,13 +741,13 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
         default_branches,
         False,
     ]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
     assert metrics.value == 7
     args[9] = True
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
@@ -757,18 +757,18 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
     args[9] = False
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
     assert metrics.value == 71
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
     assert metrics.value == 71
     args[9] = True
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     assert metrics.value == 71
@@ -783,7 +783,7 @@ async def test_calc_pull_request_metrics_line_github_quantiles(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
     args = [
@@ -805,13 +805,13 @@ async def test_calc_pull_request_metrics_line_github_quantiles(
         default_branches,
         False,
     ]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
     assert metrics.value == 25
     args[2] = [0, 1]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
@@ -833,7 +833,7 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     args = [
@@ -855,13 +855,13 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
         default_branches,
         False,
     ]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=392)
     args[-6] = release_match_setting_tag_or_branch
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     assert metrics.value == timedelta(days=40, seconds=72739)
@@ -881,7 +881,7 @@ async def test_calc_pull_request_metrics_line_github_deployment_hazard(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=12, tzinfo=timezone.utc)
     args = [
@@ -903,7 +903,7 @@ async def test_calc_pull_request_metrics_line_github_deployment_hazard(
         default_branches,
         False,
     ]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
@@ -923,7 +923,7 @@ async def test_calc_pull_request_metrics_line_jira_map(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     metrics = [
@@ -950,7 +950,7 @@ async def test_calc_pull_request_metrics_line_jira_map(
         default_branches,
         False,
     ]
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ]
     await wait_deferred()
@@ -972,7 +972,7 @@ async def test_calc_pull_request_metrics_deep_filters(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     release_settings = release_match_setting_tag_or_branch.copy()
     for r in ("gitbase", "hercules"):
         release_settings.native["src-d/" + r] = release_settings.prefixed[
@@ -1010,7 +1010,7 @@ async def test_calc_pull_request_metrics_deep_filters(
     # 4. time series primary: 2 groups
     # 5. time series secondary: 1 and 2 groups
     # 6. metrics: 3 groups
-    metrics = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    metrics = await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
     metric = MetricInt.from_fields
     ground_truth = np.array(
         [
@@ -1292,8 +1292,8 @@ def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
 
 
 @with_defer
-async def test_calc_pull_request_facts_github_open_precomputed(
-    metrics_calculator_factory,
+async def test_pr_facts_calculator_open_precomputed(
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1301,7 +1301,7 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = (
@@ -1319,19 +1319,19 @@ async def test_calc_pull_request_facts_github_open_precomputed(
         False,
         JIRAEntityToFetch.NOTHING,
     )
-    facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts1 = await pr_facts_calculator_no_cache(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
-    facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts2 = await pr_facts_calculator_no_cache(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     assert_frame_equal(facts1, facts2)
 
 
 @with_defer
-async def test_calc_pull_request_facts_github_unreleased_precomputed(
-    metrics_calculator_factory,
+async def test_pr_facts_calculator_unreleased_precomputed(
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1339,7 +1339,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
     prefixer,
     bots,
 ):
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2019, month=10, day=30, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=11, day=2, tzinfo=timezone.utc)
     args = (
@@ -1357,7 +1357,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         False,
         JIRAEntityToFetch.NOTHING,
     )
-    facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts1 = await pr_facts_calculator_no_cache(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
@@ -1366,14 +1366,14 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         assert row[GitHubMergedPullRequestFacts.data.name] is not None, row[
             GitHubMergedPullRequestFacts.pr_node_id.name
         ]
-    facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts2 = await pr_facts_calculator_no_cache(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     assert_frame_equal(facts1, facts2)
 
 
 @with_defer
-async def test_calc_pull_request_facts_github_jira(
-    metrics_calculator_factory,
+async def test_pr_facts_calculator_jira(
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1382,8 +1382,8 @@ async def test_calc_pull_request_facts_github_jira(
     bots,
     cache,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
-    metrics_calculator_cache_only = metrics_calculator_factory(1, (6366825,), cache_only=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator_cache_only = pr_facts_calculator_factory(1, (6366825,), cache_only=True)
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [
@@ -1401,7 +1401,7 @@ async def test_calc_pull_request_facts_github_jira(
         False,
         JIRAEntityToFetch.NOTHING,
     ]
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 235
     args[5] = JIRAFilter(
@@ -1414,22 +1414,22 @@ async def test_calc_pull_request_facts_github_jira(
         False,
         0,
     )
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 16
 
     args[5] = JIRAFilter.empty()
     args[-1] = JIRAEntityToFetch.ISSUES
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
 
     assert facts.jira_ids.astype(bool).sum() == 60
     await wait_deferred()
-    facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator_cache_only(*args)
     assert facts.jira_ids.astype(bool).sum() == 60
 
 
 @with_defer
-async def test_calc_pull_request_facts_github_jira_everything(
-    metrics_calculator_factory,
+async def test_pr_facts_calculator_jira_everything(
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1438,8 +1438,7 @@ async def test_calc_pull_request_facts_github_jira_everything(
     bots,
     cache,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
-    # metrics_calculator_cache_only = metrics_calculator_factory(1, (6366825,), cache_only=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [
@@ -1457,7 +1456,7 @@ async def test_calc_pull_request_facts_github_jira_everything(
         False,
         JIRAEntityToFetch.EVERYTHING(),
     ]
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     pr_fact = facts[facts.node_id == 163209]
     assert facts.jira_ids.astype(bool).sum() == 60
     assert_array_equal(pr_fact.jira_ids.values[0], np.array(["DEV-678"]))
@@ -1467,8 +1466,8 @@ async def test_calc_pull_request_facts_github_jira_everything(
 
 
 @with_defer
-async def test_calc_pull_request_facts_github_event_releases(
-    metrics_calculator_factory,
+async def test_pr_facts_calculator_event_releases(
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1492,7 +1491,7 @@ async def test_calc_pull_request_facts_github_event_releases(
             .explode(with_primary_keys=True),
         ),
     )
-    metrics_calculator = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [
@@ -1510,16 +1509,16 @@ async def test_calc_pull_request_facts_github_event_releases(
         False,
         JIRAEntityToFetch.NOTHING,
     ]
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 381
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 381
 
 
 @with_defer
 async def test_calc_pull_request_facts_empty(
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     mdb,
     pdb,
     rdb,
@@ -1528,7 +1527,7 @@ async def test_calc_pull_request_facts_empty(
     bots,
     cache,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    pr_facts_calculator = pr_facts_calculator_factory(1, (6366825,), with_cache=True)
     time_from = datetime(year=2022, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2023, month=4, day=1, tzinfo=timezone.utc)
     args = [
@@ -1546,7 +1545,7 @@ async def test_calc_pull_request_facts_empty(
         False,
         JIRAEntityToFetch.NOTHING,
     ]
-    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    facts = await pr_facts_calculator(*args)
     assert facts.empty
     assert len(facts.columns) == len(PullRequestFacts.f)
     assert PullRequestFacts.f.done in facts.columns
@@ -1632,11 +1631,11 @@ def test_counter_quantiles(pr_samples):
 @with_defer
 async def real_pr_samples(
     release_match_setting_tag,
-    metrics_calculator_factory,
+    pr_facts_calculator_factory,
     prefixer,
     bots,
 ) -> Tuple[datetime, datetime, pd.DataFrame]:
-    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = (
@@ -1654,7 +1653,7 @@ async def real_pr_samples(
         False,
         JIRAEntityToFetch.NOTHING,
     )
-    samples = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    samples = await pr_facts_calculator_no_cache(*args)
     return time_from, time_to, samples
 
 
@@ -1704,7 +1703,7 @@ async def test_pull_request_count_logical_alpha_beta(
         None,
     )
     await wait_deferred()
-    metrics_calculator = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     metrics = [
@@ -1735,7 +1734,7 @@ async def test_pull_request_count_logical_alpha_beta(
             default_branches,
             False,
         ]
-        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        values = await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
         assert values.shape == (1, 2, 1, 1)
 
@@ -1766,7 +1765,7 @@ async def test_pull_request_count_logical_root(
     branches,
     default_branches,
 ):
-    metrics_calculator = metrics_calculator_factory(1, (6366825,))
+    pr_facts_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     metrics = [
@@ -1798,7 +1797,7 @@ async def test_pull_request_count_logical_root(
             False,
         ]
         args[5].append(["src-d/go-git"])
-        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        values = await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
         assert values.shape == (1, 3, 1, 1)
         assert values[0, 2, 0, 0][0][0].value == 304
@@ -1807,7 +1806,7 @@ async def test_pull_request_count_logical_root(
         assert values[0, 2, 0, 0][0][3].value == 283
         assert values[0, 2, 0, 0][0][4].value == 230
         args[5] = [["src-d/go-git"]]
-        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        values = await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
         assert values.shape == (1, 1, 1, 1)
         assert values[0, 0, 0, 0][0][0].value == 554
