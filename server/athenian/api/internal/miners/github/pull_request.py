@@ -1554,10 +1554,9 @@ class PullRequestMiner:
         message_map = dict(
             await mdb.fetch_all(
                 sql.select(NodeCommit.node_id, await first_line_of_commit_message(mdb)).where(
-                    sql.and_(
-                        NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.node_id.in_(commit_ids_to_fetch_message),
-                    ),
+                    NodeCommit.acc_id.in_(meta_ids),
+                    NodeCommit.node_id.in_(commit_ids_to_fetch_message),
+                    NodeCommit.message.isnot(None),
                 ),
             ),
         )
