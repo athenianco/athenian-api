@@ -5,7 +5,7 @@ on:
 
 jobs:
   do-not-merge:
-    if: ${{ contains(github.event.*.labels.*.name, 'do not merge') }}
+    if: contains(github.event.*.labels.*.name, 'do not merge')
     name: Prevent merging the PR if labeled by "do not merge"
     runs-on: ubuntu-latest
     steps:

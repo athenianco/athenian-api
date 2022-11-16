@@ -26,48 +26,53 @@ jobs:
       id: get-merged-pull-request
       with:
         github_token: ${{ github.token }}
-    - name: labels
-      run: echo ${{ steps.get-merged-pull-request.outputs.labels }}
+    # no easy way to "exit 0": https://github.com/actions/runner/issues/662
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
-      if: ${{ github.actor != 'dependabot[bot]' }}
+      if: github.actor != 'dependabot[bot]'
       with:
         username: ${{ github.actor }}
         team: 'team'
         GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name != 'pull_request_target' }}
+      if: github.event_name != 'pull_request_target' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: false
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
+      if: github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: false
     - name: actions/cache
       uses: actions/cache@v3
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-static-checks-${{ hashFiles('server/requirements-lint.txt') }}
         restore-keys: ubuntu-22.04-pip-static-checks-
     - name: pip
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: static checks
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: tests/run_static_checks.sh
     - name: semgrep security
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: semgrep --config p/r2c-security-audit --severity ERROR --disable-version-check --error
     - name: semgrep custom
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: semgrep --config semgrep.yaml --severity ERROR --disable-version-check --error
     - name: bandit
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: bandit --severity-level high -r athenian/api
   custom_checks:
@@ -91,35 +96,42 @@ jobs:
           --health-retries 10
           --health-start-period 2s
     steps:
+    - uses: actions-ecosystem/action-get-merged-pull-request@v1
+      id: get-merged-pull-request
+      with:
+        github_token: ${{ github.token }}
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
-      if: ${{ github.actor != 'dependabot[bot]' }}
+      if: github.actor != 'dependabot[bot]'
       with:
         username: ${{ github.actor }}
         team: 'team'
         GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name != 'pull_request_target' }}
+      if: github.event_name != 'pull_request_target' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
+      if: github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: cache pip
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-custom-checks-
     - name: chown /usr/local
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
     - name: cache libs
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       id: cache-native-libs
       uses: actions/cache@v3
       with:
@@ -130,13 +142,14 @@ jobs:
           /usr/local/include/sentry.h
         key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
     - name: build-native-libs
-      if: steps.cache-native-libs.outputs.cache-hit != 'true'
+      if: steps.cache-native-libs.outputs.cache-hit != 'true' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         sudo apt-get update
         sudo apt-get install -y libcurl4-gnutls-dev
         make install-native
     - name: pip
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
@@ -150,6 +163,7 @@ jobs:
         python3 -m pip install --user --no-deps -e server/
         python3 -m pip list
     - name: web models
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
@@ -158,6 +172,7 @@ jobs:
         git status --porcelain
         test -z "$(git status --porcelain)"
     - name: migrations
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       env:
         PGPASSWORD: postgres
@@ -206,39 +221,47 @@ jobs:
       PDB: sqlite:///tests/pdb-master.sqlite
       RDB: sqlite:///tests/rdb-master.sqlite
     steps:
+    - uses: actions-ecosystem/action-get-merged-pull-request@v1
+      id: get-merged-pull-request
+      with:
+        github_token: ${{ github.token }}
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
-      if: ${{ github.actor != 'dependabot[bot]' }}
+      if: github.actor != 'dependabot[bot]'
       with:
         username: ${{ github.actor }}
         team: 'team'
         GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name != 'pull_request_target' }}
+      if: github.event_name != 'pull_request_target' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
+      if: github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: Set up Python 3.11
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       uses: actions/setup-python@v2
       with:
         python-version: 3.11
     - name: cache pip
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       uses: actions/cache@v3
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-22.04-3.11-pip-main-
     - name: chown /usr/local
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
     - name: cache libs
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       id: cache-native-libs
       uses: actions/cache@v3
       with:
@@ -249,13 +272,14 @@ jobs:
           /usr/local/include/sentry.h
         key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
     - name: build-native-libs
-      if: steps.cache-native-libs.outputs.cache-hit != 'true'
+      if: steps.cache-native-libs.outputs.cache-hit != 'true' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         sudo apt-get update
         sudo apt-get install -y libcurl4-gnutls-dev
         make install-native
     - name: godotenv
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         if [ ! -e $HOME/.local/bin/godotenv ]; then \
@@ -264,6 +288,7 @@ jobs:
           chmod +x $HOME/.local/bin/godotenv; \
         fi
     - name: pip
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
@@ -276,7 +301,7 @@ jobs:
         patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: setup postgres
-      if: matrix.db == 'postgres'
+      if: matrix.db == 'postgres' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       env:
         PGPASSWORD: postgres
         SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s?min_size=2&max_size=3
@@ -300,10 +325,12 @@ jobs:
         echo "OVERRIDE_PDB=$PDB" >> $GITHUB_ENV
         echo "OVERRIDE_RDB=$RDB" >> $GITHUB_ENV
     - name: setup Google KMS
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         echo '${{ secrets.GOOGLE_KMS_SERVICE_ACCOUNT_B64 }}' | base64 -d > google_service.json
         echo "GOOGLE_KMS_SERVICE_ACCOUNT_JSON=`pwd`/google_service.json" >> $GITHUB_ENV
     - name: setup env
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         echo 'AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}' >>.env
@@ -322,7 +349,7 @@ jobs:
         echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
         echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
     - name: test slim
-      if: matrix.type == 'slim'
+      if: matrix.type == 'slim' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
@@ -332,7 +359,7 @@ jobs:
         fi
         godotenv -s pytest -n 4 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300 --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py --ignore=tests/controllers/test_jira_controller.py --ignore=tests/controllers/test_integrations_controller.py --ignore=tests/controllers/test_contributors_controller.py --ignore=tests/controllers/test_settings_controller.py --ignore=tests/controllers/test_user_controller.py --ignore=tests/test_auth.py --ignore=tests/controllers/test_events_controller.py --ignore=tests/controllers/test_status_controller.py --ignore=tests/align/ --ignore=tests/internal/miners/github/test_consistency_torture_commits.py
     - name: test fat1
-      if: matrix.type == 'fat1'
+      if: matrix.type == 'fat1' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
@@ -342,7 +369,7 @@ jobs:
         fi
         godotenv -s pytest -n 4 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_contributors_controller.py tests/controllers/test_filter_controller.py tests/controllers/test_pagination_controller.py tests/controllers/test_integrations_controller.py tests/controllers/test_settings_controller.py tests/test_auth.py tests/controllers/test_events_controller.py tests/controllers/test_status_controller.py tests/align/ tests/internal/miners/github/test_consistency_torture_commits.py
     - name: test fat2
-      if: matrix.type == 'fat2'
+      if: matrix.type == 'fat2' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
@@ -353,7 +380,7 @@ jobs:
         export MANDRILL_API_KEY=
         godotenv -s pytest -n 4 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_metrics_controller.py  tests/controllers/test_histograms_controller.py tests/controllers/test_jira_controller.py
     - name: test user
-      if: matrix.type == 'user'
+      if: matrix.type == 'user' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
@@ -363,7 +390,7 @@ jobs:
         fi
         godotenv -s pytest -n 2 --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_user_controller.py
     - name: test heater
-      if: matrix.type == 'heater'
+      if: matrix.type == 'heater' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       env:
         ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE: https://whatever-jira/%s
@@ -382,17 +409,19 @@ jobs:
         godotenv -s python3 -m athenian.api.precompute --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211 accounts 1
         coverage xml
     - name: clear env
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       working-directory: server
       run: |
         set -x
         rm .env
     - uses: codecov/codecov-action@v1
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       name: codecov
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
   docker:
     name: docker
-    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
+    if: !contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'
     runs-on: ubuntu-22.04
     services:
       postgres:
@@ -411,29 +440,35 @@ jobs:
           --health-retries 10
           --health-start-period 2s
     steps:
+    - uses: actions-ecosystem/action-get-merged-pull-request@v1
+      id: get-merged-pull-request
+      with:
+        github_token: ${{ github.token }}
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
-      if: ${{ github.actor != 'dependabot[bot]' }}
+      if: github.actor != 'dependabot[bot]'
       with:
         username: ${{ github.actor }}
         team: 'team'
         GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name != 'pull_request_target' }}
+      if: github.event_name != 'pull_request_target' && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: actions/checkout
       uses: actions/checkout@v3
-      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
+      if: github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) && !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - uses: satackey/action-docker-layer-caching@v0.0.11
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       continue-on-error: true
     - name: setup postgres
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       env:
         PGPASSWORD: postgres
       run: |
@@ -441,6 +476,7 @@ jobs:
         psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
     - name: docker build
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         set -x
         python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
@@ -462,11 +498,13 @@ jobs:
         sed -i 's/[\./]server[\./]//g' /tmp/io/coverage.xml
         sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" /tmp/io/coverage.xml
     - uses: codecov/codecov-action@v1
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       name: codecov
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: /tmp/io/coverage.xml
     - name: docker prune
+      if: !contains(steps.get-merged-pull-request.outputs.labels, 'hotfix')
       run: |
         (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
