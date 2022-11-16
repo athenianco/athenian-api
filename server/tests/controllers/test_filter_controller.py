@@ -935,98 +935,112 @@ async def test_filter_prs_deployments_with_env(
     assert deps == 37
 
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
-    app.app[CACHE_VAR_NAME] = filter_prs_single_cache
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-04-23",
-        "account": 1,
-        "in": [],
-        "events": [PullRequestEvent.MERGED],
-        "exclude_inactive": False,
-    }
-    if len(filter_prs_single_cache.mem) == 0:
-        response = await client.request(
-            method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
-        )
-        text = (await response.read()).decode("utf-8")
-        assert response.status == 200, text
-    body["jira"] = {
-        "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
-        "labels_include": ["performance", "enhancement"],
-        "labels_exclude": ["security"],
-        "issue_types": ["Task"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
-    )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    prs = PullRequestSet.from_dict(json.loads(text))
-    data1 = prs.data
-    assert len(prs.data) == 2
-    filter_prs_single_cache.mem.clear()
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
-    )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    prs = PullRequestSet.from_dict(json.loads(text))
-    data2 = prs.data
-    for pr in chain(data1, data2):
-        assert pr.stage_timings.deploy["production"]
-        pr.stage_timings.deploy["production"] = timedelta(0)
-    assert data1 == data2
+class BaseFilterPRsTest(Requester):
+    async def _request(self, **kwargs: Any) -> PullRequestSet:
+        path = "/v1/filter/pull_requests"
+        headers = self.headers
+
+        response = await self.client.request(method="POST", path=path, headers=headers, **kwargs)
+        assert response.status == 200
+        res_data = await response.json()
+        return PullRequestSet.from_dict(res_data)
 
 
-async def test_filter_prs_jira_disabled_projects(client, headers, disabled_dev):
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-04-23",
-        "account": 1,
-        "in": [],
-        "events": [PullRequestEvent.MERGED],
-        "exclude_inactive": False,
-        "jira": {
+class TestFilterPRs(BaseFilterPRsTest):
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_filter_prs_jira(self, app, filter_prs_single_cache) -> None:
+        app.app[CACHE_VAR_NAME] = filter_prs_single_cache
+        body = {
+            "date_from": "2015-10-13",
+            "date_to": "2020-04-23",
+            "account": 1,
+            "in": [],
+            "events": [PullRequestEvent.MERGED],
+            "exclude_inactive": False,
+        }
+        if len(filter_prs_single_cache.mem) == 0:
+            await self._request(json=body)
+        body["jira"] = {
             "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
-        },
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
-    )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    prs = PullRequestSet.from_dict(json.loads(text))
-    assert len(prs.data) == 0
+            "labels_include": ["performance", "enhancement"],
+            "labels_exclude": ["security"],
+            "issue_types": ["Task"],
+        }
+        prs = await self._request(json=body)
+        data1 = prs.data
+        assert len(prs.data) == 2
+        filter_prs_single_cache.mem.clear()
+        prs = await self._request(json=body)
+        data2 = prs.data
+        for pr in chain(data1, data2):
+            assert pr.stage_timings.deploy["production"]
+            pr.stage_timings.deploy["production"] = timedelta(0)
+        assert data1 == data2
 
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_filter_prs_jira_priorities(self) -> None:
+        body = {
+            "date_from": "2017-10-01",
+            "date_to": "2019-01-23",
+            "account": 1,
+            "in": [],
+            "events": [PullRequestEvent.MERGED],
+            "exclude_inactive": False,
+        }
+        body["jira"] = {"projects": ["DEV"]}
+        prs = await self._request(json=body)
+        result_len_all_prios = len(prs.data)
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.filter_pull_requests
-async def test_filter_prs_logical(
-    client,
-    headers,
-    logical_settings_db,
-    release_match_setting_tag_logical_db,
-):
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-04-23",
-        "account": 1,
-        "in": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
-        "stages": [PullRequestStage.DONE],
-        "exclude_inactive": False,
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body,
-    )
-    assert response.status == 200
-    prs = PullRequestSet.from_dict(json.loads((await response.read()).decode("utf-8")))
-    assert len(prs.data) == 255
-    for pr in prs.data:
-        assert pr.repository in ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"]
+        body["jira"] = {"priorities": ["high", "low"], "projects": ["DEV"]}
+        prs = await self._request(json=body)
+        result_len_high_and_low = len(prs.data)
+
+        body["jira"] = {"priorities": ["high"], "projects": ["DEV"]}
+        prs = await self._request(json=body)
+        result_len_high = len(prs.data)
+
+        assert result_len_all_prios > result_len_high_and_low > result_len_high > 0
+
+    async def test_filter_prs_jira_disabled_projects(self, disabled_dev) -> None:
+        body = {
+            "date_from": "2015-10-13",
+            "date_to": "2020-04-23",
+            "account": 1,
+            "in": [],
+            "events": [PullRequestEvent.MERGED],
+            "exclude_inactive": False,
+            "jira": {
+                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+            },
+        }
+        prs = await self._request(json=body)
+        assert len(prs.data) == 0
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.filter_pull_requests
+    async def test_filter_prs_logical(
+        self,
+        logical_settings_db,
+        release_match_setting_tag_logical_db,
+    ) -> None:
+        body = {
+            "date_from": "2015-10-13",
+            "date_to": "2020-04-23",
+            "account": 1,
+            "in": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+            "stages": [PullRequestStage.DONE],
+            "exclude_inactive": False,
+        }
+        prs = await self._request(json=body)
+        assert len(prs.data) == 255
+        for pr in prs.data:
+            assert pr.repository in [
+                "github.com/src-d/go-git/alpha",
+                "github.com/src-d/go-git/beta",
+            ]
 
 
 open_go_git_pr_numbers = {

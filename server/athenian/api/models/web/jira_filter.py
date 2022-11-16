@@ -10,6 +10,7 @@ class JIRAFilter(Model):
     labels_include: Optional[list[str]]
     labels_exclude: Optional[list[str]]
     issue_types: Optional[list[str]]
+    priorities: Optional[list[str]]
     projects: Optional[list[str]]
     unmapped: Optional[bool]
 
@@ -57,6 +58,12 @@ class JIRAFilter(Model):
         if issue_types and self._unmapped:
             raise ValueError("`unmapped` may not be mixed with anything else")
         return issue_types
+
+    def validate_priorities(self, priorities: Optional[list[str]]) -> Optional[list[str]]:
+        """Validate the `priorities` field of this JIRAFilter."""
+        if priorities and self._unmapped:
+            raise ValueError("`unmapped` may not be mixed with anything else")
+        return priorities
 
     def validate_unmapped(self, unmapped: Optional[bool]) -> Optional[bool]:
         """Sets the unmapped of this JIRAFilter.

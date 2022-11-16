@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Iterable, Optional
 
-from athenian.api.internal.jira import JIRAConfig, normalize_issue_type
+from athenian.api.internal.jira import JIRAConfig, normalize_issue_type, normalize_priority
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 
 
@@ -230,7 +230,7 @@ class JIRAFilter:
             labels=labels,
             epics=frozenset([s.upper() for s in (model.epics or [])]),
             issue_types=frozenset([normalize_issue_type(s) for s in (model.issue_types or [])]),
-            priorities=frozenset(),  # not present in web model
+            priorities=frozenset([normalize_priority(p) for p in model.priorities or []]),
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
