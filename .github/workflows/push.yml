@@ -22,6 +22,12 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-22.04
     steps:
+    - uses: actions-ecosystem/action-get-merged-pull-request@v1
+      id: get-merged-pull-request
+      with:
+        github_token: ${{ github.token }}
+    - name: labels
+      run: echo ${{ steps.get-merged-pull-request.outputs.labels }}
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
       if: ${{ github.actor != 'dependabot[bot]' }}
