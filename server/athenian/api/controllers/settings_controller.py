@@ -218,18 +218,16 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
     return await get_jira_projects(request, model.account, jira_id=jira_id)
 
 
-@only_admin
 async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Response:
     """Add or override GitHub<>JIRA user identity mapping."""
     request_model = SetMappedJIRAIdentitiesRequest.from_dict(body)
     sdb = request.sdb
     mdb = request.mdb
     cache = request.cache
-    tasks = [
+    jira_acc, meta_ids = await gather(
         get_jira_id(request_model.account, sdb, cache),
         get_metadata_account_ids(request_model.account, sdb, cache),
-    ]
-    jira_acc, meta_ids = await gather(*tasks)
+    )
     github_logins = []
     for i, c in enumerate(request_model.changes):
         try:
@@ -238,7 +236,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
             raise ResponseError(
                 InvalidRequestError(
                     detail="Invalid developer identifier.",
-                    pointer=".changes[%d].developer_id" % i,
+                    pointer=f".changes[{i}].developer_id",
                 ),
             )
     jira_names = [c.jira_name for c in request_model.changes]
@@ -267,7 +265,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
         except KeyError:
             raise ResponseError(
                 InvalidRequestError(
-                    detail="Developer was not found.", pointer=".changes[%d].developer_id" % i,
+                    detail="Developer was not found.", pointer=f".changes[{i}].developer_id",
                 ),
             )
         if change.jira_name is None:
@@ -276,7 +274,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
         if not change.jira_name:
             raise ResponseError(
                 InvalidRequestError(
-                    detail="String cannot be empty.", pointer=".changes[%d].jira_name" % i,
+                    detail="String cannot be empty.", pointer=f".changes[{i}].jira_name",
                 ),
             )
         try:
@@ -284,7 +282,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
         except KeyError:
             raise ResponseError(
                 InvalidRequestError(
-                    detail="JIRA user was not found.", pointer=".changes[%d].jira_name" % i,
+                    detail="JIRA user was not found.", pointer=f".changes[{i}].jira_name",
                 ),
             )
         updated_maps.append((github_id, jira_id))
@@ -294,10 +292,8 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
             async with sdb_conn.transaction():
                 await sdb_conn.execute(
                     delete(MappedJIRAIdentity).where(
-                        and_(
-                            MappedJIRAIdentity.account_id == request_model.account,
-                            MappedJIRAIdentity.github_user_id.in_(cleared_github_ids),
-                        ),
+                        MappedJIRAIdentity.account_id == request_model.account,
+                        MappedJIRAIdentity.github_user_id.in_(cleared_github_ids),
                     ),
                 )
                 sql = (await dialect_specific_insert(sdb))(MappedJIRAIdentity)
