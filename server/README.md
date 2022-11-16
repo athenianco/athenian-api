@@ -8,7 +8,9 @@ the [Específico](https://github.com/athenianco/especifico) library on top of ai
 ![Entity diagram](../docs/accounts.png)
 
 ## Requirements
-Python 3.8.0+
+CPython 3.10.0+.
+
+We support both 3.10 and 3.11 until a proper 3.11 gets released in Ubuntu 22.04.
 
 ## Usage
 To run the server, please execute the following from the root directory:
@@ -49,6 +51,7 @@ pytest
 * [Manhole.](MANHOLE.md)
 
 Prometheus monitoring: `http://localhost:8080/status`.
+Memory usage statistics: `http://localhost:8080/memory`.
 
 Generating admin invitations:
 
