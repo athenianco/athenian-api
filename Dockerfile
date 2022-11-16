@@ -48,7 +48,7 @@ RUN apt-get update && \
 
 # matches our production except -march=haswell, we have to downgrade -march because of GHA
 ENV OPT="-pipe -fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
-# Bolt: -Wl,--emit-relocs -fno-reorder-blocks-and-partition
+ADD patches/cpython_configure_ac.patch patches/cpython_makefile.patch patches/cpython_rules.patch /
 
 # runtime environment
 RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \
@@ -61,18 +61,27 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
       python3-distutils html2text libjs-sphinxdoc && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
+    echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main" >>/etc/apt/sources.list.d/llvm.list && \
+    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    apt-get update && \
+    apt-get install -y bolt-16 llvm-16 && \
+    export LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-16/bin/llvm-symbolizer && \
     add-apt-repository -s ppa:deadsnakes/ppa && \
     mkdir /cpython && \
     cd /cpython && \
     apt-get source python$PYTHON_VERSION && \
     apt-get -s build-dep python$PYTHON_VERSION | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
     DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python$PYTHON_VERSION && \
-    rm /etc/apt/sources.list.d/deadsnakes* && \
+    rm /etc/apt/sources.list.d/deadsnakes* /etc/apt/sources.list.d/llvm.list && \
     cd python$PYTHON_VERSION* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
     echo 11 >debian/compat && \
     sed -i 's/debhelper (>= 9)/debhelper (>= 11)/g' debian/control.in && \
+    patch configure.ac </cpython_configure_ac.patch && \
+    patch Makefile.pre.in </cpython_makefile.patch && \
+    patch debian/rules </cpython_rules.patch && \
+    rm /cpython_configure_ac.patch /cpython_makefile.patch /cpython_rules.patch && \
     DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j$(getconf _NPROCESSORS_ONLN) && \
     cd .. && \
 	apt-get source python3 && \
@@ -101,7 +110,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
       python$PYTHON_VERSION-venv* \
       python$PYTHON_VERSION-full* && \
     echo "========" && ls && \
-    apt-get purge -y dpkg-dev devscripts software-properties-common html2text $(cat build_bloat) && \
+    apt-get purge -y dpkg-dev devscripts software-properties-common html2text bolt-16 llvm-16 $(cat build_bloat) && \
     apt-get autoremove -y && \
     dpkg -i *python3.11*.deb && \
     dpkg -i python3-minimal*.deb libpython3-stdlib*.deb && \
