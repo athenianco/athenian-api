@@ -36,7 +36,7 @@ exclude = "athenian/api/sentry_native"
 per-file-ignores = [
     "athenian/api/sentry_native:",
     "athenian/api/mimalloc:",
-    "tests/*:D",
+    "tests/*:D,B008",
     "**/__init__.py:F401",
     "athenian/api/models/web/__init__.py:F401",
     "athenian/api/models/*.py:D400,D401,D403",

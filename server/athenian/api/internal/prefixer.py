@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 import pickle
-from typing import Dict, Iterable, List, Optional
+from typing import Iterable, Optional
 
 import aiomcache
 from sqlalchemy import select
@@ -102,14 +102,14 @@ class Prefixer:
     """
 
     do_not_construct_me_directly: None
-    repo_node_to_prefixed_name: Dict[int, str]
-    repo_name_to_prefixed_name: Dict[str, str]
-    repo_node_to_name: Dict[int, str]
-    repo_name_to_node: Dict[str, int]
-    user_node_to_prefixed_login: Dict[int, str]
-    user_login_to_prefixed_login: Dict[str, str]
-    user_node_to_login: Dict[int, str]
-    user_login_to_node: Dict[str, List[int]]  # same users in different accounts
+    repo_node_to_prefixed_name: dict[int, str]
+    repo_name_to_prefixed_name: dict[str, str]
+    repo_node_to_name: dict[int, str]
+    repo_name_to_node: dict[str, int]
+    user_node_to_prefixed_login: dict[int, str]
+    user_login_to_prefixed_login: dict[str, str]
+    user_node_to_login: dict[int, str]
+    user_login_to_node: dict[str, list[int]]  # same users in different accounts
 
     @staticmethod
     @cached(
@@ -183,19 +183,19 @@ class Prefixer:
         meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
         return await Prefixer.load(meta_ids, request.mdb, request.cache)
 
-    def resolve_repo_nodes(self, repo_node_ids: Iterable[int]) -> List[str]:
+    def resolve_repo_nodes(self, repo_node_ids: Iterable[int]) -> list[str]:
         """Lookup each repository node ID in repo_node_map."""
         return [self.repo_node_to_prefixed_name[node_id] for node_id in repo_node_ids]
 
-    def prefix_repo_names(self, repo_names: Iterable[str]) -> List[str]:
+    def prefix_repo_names(self, repo_names: Iterable[str]) -> list[str]:
         """Lookup each repository full name in repo_name_map."""
         return [self.prefix_logical_repo(name) for name in repo_names]
 
-    def resolve_user_nodes(self, user_node_ids: Iterable[int]) -> List[str]:
+    def resolve_user_nodes(self, user_node_ids: Iterable[int]) -> list[str]:
         """Lookup each user node ID in user_node_to_prefixed_login."""
         return [self.user_node_to_prefixed_login[node_id] for node_id in user_node_ids]
 
-    def prefix_user_logins(self, user_logins: Iterable[str]) -> List[str]:
+    def prefix_user_logins(self, user_logins: Iterable[str]) -> list[str]:
         """Lookup each user login in user_login_to_prefixed_login."""
         return [
             pl
@@ -204,12 +204,12 @@ class Prefixer:
         ]
 
     def prefix_logical_repo(self, repo: str) -> Optional[str]:
-        """Lookup the repository name prefix for the given logical repository."""
-        *physical_repo, logical_name = repo.split("/", 2)
+        """Lookup the repository name prefix for the given repository, logical or not."""
+        *physical_repo_parts, logical_name = repo.split("/", 2)
         try:
-            if len(physical_repo) == 1:
+            if len(physical_repo_parts) == 1:  # physical repo
                 return self.repo_name_to_prefixed_name[repo]
-            physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo)]
+            physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo_parts)]
             return "/".join([physical_repo, logical_name])
         except KeyError:
             return None

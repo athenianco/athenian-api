@@ -7,6 +7,7 @@ from athenian.api.models.metadata.github import (
     AccountRepository,
     Bot,
     FetchProgress,
+    NodePullRequest,
     NodePullRequestJiraIssues,
     PullRequest,
     Repository,
@@ -107,6 +108,21 @@ class UserFactory(SQLAlchemyModelFactory):
     avatar_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}.jpg")
     login = factory.LazyAttribute(lambda user: f"user-{user.node_id}")
     html_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}")
+
+
+class NodePullRequestFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = NodePullRequest
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    title = factory.LazyAttribute(lambda pr: f"PR [{pr.node_id}]")
+    additions = 1
+    deletions = 1
+    number = factory.LazyAttribute(lambda pr: pr.node_id)
+    repository_id = 1
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    updated_at = factory.LazyAttribute(lambda pr: pr.created_at + timedelta(days=2))
 
 
 class BotFactory(SQLAlchemyModelFactory):
