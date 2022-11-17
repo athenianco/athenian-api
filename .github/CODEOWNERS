@@ -1,0 +1,30 @@
+# Cython/C++
+*.pyx  @vmarkovtsev
+*.pyd  @vmarkovtsev
+*.h    @vmarkovtsev
+
+# Deep internals
+server/athenian/api/internal/features/    @athenianco/api-admin
+server/athenian/api/internal/miners/      @athenianco/api-admin
+server/athenian/api/internal/prefixer.py  @athenianco/api-admin
+
+# DB models
+server/athenian/api/models/metadata/        @athenianco/api-admin
+server/athenian/api/models/precomputed/     @athenianco/api-admin
+server/athenian/api/models/persistentdata/  @athenianco/api-admin
+
+# Server engine
+server/athenian/api/async_utils.py    @athenianco/api-admin
+server/athenian/api/auth.py           @athenianco/api-admin
+server/athenian/api/cache.py          @athenianco/api-admin
+server/athenian/api/defer.py          @athenianco/api-admin
+server/athenian/api/faster_pandas.py  @athenianco/api-admin
+server/athenian/api/int_to_str.py     @athenianco/api-admin
+server/athenian/api/serialization.py  @athenianco/api-admin
+server/athenian/api/tracing.py        @athenianco/api-admin
+server/athenian/api/typing_utils.py   @athenianco/api-admin
+Dockerfile                            @athenianco/api-admin
+pyproject.toml                        @athenianco/api-admin
+requirements.txt                      @athenianco/api-admin
+setup.py                              @athenianco/api-admin
+.github/**                            @athenianco/api-admin
