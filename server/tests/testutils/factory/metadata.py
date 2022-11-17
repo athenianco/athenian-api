@@ -33,7 +33,7 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     class Meta:
         model = AccountRepository
 
-    acc_id = factory.Sequence(lambda n: n)
+    acc_id = DEFAULT_MD_ACCOUNT_ID
     repo_graph_id = factory.Sequence(lambda n: n)
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
