@@ -80,3 +80,10 @@ class TeamTree(TeamTreeLeaf):
             if name in TeamTreeLeaf.attribute_types
         }
         return TeamTreeLeaf(**kwargs)
+
+    def to_dict(self) -> dict:
+        """Return the model as dict, without the unexported fields."""
+        res = super().to_dict()
+        res.pop("members")
+        res.pop("total_members")
+        return res

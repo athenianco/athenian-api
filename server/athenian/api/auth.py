@@ -671,6 +671,7 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
             # token_info = {"token": <token>, "method": "bearer" or "apikey"}
             await auth._set_user(context := request.context, **token_info)
             # check whether the user may access the specified account
+            # TODO: same check can be done for `account` query parameter
             try:
                 request_json = request.json
             except JSONDecodeError:

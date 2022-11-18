@@ -67,7 +67,7 @@ class TestListTeamMembersErrors(BaseListTeamMembersTest):
         await models_insert(sdb, TeamFactory(id=10))
         res = await self._request(10, 404, account=3)
         assert isinstance(res, dict)
-        assert res["detail"] == "Team 10 not found or access denied"
+        assert res["type"] == "/errors/AccountNotFound"
 
     async def test_team_account_mismatch_non_default_user(self, sdb: Database) -> None:
         await models_insert(
@@ -92,6 +92,16 @@ class TestListTeamMembersErrors(BaseListTeamMembersTest):
         res = await self._request(0, 400, account=None)
         assert isinstance(res, dict)
         assert res["type"] == "/errors/BadRequest"
+
+    async def test_root_team_account_mismatch(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            UserAccountFactory(user_id="u0", account_id=2),
+            TeamFactory(id=10, members=[40078]),
+        )
+        res = await self._request(0, 404, account=1, user_id="u0")
+        assert isinstance(res, dict)
+        assert res["type"] == "/errors/AccountNotFound"
 
 
 class TestListTeamMembers(BaseListTeamMembersTest):
