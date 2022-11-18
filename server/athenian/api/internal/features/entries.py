@@ -1792,7 +1792,9 @@ class PRFactsCalculator:
                 ),
             )
         # augment blacklist with deployed PRs
-        (precomputed_facts, ambiguous), *blacklist = await gather(*precomputed_tasks)
+        (precomputed_facts, ambiguous), *blacklist = await gather(
+            *precomputed_tasks, op="precomputed_tasks",
+        )
         precomputed_node_ids = {node_id for node_id, _ in precomputed_facts}
         if blacklist:
             blacklist = (blacklist[0][0] | precomputed_node_ids, blacklist[0][1])

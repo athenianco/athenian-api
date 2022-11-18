@@ -66,8 +66,10 @@ class Slots(ABCMeta):
 
     @classmethod
     def __getter(mcs: typing.Type[T], key: str, type_: type) -> typing.Callable[[T], typing.Any]:
+        attr_get = f"_{key}"
+
         def get(self: T) -> type_:
-            return getattr(self, f"_{key}")
+            return getattr(self, attr_get)
 
         get.__name__ = f"get_{key}"
         return get
@@ -78,26 +80,30 @@ class Slots(ABCMeta):
         key: str,
         type_: type,
     ) -> typing.Callable[[T, typing.Any], None]:
+        attr_get = f"validate_{key}"
+        attr_set = f"_{key}"
+        validate_cached = None
+
         if not typing_utils.is_generic(type_) or not typing_utils.is_optional(type_):
 
-            def set_(self: T, value: type_) -> None:
-                try:
-                    value = getattr(self, f"validate_{key}")(value)
-                except AttributeError:
-                    if value is None:
-                        raise ValueError(
-                            f"Invalid value for `{key}`, must not be `None`",
-                        ) from None
-                setattr(self, f"_{key}", value)
+            def default_validate(self, value):
+                if value is None:
+                    raise ValueError(f"Invalid value for `{key}`, must not be `None`") from None
+                return value
 
         else:
 
-            def set_(self: T, value: type_) -> None:
+            def default_validate(self, value):
+                return value
+
+        def set_(self: T, value: type_) -> None:
+            nonlocal validate_cached
+            if validate_cached is None:
                 try:
-                    value = getattr(self, f"validate_{key}")(value)
+                    validate_cached = getattr(type(self), attr_get)
                 except AttributeError:
-                    pass
-                setattr(self, f"_{key}", value)
+                    validate_cached = default_validate
+            setattr(self, attr_set, validate_cached(self, value))
 
         set_.__name__ = f"set_{key}"
         return set_

@@ -20,7 +20,7 @@ class JIRAFilter(Model):
 
         :param epics: The epics of this JIRAFilter.
         """
-        if epics and self._unmapped:
+        if epics and getattr(self, "_unmapped", False):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return epics
 
@@ -32,7 +32,7 @@ class JIRAFilter(Model):
 
         :param labels_include: The labels_include of this JIRAFilter.
         """
-        if labels_include and self._unmapped:
+        if labels_include and getattr(self, "_unmapped", False):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return labels_include
 
@@ -43,7 +43,7 @@ class JIRAFilter(Model):
 
         :param labels_exclude: The labels_exclude of this JIRAFilter.
         """
-        if labels_exclude and self._unmapped:
+        if labels_exclude and getattr(self, "_unmapped", False):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return labels_exclude
 
@@ -54,7 +54,7 @@ class JIRAFilter(Model):
 
         :param issue_types: The issue_types of this JIRAFilter.
         """
-        if issue_types and self._unmapped:
+        if issue_types and getattr(self, "_unmapped", False):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return issue_types
 
@@ -66,7 +66,10 @@ class JIRAFilter(Model):
         :param unmapped: The unmapped of this JIRAFilter.
         """
         if unmapped and (
-            self._epics or self._labels_include or self._labels_exclude or self._issue_types
+            getattr(self, "_epics", False)
+            or getattr(self, "_labels_include", False)
+            or getattr(self, "_labels_exclude", False)
+            or getattr(self, "_issue_types", False)
         ):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return unmapped

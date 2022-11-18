@@ -325,7 +325,7 @@ async def _epic_flow(
         issue_type_ids = {}
         children_by_type = defaultdict(list)
         epics_by_type = defaultdict(list)
-        now = datetime.utcnow()
+        now = np.datetime64(datetime.utcnow())
         for (
             epic_id,
             project_id,
@@ -450,9 +450,9 @@ async def _epic_flow(
                     lead_time = resolved - work_began
                     life_time = resolved - child_created
                 else:
-                    life_time = now - pd.to_datetime(child_created)
+                    life_time = now - child_created
                     if work_began is not None:
-                        lead_time = now - pd.to_datetime(work_began)
+                        lead_time = now - work_began
                     else:
                         lead_time = None
                 if resolved is None:
@@ -487,9 +487,9 @@ async def _epic_flow(
                 epic.lead_time = epic.resolved - epic.work_began
                 epic.life_time = epic.resolved - epic.created
             else:
-                epic.life_time = now - pd.to_datetime(epic.created)
+                epic.life_time = now - epic.created
                 if epic.work_began is not None:
-                    epic.lead_time = now - pd.to_datetime(epic.work_began)
+                    epic.lead_time = now - epic.work_began
     if JIRAFilterReturn.PRIORITIES in return_:
         priority_ids = unordered_unique(
             np.concatenate(
@@ -994,7 +994,7 @@ async def _issue_flow(
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_models = []
-        now = datetime.utcnow()
+        now = np.datetime64(datetime.utcnow())
         for (
             issue_key,
             issue_title,
@@ -1044,9 +1044,9 @@ async def _issue_flow(
                 lead_time = resolved - work_began
                 life_time = resolved - issue_created
             else:
-                life_time = now - pd.to_datetime(issue_created)
+                life_time = now - issue_created
                 if work_began:
-                    lead_time = now - pd.to_datetime(work_began)
+                    lead_time = now - work_began
                 else:
                     lead_time = None
             issue_models.append(
