@@ -61,7 +61,7 @@ class JIRAFilter(Model):
 
     def validate_priorities(self, priorities: Optional[list[str]]) -> Optional[list[str]]:
         """Validate the `priorities` field of this JIRAFilter."""
-        if priorities and self._unmapped:
+        if priorities and getattr(self, "_unmapped", False):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return priorities
 
@@ -77,6 +77,7 @@ class JIRAFilter(Model):
             or getattr(self, "_labels_include", False)
             or getattr(self, "_labels_exclude", False)
             or getattr(self, "_issue_types", False)
+            or getattr(self, "_priorities", False)
         ):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return unmapped

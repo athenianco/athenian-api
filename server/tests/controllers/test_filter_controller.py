@@ -941,8 +941,8 @@ class BaseFilterPRsTest(Requester):
         headers = self.headers
 
         response = await self.client.request(method="POST", path=path, headers=headers, **kwargs)
-        assert response.status == 200
         res_data = await response.json()
+        assert response.status == 200, res_data
         return PullRequestSet.from_dict(res_data)
 
 
