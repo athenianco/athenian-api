@@ -18,8 +18,8 @@ class RepositoryGroupsMixin:
             raise ValueError("Invalid value for `repositories`, must not be `None`")
         if len(repositories) == 0:
             raise ValueError("Invalid value for `repositories`, must not be an empty list")
-        if self._repogroups is not None:
-            for i, group in enumerate(self._repogroups):
+        if (repogroups := getattr(self, "_repogroups", None)) is not None:
+            for i, group in enumerate(repogroups):
                 for j, v in enumerate(group):
                     if v >= len(repositories):
                         raise ValueError(
