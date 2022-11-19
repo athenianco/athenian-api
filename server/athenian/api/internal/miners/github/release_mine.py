@@ -1945,27 +1945,40 @@ async def _load_release_deployments(
         "U", copy=False,
     )
     cols = [ghrd.deployment_name, ghrd.release_id]
-    depmap = await read_sql_query(
-        union_all(
-            *(
-                select(cols).where(
-                    and_(
-                        ghrd.acc_id == account,
-                        ghrd.release_match == compose_release_match(m, v),
-                        ghrd.repository_full_name.in_(repos_group),
-                        ghrd.release_id.in_(
-                            release_ids[
-                                np.in1d(repo_names, np.array(repos_group, dtype=repo_names.dtype))
-                            ],
-                        ),
+    reverse_items = list(reverse_settings.items())
+    batch_size = 10
+    depmaps = await gather(
+        *(
+            read_sql_query(
+                union_all(
+                    *(
+                        select(*cols).where(
+                            ghrd.acc_id == account,
+                            ghrd.release_match == compose_release_match(m, v),
+                            ghrd.repository_full_name.in_(repos_group),
+                            ghrd.release_id.in_(
+                                release_ids[
+                                    in1d_str(
+                                        repo_names, np.array(repos_group, dtype=repo_names.dtype),
+                                    )
+                                ],
+                            ),
+                        )
+                        for (m, v), repos_group in reverse_items[
+                            group * batch_size : (group + 1) * batch_size
+                        ]
                     ),
-                )
-                for (m, v), repos_group in reverse_settings.items()
-            ),
+                ),
+                pdb,
+                cols,
+            )
+            for group in range((len(reverse_items) + batch_size - 1) // batch_size)
         ),
-        pdb,
-        cols,
     )
+    if len(depmaps) == 1:
+        depmap = depmaps[0]
+    else:
+        depmap = pd.concat(depmaps, ignore_index=True)
     release_ids = depmap[ghrd.release_id.name].values
     dep_names = depmap[ghrd.deployment_name.name].values
     order = np.argsort(release_ids)

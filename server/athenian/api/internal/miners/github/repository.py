@@ -80,35 +80,50 @@ async def mine_repositories(
         repos = set(repos)
 
     @sentry_span
-    async def fetch_active_prs():
-        query_released = [
-            select(distinct(GitHubDonePullRequestFacts.repository_full_name)).where(
-                GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-                GitHubDonePullRequestFacts.acc_id == account,
-                col.between(time_from, time_to),
-            )
-            for col in (
-                GitHubDonePullRequestFacts.pr_done_at,
-                GitHubDonePullRequestFacts.pr_created_at,
-            )
-        ]
-        query_merged = select(distinct(GitHubMergedPullRequestFacts.repository_full_name)).where(
-            GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
-            GitHubMergedPullRequestFacts.acc_id == account,
-            GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to),
+    async def fetch_active_done_prs():
+        return await pdb.fetch_all(
+            union_all(
+                *(
+                    select(distinct(GitHubDonePullRequestFacts.repository_full_name)).where(
+                        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+                        GitHubDonePullRequestFacts.acc_id == account,
+                        col.between(time_from, time_to),
+                    )
+                    for col in (
+                        GitHubDonePullRequestFacts.pr_done_at,
+                        GitHubDonePullRequestFacts.pr_created_at,
+                    )
+                ),
+            ),
         )
-        query_open = [
-            select(distinct(GitHubOpenPullRequestFacts.repository_full_name)).where(
-                GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
-                GitHubOpenPullRequestFacts.acc_id == account,
-                col.between(time_from, time_to),
-            )
-            for col in (
-                GitHubOpenPullRequestFacts.pr_updated_at,
-                GitHubOpenPullRequestFacts.pr_created_at,
-            )
-        ]
-        return await pdb.fetch_all(union(*query_released, query_merged, *query_open))
+
+    @sentry_span
+    async def fetch_active_merged_prs():
+        return await pdb.fetch_all(
+            select(distinct(GitHubMergedPullRequestFacts.repository_full_name)).where(
+                GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
+                GitHubMergedPullRequestFacts.acc_id == account,
+                GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to),
+            ),
+        )
+
+    @sentry_span
+    async def fetch_active_open_prs():
+        return await pdb.fetch_all(
+            union_all(
+                *(
+                    select(distinct(GitHubOpenPullRequestFacts.repository_full_name)).where(
+                        GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
+                        GitHubOpenPullRequestFacts.acc_id == account,
+                        col.between(time_from, time_to),
+                    )
+                    for col in (
+                        GitHubOpenPullRequestFacts.pr_updated_at,
+                        GitHubOpenPullRequestFacts.pr_created_at,
+                    )
+                ),
+            ),
+        )
 
     @sentry_span
     async def fetch_inactive_open_prs():
@@ -144,11 +159,9 @@ async def mine_repositories(
     @sentry_span
     async def fetch_commits_comments_reviews():
         query_comments = select([distinct(PullRequestComment.repository_full_name)]).where(
-            and_(
-                PullRequestComment.acc_id.in_(meta_ids),
-                PullRequestComment.repository_node_id.in_(repo_ids),
-                PullRequestComment.created_at.between(time_from, time_to),
-            ),
+            PullRequestComment.acc_id.in_(meta_ids),
+            PullRequestComment.repository_node_id.in_(repo_ids),
+            PullRequestComment.created_at.between(time_from, time_to),
         )
         query_commits = (
             select(
@@ -167,19 +180,15 @@ async def mine_repositories(
                 ),
             )
             .where(
-                and_(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.repository_id.in_(repo_ids),
-                    NodeCommit.committed_date.between(time_from, time_to),
-                ),
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.repository_id.in_(repo_ids),
+                NodeCommit.committed_date.between(time_from, time_to),
             )
         )
-        query_reviews = select([distinct(PullRequestReview.repository_full_name)]).where(
-            and_(
-                PullRequestReview.acc_id.in_(meta_ids),
-                PullRequestReview.repository_node_id.in_(repo_ids),
-                PullRequestReview.submitted_at.between(time_from, time_to),
-            ),
+        query_reviews = select(distinct(PullRequestReview.repository_full_name)).where(
+            PullRequestReview.acc_id.in_(meta_ids),
+            PullRequestReview.repository_node_id.in_(repo_ids),
+            PullRequestReview.submitted_at.between(time_from, time_to),
         )
         return await mdb.fetch_all(union(query_comments, query_commits, query_reviews))
 
@@ -196,13 +205,11 @@ async def mine_repositories(
             # We experienced a huge fuck-up without this condition.
             return []
         queries = [
-            select([distinct(GitHubRelease.repository_full_name)]).where(
-                and_(
-                    GitHubRelease.release_match == "tag|" + m,
-                    GitHubRelease.repository_full_name.in_(r),
-                    GitHubRelease.acc_id == account,
-                    GitHubRelease.published_at.between(time_from, time_to),
-                ),
+            select(distinct(GitHubRelease.repository_full_name)).where(
+                GitHubRelease.release_match == "tag|" + m,
+                GitHubRelease.repository_full_name.in_(r),
+                GitHubRelease.acc_id == account,
+                GitHubRelease.published_at.between(time_from, time_to),
             )
             for m, r in match_groups.items()
         ]
@@ -215,7 +222,7 @@ async def mine_repositories(
     @sentry_span
     async def fetch_deployments():
         rows = await rdb.fetch_all(
-            select([distinct(DeployedComponent.repository_node_id)])
+            select(distinct(DeployedComponent.repository_node_id))
             .select_from(
                 join(
                     DeployedComponent,
@@ -227,11 +234,9 @@ async def mine_repositories(
                 ),
             )
             .where(
-                and_(
-                    DeploymentNotification.account_id == account,
-                    DeploymentNotification.started_at <= time_to,
-                    DeploymentNotification.finished_at >= time_from,
-                ),
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.started_at <= time_to,
+                DeploymentNotification.finished_at >= time_from,
             ),
         )
         repo_node_to_name = prefixer.repo_node_to_name
@@ -239,7 +244,9 @@ async def mine_repositories(
 
     tasks = [
         fetch_commits_comments_reviews(),
-        fetch_active_prs(),
+        fetch_active_done_prs(),
+        fetch_active_merged_prs(),
+        fetch_active_open_prs(),
         fetch_releases(),
         fetch_deployments(),
     ]
