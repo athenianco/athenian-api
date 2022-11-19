@@ -405,7 +405,7 @@ async def precompute_reposet(
                 await slack.post_install(
                     "precomputed_account.jinja2",
                     account=reposet.owner_id,
-                    prefixes={r.prefix for r in deref_items},
+                    prefixes={r.owner for r in deref_items},
                     prs=prs,
                     prs_done=prs_done,
                     prs_merged=prs_merged,
