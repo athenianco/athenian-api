@@ -6,6 +6,13 @@ from athenian.api.models.web.goal import MetricValue
 from athenian.api.typing_utils import VerbatimOptional
 
 
+class TeamDigest(Model):
+    """Basic information about a team."""
+
+    id: int
+    name: str
+
+
 class _TeamMetricParams(Model):
     team: int
     metric_params: dict[str, Any]
@@ -33,9 +40,9 @@ class TeamMetricsRequest(Model):
 
 
 class TeamMetricValueNode(Model):
-    """A node of the tree returned in TeamMetricResponse, with team id and metric value."""
+    """A node of the tree returned in TeamMetricResponse, with team its and metric value."""
 
-    team: int
+    team: TeamDigest
     children: Sequence["TeamMetricValueNode"]
     # see comment for GoalValue.current field about string type reference
     value: VerbatimOptional["MetricValue"]

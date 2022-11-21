@@ -29,6 +29,7 @@ from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import (
     InvalidRequestError,
+    TeamDigest,
     TeamMetricResponseElement,
     TeamMetricsRequest,
     TeamMetricValueNode,
@@ -199,7 +200,7 @@ def _build_team_metric_value_node(
     # will include just one value
     value = metric_values[metric_w_params][(team_tree.id, 0)][0]
     return TeamMetricValueNode(
-        team=team_tree.id,
+        team=TeamDigest(id=team_tree.id, name=team_tree.name),
         value=value,
         children=[
             _build_team_metric_value_node(requested_metric, child, metric_values)
