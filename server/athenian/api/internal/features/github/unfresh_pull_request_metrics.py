@@ -33,7 +33,7 @@ from athenian.api.internal.miners.types import (
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import NodePullRequest, PullRequest
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.tracing import sentry_span
 
@@ -295,7 +295,13 @@ class UnfreshPullRequestFactsFetcher:
         for node_id, repo in done_facts:
             pr_node_ids[node_id].append(repo)
         filtered = await miner.filter_jira(
-            pr_node_ids, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id],
+            pr_node_ids,
+            jira,
+            meta_ids,
+            mdb,
+            cache,
+            model=NodePullRequest,
+            columns=[NodePullRequest.node_id],
         )
         for node_id in pr_node_ids.keys() - set(filtered.index.values):
             for repo in pr_node_ids[node_id]:

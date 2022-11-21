@@ -120,7 +120,13 @@ from athenian.api.internal.miners.types import (
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
-from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
+from athenian.api.models.metadata.github import (
+    CheckRun,
+    NodePullRequest,
+    PullRequest,
+    PushCommit,
+    Release,
+)
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.pandas_io import deserialize_args, serialize_args
@@ -1890,7 +1896,8 @@ class PRFactsCalculator:
                     self._meta_ids,
                     self._mdb,
                     self._cache,
-                    columns=[PullRequest.node_id],
+                    model=NodePullRequest,
+                    columns=[NodePullRequest.node_id],
                 ),
             )
             (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = await gather(

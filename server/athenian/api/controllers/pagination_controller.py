@@ -129,7 +129,8 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                 meta_ids,
                 request.mdb,
                 request.cache,
-                columns=[PullRequest.node_id],
+                model=NodePullRequest,
+                columns=[NodePullRequest.node_id],
             ),
         )
     (other_prs, *_), done_updated_at, *passed_jira = await gather(*tasks)
