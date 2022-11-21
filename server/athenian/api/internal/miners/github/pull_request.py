@@ -2002,19 +2002,30 @@ class PullRequestMiner:
         meta_ids: tuple[int, ...],
         mdb: Database,
         cache: Optional[aiomcache.Client],
+        model=PullRequest,
         columns=PullRequest,
     ) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
         assert jira
         query = await generate_jira_prs_query(
-            [PullRequest.node_id.in_(pr_node_ids)], jira, meta_ids, mdb, cache, columns=columns,
+            [model.node_id.in_(pr_node_ids)],
+            jira,
+            meta_ids,
+            mdb,
+            cache,
+            seed=model,
+            columns=columns,
+            on=(model.node_id, model.acc_id),
         )
-        # pr JOIN repo is always len(pr_node_ids)
         # speculate that m JOIN pr is ~0.5 of len(pr_node_ids), that is, half of PRs mapped to JIRA
+        # also, m JOIN j is too pessimistic
         query = query.with_statement_hint(
-            f"Rows(pr repo #{len(pr_node_ids)})",
-        ).with_statement_hint(f"Rows(m pr #{len(pr_node_ids) // 2})")
-        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
+            f"Rows(m pr #{len(pr_node_ids) // 2})",
+        ).with_statement_hint("Rows(m j *10)")
+        if model is PullRequest:
+            # pr JOIN repo is always len(pr_node_ids)
+            query = query.with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")
+        return await read_sql_query(query, mdb, columns, index=model.node_id.name)
 
     @classmethod
     @sentry_span
