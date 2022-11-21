@@ -107,25 +107,27 @@ class TestTeamMetrics(BaseTeamMetricsTest):
             {
                 "metric": "pr-lead-time",
                 "value": {
-                    "team": 1,
+                    "team": {"id": 1, "name": "T1"},
                     "value": "2939453s",
-                    "children": [{"team": 2, "value": "4337530s", "children": []}],
+                    "children": [
+                        {"team": {"id": 2, "name": "T2"}, "value": "4337530s", "children": []},
+                    ],
                 },
             },
             {
                 "metric": "release-prs",
                 "value": {
-                    "team": 1,
+                    "team": {"id": 1, "name": "T1"},
                     "value": 474,
-                    "children": [{"team": 2, "value": 382, "children": []}],
+                    "children": [{"team": {"id": 2, "name": "T2"}, "value": 382, "children": []}],
                 },
             },
             {
                 "metric": "jira-resolved",
                 "value": {
-                    "team": 1,
+                    "team": {"id": 1, "name": "T1"},
                     "value": 0,
-                    "children": [{"team": 2, "value": 0, "children": []}],
+                    "children": [{"team": {"id": 2, "name": "T2"}, "value": 0, "children": []}],
                 },
             },
         ]
@@ -173,17 +175,23 @@ class TestTeamMetrics(BaseTeamMetricsTest):
             {
                 "metric": "jira-resolved",
                 "value": {
-                    "team": 1,
+                    "team": {"id": 1, "name": "T1"},
                     "value": 738,
-                    "children": [{"team": 2, "value": 163, "children": []}],
+                    "children": [{"team": {"id": 2, "name": "T2"}, "value": 163, "children": []}],
                 },
             },
             {
                 "metric": "jira-resolution-rate",
                 "value": {
-                    "team": 1,
+                    "team": {"id": 1, "name": "T1"},
                     "value": 0.9473684430122375,
-                    "children": [{"team": 2, "value": 0.8624338507652283, "children": []}],
+                    "children": [
+                        {
+                            "team": {"id": 2, "name": "T2"},
+                            "value": 0.8624338507652283,
+                            "children": [],
+                        },
+                    ],
                 },
             },
         ]
@@ -192,7 +200,7 @@ class TestTeamMetrics(BaseTeamMetricsTest):
         await models_insert(
             sdb,
             TeamFactory(id=1, members=[39789, 40070]),
-            TeamFactory(id=2, parent_id=1, members=[39926]),
+            TeamFactory(id=2, name="T2", parent_id=1, members=[39926]),
         )
         body = self._body(
             1, [(PullRequestMetricID.PR_REVIEW_TIME,)], date(2005, 1, 1), date(2005, 3, 31),
@@ -201,11 +209,11 @@ class TestTeamMetrics(BaseTeamMetricsTest):
         pr_review_time_data = res[0]  # ["data"]["metricsCurrentValues"][0]
         assert pr_review_time_data["metric"] == PullRequestMetricID.PR_REVIEW_TIME
         team_1_data = pr_review_time_data["value"]
-        assert team_1_data["team"] == 1
+        assert team_1_data["team"]["id"] == 1
         assert team_1_data["value"] is None
 
         assert len(team_1_data["children"]) == 1
-        assert (team_2_data := team_1_data["children"][0])["team"] == 2
+        assert (team_2_data := team_1_data["children"][0])["team"] == {"id": 2, "name": "T2"}
         assert team_2_data["value"] is None
 
     async def test_repositories_param(self, sdb: Database) -> None:
@@ -511,10 +519,10 @@ class TestMetricsWithParams(BaseTeamMetricsTest):
 
         # teams are the same, but team 2 is computed with a lower threshold due to
         # teamsMetricParams so will have a lower metric value
-        assert metric_values["team"] == 1
+        assert metric_values["team"]["id"] == 1
         assert metric_values["value"] == pytest.approx(0.6923077)
 
-        assert metric_values["children"][0]["team"] == 2
+        assert metric_values["children"][0]["team"]["id"] == 2
         assert metric_values["children"][0]["value"] == pytest.approx(0.653846)
 
 
@@ -522,8 +530,8 @@ class TestMetricsWithParams(BaseTeamMetricsTest):
 async def sample_teams(sdb: Database) -> None:
     await models_insert(
         sdb,
-        TeamFactory(id=1, members=[40020, 39789, 40070]),
-        TeamFactory(id=2, parent_id=1, members=[40191, 39926, 40418]),
+        TeamFactory(id=1, name="T1", members=[40020, 39789, 40070]),
+        TeamFactory(id=2, name="T2", parent_id=1, members=[40191, 39926, 40418]),
         MappedJIRAIdentityFactory(github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1"),
         MappedJIRAIdentityFactory(github_user_id=39789, jira_user_id="5dd58cb9c7ac480ee5674902"),
         MappedJIRAIdentityFactory(github_user_id=40191, jira_user_id="5ddec0b9be6c1f0d071ff82d"),

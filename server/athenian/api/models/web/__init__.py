@@ -226,6 +226,7 @@ from athenian.api.models.web.table_fetching_progress import TableFetchingProgres
 from athenian.api.models.web.team import Team
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 from athenian.api.models.web.team_metrics import (
+    TeamDigest,
     TeamMetricResponseElement,
     TeamMetricsRequest,
     TeamMetricValueNode,
