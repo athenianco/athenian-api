@@ -3142,8 +3142,12 @@ async def fetch_prs_numbers(
         stmt = stmt.with_statement_hint(hint)
 
     db_df = await read_sql_query(stmt, mdb, columns)
-    db_node_ids = db_df[NodePullRequest.node_id.name].values
-    db_numbers = db_df[NodePullRequest.number.name].values
+
+    unsorted_db_node_ids = db_df[NodePullRequest.node_id.name].values
+    db_node_ids_sorted_indexes = np.argsort(unsorted_db_node_ids)
+
+    db_node_ids = unsorted_db_node_ids[db_node_ids_sorted_indexes]
+    db_numbers = db_df[NodePullRequest.number.name].values[db_node_ids_sorted_indexes]
 
     # indexes selecting from db_node_ids and db_numbers in the same order as node_ids
     db_sorted_indexes = searchsorted_inrange(db_node_ids, node_ids)
