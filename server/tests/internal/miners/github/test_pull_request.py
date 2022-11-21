@@ -82,6 +82,10 @@ class TestFetchPRsNumbers:
                 prs_numbers = await fetch_prs_numbers(np.array([23, 25, 19, 21, 22]), (3,), mdb_rw)
             assert_array_equal(prs_numbers, np.array([4, 6, 0, 5, 1]))
 
+    async def test_no_pr_found_pr_order_noise_meta_acc_id(self, mdb_rw: Database) -> None:
+        prs_numbers = await fetch_prs_numbers(np.array([22, 23]), (3,), mdb_rw)
+        assert_array_equal(prs_numbers, np.array([0, 0]))
+
     @contextlib.contextmanager
     def _shuffle_read_sql_query_result(self):
         mock_path = f"{fetch_prs_numbers.__module__}.read_sql_query"

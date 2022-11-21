@@ -3143,6 +3143,9 @@ async def fetch_prs_numbers(
 
     db_df = await read_sql_query(stmt, mdb, columns)
 
+    if not len(db_df):
+        return np.zeros(len(node_ids), dtype=int)
+
     unsorted_db_node_ids = db_df[NodePullRequest.node_id.name].values
     db_node_ids_sorted_indexes = np.argsort(unsorted_db_node_ids)
 
