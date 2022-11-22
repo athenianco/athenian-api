@@ -5,6 +5,7 @@ import logging
 import pickle
 from typing import (
     Callable,
+    Collection,
     Dict,
     Generator,
     Iterable,
@@ -19,6 +20,7 @@ from typing import (
 
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, select, union_all
@@ -1366,3 +1368,58 @@ async def unwrap_pull_requests(
         # we need it inside df_from_structs()
         PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
     return filtered_prs, dfs, facts, matched_bys, deployments_task
+
+
+def pr_facts_stages_masks(pr_facts: pd.DataFrame) -> npt.NDArray[int]:
+    """Given a df of PullRequestFacts columns return the masks representing their stages.
+
+    Each mask is an integer where the bit at position PullRequestEvent.STAGE.value is 1.
+    This function returns the same stages collected by
+    PullRequestListMiner._collect_events_and_stages.
+
+    Use `pr_stages_mask()` to build a comparable bitmask starting from a set of stage names.
+    """
+    # 8 stages, use stage int value in the enum as position in the bitmask
+    masks = np.zeros(len(pr_facts), np.uint8)
+
+    force_push_dropped_mask = pr_facts.done.values & pr_facts.force_push_dropped.values
+    masks[force_push_dropped_mask] |= _pr_stage_enum_mask(PullRequestStage.FORCE_PUSH_DROPPED)
+
+    release_ignored_mask = pr_facts.done.values & pr_facts.release_ignored.values
+    # stages are prioritized, so update masks only when it's still 0
+    masks[(masks == 0) & release_ignored_mask] |= _pr_stage_enum_mask(
+        PullRequestStage.RELEASE_IGNORED,
+    )
+    # DONE is an exception, it lives together with FORCE_PUSH_DROPPED or RELEASE_IGNORED_MASK
+    masks[pr_facts.done.values] |= _pr_stage_enum_mask(PullRequestStage.DONE)
+    masks[(masks == 0) & ~np.isnat(pr_facts.merged.values)] |= _pr_stage_enum_mask(
+        PullRequestStage.RELEASING,
+    )
+    masks[(masks == 0) & ~np.isnat(pr_facts.approved.values)] |= _pr_stage_enum_mask(
+        PullRequestStage.MERGING,
+    )
+    masks[(masks == 0) & ~np.isnat(pr_facts.first_review_request.values)] |= _pr_stage_enum_mask(
+        PullRequestStage.REVIEWING,
+    )
+    # everything is at least wip
+    masks[masks == 0] = _pr_stage_enum_mask(PullRequestStage.WIP)
+
+    return masks
+
+
+def pr_stages_mask(stages: Collection[str]) -> int:
+    """Return the bitmask representing a set of pull request stages.
+
+    `stages` are strings included in the web PullRequestStage enum.
+
+    """
+    mask = 0
+    for stage in stages:
+        stage_enum = getattr(PullRequestStage, stage.upper())
+        mask |= _pr_stage_enum_mask(stage_enum)
+    return mask
+
+
+def _pr_stage_enum_mask(stage: PullRequestStage) -> int:
+    """Return the bitmask for a single pull request stage expressed as an enum."""
+    return 1 << (stage.value - 1)
