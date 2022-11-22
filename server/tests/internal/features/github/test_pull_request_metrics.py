@@ -140,6 +140,12 @@ class TestReviewTimeCalculator:
                 first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)),
                 approved=pd.Timestamp(dt(2022, 1, 2)),
             ),
+            PullRequestFactsFactory(
+                first_review_request_exact=None, approved=pd.Timestamp(dt(2022, 1, 2)),
+            ),  # review not requested, doesn't affect metric
+            PullRequestFactsFactory(
+                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)), approved=None,
+            ),  # not reviewed, doesn't affect metric
         ]
         facts = df_from_structs(prs)
 
