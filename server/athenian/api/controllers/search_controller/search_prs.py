@@ -4,16 +4,24 @@ from collections.abc import Collection
 import dataclasses
 from datetime import datetime, timedelta, timezone
 import logging
-from typing import Optional
+from typing import Optional, Sequence
 
 from aiohttp import web
 import aiomcache
+import numpy as np
+from numpy import typing as npt
+import pandas as pd
 import sentry_sdk
 
 from athenian.api.async_utils import gather
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import PRFactsCalculator
+from athenian.api.internal.features.github.pull_request_metrics import (
+    PullRequestMetricCalculatorEnsemble,
+    metric_calculators as pr_metric_calculators,
+)
+from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
 from athenian.api.internal.jira import get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
@@ -29,7 +37,9 @@ from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_withgroups
 from athenian.api.models.web import (
+    OrderByDirection,
     PullRequestDigest,
+    SearchPullRequestsOrderByExpression,
     SearchPullRequestsRequest,
     SearchPullRequestsResponse,
 )
@@ -47,7 +57,9 @@ async def search_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     account_info = await _build_account_info(search_request.account, request)
     search_filter = await _build_filter(search_request, account_info, request)
     repos_settings = await _build_repos_settings(account_info, search_filter.repositories)
-    pr_digests = await _search_pr_digests(search_filter, account_info, repos_settings, connectors)
+    pr_digests = await _search_pr_digests(
+        search_filter, search_request.order_by or (), account_info, repos_settings, connectors,
+    )
     return model_response(SearchPullRequestsResponse(pull_requests=pr_digests))
 
 
@@ -166,6 +178,7 @@ class _SearchPRsConnectors:
 @sentry_span
 async def _search_pr_digests(
     search_filter: _SearchPRsFilter,
+    order_by: Sequence[SearchPullRequestsOrderByExpression],
     account_info: _SearchPRsAccountInfo,
     repos_settings: _SearchPRsReposSettings,
     connectors: _SearchPRsConnectors,
@@ -195,6 +208,9 @@ async def _search_pr_digests(
         with_jira=JIRAEntityToFetch.NOTHING,
     )
 
+    if order_by:
+        pr_facts = _apply_order_by(pr_facts, search_filter, order_by)
+
     prs_numbers = await fetch_prs_numbers(
         pr_facts[PullRequestFacts.f.node_id].values, account_info.meta_ids, mdb,
     )
@@ -220,3 +236,97 @@ async def _search_pr_digests(
             ",".join(map(str, unknown_prs)),
         )
     return pr_digests
+
+
+@sentry_span
+def _apply_order_by(
+    pr_facts: pd.DataFrame,
+    search_filter: _SearchPRsFilter,
+    order_by: Sequence[SearchPullRequestsOrderByExpression],
+) -> pd.DataFrame:
+    assert order_by
+    if not len(pr_facts):
+        return pr_facts
+
+    keep_mask = np.full((len(pr_facts),), True, bool)
+    ordered_indexes = np.arange(len(pr_facts))
+    order_by_metrics: Optional[_OrderByMetrics] = None
+
+    for expr in reversed(order_by):
+        if expr.field in _OrderByMetrics.FIELDS:
+            if order_by_metrics is None:
+                order_by_metrics = _OrderByMetrics.build(pr_facts, search_filter, order_by)
+            ordered_indexes, discard = order_by_metrics.apply_expression(expr, ordered_indexes)
+            keep_mask[discard] = False
+
+    kept_positions = ordered_indexes[np.nonzero(keep_mask[ordered_indexes])]
+    return pr_facts.iloc[kept_positions]
+
+
+class _OrderByMetrics:
+    """Handles order by pull request metric values.
+
+    Expressions about a metric field can be fed into this object with `apply_expression`.
+    """
+
+    FIELDS = pr_metric_calculators
+
+    def __init__(self, calc_ensemble: PullRequestMetricCalculatorEnsemble):
+        self._calc_ensemble = calc_ensemble
+
+    @classmethod
+    def build(
+        cls,
+        pr_facts: pd.DataFrame,
+        search_filter: _SearchPRsFilter,
+        order_by: Sequence[SearchPullRequestsOrderByExpression],
+    ) -> _OrderByMetrics:
+        metrics = [expr.field for expr in order_by if expr.field in cls.FIELDS]
+        assert metrics
+        min_times, max_times = (
+            np.array([t.replace(tzinfo=None)], dtype="datetime64[ns]")
+            for t in (search_filter.time_from, search_filter.time_to)
+        )
+        calc_ensemble = PullRequestMetricCalculatorEnsemble(
+            *metrics, quantiles=(0, 1), quantile_stride=DEFAULT_QUANTILE_STRIDE,
+        )
+        groups = np.full((1, len(pr_facts)), True, bool)
+        calc_ensemble(pr_facts, min_times, max_times, groups)
+        return cls(calc_ensemble)
+
+    def apply_expression(
+        self,
+        expr: SearchPullRequestsOrderByExpression,
+        ordered_indexes: npt.NDarray[int],
+    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
+        """Parse an expression and return a tuple with ordered indexes and discard indexes.
+
+        `order_indexes` is the current order of the pull request facts.
+        returned `discard` is an array with the indexes of element in `pr_facts` to
+        drop from end result due to expression.
+
+        """
+        calc = self._calc_ensemble[expr.field][0]
+        values = calc.peek[0][ordered_indexes]
+
+        if calc.has_nan:
+            nulls = values != values
+        else:
+            nulls = values == calc.nan
+
+        if len(nulls) and expr.exclude_nulls:
+            discard = np.flatnonzero(nulls)
+        else:
+            discard = np.array([], dtype=int)
+
+        notnulls_values = values[~nulls]
+        if expr.direction == OrderByDirection.DESCENDING.value:
+            notnulls_values = -notnulls_values
+
+        indexes_notnull = ordered_indexes[~nulls][np.argsort(notnulls_values, kind="stable")]
+
+        res_parts = [indexes_notnull, ordered_indexes[nulls]]
+        if expr.nulls_first:
+            res_parts = res_parts[::-1]
+        result = np.concatenate(res_parts)
+        return result, discard
