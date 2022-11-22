@@ -10,6 +10,7 @@ from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import (
     OrderByDirection,
     PullRequestMetricID,
+    PullRequestStage,
     SearchPullRequestsRequest,
 )
 from tests.testutils.db import DBCleaner, models_insert
@@ -165,6 +166,52 @@ class TestSearchPRs(BaseSearchPRsTest):
             body = self._body(jira={"projects": ["EE"]})
             assert {111} & set(await self._fetch_pr_numbers(json=body)) == {111}
 
+    async def test_multiple_filters(self, sdb: Database, mdb_rw: Database) -> None:
+        ts = {"created_at": dt(2022, 4, 2), "updated_at": dt(2022, 4, 15)}
+
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+        )
+
+        t0 = dt(2022, 4, 4)
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=20, full_name="org0/repo0")
+            repo1 = md_factory.RepositoryFactory(node_id=21, full_name="org0/repo1")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            await insert_repo(repo1, mdb_cleaner, mdb_rw, sdb)
+            models = [
+                *pr_models(20, 11, 1, repository_full_name="org0/repo0", **ts),
+                *pr_models(21, 12, 2, repository_full_name="org0/repo1", **ts),
+                *pr_models(
+                    20, 13, 3, repository_full_name="org0/repo0", closed=True, closed_at=t0, **ts,
+                ),
+                *pr_models(
+                    21, 14, 4, repository_full_name="org0/repo1", closed=True, closed_at=t0, **ts,
+                ),
+                *pr_models(
+                    21, 15, 5, repository_full_name="org0/repo1", closed=True, closed_at=t0, **ts,
+                ),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            ns = await self._fetch_pr_numbers(json=body)
+            assert sorted(ns) == [1, 2, 3, 4, 5]
+
+            body["repositories"] = ["github.com/org0/repo0"]
+            ns = await self._fetch_pr_numbers(json=body)
+            assert sorted(ns) == [1, 3]
+
+            body["repositories"] = ["github.com/org0/repo1"]
+            body["stages"] = [PullRequestStage.DONE]
+            ns = await self._fetch_pr_numbers(json=body)
+            assert sorted(ns) == [4, 5]
+
+            body["stages"] = [PullRequestStage.WIP]
+            ns = await self._fetch_pr_numbers(json=body)
+            assert ns == (2,)
+
 
 class TestSearchPRsOrderBy(BaseSearchPRsTest):
     _from: dict = {"date_from": date(2019, 10, 1), "date_to": date(2019, 12, 1)}
@@ -276,3 +323,74 @@ class TestSearchPRsOrderBy(BaseSearchPRsTest):
         body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
         ns = await self._fetch_pr_numbers(json=body)
         assert ns == (1231, 1225, 1226, 1235)
+
+
+class TestSearchPRsStagesFilter(BaseSearchPRsTest):
+    async def test_smoke(self, sdb: Database) -> None:
+        body = self._body()
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns) == [1231, 1235, 1238, 1243, 1246, 1247, 1248]
+
+        body = self._body(stages=[PullRequestStage.MERGING])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns) == [1238]
+
+        body = self._body(stages=[PullRequestStage.WIP])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns) == [1243, 1246]
+
+        body = self._body(stages=[PullRequestStage.DONE])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns) == [1231, 1235, 1247, 1248]
+
+        body = self._body(stages=[PullRequestStage.MERGING, PullRequestStage.WIP])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns) == [1238, 1243, 1246]
+
+        body = self._body(stages=[PullRequestStage.REVIEWING])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == ()
+
+    async def test_created_data(self, sdb: Database, mdb_rw: Database) -> None:
+        times = {"created_at": dt(2022, 4, 2), "updated_at": dt(2022, 4, 15)}
+
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            repositories=["github.com/org0/repo0"],
+        )
+
+        t0 = dt(2022, 4, 4)
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {**times, "repository_full_name": "org0/repo0"}
+            models = [
+                *pr_models(99, 11, 1, **pr_kwargs),
+                *pr_models(99, 12, 2, **pr_kwargs),
+                *pr_models(
+                    99, 13, 3, closed=True, closed_at=t0, merged=True, merged_at=t0, **pr_kwargs,
+                ),
+                *pr_models(99, 14, 4, closed=True, closed_at=t0, **pr_kwargs),
+                *pr_models(99, 15, 5, closed=True, closed_at=t0, **pr_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            ns = await self._fetch_pr_numbers(json=body)
+            assert sorted(ns) == [1, 2, 3, 4, 5]
+
+            body["stages"] = [PullRequestStage.WIP]
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [1, 2]
+
+            body["stages"] = [PullRequestStage.DONE]
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [4, 5]
+
+            body["stages"] = [PullRequestStage.RELEASING]
+            assert await self._fetch_pr_numbers(json=body) == (3,)
+
+            body["stages"] = [PullRequestStage.WIP, PullRequestStage.RELEASE_IGNORED]
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [1, 2]
+
+            body["stages"] = [PullRequestStage.DONE, PullRequestStage.RELEASING]
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [3, 4, 5]

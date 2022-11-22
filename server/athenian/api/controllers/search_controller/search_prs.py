@@ -17,6 +17,10 @@ from athenian.api.async_utils import gather
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import PRFactsCalculator
+from athenian.api.internal.features.github.pull_request_filter import (
+    pr_facts_stages_masks,
+    pr_stages_mask,
+)
 from athenian.api.internal.features.github.pull_request_metrics import (
     PullRequestMetricCalculatorEnsemble,
     metric_calculators as pr_metric_calculators,
@@ -140,7 +144,9 @@ async def _build_filter(
         _resolve_repos(), _resolve_participants(), _resolve_jira(),
     )
 
-    return _SearchPRsFilter(time_from, time_to, repositories, participants, jira)
+    return _SearchPRsFilter(
+        time_from, time_to, repositories, participants, jira, search_req.stages,
+    )
 
 
 @dataclasses.dataclass
@@ -150,6 +156,7 @@ class _SearchPRsFilter:
     repositories: Optional[Collection[RepositoryName]] = None
     participants: Optional[PRParticipants] = None
     jira: Optional[JIRAFilter] = None
+    stages: Optional[list[str]] = None
 
 
 @dataclasses.dataclass
@@ -208,6 +215,9 @@ async def _search_pr_digests(
         with_jira=JIRAEntityToFetch.NOTHING,
     )
 
+    if search_filter.stages is not None:
+        pr_facts = _apply_stages_filter(pr_facts, search_filter.stages)
+
     if order_by:
         pr_facts = _apply_order_by(pr_facts, search_filter, order_by)
 
@@ -236,6 +246,12 @@ async def _search_pr_digests(
             ",".join(map(str, unknown_prs)),
         )
     return pr_digests
+
+
+def _apply_stages_filter(pr_facts: pd.DataFrame, stages: Collection[str]) -> pd.DataFrame:
+    masks = pr_facts_stages_masks(pr_facts)
+    filter_mask = pr_stages_mask(stages)
+    return pr_facts.take(np.flatnonzero(masks & filter_mask))
 
 
 @sentry_span
