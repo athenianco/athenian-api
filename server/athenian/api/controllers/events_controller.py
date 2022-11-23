@@ -5,7 +5,7 @@ from itertools import chain
 import logging
 import re
 import sqlite3
-from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Collection, Iterable, Mapping, Optional, Union
 
 from aiohttp import web
 import aiomcache
@@ -85,9 +85,11 @@ commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
 
 @disable_default_user
 @weight(0)
-async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.Response:
+async def notify_releases(request: AthenianWebRequest, body: list[dict]) -> web.Response:
     """Notify about new releases. The release settings must be set to "notification"."""
     # account is automatically checked at this point
+    log = logging.getLogger(f"{metadata.__package__}.notify_releases")
+    log.info("%s", body)
     try:
         notifications = [WebReleaseNotification.from_dict(n) for n in body]
     except ParseError as e:
@@ -215,7 +217,6 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         PushCommit.sha.name: None,
         PushCommit.node_id.name: None,
     }
-    log = logging.getLogger(f"{metadata.__package__}.notify_releases")
     for i, (n, author, status) in enumerate(zip(notifications, authors, statuses)):
         if status == ReleaseNotificationStatus.IGNORED_DUPLICATE:
             log.warning("ignored %s", n.to_dict())
@@ -287,9 +288,9 @@ async def _drop_precomputed_deployments(
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     request: AthenianWebRequest,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
 ) -> None:
     pdb, rdb = request.pdb, request.rdb
     repo_name_to_node = prefixer.repo_name_to_node.get
@@ -363,9 +364,9 @@ async def _drop_precomputed_event_releases(
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     request: AthenianWebRequest,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
 ) -> None:
     pdb = request.pdb
     bots_task = asyncio.create_task(
@@ -491,9 +492,11 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
 
 @disable_default_user
 @weight(0)
-async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> web.Response:
+async def notify_deployments(request: AthenianWebRequest, body: list[dict]) -> web.Response:
     """Notify about new deployments."""
     # account is automatically checked at this point
+    log = logging.getLogger(f"{metadata.__package__}.notify_deployments")
+    log.info("%s", body)
     try:
         notifications = [WebDeploymentNotification.from_dict(n) for n in body]
     except ParseError as e:
@@ -580,11 +583,11 @@ def _compose_name(notification: WebDeploymentNotification) -> str:
 
 @sentry_span
 async def _resolve_references(
-    components: Iterable[Tuple[Union[int, str], str]],
-    meta_ids: Tuple[int, ...],
+    components: Iterable[tuple[Union[int, str], str]],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     repository_node_ids: bool,
-) -> Dict[str, Dict[str, str]]:
+) -> dict[str, dict[str, str]]:
     releases = defaultdict(set)
     full_commits = set()
     prefix_commits = defaultdict(set)
