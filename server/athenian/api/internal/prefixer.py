@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+import logging
 import pickle
 from typing import Iterable, Optional
 
 import aiomcache
 from sqlalchemy import select
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
@@ -230,26 +232,34 @@ class Prefixer:
             repos.append(RepositoryReference(name.prefix, physical_id, name.logical))
         return repos
 
+    _dereference_repositories_logger = logging.getLogger(
+        f"{metadata.__package__}.dereference_repositories",
+    )
+
     def dereference_repositories(
         self,
         repo_refs: Iterable[RepositoryReference],
         return_missing: bool = False,
-    ) -> list[RepositoryName] | tuple[list[RepositoryName], list[int]]:
+        logger: Optional[logging.Logger] = _dereference_repositories_logger,
+    ) -> list[RepositoryName] | tuple[list[RepositoryName], list[RepositoryReference]]:
         """Convert a list of RepositoryReference to a list of prefixed repository names."""
         repo_names = []
         repo_node_to_name = self.repo_node_to_name.__getitem__
         missing = []
-        for i, repo in enumerate(repo_refs):
+        for repo in repo_refs:
             try:
                 physical_name = repo.prefix + "/" + repo_node_to_name(repo.node_id)
             except KeyError:
-                if return_missing:
-                    missing.append(i)
-                    continue
-                else:
-                    raise ValueError(f"Invalid repo_id {repo.node_id}") from None
+                missing.append(repo)
+                continue
             repo_names.append(
                 RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name),
+            )
+        if missing:
+            logger.error(
+                "reposet-sync did not delete %d repositories: %s",
+                len(missing),
+                ", ".join("(%s, %d, %s)" % r for r in missing),
             )
         if return_missing:
             return repo_names, missing

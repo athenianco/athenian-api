@@ -106,8 +106,7 @@ class TestRepoIdentitiesMapper:
 
     def test_identities_to_prefixed_names_invalid_identities(self) -> None:
         prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/org/repo1"})
-        with pytest.raises(ValueError):
-            prefixer.dereference_repositories([RepositoryReference("github.com", 2, "")])
+        assert not prefixer.dereference_repositories([RepositoryReference("github.com", 2, "")])
 
     async def test_with_real_prefixer(self, mdb_rw: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:

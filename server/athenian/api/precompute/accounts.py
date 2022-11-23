@@ -211,7 +211,7 @@ async def precompute_reposet(
         sentry_sdk.capture_exception(e)
         return
     deref_items, missing = prefixer.dereference_repositories(
-        reposet_items_to_refs(reposet.items), return_missing=True,
+        reposet_items_to_refs(reposet.items), return_missing=True, logger=log,
     )
     if missing:
         await sdb.execute(
@@ -221,9 +221,7 @@ async def precompute_reposet(
                 {
                     RepositorySet.updates_count: RepositorySet.updates_count + 1,
                     RepositorySet.updated_at: datetime.now(timezone.utc),
-                    RepositorySet.items: [
-                        r for i, r in enumerate(reposet.items) if i not in missing
-                    ],
+                    RepositorySet.items: [r for r in reposet.items if r not in missing],
                 },
             ),
         )
