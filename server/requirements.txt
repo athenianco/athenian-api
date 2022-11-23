@@ -15,7 +15,7 @@ scipy==1.9.2
 sentry-sdk[pure_eval]==1.11.0
 prometheus_client==0.14.1
 alembic==1.8.1
-mako==1.2.3
+mako==1.2.4
 pandas==1.1.5
 python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
