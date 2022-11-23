@@ -187,6 +187,7 @@ async def resolve_repos(
     :return: (Union of all the mentioned repo names, service prefix).
     """
     wrong_format = set()
+    log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
     if not repositories:
         # this may initialize meta_ids, so must execute serialized
         reposets = await load_account_reposets(
@@ -206,7 +207,7 @@ async def resolve_repos(
             if reposet[RepositorySet.name.name] == RepositorySet.ALL:
                 reposets = [
                     prefixer.dereference_repositories(
-                        reposet_items_to_refs(reposet[RepositorySet.items.name]),
+                        reposet_items_to_refs(reposet[RepositorySet.items.name]), logger=log,
                     ),
                 ]
                 break
@@ -262,7 +263,6 @@ async def resolve_repos(
             account, meta_ids, sdb, mdb, cache,
         ).load()
     if denied := await checker.check(coerce_logical_repos(checked_repos).keys()):
-        log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
         log.warning(
             "access denied account %d%s: user sent %s we've got %s",
             account,
