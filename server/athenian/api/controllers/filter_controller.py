@@ -90,6 +90,7 @@ from athenian.api.models.web import (
     CommitsListInclude,
     CommonFilterProperties,
     DeployedComponent as WebDeployedComponent,
+    DeployedPullRequest,
     DeployedRelease,
     DeploymentAnalysisCode,
     DeploymentNotification as WebDeploymentNotification,
@@ -1253,7 +1254,7 @@ async def _build_deployments_response(
                     },
                 ),
                 prs=[
-                    ReleasedPullRequest(
+                    DeployedPullRequest(
                         number=pr_number,
                         title=pr_title,
                         created=pr_created,
@@ -1261,6 +1262,7 @@ async def _build_deployments_response(
                         deletions=pr_dels,
                         author=user_node_to_prefixed_login[pr_author] if pr_author else None,
                         jira=pr_jira if len(pr_jira) else None,
+                        repository=pr_repo,
                     )
                     for (
                         pr_number,
@@ -1270,6 +1272,7 @@ async def _build_deployments_response(
                         pr_dels,
                         pr_author,
                         pr_jira,
+                        pr_repo,
                     ) in zip(
                         pr_numbers,
                         pr_titles,
@@ -1278,6 +1281,10 @@ async def _build_deployments_response(
                         pr_deletions,
                         pr_user_node_ids,
                         np.split(pr_jiras, pr_jira_offsets),
+                        np.repeat(
+                            resolved_repos,
+                            np.diff(prs_offsets, prepend=0, append=len(prs)),
+                        ),
                     )
                 ],
                 releases=[

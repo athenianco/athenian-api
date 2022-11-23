@@ -5,8 +5,8 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.typing_utils import VerbatimOptional
 
 
-class ReleasedPullRequest(Model):
-    """Details about a pull request listed in `/filter/releases`."""
+class _PullRequestSummary(Model, sealed=False):
+    """Common information about a pull request."""
 
     number: int
     title: str
@@ -15,3 +15,7 @@ class ReleasedPullRequest(Model):
     deletions: int
     author: VerbatimOptional[str]
     jira: Optional[list[str]]
+
+
+class ReleasedPullRequest(_PullRequestSummary):
+    """Details about a pull request listed in `/filter/releases`."""
