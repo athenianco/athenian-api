@@ -774,6 +774,16 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, chunked_stream &str
                     continue
                 if PyArray_CheckExact(value) and PyArray_NDIM(value) == 1 and PyArray_DIM(value, 0) == 0:
                     continue
+                if nested.type == DT_FLOAT:
+                    if PyFloat_CheckExact(value):
+                        val_double = PyFloat_AS_DOUBLE(value)
+                    elif PyObject_TypeCheck(value, &PyDoubleArrType_Type):
+                        PyArray_ScalarAsCtype(value, &val_double)
+                    elif PyObject_TypeCheck(value, &PyFloatArrType_Type):
+                        PyArray_ScalarAsCtype(value, &val_float)
+                        val_double = val_float
+                    if val_double != val_double:
+                        continue
             if kind:
                 stream.write(b",", 1)
             else:

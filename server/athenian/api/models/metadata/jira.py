@@ -1,6 +1,19 @@
-from sqlalchemy import JSON, TIMESTAMP, BigInteger, Boolean, Column, Integer, SmallInteger, Text
+from sqlalchemy import (
+    JSON,
+    REAL,
+    TIMESTAMP,
+    BigInteger,
+    Boolean,
+    Column,
+    Integer,
+    Numeric,
+    SmallInteger,
+    Text,
+    cast,
+)
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import column_property
 
 
 class AccountIDMixin:
@@ -55,6 +68,12 @@ class Issue(Base):
     priority_name = Column(Text, nullable=True)
     url = Column(Text, nullable=False)
     is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
+    story_points_ = Column(Numeric, name="story_points")
+    story_points = column_property(cast(story_points_, REAL))
+
+
+Issue.story_points.default = Issue.story_points.server_default = None
+Issue.story_points.nullable = True
 
 
 class Component(Base):

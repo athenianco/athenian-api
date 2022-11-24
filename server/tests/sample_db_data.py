@@ -97,9 +97,9 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     columns[c.name] = ctor
                 keys = [p.strip(b'(),"').decode() for p in parts[1:-2]]
                 name_map = {
-                    getattr(model, k).name: k
+                    c.name: k
                     for k in dir(model)
-                    if not k.startswith("_") and hasattr(getattr(model, k), "name")
+                    if not k.startswith("_") and hasattr((c := getattr(model, k)), "name")
                 }
                 continue
             if stdin:

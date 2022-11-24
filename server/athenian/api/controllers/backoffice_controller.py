@@ -340,3 +340,8 @@ async def _i_will_survive(log, target, coro) -> None:
     except Exception:
         sentry_sdk.capture_exception()
         log.warning("reset failed: %s", target)
+
+
+async def move_user(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Move the user between accounts."""
+    raise NotImplementedError

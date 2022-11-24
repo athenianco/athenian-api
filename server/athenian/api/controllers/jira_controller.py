@@ -294,6 +294,7 @@ async def _epic_flow(
         Issue.type_id,
         Issue.comments_count,
         Issue.url,
+        Issue.story_points,
     ]
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
@@ -345,6 +346,7 @@ async def _epic_flow(
             epic_prs,
             epic_comments,
             epic_url,
+            epic_story_points,
         ) in zip(
             epics_df.index.values,
             *(
@@ -367,6 +369,7 @@ async def _epic_flow(
                     ISSUE_PRS_COUNT,
                     Issue.comments_count.name,
                     Issue.url.name,
+                    Issue.story_points.name,
                 )
             ),
         ):
@@ -392,6 +395,7 @@ async def _epic_flow(
                     prs=epic_prs,
                     url=epic_url,
                     life_time=timedelta(0),
+                    story_points=epic_story_points,
                 ),
             )
             epics_by_type[(project_id, epic_type)].append(epic)
@@ -416,6 +420,7 @@ async def _epic_flow(
                 child_prs,
                 child_type,
                 child_url,
+                child_story_points,
             ) in zip(
                 *(
                     children_columns[column][children_indexes]
@@ -437,6 +442,7 @@ async def _epic_flow(
                         ISSUE_PRS_COUNT,
                         Issue.type_id.name,
                         Issue.url.name,
+                        Issue.story_points.name,
                     )
                 ),
             ):  # noqa(E123)
@@ -477,6 +483,7 @@ async def _epic_flow(
                         type=child_type,
                         subtasks=0,
                         url=child_url,
+                        story_points=child_story_points,
                     ),
                 )
                 issue_by_id[child_id] = child
@@ -634,6 +641,7 @@ async def _issue_flow(
         Issue.status,
         Issue.type_id,
         Issue.comments_count,
+        Issue.story_points,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         extra_columns.extend(
@@ -1013,6 +1021,7 @@ async def _issue_flow(
             issue_project,
             issue_comments,
             issue_url,
+            issue_story_points,
         ) in zip(
             *(
                 issues[column].values
@@ -1034,6 +1043,7 @@ async def _issue_flow(
                     Issue.project_id.name,
                     Issue.comments_count.name,
                     Issue.url.name,
+                    Issue.story_points.name,
                 )
             ),
         ):
@@ -1068,6 +1078,7 @@ async def _issue_flow(
                     type=issue_type_names[(issue_project, issue_type)],
                     prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
                     url=issue_url,
+                    story_points=issue_story_points,
                 ),
             )
     else:

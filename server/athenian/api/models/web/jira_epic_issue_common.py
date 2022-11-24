@@ -22,3 +22,4 @@ class JIRAEpicIssueCommon(Model, sealed=False):
     status: str
     type: str
     url: str
+    story_points: Optional[float]
