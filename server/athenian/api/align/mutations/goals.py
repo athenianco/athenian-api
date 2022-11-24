@@ -104,8 +104,9 @@ async def resolve_update_goal(
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
             if deletions := update.team_goal_deletions:
                 await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
-            kw = {}
 
+            kw = {}
+            goal = await fetch_goal(accountId, goal_id, sdb_conn)
             for update_info, col in (
                 (update.repositories, Goal.repositories),
                 (update.jira_projects, Goal.jira_projects),
@@ -114,13 +115,17 @@ async def resolve_update_goal(
             ):
                 if update_info is not None:
                     kw[col.name] = None if update_info.remove else update_info.value
+                else:
+                    # team goal dependant columns are always sent to update_goal to trigger
+                    # the updates in TeamGoal
+                    kw[col.name] = goal[col.name]
 
             if update.archived is not None:
                 kw[Goal.archived.name] = update.archived
             if update.name is not None:
                 kw[Goal.name.name] = update.name
-            if kw:
-                await update_goal(accountId, goal_id, sdb_conn, **kw)
+
+            await update_goal(accountId, goal_id, sdb_conn, **kw)
 
     return result
 

@@ -591,6 +591,27 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         tg_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
         assert tg_11[TeamGoal.repositories.name] == [[40550, ""], [39652768, ""]]
 
+    async def test_new_assigned_teams_inherit_goal_values(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, repositories=[[40550, ""]]),
+            TeamFactory(id=10),
+            TeamFactory(id=11, parent_id=10),
+            TeamGoalFactory(team_id=10, goal_id=100, target=1, repositories=[[40550, ""]]),
+        )
+        body = self._body(repositories=["github.com/src-d/go-git"], team_goals=[(10, 1), (11, 2)])
+        res = await self._request(100, json=body)
+        assert res == {"id": 100}
+
+        row = await assert_existing_row(sdb, Goal, id=100)
+        assert row[Goal.repositories.name] == [[40550, ""]]
+        team_goal_row_10 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        assert team_goal_row_10[TeamGoal.repositories.name] == [[40550, ""]]
+        assert team_goal_row_10[TeamGoal.target.name] == 1
+        team_goal_row_11 = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=11)
+        assert team_goal_row_11[TeamGoal.repositories.name] == [[40550, ""]]
+        assert team_goal_row_11[TeamGoal.target.name] == 2
+
     async def test_update_jira_fields(self, sdb: Database) -> None:
         await models_insert(
             sdb,
