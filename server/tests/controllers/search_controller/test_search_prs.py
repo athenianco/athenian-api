@@ -11,6 +11,7 @@ from athenian.api.models.web import (
     OrderByDirection,
     PullRequestMetricID,
     PullRequestStage,
+    SearchPullRequestsOrderByStageTiming as StageTiming,
     SearchPullRequestsRequest,
 )
 from tests.testutils.db import DBCleaner, models_insert
@@ -19,7 +20,7 @@ from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import TeamFactory
 from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.requester import Requester
-from tests.testutils.time import dt
+from tests.testutils.time import dt, freeze_time
 
 
 class BaseSearchPRsTest(Requester):
@@ -213,7 +214,7 @@ class TestSearchPRs(BaseSearchPRsTest):
             assert ns == (2,)
 
 
-class TestSearchPRsOrderBy(BaseSearchPRsTest):
+class TestSearchPRsOrderByMetric(BaseSearchPRsTest):
     _from: dict = {"date_from": date(2019, 10, 1), "date_to": date(2019, 12, 1)}
 
     async def test_int_metric(self, sdb: Database) -> None:
@@ -323,6 +324,119 @@ class TestSearchPRsOrderBy(BaseSearchPRsTest):
         body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
         ns = await self._fetch_pr_numbers(json=body)
         assert ns == (1231, 1225, 1226, 1235)
+
+
+class TestSearchPRsOrderByStageTiming(BaseSearchPRsTest):
+    async def test_review_stage_timing_smoke(self, sdb: Database) -> None:
+        body = self._body(order_by=[{"field": StageTiming.PR_WIP_STAGE_TIMING.value}])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == (1238, 1247, 1231, 1235, 1248, 1246, 1243)
+
+        body = self._body(order_by=[{"field": StageTiming.PR_MERGE_STAGE_TIMING.value}])
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == (1235, 1231, 1238)
+
+    async def test_wip_stage_timing(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            repositories=["github.com/org0/repo0"],
+            order_by=[{"field": StageTiming.PR_WIP_STAGE_TIMING.value}],
+        )
+        pr_kwargs = {"repository_full_name": "org0/repo0"}
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            models = [
+                *pr_models(99, 11, 1, created_at=dt(2022, 4, 3), **pr_kwargs),
+                *pr_models(99, 12, 2, created_at=dt(2022, 4, 5), **pr_kwargs),
+                *pr_models(99, 13, 3, created_at=dt(2022, 4, 4), **pr_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            ns = await self._fetch_pr_numbers(json=body)
+            assert ns == (2, 3, 1)
+
+            body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+            ns = await self._fetch_pr_numbers(json=body)
+            assert ns == (1, 3, 2)
+
+    @freeze_time("2022-04-25")
+    async def test_multiple_stage_timings(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            repositories=["github.com/org0/repo0"],
+        )
+        WIP = StageTiming.PR_WIP_STAGE_TIMING.value
+        REVIEW = StageTiming.PR_REVIEW_STAGE_TIMING.value
+        DESC = OrderByDirection.DESCENDING.value
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+        pr_kwargs = {"repository_full_name": "org0/repo0"}
+        # wip days: 1 19 1 2
+        # review days: 20 nat 19 18
+        models = [
+            *pr_models(
+                99, 11, 1, created_at=dt(2022, 4, 3), review_request=dt(2022, 4, 4), **pr_kwargs,
+            ),
+            *pr_models(99, 12, 2, created_at=dt(2022, 4, 5), **pr_kwargs),
+            *pr_models(
+                99, 13, 3, created_at=dt(2022, 4, 4), review_request=dt(2022, 4, 5), **pr_kwargs,
+            ),
+            *pr_models(
+                99, 14, 4, created_at=dt(2022, 4, 4), review_request=dt(2022, 4, 6), **pr_kwargs,
+            ),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            body["order_by"] = [{"field": WIP}, {"field": REVIEW, "exclude_nulls": False}]
+            assert await self._fetch_pr_numbers(json=body) == (3, 1, 4, 2)
+
+            body["order_by"] = [{"field": WIP}, {"field": REVIEW}]
+            # 2 filtered out, it has nat review timing
+            assert await self._fetch_pr_numbers(json=body) == (3, 1, 4)
+
+            body["order_by"] = [
+                {"field": WIP, "direction": DESC},
+                {"field": REVIEW, "exclude_nulls": False},
+            ]
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 3, 1)
+
+            body["order_by"] = [
+                {"field": WIP, "direction": DESC},
+                {"field": REVIEW, "direction": DESC, "exclude_nulls": False},
+            ]
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 1, 3)
+
+            body["order_by"] = [
+                {"field": REVIEW, "direction": DESC, "exclude_nulls": False},
+                {"field": WIP, "direction": DESC},
+            ]
+            assert await self._fetch_pr_numbers(json=body) == (1, 3, 4, 2)
+
+            body["order_by"] = [
+                {
+                    "field": REVIEW,
+                    "direction": DESC,
+                    "exclude_nulls": False,
+                    "nulls_first": True,
+                },
+                {"field": WIP},
+            ]
+            assert await self._fetch_pr_numbers(json=body) == (2, 1, 3, 4)
+
+            body["order_by"] = [
+                {"field": REVIEW, "exclude_nulls": False, "nulls_first": True},
+                {"field": WIP},
+            ]
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 3, 1)
 
 
 class TestSearchPRsStagesFilter(BaseSearchPRsTest):

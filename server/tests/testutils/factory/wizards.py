@@ -52,9 +52,29 @@ async def insert_repo(
     await models_insert(mdb, *md_models)
 
 
-def pr_models(repo_id: int, node_id: int, number: int, **kwargs: Any) -> Sequence[Any]:
-    """Return the models to insert in mdb to have a valid pull request."""
-    return [
+def pr_models(
+    repo_id: int,
+    node_id: int,
+    number: int,
+    *,
+    review_request: datetime | None = None,
+    **kwargs: Any,
+) -> Sequence[Any]:
+    """Return the models to insert in mdb to have a valid pull request.
+
+    - `review_request`: if passed also a PullRequestReviewRequest model will be generated
+
+    All other parameters are passed to PullRequestFactory.
+    """
+    models = [
         md_factory.PullRequestFactory(node_id=node_id, repository_node_id=repo_id, **kwargs),
         md_factory.NodePullRequestFactory(node_id=node_id, number=number, repository_id=repo_id),
     ]
+    if review_request is not None:
+        models.append(
+            md_factory.PullRequestReviewRequestFactory(
+                created_at=review_request, pull_request_id=node_id,
+            ),
+        )
+
+    return models

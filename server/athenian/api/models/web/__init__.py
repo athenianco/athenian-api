@@ -222,6 +222,7 @@ from athenian.api.models.web.search_prs import (
     OrderByDirection,
     PullRequestDigest,
     SearchPullRequestsOrderByExpression,
+    SearchPullRequestsOrderByStageTiming,
     SearchPullRequestsRequest,
     SearchPullRequestsResponse,
 )

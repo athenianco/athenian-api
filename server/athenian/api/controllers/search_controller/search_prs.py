@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 from collections.abc import Collection
 import dataclasses
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.features.github.pull_request_filter import (
+    PullRequestListMiner,
     pr_facts_stages_masks,
     pr_stages_mask,
 )
@@ -44,6 +46,7 @@ from athenian.api.models.web import (
     OrderByDirection,
     PullRequestDigest,
     SearchPullRequestsOrderByExpression,
+    SearchPullRequestsOrderByStageTiming,
     SearchPullRequestsRequest,
     SearchPullRequestsResponse,
 )
@@ -267,19 +270,78 @@ def _apply_order_by(
     keep_mask = np.full((len(pr_facts),), True, bool)
     ordered_indexes = np.arange(len(pr_facts))
     order_by_metrics: Optional[_OrderByMetrics] = None
+    order_by_stage_timings: Optional[_OrderByStageTimings] = None
 
     for expr in reversed(order_by):
+        orderer: _OrderBy
         if expr.field in _OrderByMetrics.FIELDS:
             if order_by_metrics is None:
                 order_by_metrics = _OrderByMetrics.build(pr_facts, search_filter, order_by)
-            ordered_indexes, discard = order_by_metrics.apply_expression(expr, ordered_indexes)
-            keep_mask[discard] = False
+            orderer = order_by_metrics
+        elif expr.field in _OrderByStageTimings.FIELDS:
+            if order_by_stage_timings is None:
+                order_by_stage_timings = _OrderByStageTimings.build(pr_facts, order_by)
+            orderer = order_by_stage_timings
+        else:
+            raise ValueError(f"Invalid order by field {expr.field}")
+
+        ordered_indexes, discard = orderer.apply_expression(expr, ordered_indexes)
+        keep_mask[discard] = False
 
     kept_positions = ordered_indexes[np.flatnonzero(keep_mask[ordered_indexes])]
     return pr_facts.take(kept_positions)
 
 
-class _OrderByMetrics:
+class _OrderBy(metaclass=abc.ABCMeta):
+    """Handles the order by expressions."""
+
+    @abc.abstractmethod
+    def apply_expression(
+        self,
+        expr: SearchPullRequestsOrderByExpression,
+        current_indexes: npt.NDarray[int],
+    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
+        """Parse an expression and return a tuple with ordered indexes and discard indexes.
+
+        `current_indexes` is the current order of the pull request facts.
+        returned `discard` is an array with the indexes of element in `pr_facts` to
+        drop from end result due to expression.
+
+        """
+
+    @classmethod
+    def _ordered_indexes(
+        cls,
+        expr: SearchPullRequestsOrderByExpression,
+        ordered_indexes: npt.NDarray[int],
+        values: npt.NDArray,
+        nulls: npt.NDArray[int],
+    ) -> npt.NDArray[int]:
+        notnulls_values = values[~nulls]
+        if expr.direction == OrderByDirection.DESCENDING.value:
+            notnulls_values = -notnulls_values
+
+        indexes_notnull = ordered_indexes[~nulls][np.argsort(notnulls_values, kind="stable")]
+
+        res_parts = [indexes_notnull, ordered_indexes[nulls]]
+        if expr.nulls_first:
+            res_parts = res_parts[::-1]
+        result = np.concatenate(res_parts)
+        return result
+
+    @classmethod
+    def _discard_mask(
+        cls,
+        expr: SearchPullRequestsOrderByExpression,
+        nulls: npt.NDArray[int],
+    ) -> npt.NDArray[int]:
+        if len(nulls) and expr.exclude_nulls:
+            return np.flatnonzero(nulls)
+        else:
+            return np.array([], dtype=int)
+
+
+class _OrderByMetrics(_OrderBy):
     """Handles order by pull request metric values.
 
     Expressions about a metric field can be fed into this object with `apply_expression`.
@@ -313,36 +375,59 @@ class _OrderByMetrics:
     def apply_expression(
         self,
         expr: SearchPullRequestsOrderByExpression,
-        ordered_indexes: npt.NDarray[int],
+        current_indexes: npt.NDarray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
-        """Parse an expression and return a tuple with ordered indexes and discard indexes.
-
-        `order_indexes` is the current order of the pull request facts.
-        returned `discard` is an array with the indexes of element in `pr_facts` to
-        drop from end result due to expression.
-
-        """
         calc = self._calc_ensemble[expr.field][0]
-        values = calc.peek[0][ordered_indexes]
+        values = calc.peek[0][current_indexes]
 
         if calc.has_nan:
             nulls = values != values
         else:
             nulls = values == calc.nan
+        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
+        discard = self._discard_mask(expr, nulls)
+        return ordered_indexes, discard
 
-        if len(nulls) and expr.exclude_nulls:
-            discard = np.flatnonzero(nulls)
-        else:
-            discard = np.array([], dtype=int)
 
-        notnulls_values = values[~nulls]
-        if expr.direction == OrderByDirection.DESCENDING.value:
-            notnulls_values = -notnulls_values
+class _OrderByStageTimings(_OrderBy):
+    """Handles order by pull request stage timing."""
 
-        indexes_notnull = ordered_indexes[~nulls][np.argsort(notnulls_values, kind="stable")]
+    FIELDS = [f.value for f in SearchPullRequestsOrderByStageTiming]
 
-        res_parts = [indexes_notnull, ordered_indexes[nulls]]
-        if expr.nulls_first:
-            res_parts = res_parts[::-1]
-        result = np.concatenate(res_parts)
-        return result, discard
+    # values here match what returned by PullRequestListMiner.calc_stage_timings
+    _FIELD_TO_STAGE = {
+        SearchPullRequestsOrderByStageTiming.PR_WIP_STAGE_TIMING.value: "wip",
+        SearchPullRequestsOrderByStageTiming.PR_REVIEW_STAGE_TIMING.value: "review",
+        SearchPullRequestsOrderByStageTiming.PR_MERGE_STAGE_TIMING.value: "merge",
+        SearchPullRequestsOrderByStageTiming.PR_RELEASE_STAGE_TIMING.value: "release",
+    }
+
+    def __init__(self, stage_timings: dict[str, npt.NDArray]):
+        self._stage_timings = stage_timings
+
+    @classmethod
+    def build(
+        cls,
+        pr_facts: pd.DataFrame,
+        order_by: Sequence[SearchPullRequestsOrderByExpression],
+    ) -> _OrderByStageTimings:
+        fields = [expr.field for expr in order_by if expr.field in cls.FIELDS]
+        assert fields
+        stages = [cls._FIELD_TO_STAGE[f] for f in fields]
+        stage_calcs, counter_deps = PullRequestListMiner.create_stage_calcs({}, stages=stages)
+        stage_timings = PullRequestListMiner.calc_stage_timings(
+            pr_facts, stage_calcs, counter_deps,
+        )
+        return cls(stage_timings)
+
+    def apply_expression(
+        self,
+        expr: SearchPullRequestsOrderByExpression,
+        current_indexes: npt.NDarray[int],
+    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
+        stage = self._FIELD_TO_STAGE[expr.field]
+        values = self._stage_timings[stage][0][current_indexes]
+        nulls = values != values
+        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
+        discard = self._discard_mask(expr, nulls)
+        return ordered_indexes, discard
