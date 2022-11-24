@@ -2,7 +2,6 @@ from datetime import date
 from functools import partial
 from typing import Any, Optional, Sequence
 
-from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -25,6 +24,7 @@ from tests.testutils.factory.state import (
     UserAccountFactory,
 )
 from tests.testutils.requester import Requester
+from tests.testutils.time import freeze_time
 
 
 class BaseTeamMetricsTest(Requester):
@@ -449,8 +449,7 @@ class TestMetricsNasty(BaseTeamMetricsTest):
         assert res["title"] == "Bad Request"
         assert "1984-01-01" in res["detail"]
 
-    # ignore in athenian.api.serialization is needed to not break klass == date tests
-    @freeze_time("2022-03-31", ignore=["athenian.api.serialization"])
+    @freeze_time("2022-03-31")
     async def test_valid_from_in_the_future(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=1, members=[39789]))
         body = self._body(1, [(PullRequestMetricID.PR_SIZE,)], date(2022, 4, 1), date(2022, 4, 10))

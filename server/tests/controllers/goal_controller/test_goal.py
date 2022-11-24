@@ -3,7 +3,6 @@
 from datetime import date
 from typing import Any, Optional, Sequence
 
-from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -26,7 +25,7 @@ from tests.testutils.factory.state import (
     UserAccountFactory,
 )
 from tests.testutils.requester import Requester
-from tests.testutils.time import dt
+from tests.testutils.time import dt, freeze_time
 
 _USER_ID = "github|1"
 
@@ -312,8 +311,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id)
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == dt(2022, 5, 4)
 
-    # ignore in athenian.api.serialization is needed to not break klass == date tests
-    @freeze_time("2022-03-01", ignore=["athenian.api.serialization"])
+    @freeze_time("2022-03-01")
     async def test_future_dates_are_accepted(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=100))
         body = self._body(
