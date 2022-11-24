@@ -11,7 +11,7 @@ from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
 from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
+from sqlalchemy import REAL, BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import Label
 from sqlalchemy.sql.selectable import GenerativeSelect
@@ -190,6 +190,8 @@ def _build_dtype(
             if dtype.kind == "S":
                 str_reset_nulls.add(c.name)
             body.append((c.name, dtype))
+        elif isinstance(c.type, REAL) or (isinstance(c.type, type) and issubclass(c.type, REAL)):
+            body.append((c.name, np.float32))
         else:
             body.append((c.name, object))
 
@@ -251,6 +253,7 @@ def _wrap_sql_query(
     int_columns = _extract_integer_columns(columns)
     bool_columns = _extract_boolean_columns(columns)
     fixed_str_columns = _extract_fixed_string_columns(columns)
+    float32_typed_columns = _extract_float32_typed_columns(columns)
     columns = [(c.name if not isinstance(c, str) else c) for c in columns]
 
     typed_cols_indexes = []
@@ -263,6 +266,7 @@ def _wrap_sql_query(
             or column in int_columns
             or column in bool_columns
             or column in fixed_str_columns
+            or column in float32_typed_columns
         ):
             cols_indexes = typed_cols_indexes
             cols_names = typed_cols_names
@@ -299,6 +303,8 @@ def _wrap_sql_query(
             elif column in fixed_str_columns:
                 values[is_null(values)] = np.dtype(fixed_str_columns[column]).type()
                 converted_typed.append(values.astype(fixed_str_columns[column]))
+            elif column in float32_typed_columns:
+                converted_typed.append(np.array(values, dtype=np.float32))
             else:
                 raise AssertionError("impossible: typed columns are either dt or int")
         if remain_mask is not None:
@@ -362,6 +368,15 @@ def _extract_integer_columns(
                 and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
             )
         )
+    }
+
+
+def _extract_float32_typed_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
+    return {
+        c.name
+        for c in columns
+        if not isinstance(c, str)
+        and (isinstance(c.type, REAL) or (isinstance(c.type, type) and issubclass(c.type, REAL)))
     }
 
 

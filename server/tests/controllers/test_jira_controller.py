@@ -204,6 +204,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                 children=[],
                 type="Epic",
                 url="https://athenianco.atlassian.net/browse/ENG-1",
+                story_points=None,
             ),
             JIRAEpic(
                 id="DEV-70",
@@ -223,6 +224,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                 type="Epic",
                 prs=0,
                 project="10009",
+                story_points=1.899999976158142,
                 children=[
                     JIRAEpicChild(
                         id="DEV-183",
@@ -242,6 +244,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         type="Task",
                         subtasks=0,
                         url="https://athenianco.atlassian.net/browse/DEV-183",
+                        story_points=None,
                     ),
                     JIRAEpicChild(
                         id="DEV-228",
@@ -264,6 +267,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         type="Task",
                         subtasks=0,
                         url="https://athenianco.atlassian.net/browse/DEV-228",
+                        story_points=3.0,
                     ),
                     JIRAEpicChild(
                         id="DEV-315",
@@ -286,6 +290,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         type="Story",
                         subtasks=0,
                         url="https://athenianco.atlassian.net/browse/DEV-315",
+                        story_points=None,
                     ),
                     JIRAEpicChild(
                         id="DEV-364",
@@ -308,6 +313,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         type="Story",
                         subtasks=0,
                         url="https://athenianco.atlassian.net/browse/DEV-364",
+                        story_points=0.4000000059604645,
                     ),
                     JIRAEpicChild(
                         id="DEV-365",
@@ -330,6 +336,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         type="Story",
                         subtasks=0,
                         url="https://athenianco.atlassian.net/browse/DEV-365",
+                        story_points=None,
                     ),
                 ],
             ),
