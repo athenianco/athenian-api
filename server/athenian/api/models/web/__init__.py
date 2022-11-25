@@ -236,6 +236,7 @@ from athenian.api.models.web.team_metrics import (
 from athenian.api.models.web.team_tree import TeamTree, TeamTreeLeaf
 from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.models.web.user import User
+from athenian.api.models.web.user_move_request import UserMoveRequest
 from athenian.api.models.web.versions import Versions
 from athenian.api.models.web.work_type import WorkType
 from athenian.api.models.web.work_type_get_request import WorkTypeGetRequest

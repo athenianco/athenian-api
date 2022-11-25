@@ -681,7 +681,19 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
-                        await get_user_account_status_from_request(context, account)
+                        canonical = context.match_info.route.resource.canonical
+                        route_specs = context.app["route_spec"]
+                        if (spec := route_specs.get(canonical, None)) is not None:
+                            try:
+                                ignore_account = deep_get(
+                                    spec, ["requestBody", "x-ignore-account"],
+                                )
+                            except KeyError:
+                                ignore_account = False
+                        else:
+                            ignore_account = False
+                        if not ignore_account:
+                            await get_user_account_status_from_request(context, account)
                     else:
                         # we'll report an error later from OpenAPI validator
                         account = None

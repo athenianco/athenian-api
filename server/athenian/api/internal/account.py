@@ -381,8 +381,8 @@ async def get_user_account_status(
     `context` is an optional string to pass in the user rejection Slack message.
     """
     status = await sdb.fetch_val(
-        select([UserAccount.is_admin]).where(
-            and_(UserAccount.user_id == user, UserAccount.account_id == account),
+        select(UserAccount.is_admin).where(
+            UserAccount.user_id == user, UserAccount.account_id == account,
         ),
     )
     if status is None:

@@ -1,15 +1,22 @@
+from datetime import datetime, timezone
 import logging
+from sqlite3 import IntegrityError, OperationalError
 from typing import Optional
 
 from aiohttp import web
 import aiomcache
+from asyncpg import IntegrityConstraintViolationError
 import sentry_sdk
-from sqlalchemy import delete, select, union_all, update
+from sqlalchemy import delete, insert, select, union_all, update
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.db import Database
-from athenian.api.internal.account import get_metadata_account_ids, only_god
+from athenian.api.internal.account import (
+    get_metadata_account_ids,
+    get_user_account_status,
+    only_god,
+)
 from athenian.api.internal.jira import fetch_jira_installation_progress, get_jira_id
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -20,7 +27,14 @@ from athenian.api.internal.team_sync import sync_teams
 from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.state.models import God, RepositorySet, UserAccount
-from athenian.api.models.web import InvalidRequestError, NotFoundError, ResetRequest, ResetTarget
+from athenian.api.models.web import (
+    DatabaseConflict,
+    InvalidRequestError,
+    NotFoundError,
+    ResetRequest,
+    ResetTarget,
+    UserMoveRequest,
+)
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
@@ -342,6 +356,65 @@ async def _i_will_survive(log, target, coro) -> None:
         log.warning("reset failed: %s", target)
 
 
+@only_god
 async def move_user(request: AthenianWebRequest, body: dict) -> web.Response:
     """Move the user between accounts."""
-    raise NotImplementedError
+    model = UserMoveRequest.from_dict(body)
+    await get_user_account_status(
+        model.user,
+        model.old_account,
+        request.sdb,
+        request.mdb,
+        request.user,
+        request.app["slack"],
+        request.cache,
+        is_god=True,
+    )
+    if (model.new_account_admin is None) == (model.new_account_regular is None):
+        raise ResponseError(
+            InvalidRequestError(
+                ".new_account_admin || .new_account_regular",
+                detail=(
+                    "Either `new_account_admin` or `new_account_regular` must be specified or "
+                    "removed."
+                ),
+            ),
+        )
+    new_account = model.new_account_regular or model.new_account_admin
+    if new_account == model.old_account:
+        raise ResponseError(
+            InvalidRequestError(
+                ".old_account",
+                detail="The old and the new acoounts may not match.",
+            ),
+        )
+    try:
+        async with request.sdb.connection() as sdb:
+            async with sdb.transaction():
+                await sdb.execute(
+                    delete(UserAccount).where(
+                        UserAccount.account_id == model.old_account,
+                        UserAccount.user_id == model.user,
+                    ),
+                )
+                await sdb.execute(
+                    insert(UserAccount).values(
+                        {
+                            UserAccount.user_id: model.user,
+                            UserAccount.account_id: new_account,
+                            UserAccount.is_admin: model.new_account_admin is not None,
+                            UserAccount.created_at: datetime.now(timezone.utc),
+                        },
+                    ),
+                )
+    except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
+        raise ResponseError(DatabaseConflict(detail=str(e)))
+    await gather(
+        get_user_account_status.reset_cache(
+            model.user, model.old_account, None, None, None, None, None,
+        ),
+        get_user_account_status.reset_cache(
+            model.user, new_account, None, None, None, None, None,
+        ),
+    )
+    return web.Response()
