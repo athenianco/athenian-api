@@ -46,6 +46,7 @@ from athenian.api.models.web import (
     OrderByDirection,
     PullRequestDigest,
     SearchPullRequestsOrderByExpression,
+    SearchPullRequestsOrderByPRTrait,
     SearchPullRequestsOrderByStageTiming,
     SearchPullRequestsRequest,
     SearchPullRequestsResponse,
@@ -271,6 +272,7 @@ def _apply_order_by(
     ordered_indexes = np.arange(len(pr_facts))
     order_by_metrics: Optional[_OrderByMetrics] = None
     order_by_stage_timings: Optional[_OrderByStageTimings] = None
+    order_by_traits: Optional[_OrderByTraits] = None
 
     for expr in reversed(order_by):
         orderer: _OrderBy
@@ -282,6 +284,10 @@ def _apply_order_by(
             if order_by_stage_timings is None:
                 order_by_stage_timings = _OrderByStageTimings.build(pr_facts, order_by)
             orderer = order_by_stage_timings
+        elif expr.field in _OrderByTraits.FIELDS:
+            if order_by_traits is None:
+                order_by_traits = _OrderByTraits(pr_facts)
+            orderer = order_by_traits
         else:
             raise ValueError(f"Invalid order by field {expr.field}")
 
@@ -319,7 +325,7 @@ class _OrderBy(metaclass=abc.ABCMeta):
     ) -> npt.NDArray[int]:
         notnulls_values = values[~nulls]
         if expr.direction == OrderByDirection.DESCENDING.value:
-            notnulls_values = -notnulls_values
+            notnulls_values = cls._negate_values(notnulls_values)
 
         indexes_notnull = ordered_indexes[~nulls][np.argsort(notnulls_values, kind="stable")]
 
@@ -339,6 +345,10 @@ class _OrderBy(metaclass=abc.ABCMeta):
             return np.flatnonzero(nulls)
         else:
             return np.array([], dtype=int)
+
+    @classmethod
+    def _negate_values(cls, values: npt.NDArray) -> npt.NDArray:
+        return -values
 
 
 class _OrderByMetrics(_OrderBy):
@@ -431,3 +441,31 @@ class _OrderByStageTimings(_OrderBy):
         ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
         discard = self._discard_mask(expr, nulls)
         return ordered_indexes, discard
+
+
+class _OrderByTraits(_OrderBy):
+    FIELDS = [f.value for f in SearchPullRequestsOrderByPRTrait]
+
+    def __init__(self, pr_facts: pd.DataFrame):
+        self._pr_facts = pr_facts
+
+    def apply_expression(
+        self,
+        expr: SearchPullRequestsOrderByExpression,
+        current_indexes: npt.NDarray[int],
+    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
+        values = self._get_values(expr).copy()[current_indexes]
+        nulls = values != values
+        discard = self._discard_mask(expr, nulls)
+        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
+        return ordered_indexes, discard
+
+    def _get_values(self, expr: SearchPullRequestsOrderByExpression) -> npt.NDArray[np.datetime64]:
+        if expr.field == SearchPullRequestsOrderByPRTrait.WORK_BEGAN.value:
+            return self._pr_facts[PullRequestFacts.f.work_began].values
+        raise RuntimeError(f"Cannot order by pr trait {expr.field}")
+
+    @classmethod
+    def _negate_values(cls, values: npt.NDArray) -> npt.NDArray:
+        # datetime64 array cannot be negated
+        return -(values.astype(np.int64))

@@ -11,6 +11,7 @@ from athenian.api.models.web import (
     OrderByDirection,
     PullRequestMetricID,
     PullRequestStage,
+    SearchPullRequestsOrderByPRTrait as PRTrait,
     SearchPullRequestsOrderByStageTiming as StageTiming,
     SearchPullRequestsRequest,
 )
@@ -437,6 +438,38 @@ class TestSearchPRsOrderByStageTiming(BaseSearchPRsTest):
                 {"field": WIP},
             ]
             assert await self._fetch_pr_numbers(json=body) == (2, 4, 3, 1)
+
+
+class TestSearchPRsOrderByTrait(BaseSearchPRsTest):
+    async def test_work_began(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            order_by=[{"field": PRTrait.WORK_BEGAN.value}],
+        )
+        pr_kwargs = {"repository_full_name": "org0/repo0"}
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+        models = [
+            # work_began is min(created_at, first_commit)
+            *pr_models(99, 11, 1, created_at=dt(2022, 4, 20), **pr_kwargs),
+            *pr_models(
+                99, 12, 2, created_at=dt(2022, 4, 20), commits=[dt(2022, 4, 10)], **pr_kwargs,
+            ),
+            *pr_models(
+                99, 13, 3, created_at=dt(2022, 4, 19), commits=[dt(2022, 4, 23)], **pr_kwargs,
+            ),
+            *pr_models(99, 14, 4, created_at=dt(2022, 4, 12), **pr_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 3, 1)
+
+            body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+            assert await self._fetch_pr_numbers(json=body) == (1, 3, 4, 2)
 
 
 class TestSearchPRsStagesFilter(BaseSearchPRsTest):
