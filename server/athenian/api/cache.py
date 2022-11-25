@@ -141,29 +141,36 @@ def cached(
             client = discover_cache(**args_dict)
             cache_key = None
             if client is not None:
+                buffer = None
                 if (cache_key := _gen_cache_key(args_dict)) is not None:
-                    try:
-                        with sentry_sdk.start_span(op="get " + cache_key.hex()):
-                            buffer = await client.get(cache_key)
-                    except (
-                        aiomcache.exceptions.ClientException,
-                        IncompleteReadError,
-                        IndexError,  # DEV-4823, https://github.com/aio-libs/aiomcache/issues/279
-                    ) as e:
-                        log.exception(
-                            "Failed to fetch cached %s/%s: %s: %s",
-                            full_name,
-                            cache_key.decode(),
-                            type(e).__name__,
-                            e,
-                        )
-                        buffer = None
-                else:
-                    buffer = None
+                    for retry in range(1, 4):
+                        try:
+                            with sentry_sdk.start_span(
+                                op=f"get {cache_key.hex()} [{retry}]",
+                            ) as span:
+                                if (buffer := await client.get(cache_key)) is not None:
+                                    span.description = str(len(buffer))
+                            break
+                        except (
+                            aiomcache.exceptions.ClientException,
+                            IncompleteReadError,
+                            IndexError,  # https://github.com/aio-libs/aiomcache/issues/279
+                        ) as e:
+                            log.warning(
+                                "Failed to fetch cached %s/%s [%d]: %s: %s",
+                                full_name,
+                                cache_key.decode(),
+                                retry,
+                                type(e).__name__,
+                                e,
+                            )
                 if buffer is not None:
                     try:
-                        with sentry_sdk.start_span(op="deserialize", description=str(len(buffer))):
-                            result = deserialize(lz4.frame.decompress(buffer))
+                        with sentry_sdk.start_span(op="deserialize") as span:
+                            buffer = lz4.frame.decompress(buffer)
+                            span.description = str(len(buffer))
+                            result = deserialize(buffer)
+                            del buffer
                     except Exception as e:
                         log.error(
                             "Failed to deserialize cached %s/%s: %s: %s",
