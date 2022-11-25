@@ -1,10 +1,13 @@
-from typing import Callable, Coroutine, Optional
+from typing import Callable, Coroutine, Optional, Type, TypeVar
 
 from aiohttp import web
 import aiomcache
 
 from athenian.api.db import Database
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.user import User
+from athenian.api.response import ResponseError
 
 
 class AthenianWebRequest(web.Request):
@@ -34,3 +37,14 @@ class AthenianWebRequest(web.Request):
     uid: str
     account: Optional[int]
     is_default_user: bool
+
+
+ModelType = TypeVar("ModelType", bound=Model)
+
+
+def model_from_body(model_class: Type[ModelType], body: dict) -> ModelType:
+    """Parse a model from a request body and raises a 400 exception when parsing fails."""
+    try:
+        return model_class.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
