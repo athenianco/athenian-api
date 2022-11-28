@@ -30,8 +30,8 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport (
-    mi_heap_stl_allocator,
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
+    mi_heap_destroy_stl_allocator,
     mi_unordered_map,
     mi_unordered_set,
     pair,
@@ -78,14 +78,13 @@ cdef ndarray _unordered_unique_pystr(ndarray arr):
         int64_t i, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0) >> 3
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_map[string_view, int64_t]] hashtable
         pair[string_view, int64_t] it
         ndarray result
 
     with nogil:
         alloc.emplace()
-        deref(alloc).disable_free()
         hashtable.emplace(deref(alloc))
         deref(hashtable).reserve(length // 16)
         for i in range(length):
@@ -116,14 +115,13 @@ cdef ndarray _unordered_unique_str(ndarray arr, np_dtype dtype):
             itemsize = dtype.itemsize, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0)
-        optional[mi_heap_stl_allocator[string_view]] alloc
+        optional[mi_heap_destroy_stl_allocator[string_view]] alloc
         optional[mi_unordered_set[string_view]] hashtable
         string_view it
         ndarray result
 
     with nogil:
         alloc.emplace()
-        deref(alloc).disable_free()
         hashtable.emplace(deref(alloc))
         deref(hashtable).reserve(length // 16)
         for i in range(length):
@@ -153,14 +151,13 @@ cdef ndarray _unordered_unique_int(ndarray arr, np_dtype dtype, varint _):
             itemsize = dtype.itemsize, \
             length = PyArray_DIM(arr, 0), \
             stride = PyArray_STRIDE(arr, 0)
-        optional[mi_heap_stl_allocator[varint]] alloc
+        optional[mi_heap_destroy_stl_allocator[varint]] alloc
         optional[mi_unordered_set[varint]] hashtable
         varint it
         ndarray result
 
     with nogil:
         alloc.emplace()
-        deref(alloc).disable_free()
         hashtable.emplace(deref(alloc))
         deref(hashtable).reserve(length // 16)
         for i in range(length):
@@ -205,14 +202,13 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
             itemsize = dtype_dict.itemsize, \
             length = PyArray_DIM(dictionary, 0), \
             stride = PyArray_STRIDE(dictionary, 0)
-        optional[mi_heap_stl_allocator[string_view]] alloc
+        optional[mi_heap_destroy_stl_allocator[string_view]] alloc
         optional[mi_unordered_set[string_view]] hashtable
         mi_unordered_set[string_view].iterator end
         ndarray result
 
     with nogil:
         alloc.emplace()
-        deref(alloc).disable_free()
         hashtable.emplace(deref(alloc))
         deref(hashtable).reserve(length * 4)
         if is_char:

@@ -7,11 +7,13 @@ build-native:
 
 .PHONY: install-native
 install-native: build-native
+	sed -i 's/x) { return (this->heap == x.heap); }/x) const { return (this->heap == x.heap); }/g' athenian/api/mimalloc/include/mimalloc.h
 	sudo cmake --install athenian/api/sentry_native/build
 	sudo cmake --install athenian/api/mimalloc/build
 
 PHONY: install-native-user
 install-native-user: build-native
+	sed -i 's/x) { return (this->heap == x.heap); }/x) const { return (this->heap == x.heap); }/g' athenian/api/mimalloc/include/mimalloc.h
 	cmake --install athenian/api/sentry_native/build
 	cmake --install athenian/api/mimalloc/build
 

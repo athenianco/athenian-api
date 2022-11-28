@@ -62,9 +62,9 @@ from athenian.api.native.cpython cimport (
     PyUnicode_GET_LENGTH,
     PyUnicode_KIND,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport (
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
-    mi_heap_stl_allocator,
+    mi_heap_destroy_stl_allocator,
     mi_vector,
 )
 from athenian.api.native.numpy cimport (
@@ -174,7 +174,7 @@ def serialize_df(df not None, alloc_capsule=None) -> bytes:
         char *input
         char *output
         Py_ssize_t i, error_i = -1
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_vector[mi_vector[ColumnMeasurement]]] measurements
 
     mgr = df._mgr
@@ -182,7 +182,6 @@ def serialize_df(df not None, alloc_capsule=None) -> bytes:
         alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        deref(alloc).disable_free()
     measurements.emplace(deref(alloc))
     deref(measurements).reserve(len(mgr.blocks))
     for i, block in enumerate(mgr.blocks):

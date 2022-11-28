@@ -30,9 +30,9 @@ from athenian.api.native.cpython cimport (
     PyUnicode_DATA,
     PyUnicode_GET_LENGTH,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport (
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
-    mi_heap_stl_allocator,
+    mi_heap_destroy_stl_allocator,
     mi_unordered_map,
     mi_vector,
 )
@@ -81,7 +81,7 @@ def split_prs_to_jira_ids(
         return (np.array([], dtype=object),) * 4
 
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_map[long, mi_vector[string_view]]] id_map
         mi_unordered_map[long, mi_vector[string_view]].iterator id_map_iter
         optional[mi_unordered_map[string_view, PyObjectPtr]] origin_map
@@ -142,7 +142,6 @@ def split_prs_to_jira_ids(
         alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        deref(alloc).disable_free()
 
     with nogil:
         id_map.emplace(deref(alloc))

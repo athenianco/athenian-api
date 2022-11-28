@@ -37,9 +37,9 @@ from athenian.api.native.cpython cimport (
     PyUnicode_FromStringAndSize,
     PyUnicode_New,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport (
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
-    mi_heap_stl_allocator,
+    mi_heap_destroy_stl_allocator,
     mi_unordered_map,
     mi_unordered_set,
     mi_vector,
@@ -94,7 +94,7 @@ def extract_subdag(
     left_vertexes = np.zeros_like(vertexes)
     left_edges = np.zeros_like(edges)
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         long left_count
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
@@ -106,7 +106,6 @@ def extract_subdag(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     with nogil:
         left_count = _extract_subdag(
             vertexes_view,
@@ -134,7 +133,7 @@ cdef uint32_t _extract_subdag(
     uint32_t[:] left_vertexes_map,
     uint32_t[:] left_vertexes,
     uint32_t[:] left_edges,
-    mi_heap_stl_allocator[char] alloc,
+    mi_heap_destroy_stl_allocator[char] alloc,
 ) nogil:
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
@@ -205,7 +204,7 @@ def join_dags(
         PyObject *record
         PyObject *obj
         char *new_hashes_data
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_map[string_view, int]] new_hashes_map, hashes_map
         mi_unordered_map[string_view, int].iterator it
         mi_vector[Edge] *found_edges
@@ -218,7 +217,6 @@ def join_dags(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     new_hashes_map.emplace(dereference(alloc))
     hashes_map.emplace(dereference(alloc))
     new_hashes_arr = np.empty(size * 2, dtype="S40")
@@ -405,7 +403,7 @@ def append_missing_heads(
     alloc_capsule=None,
 ) -> None:
     cdef:
-        optional[mi_heap_stl_allocator[string_view]] alloc
+        optional[mi_heap_destroy_stl_allocator[string_view]] alloc
         optional[mi_unordered_set[string_view]] hashes_set
         mi_unordered_set[string_view].const_iterator it
         Py_ssize_t size
@@ -418,7 +416,6 @@ def append_missing_heads(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     size = len(hashes)
     hashes_data = PyArray_BYTES(hashes)
     with nogil:
@@ -473,7 +470,7 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
         Py_ssize_t children_size
         const char *oid
         long indexes_sum, parent_index, i, j, is_asyncpg
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_map[string_view, mi_vector[RawEdge]]] children_indexes
         mi_unordered_map[string_view, mi_vector[RawEdge]].iterator it
         PyObject *record
@@ -505,7 +502,6 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
 
     with nogil:
         bads.emplace(size, dereference(alloc))
@@ -665,7 +661,7 @@ def find_orphans(
         const char *parent_oid
         bint is_asyncpg
         size_t j
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_set[string_view]] parents
         optional[mi_unordered_map[string_view, mi_vector[RawEdge]]] reversed_edges
         mi_unordered_map[string_view, mi_vector[RawEdge]].iterator reversed_parents
@@ -687,7 +683,6 @@ def find_orphans(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     parents.emplace(dereference(alloc))
     reversed_edges.emplace(dereference(alloc))
     leaves.emplace(dereference(alloc))
@@ -808,7 +803,7 @@ def mark_dag_access(
         return access[:-1]
     order = np.full(size, size, np.int32)
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         bool heads_order_is_significant_native = heads_order_is_significant
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
@@ -820,7 +815,6 @@ def mark_dag_access(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     with nogil:
         _toposort(
             vertexes_view,
@@ -849,7 +843,7 @@ cdef void _toposort(
     const uint32_t[:] heads,
     bool heads_order_is_significant,
     int32_t[:] order,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) nogil:
     """Topological sort of `heads`. The order is reversed!"""
     cdef:
@@ -908,7 +902,7 @@ cdef void _mark_dag_access(
     const uint32_t[:] heads,
     const int32_t[:] order,
     int32_t[:] access,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) nogil:
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
@@ -964,7 +958,7 @@ def mark_dag_parents(
     timestamps = timestamps.view(np.uint64)
     ownership = ownership.astype(np.int32, copy=False)
     cdef:
-        optional[mi_heap_stl_allocator[uint32_t]] alloc
+        optional[mi_heap_destroy_stl_allocator[uint32_t]] alloc
         optional[mi_vector[mi_vector[uint32_t]]] parents
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
@@ -977,7 +971,6 @@ def mark_dag_parents(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     with nogil:
         parents.emplace(dereference(alloc))
         dereference(parents).reserve(len_heads)
@@ -1145,7 +1138,7 @@ def partition_dag(
         seeds = np.array([], dtype=np.uint32)
     borders = np.zeros_like(hashes, dtype=np.bool_)
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] seeds_view = seeds
@@ -1154,7 +1147,6 @@ def partition_dag(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     with nogil:
         _partition_dag(vertexes_view, edges_view, seeds_view, borders_view, dereference(alloc))
     return hashes[borders]
@@ -1167,7 +1159,7 @@ cdef void _partition_dag(
     const uint32_t[:] edges,
     const uint32_t[:] heads,
     char[:] borders,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) nogil:
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
@@ -1220,7 +1212,7 @@ def extract_pr_commits(
     left_vertexes_map = np.zeros(len(hashes), dtype=np.int8)
     cdef:
         optional[mi_vector[mi_vector[uint32_t]]] pr_commits
-        optional[mi_heap_stl_allocator[uint32_t]] alloc
+        optional[mi_heap_destroy_stl_allocator[uint32_t]] alloc
         const uint32_t[:] vertexes_view = vertexes
         const uint32_t[:] edges_view = edges
         const uint32_t[:] pr_merges_view = pr_merges
@@ -1234,7 +1226,6 @@ def extract_pr_commits(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     with nogil:
         pr_commits.emplace(dereference(alloc))
         dereference(pr_commits).reserve(pr_merges_len)
@@ -1346,7 +1337,7 @@ def extract_independent_ownership(
     left_vertexes = left_edges = np.array([], dtype=np.uint32)
     single_slot = np.zeros(1, dtype=np.uint32)
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_vector[mi_vector[uint32_t]]] found_commits
         mi_vector[uint32_t] *found_commits_data
         uint32_t *head_vertexes
@@ -1369,7 +1360,6 @@ def extract_independent_ownership(
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
 
     with nogil:
         found_commits.emplace(dereference(alloc))
@@ -1436,7 +1426,7 @@ cdef void _extract_independent_ownership(
                 left_vertexes_map,
                 left_vertexes,
                 left_edges,
-                <mi_heap_stl_allocator[char]> result.get_allocator(),
+                <mi_heap_destroy_stl_allocator[char]> result.get_allocator(),
             )
         if not has_parent:
             single_slot[0] = head
@@ -1448,7 +1438,7 @@ cdef void _extract_independent_ownership(
                 left_vertexes_map,
                 left_vertexes,
                 left_edges,
-                <mi_heap_stl_allocator[char]> result.get_allocator(),
+                <mi_heap_destroy_stl_allocator[char]> result.get_allocator(),
             )
             head_result.reserve(count)
             for j in range(count):

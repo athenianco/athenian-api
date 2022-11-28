@@ -1,11 +1,11 @@
 #include <list>
-#include "mi_heap_stl_allocator.h"
+#include "mi_heap_destroy_stl_allocator.h"
 
 template <int chunk_size = (1 << 16)>
 class chunked_stream {
  public:
   template <typename T>
-  explicit chunked_stream(mi_heap_stl_allocator<T> &alloc): chunks_(alloc), pos_(0) {
+  explicit chunked_stream(mi_heap_destroy_stl_allocator<T> &alloc): chunks_(alloc), pos_(0) {
     chunks_.emplace_back(alloc).reserve(chunk_size);
   }
 
@@ -46,6 +46,6 @@ class chunked_stream {
   size_t size() const noexcept { return (chunks_.size() - 1) * chunk_size + pos_; }
 
  private:
-  std::list<mi_vector<char>, mi_heap_stl_allocator<mi_vector<char>>> chunks_;
+  std::list<mi_vector<char>, mi_heap_destroy_stl_allocator<mi_vector<char>>> chunks_;
   int pos_;
 };
