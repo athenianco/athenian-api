@@ -9,6 +9,5 @@ from cpython.pycapsule cimport PyCapsule_New
 
 
 def make_mi_heap_allocator_capsule() -> object:
-    cdef mi_heap_stl_allocator[char] *alloc = new mi_heap_stl_allocator[char]()
-    alloc.disable_free()
-    return PyCapsule_New(alloc, b"mi_heap_stl_allocator", _delete_mi_heap_allocator_in_capsule)
+    cdef mi_heap_destroy_stl_allocator[char] *alloc = new mi_heap_destroy_stl_allocator[char]()
+    return PyCapsule_New(alloc, b"mi_heap_destroy_stl_allocator", _delete_mi_heap_allocator_in_capsule)

@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-  pull_request_target:
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -140,7 +140,7 @@ jobs:
           /usr/local/lib/libmimalloc.so*
           /usr/local/include/mimalloc.h
           /usr/local/include/sentry.h
-        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
+        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/dev') }}
     - name: build-native-libs
       if: "steps.cache-native-libs.outputs.cache-hit != 'true' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       run: |
@@ -270,7 +270,7 @@ jobs:
           /usr/local/lib/libmimalloc.so*
           /usr/local/include/mimalloc.h
           /usr/local/include/sentry.h
-        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/master') }}
+        key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/dev') }}
     - name: build-native-libs
       if: "steps.cache-native-libs.outputs.cache-hit != 'true' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       run: |

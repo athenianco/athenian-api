@@ -91,7 +91,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRebasedPullRequest,
     GitHubReleaseDeployment,
 )
-from athenian.api.native.mi_heap_stl_allocator import make_mi_heap_allocator_capsule
+from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span

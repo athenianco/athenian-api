@@ -83,7 +83,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubRepository,
 )
-from athenian.api.native.mi_heap_stl_allocator import make_mi_heap_allocator_capsule
+from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 

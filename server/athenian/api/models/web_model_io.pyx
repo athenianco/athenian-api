@@ -81,9 +81,9 @@ from athenian.api.native.cpython cimport (
     PyUnicode_KIND,
     PyUnicode_Type,
 )
-from athenian.api.native.mi_heap_stl_allocator cimport (
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
-    mi_heap_stl_allocator,
+    mi_heap_destroy_stl_allocator,
     mi_vector,
 )
 from athenian.api.native.numpy cimport (
@@ -227,7 +227,7 @@ cdef inline void _apply_data_type(
     const char *key,
     PyTypeObject *member_type,
     ModelFields *fields,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) except *:
     cdef:
         PyTypeObject *deref = NULL
@@ -248,7 +248,7 @@ cdef inline void _apply_data_type(
 cdef void _discover_fields(
     PyTypeObject *model,
     ModelFields *fields,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) except *:
     cdef:
         object attribute_types
@@ -472,7 +472,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, chunked_stream &s
 cdef void _serialize_list_of_models(
     list models,
     chunked_stream &stream,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) except *:
     cdef:
         uint32_t size
@@ -511,14 +511,13 @@ def serialize_models(tuple models not None, alloc_capsule=None) -> bytes:
         optional[chunked_stream] stream
         bytes result
         char count
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         size_t size
     assert len(models) < 255
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     stream.emplace(dereference(alloc))
     count = len(models)
     dereference(stream).write(&count, 1)
@@ -544,13 +543,12 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
         bytes type_buf
         object model_type
         ModelFields spec
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
 
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     stream = fmemopen(input, PyBytes_GET_SIZE(<PyObject *> buffer), b"r")
     if fread(&aux, 1, 1, stream) != 1:
         raise ValueError(corrupted_msg % (ftell(stream), "tuple"))
@@ -689,7 +687,7 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
 def model_to_json(model, alloc_capsule=None) -> bytes:
     cdef:
         bytes result
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[chunked_stream] stream
         type root_type
         ModelFields spec
@@ -710,7 +708,6 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        dereference(alloc).disable_free()
     stream.emplace(dereference(alloc))
 
     spec.nested.emplace(dereference(alloc))

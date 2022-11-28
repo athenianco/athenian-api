@@ -9,9 +9,9 @@ from libc.stdint cimport int32_t, int64_t, uint64_t
 from numpy cimport PyArray_DATA
 
 from athenian.api.native.cpython cimport PyUnicode_DATA
-from athenian.api.native.mi_heap_stl_allocator cimport (
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
-    mi_heap_stl_allocator,
+    mi_heap_destroy_stl_allocator,
     mi_unordered_map,
 )
 from athenian.api.native.optional cimport optional
@@ -35,7 +35,7 @@ def split_duplicate_check_runs(
     started_ats[started_ats != started_ats] = 0
     suite_order = np.argsort(suite_ids, kind="stable")
     cdef:
-        optional[mi_heap_stl_allocator[char]] alloc
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
         long result
         PyObject **data_obj = <PyObject **> PyArray_DATA(names)
         int64_t[:] suite_ids_view = suite_ids
@@ -45,7 +45,6 @@ def split_duplicate_check_runs(
         alloc.emplace(deref(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
         alloc.emplace()
-        deref(alloc).disable_free()
     with nogil:
         result = _split_duplicate_check_runs(
             suite_ids_view,
@@ -69,7 +68,7 @@ cdef long _split_duplicate_check_runs(
     PyObject **names,
     const int64_t[:] started_ats,
     const int64_t[:] suite_order,
-    mi_heap_stl_allocator[char] &alloc,
+    mi_heap_destroy_stl_allocator[char] &alloc,
 ) nogil:
     cdef:
         optional[mi_unordered_map[int64_t, CheckSuiteState]] suite_groups
