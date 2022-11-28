@@ -27,6 +27,7 @@ class SearchPullRequestsOrderByPRTrait(Enum):
     """A trait of the pull request usable as ordering fine in /search/pull_requests."""
 
     WORK_BEGAN = "pr-order-by-work-began"
+    FIRST_REVIEW_REQUEST = "pr-order-by-first-review-request"
 
 
 class SearchPullRequestsOrderByExpression(Model):

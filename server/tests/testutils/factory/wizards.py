@@ -1,6 +1,7 @@
 """Tools to easily execute complex creations and insertions of DB objects."""
 
 from bisect import bisect_right
+from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
@@ -58,11 +59,15 @@ def pr_models(
     number: int,
     *,
     review_request: datetime | None = None,
+    review_submit: datetime | None = None,
+    commits: Collection[datetime] = (),
     **kwargs: Any,
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid pull request.
 
     - `review_request`: if passed also a PullRequestReviewRequest model will be generated
+    - `review_submit`: if passed also a PullRequestReview model will be generated
+    - `commit`: a PullRequestCommit will be generated for every datetime passed
 
     All other parameters are passed to PullRequestFactory.
     """
@@ -74,6 +79,21 @@ def pr_models(
         models.append(
             md_factory.PullRequestReviewRequestFactory(
                 created_at=review_request, pull_request_id=node_id,
+            ),
+        )
+    if review_submit is not None:
+        models.append(
+            md_factory.PullRequestReviewFactory(
+                submitted_at=review_submit,
+                pull_request_node_id=node_id,
+                repository_node_id=repo_id,
+            ),
+        )
+
+    for commit in commits:
+        models.append(
+            md_factory.PullRequestCommitFactory(
+                pull_request_node_id=node_id, committed_date=commit, repository_node_id=repo_id,
             ),
         )
 

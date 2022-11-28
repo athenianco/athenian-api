@@ -471,6 +471,41 @@ class TestSearchPRsOrderByTrait(BaseSearchPRsTest):
             body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
             assert await self._fetch_pr_numbers(json=body) == (1, 3, 4, 2)
 
+    @freeze_time("2022-04-28")
+    async def test_first_review_request(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            order_by=[
+                {"field": PRTrait.FIRST_REVIEW_REQUEST.value, "exclude_nulls": False},
+            ],
+        )
+        pr_kwargs = {"repository_full_name": "org0/repo0", "created_at": dt(2022, 4, 10)}
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+        models = [
+            *pr_models(99, 11, 1, review_request=dt(2022, 4, 20), **pr_kwargs),
+            *pr_models(99, 12, 2, review_request=dt(2022, 4, 23), **pr_kwargs),
+            *pr_models(99, 13, 3, **pr_kwargs),
+            *pr_models(99, 14, 4, review_request=dt(2022, 4, 22), **pr_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            assert await self._fetch_pr_numbers(json=body) == (1, 4, 2, 3)
+
+            body["order_by"][0]["nulls_first"] = True
+            assert await self._fetch_pr_numbers(json=body) == (3, 1, 4, 2)
+
+            body["order_by"][0]["nulls_first"] = False
+            body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 1, 3)
+
+            body["order_by"][0]["exclude_nulls"] = True
+            assert await self._fetch_pr_numbers(json=body) == (2, 4, 1)
+
 
 class TestSearchPRsStagesFilter(BaseSearchPRsTest):
     async def test_smoke(self, sdb: Database) -> None:

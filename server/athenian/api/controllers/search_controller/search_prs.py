@@ -463,6 +463,8 @@ class _OrderByTraits(_OrderBy):
     def _get_values(self, expr: SearchPullRequestsOrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchPullRequestsOrderByPRTrait.WORK_BEGAN.value:
             return self._pr_facts[PullRequestFacts.f.work_began].values
+        if expr.field == SearchPullRequestsOrderByPRTrait.FIRST_REVIEW_REQUEST.value:
+            return self._pr_facts[PullRequestFacts.f.first_review_request].values
         raise RuntimeError(f"Cannot order by pr trait {expr.field}")
 
     @classmethod
