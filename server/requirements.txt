@@ -12,7 +12,7 @@ xxhash==3.1.0
 numpy==1.23.4
 scipy==1.9.2
 # end of remember to change in Dockerfile
-sentry-sdk[pure_eval]==1.11.0
+sentry-sdk[pure_eval]==1.11.1
 prometheus_client==0.14.1
 alembic==1.8.1
 mako==1.2.4
