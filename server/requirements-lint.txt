@@ -13,7 +13,7 @@ flake8-sfs==0.0.4
 flake8-pyproject==1.2.1
 flake8==5.0.4
 isort==5.10.1
-pycodestyle==2.9.1
+pycodestyle==2.10.0
 pydocstyle==6.1.1
 semgrep==0.122.0
 sqlalchemy-stubs==0.4
