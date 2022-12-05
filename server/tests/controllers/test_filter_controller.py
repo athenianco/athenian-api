@@ -3940,7 +3940,10 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
-async def test_filter_deployments_smoke(client, headers):
+@pytest.mark.parametrize("with_jira", [True, False])
+async def test_filter_deployments_smoke(client, headers, with_jira, sdb):
+    if not with_jira:
+        await sdb.execute(delete(AccountJiraInstallation))
     body = {
         "account": 1,
         "date_from": "2018-01-12",
@@ -3955,7 +3958,8 @@ async def test_filter_deployments_smoke(client, headers):
     assert response.status == 200, response_text
     deps = FilteredDeployments.from_dict(json.loads(response_text))
     assert len(deps.include.users) == 124
-    assert len(deps.include.jira) == 42
+    if with_jira:
+        assert len(deps.include.jira) == 42
     deps = deps.deployments
     assert len(deps) == 1
     assert len(deps[0].prs) == 513
@@ -3975,55 +3979,61 @@ async def test_filter_deployments_smoke(client, headers):
         "deletions": 1,
         "author": "github.com/ferhatelmas",
     }
+    if with_jira:
+        jira = {
+            "jira": {
+                "github.com/src-d/go-git": [
+                    "DEV-139",
+                    "DEV-164",
+                    "DEV-261",
+                    "DEV-558",
+                    "DEV-594",
+                    "DEV-599",
+                    "DEV-618",
+                    "DEV-626",
+                    "DEV-627",
+                    "DEV-638",
+                    "DEV-644",
+                    "DEV-651",
+                    "DEV-655",
+                    "DEV-658",
+                    "DEV-671",
+                    "DEV-676",
+                    "DEV-677",
+                    "DEV-681",
+                    "DEV-684",
+                    "DEV-685",
+                    "DEV-691",
+                    "DEV-692",
+                    "DEV-698",
+                    "DEV-708",
+                    "DEV-711",
+                    "DEV-714",
+                    "DEV-719",
+                    "DEV-720",
+                    "DEV-723",
+                    "DEV-724",
+                    "DEV-725",
+                    "DEV-726",
+                    "DEV-732",
+                    "DEV-733",
+                    "DEV-736",
+                    "DEV-743",
+                    "DEV-749",
+                    "DEV-757",
+                    "DEV-760",
+                    "DEV-770",
+                    "DEV-772",
+                    "DEV-774",
+                ],
+            },
+        }
+    else:
+        jira = {}
     assert deps[0].code.to_dict() == {
         "commits_overall": {"github.com/src-d/go-git": 1508},
         "commits_prs": {"github.com/src-d/go-git": 1070},
-        "jira": {
-            "github.com/src-d/go-git": [
-                "DEV-139",
-                "DEV-164",
-                "DEV-261",
-                "DEV-558",
-                "DEV-594",
-                "DEV-599",
-                "DEV-618",
-                "DEV-626",
-                "DEV-627",
-                "DEV-638",
-                "DEV-644",
-                "DEV-651",
-                "DEV-655",
-                "DEV-658",
-                "DEV-671",
-                "DEV-676",
-                "DEV-677",
-                "DEV-681",
-                "DEV-684",
-                "DEV-685",
-                "DEV-691",
-                "DEV-692",
-                "DEV-698",
-                "DEV-708",
-                "DEV-711",
-                "DEV-714",
-                "DEV-719",
-                "DEV-720",
-                "DEV-723",
-                "DEV-724",
-                "DEV-725",
-                "DEV-726",
-                "DEV-732",
-                "DEV-733",
-                "DEV-736",
-                "DEV-743",
-                "DEV-749",
-                "DEV-757",
-                "DEV-760",
-                "DEV-770",
-                "DEV-772",
-                "DEV-774",
-            ],
-        },
+        **jira,
         "lines_overall": {"github.com/src-d/go-git": 258545},
         "lines_prs": {"github.com/src-d/go-git": 136819},
         "prs": {"github.com/src-d/go-git": 513},

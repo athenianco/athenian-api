@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
+from itertools import chain, repeat
 import logging
 import operator
 from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Set, TypeVar
@@ -1251,7 +1251,9 @@ async def _build_deployments_response(
                             resolved_repos, np.split(jira_by_repo, jira_repo_offsets),
                         )
                         if keys is not None
-                    },
+                    }
+                    if len(jira_by_repo)
+                    else None,
                 ),
                 prs=[
                     DeployedPullRequest(
@@ -1280,7 +1282,7 @@ async def _build_deployments_response(
                         pr_additions,
                         pr_deletions,
                         pr_user_node_ids,
-                        np.split(pr_jiras, pr_jira_offsets),
+                        np.split(pr_jiras, pr_jira_offsets) if len(pr_jiras) else repeat([]),
                         np.repeat(
                             resolved_repos,
                             np.diff(prs_offsets, prepend=0, append=len(prs)),
