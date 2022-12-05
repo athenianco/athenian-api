@@ -36,7 +36,6 @@ from athenian.api.internal.account import (
     is_github_login_enabled,
     is_membership_check_enabled,
     jira_url_template,
-    only_god,
 )
 from athenian.api.internal.jira import fetch_jira_installation_progress
 from athenian.api.internal.reposet import load_account_reposets
@@ -110,7 +109,6 @@ async def gen_user_invitation(request: AthenianWebRequest, id: int) -> web.Respo
         return model_response(model)
 
 
-@only_god
 async def gen_account_invitation(request: AthenianWebRequest) -> web.Response:
     """Generate a new account invitation URL."""
     async with request.sdb.connection() as conn:

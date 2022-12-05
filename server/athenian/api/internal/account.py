@@ -414,17 +414,6 @@ def only_admin(func):
     return wraps(wrapped_only_admin, func)
 
 
-def only_god(func):
-    """Enforce the god access level to an API handler."""
-
-    async def wrapped_only_god(request: AthenianWebRequest, **kwargs) -> web.Response:
-        if not hasattr(request, "god_id"):
-            raise ResponseError(ForbiddenError(detail=f"User {request.uid} must be a god"))
-        return await func(request, **kwargs)
-
-    return wraps(wrapped_only_god, func)
-
-
 async def get_account_repository_refs(
     account: int,
     sdb: DatabaseLike,
