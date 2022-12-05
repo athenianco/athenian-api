@@ -275,8 +275,8 @@ def _apply_order_by(
             ordered_indexes, discard = order_by_metrics.apply_expression(expr, ordered_indexes)
             keep_mask[discard] = False
 
-    kept_positions = ordered_indexes[np.nonzero(keep_mask[ordered_indexes])]
-    return pr_facts.iloc[kept_positions]
+    kept_positions = ordered_indexes[np.flatnonzero(keep_mask[ordered_indexes])]
+    return pr_facts.take(kept_positions)
 
 
 class _OrderByMetrics:
