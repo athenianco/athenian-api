@@ -33,6 +33,7 @@ class SearchPullRequestsRequest(Model):
     order_by: Optional[list[SearchPullRequestsOrderByExpression]]
     repositories: Optional[list[str]]
     participants: Optional[PullRequestWith]
+    stages: Optional[list[str]]
 
 
 class PullRequestDigest(Model):
