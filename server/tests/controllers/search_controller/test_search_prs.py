@@ -7,7 +7,11 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import AccountJiraInstallation
-from athenian.api.models.web.search_prs import SearchPullRequestsRequest
+from athenian.api.models.web import (
+    OrderByDirection,
+    PullRequestMetricID,
+    SearchPullRequestsRequest,
+)
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
@@ -160,3 +164,115 @@ class TestSearchPRs(BaseSearchPRsTest):
 
             body = self._body(jira={"projects": ["EE"]})
             assert {111} & set(await self._fetch_pr_numbers(json=body)) == {111}
+
+
+class TestSearchPRsOrderBy(BaseSearchPRsTest):
+    _from: dict = {"date_from": date(2019, 10, 1), "date_to": date(2019, 12, 1)}
+
+    async def test_int_metric(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_SIZE
+        body = self._body(order_by=[{"field": metric, "exclude_nulls": False}], **self._from)
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns[:3]) == [1226, 1235, 1238]  # all of size 2
+        assert ns[3:] == (1246, 1247, 1248, 1231, 1225, 1243, 1153)
+
+        # direction
+        body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns[:6] == (1243, 1225, 1231, 1248, 1247, 1246)
+        assert sorted(ns[6:9]) == [1226, 1235, 1238]  # all of size 2
+        assert ns[9] == 1153  # null size since out of time, last
+
+        # nulls_first
+        body = self._body(
+            order_by=[{"field": metric, "nulls_first": True, "exclude_nulls": False}],
+            **self._from,
+        )
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns[0] == 1153  # null
+        assert sorted(ns[1:4]) == [1226, 1235, 1238]  # all of size 2
+        assert ns[4:] == (1246, 1247, 1248, 1231, 1225, 1243)
+
+        body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns[0] == 1153  # null
+        assert ns[1:7] == (1243, 1225, 1231, 1248, 1247, 1246)
+        assert sorted(ns[7:]) == [1226, 1235, 1238]
+
+    async def test_timedelta_metric(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_REVIEW_TIME
+        body = self._body(order_by=[{"field": metric, "exclude_nulls": False}], **self._from)
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns[:2] == (1226, 1225)
+        assert sorted(ns[2:]) == [1153, 1231, 1235, 1238, 1243, 1246, 1247, 1248]  # all nulls
+
+        body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns[:2] == (1225, 1226)
+        assert sorted(ns[2:]) == [1153, 1231, 1235, 1238, 1243, 1246, 1247, 1248]
+
+        body["order_by"][0]["nulls_first"] = True
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns[:8]) == [1153, 1231, 1235, 1238, 1243, 1246, 1247, 1248]
+        assert ns[8:] == (1225, 1226)
+
+        body = self._body(order_by=[{"field": metric, "exclude_nulls": True}], **self._from)
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == (1226, 1225)
+
+    async def test_float_metric(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_PARTICIPANTS_PER
+        body = self._body(order_by=[{"field": metric}], **self._from)
+        ns = await self._fetch_pr_numbers(json=body)
+        assert sorted(ns[:6]) == [1231, 1235, 1243, 1246, 1247, 1248]  # all 2 participants
+        assert sorted(ns[6:8]) == [1226, 1238]  # 3 participants
+        assert ns[8:] == (1225, 1153)  # 4 and 6 participants
+
+    async def test_multiple_metrics(self, sdb: Database, mdb_rw: Database) -> None:
+        times = {"created_at": dt(2022, 4, 2), "updated_at": dt(2022, 4, 15)}
+
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            order_by=[
+                {
+                    "field": PullRequestMetricID.PR_SIZE,
+                    "direction": OrderByDirection.DESCENDING.value,
+                },
+                {"field": PullRequestMetricID.PR_OPEN_TIME, "exclude_nulls": False},
+            ],
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {**times, "repository_full_name": "org0/repo0", "deletions": 0}
+            models = [
+                *pr_models(99, 10, 110, additions=10, **pr_kwargs),
+                *pr_models(
+                    99, 11, 111, closed=True, closed_at=dt(2022, 4, 5), additions=12, **pr_kwargs,
+                ),
+                *pr_models(
+                    99, 12, 112, closed=True, closed_at=dt(2022, 4, 8), additions=12, **pr_kwargs,
+                ),
+                *pr_models(
+                    99, 13, 113, closed=True, closed_at=dt(2022, 4, 7), additions=12, **pr_kwargs,
+                ),
+                *pr_models(99, 14, 114, **pr_kwargs, additions=13),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            ns = await self._fetch_pr_numbers(json=body)
+            # 111 112 and 113 have the same size so they are ordered by ascending PR_OPEN_TIME
+            assert ns == (114, 111, 113, 112, 110)
+
+    async def test_lead_time(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_LEAD_TIME
+        body = self._body(order_by=[{"field": metric, "exclude_nulls": True}], **self._from)
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == (1235, 1226, 1225, 1231)
+
+        body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+        ns = await self._fetch_pr_numbers(json=body)
+        assert ns == (1231, 1225, 1226, 1235)
