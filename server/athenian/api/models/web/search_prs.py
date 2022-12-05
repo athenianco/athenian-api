@@ -14,6 +14,15 @@ class OrderByDirection(Enum):
     DESCENDING = "descending"
 
 
+class SearchPullRequestsOrderByStageTiming(Enum):
+    """Stage timing that can be used as orderby fields when searching for pull requests."""
+
+    PR_WIP_STAGE_TIMING = "pr-wip-stage-timing"
+    PR_REVIEW_STAGE_TIMING = "pr-review-stage-timing"
+    PR_MERGE_STAGE_TIMING = "pr-merge-stage-timing"
+    PR_RELEASE_STAGE_TIMING = "pr-release-stage-timing"
+
+
 class SearchPullRequestsOrderByExpression(Model):
     """An expression based on a field used to sort pull requests."""
 

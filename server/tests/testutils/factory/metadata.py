@@ -10,6 +10,7 @@ from athenian.api.models.metadata.github import (
     NodePullRequest,
     NodePullRequestJiraIssues,
     PullRequest,
+    PullRequestReviewRequest,
     Repository,
     Team,
     TeamMember,
@@ -38,6 +39,16 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class PullRequestReviewRequestFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = PullRequestReviewRequest
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 10000)  # do not step over the Big Fixture
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    pull_request_id = factory.Sequence(lambda n: n + 1)
 
 
 class PullRequestFactory(SQLAlchemyModelFactory):

@@ -1,11 +1,11 @@
 import asyncio
+from collections.abc import Collection
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
 from typing import (
     Callable,
-    Collection,
     Dict,
     Generator,
     Iterable,
@@ -175,8 +175,9 @@ class PullRequestListMiner:
     @classmethod
     def create_stage_calcs(
         cls,
-        environments: Dict[str, List[str]],
-    ) -> Tuple[Dict[str, Dict[str, List[MetricCalculator[int]]]], Iterable[MetricCalculator]]:
+        environments: dict[str, list[str]],
+        stages: Collection[str] = ("wip", "review", "merge", "release", "deploy"),
+    ) -> tuple[dict[str, dict[str, list[MetricCalculator[int]]]], Iterable[MetricCalculator]]:
         """Intialize PR metric calculators needed to calculate the stage timings."""
         quantiles = {"quantiles": (0, 1)}
         ordered_envs = np.empty(len(environments), dtype=object)
@@ -190,24 +191,29 @@ class PullRequestListMiner:
         all_counter = cls.DummyAllCounter(**quantiles)
         pendinger = StagePendingDependencyCalculator(all_counter, **quantiles)
         env_marker = EnvironmentsMarker(**quantiles, environments=ordered_envs)
-        calcs = {
-            "wip": {
+        calcs = {}
+        if "wip" in stages:
+            calcs["wip"] = {
                 "time": [WorkInProgressTimeCalculator(**quantiles)],
                 "pending": [WorkInProgressPendingCounter(pendinger, **quantiles)],
-            },
-            "review": {
+            }
+        if "review" in stages:
+            calcs["review"] = {
                 "time": [ReviewTimeCalculator(**quantiles)],
                 "pending": [ReviewPendingCounter(pendinger, **quantiles)],
-            },
-            "merge": {
+            }
+        if "merge" in stages:
+            calcs["merge"] = {
                 "time": [MergingTimeCalculator(**quantiles)],
                 "pending": [MergingPendingCounter(pendinger, **quantiles)],
-            },
-            "release": {
+            }
+        if "release" in stages:
+            calcs["release"] = {
                 "time": [ReleaseTimeCalculator(**quantiles)],
                 "pending": [ReleasePendingCounter(pendinger, **quantiles)],
-            },
-            "deploy": {
+            }
+        if "deploy" in stages:
+            calcs["deploy"] = {
                 "time": DeploymentTimeCalculator(
                     env_marker, **quantiles, environments=ordered_envs,
                 ).split(),
@@ -221,8 +227,8 @@ class PullRequestListMiner:
                     drop_logical=True,
                 ).split(),
                 "deps": [env_marker],
-            },
-        }
+            }
+
         return calcs, (all_counter, pendinger)
 
     @classmethod
