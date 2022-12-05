@@ -11,12 +11,13 @@ from sqlalchemy import delete, insert, select, union_all, update
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.db import Database
+from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.internal.account import (
     get_metadata_account_ids,
     get_user_account_status,
-    only_god,
+    get_user_account_status_from_request,
 )
+from athenian.api.internal.account_feature import get_account_features
 from athenian.api.internal.jira import fetch_jira_installation_progress, get_jira_id
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -26,17 +27,27 @@ from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.team_sync import sync_teams
 from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.github import NodeCommit
-from athenian.api.models.state.models import God, RepositorySet, UserAccount
+from athenian.api.models.state.models import (
+    Account,
+    AccountFeature,
+    Feature,
+    God,
+    RepositorySet,
+    UserAccount,
+)
 from athenian.api.models.web import (
     DatabaseConflict,
+    ForbiddenError,
     InvalidRequestError,
     NotFoundError,
+    ProductFeature,
     ResetRequest,
     ResetTarget,
     UserMoveRequest,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
+from athenian.api.serialization import deserialize_datetime
 from athenian.api.tracing import sentry_span
 from athenian.precomputer.db.models import (
     GitHubCommitDeployment,
@@ -55,7 +66,6 @@ from athenian.precomputer.db.models import (
 )
 
 
-@only_god
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
     """God mode ability to turn into any user. The current user must be marked internally as \
     a super admin."""
@@ -63,7 +73,7 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
     async with request.sdb.connection() as conn:
         if (
             id
-            and (await conn.fetch_one(select([UserAccount]).where(UserAccount.user_id == id)))
+            and (await conn.fetch_one(select(UserAccount).where(UserAccount.user_id == id)))
             is None
         ):
             raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
@@ -304,7 +314,6 @@ _resetters = {
 }
 
 
-@only_god
 async def reset_account(request: AthenianWebRequest, body: dict) -> web.Response:
     """Clear the selected tables in precomputed DB, drop the related caches."""
     log = logging.getLogger(f"{metadata.__package__}.reset_account")
@@ -356,7 +365,6 @@ async def _i_will_survive(log, target, coro) -> None:
         log.warning("reset failed: %s", target)
 
 
-@only_god
 async def move_user(request: AthenianWebRequest, body: dict) -> web.Response:
     """Move the user between accounts."""
     model = UserMoveRequest.from_dict(body)
@@ -418,3 +426,79 @@ async def move_user(request: AthenianWebRequest, body: dict) -> web.Response:
         ),
     )
     return web.Response()
+
+
+async def set_account_features(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
+    """Set account features if you are a god."""
+    # we must check this even though we've already checked x-only-god
+    # the god must be impersonating someone
+    if getattr(request, "god_id", None) is None:
+        raise ResponseError(
+            ForbiddenError(
+                detail="User %s is not allowed to set features of accounts" % request.uid,
+            ),
+        )
+    features = [ProductFeature.from_dict(f) for f in body]
+    async with request.sdb.connection() as conn:
+        await get_user_account_status_from_request(request, id)
+        for i, feature in enumerate(features):
+            if feature.name == Account.expires_at.name:
+                try:
+                    expires_at = deserialize_datetime(feature.parameters, max_future_delta=None)
+                except (TypeError, ValueError):
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].parameters",
+                            detail=f"Invalid datetime string: {feature.parameters}",
+                        ),
+                    )
+                await conn.execute(
+                    update(Account)
+                    .where(Account.id == id)
+                    .values(
+                        {
+                            Account.expires_at: expires_at,
+                        },
+                    ),
+                )
+            else:
+                if not isinstance(feature.parameters, dict) or not isinstance(
+                    feature.parameters.get("enabled"), bool,
+                ):
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].parameters",
+                            detail='Parameters must be {"enabled": true|false, ...}',
+                        ),
+                    )
+                fid = await conn.fetch_val(
+                    select([Feature.id]).where(Feature.name == feature.name),
+                )
+                if fid is None:
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].name",
+                            detail=f"Feature is not supported: {feature.name}",
+                        ),
+                    )
+                query = (await dialect_specific_insert(conn))(AccountFeature)
+                query = query.on_conflict_do_update(
+                    index_elements=AccountFeature.__table__.primary_key.columns,
+                    set_={
+                        AccountFeature.enabled.name: query.excluded.enabled,
+                        AccountFeature.parameters.name: query.excluded.parameters,
+                    },
+                )
+                await conn.execute(
+                    query.values(
+                        AccountFeature(
+                            account_id=id,
+                            feature_id=fid,
+                            enabled=feature.parameters["enabled"],
+                            parameters=feature.parameters.get("parameters"),
+                        )
+                        .create_defaults()
+                        .explode(with_primary_keys=True),
+                    ),
+                )
+    return model_response(await get_account_features(id, request.sdb))

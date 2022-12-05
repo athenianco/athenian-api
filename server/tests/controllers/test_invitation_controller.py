@@ -159,7 +159,7 @@ async def test_gen_user_invitation_existing(client, eiso, headers, app):
 
 async def test_gen_account_invitation_no_god(client, headers, sdb):
     response = await client.request(
-        method="GET", path="/v1/invite/generate", headers=headers, json={},
+        method="GET", path="/private/invite/generate", headers=headers, json={},
     )
     assert response.status == 403, (await response.read()).decode("utf-8")
 
@@ -167,7 +167,7 @@ async def test_gen_account_invitation_no_god(client, headers, sdb):
 @freeze_time("2012-10-23T10:00:00")
 async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_default_user):
     response = await client.request(
-        method="GET", path="/v1/invite/generate", headers=headers, json={},
+        method="GET", path="/private/invite/generate", headers=headers, json={},
     )
     assert response.status == 200
     body = await response.json()

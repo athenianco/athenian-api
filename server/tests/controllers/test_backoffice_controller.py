@@ -64,7 +64,7 @@ async def test_reset_account_no_god(client, headers):
     assert response.status == 403, text
 
 
-async def test_reset_account_bad_account(client, headers):
+async def test_reset_account_bad_account(client, headers, god):
     body = {
         "targets": [],
         "account": 10,

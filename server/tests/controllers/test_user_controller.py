@@ -233,7 +233,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
         {"name": "bare_value", "parameters": {"enabled": False}},
     ]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 200, await response.json()
     body = await response.json()
@@ -255,7 +255,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
 async def test_set_account_expires_far_future(client, headers, god, sdb) -> None:
     body = [{"name": "expires_at", "parameters": "2112-05-12T16:00:00Z"}]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
 
     assert response.status == 200
@@ -274,7 +274,7 @@ async def test_set_account_expires_far_past(client, headers, god, sdb) -> None:
     orig_expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
     body = [{"name": "expires_at", "parameters": "1984-05-01T06:00:00Z"}]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 400
     # expires_at hasn't changed
@@ -287,7 +287,7 @@ async def test_set_account_features_nongod(client, headers, sdb):
         {"name": "expires_at", "parameters": "2020-01-01"},
     ]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 403
     expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
@@ -299,7 +299,7 @@ async def test_set_account_features_nasty(client, headers, god):
         {"name": "xxx", "parameters": "2020-01-01"},
     ]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 400
 
@@ -317,7 +317,7 @@ async def test_set_account_features_nasty(client, headers, god):
 async def test_set_account_features_type_mismatch(client, headers, god, sdb, body):
     body = [body]
     response = await client.request(
-        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+        method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     text = await response.json()
     assert "format mismatch" in str(text), text
@@ -351,13 +351,15 @@ async def test_get_users_rate_limit(xapp):
 async def test_become_db(client, headers, sdb, god):
     response = await client.request(
         method="GET",
-        path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741",
+        path="/private/become?id=auth0|5e1f6e2e8bfa520ea5290741",
         headers=headers,
         json={},
     )
     body1 = await response.json()
+    assert response.status == 200, body1
     response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     body2 = await response.json()
+    assert response.status == 200, body2
     assert body2["impersonated_by"] == "auth0|62a1ae88b6bba16c6dbc6870"
     del body2["impersonated_by"]
     assert body1 == body2
@@ -386,7 +388,7 @@ async def test_become_db(client, headers, sdb, god):
             },
         },
     }
-    response = await client.request(method="GET", path="/v1/become", headers=headers, json={})
+    response = await client.request(method="GET", path="/private/become", headers=headers, json={})
     body3 = await response.json()
     del body3["updated"]
     assert body3 == {

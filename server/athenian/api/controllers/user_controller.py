@@ -1,54 +1,41 @@
 import asyncio
-from datetime import timezone
-import json
 import pickle
 from typing import Optional
 
 from aiohttp import web
 import aiomcache
-import morcilla
 import sentry_sdk
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.invitation_controller import join_account
-from athenian.api.db import DatabaseLike, dialect_specific_insert
+from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import (
     get_account_organizations,
     get_user_account_status_from_request,
     is_membership_check_enabled,
     only_admin,
 )
+from athenian.api.internal.account_feature import get_account_features as _get_account_features
 from athenian.api.internal.jira import get_jira_id
 from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.jira import (
     Installation as JIRAInstallation,
     Project as JIRAProject,
 )
-from athenian.api.models.state.models import (
-    Account as DBAccount,
-    AccountFeature,
-    BanishedUserAccount,
-    Feature,
-    FeatureComponent,
-    Invitation,
-    UserAccount,
-)
+from athenian.api.models.state.models import BanishedUserAccount, Invitation, UserAccount
 from athenian.api.models.web import (
     Account,
     AccountUserChangeRequest,
     ForbiddenError,
-    InvalidRequestError,
     JIRAInstallation as WebJIRAInstallation,
     NotFoundError,
     Organization,
-    ProductFeature,
     UserChangeStatus,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
-from athenian.api.serialization import deserialize_datetime
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
@@ -157,140 +144,7 @@ async def _get_account_jira(
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
     await get_user_account_status_from_request(request, id)
-    return await _get_account_features(request.sdb, id)
-
-
-async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response:
-    async def fetch_features():
-        account_features = await sdb.fetch_all(
-            select([AccountFeature.feature_id, AccountFeature.parameters]).where(
-                and_(AccountFeature.account_id == id, AccountFeature.enabled),
-            ),
-        )
-        account_features = {row[0]: row[1] for row in account_features}
-        features = await sdb.fetch_all(
-            select([Feature.id, Feature.name, Feature.default_parameters]).where(
-                and_(
-                    Feature.id.in_(account_features),
-                    Feature.component == FeatureComponent.webapp,
-                    Feature.enabled,
-                ),
-            ),
-        )
-        features = {row[0]: [row[1], row[2]] for row in features}
-        return account_features, features
-
-    async def fetch_expires_at():
-        expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == id))
-        if sdb.url.dialect == "sqlite":
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        return expires_at
-
-    (account_features, features), expires_at = await gather(fetch_features(), fetch_expires_at())
-    features[-1] = DBAccount.expires_at.name, expires_at
-
-    for k, v in account_features.items():
-        try:
-            fk = features[k]
-        except KeyError:
-            continue
-        if v is not None:
-            if isinstance(v, dict) != isinstance(fk[1], dict):
-                raise ResponseError(
-                    InvalidRequestError(
-                        pointer=f".{fk[0]}.parameters.parameters",
-                        detail=(
-                            "`parameters` format mismatch: required type"
-                            f' {type(fk[1]).__name__} (example: `{{"parameters":'
-                            f" {json.dumps(fk[1])}}}`) but got {type(v).__name__} ="
-                            f" `{json.dumps(v)}`"
-                        ),
-                    ),
-                )
-            if isinstance(v, dict):
-                for pk, pv in v.items():
-                    fk[1][pk] = pv
-            else:
-                fk[1] = v
-    models = [
-        ProductFeature(name=name, parameters=parameters)
-        for k, (name, parameters) in sorted(features.items())
-    ]
-    return model_response(models)
-
-
-async def set_account_features(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
-    """Set account features if you are a god."""
-    if getattr(request, "god_id", None) is None:  # no hasattr() please
-        raise ResponseError(
-            ForbiddenError(
-                detail="User %s is not allowed to set features of accounts" % request.uid,
-            ),
-        )
-    features = [ProductFeature.from_dict(f) for f in body]
-    async with request.sdb.connection() as conn:
-        await get_user_account_status_from_request(request, id)
-        for i, feature in enumerate(features):
-            if feature.name == DBAccount.expires_at.name:
-                try:
-                    expires_at = deserialize_datetime(feature.parameters, max_future_delta=None)
-                except (TypeError, ValueError):
-                    raise ResponseError(
-                        InvalidRequestError(
-                            pointer=f".[{i}].parameters",
-                            detail=f"Invalid datetime string: {feature.parameters}",
-                        ),
-                    )
-                await conn.execute(
-                    update(DBAccount)
-                    .where(DBAccount.id == id)
-                    .values(
-                        {
-                            DBAccount.expires_at: expires_at,
-                        },
-                    ),
-                )
-            else:
-                if not isinstance(feature.parameters, dict) or not isinstance(
-                    feature.parameters.get("enabled"), bool,
-                ):
-                    raise ResponseError(
-                        InvalidRequestError(
-                            pointer=f".[{i}].parameters",
-                            detail='Parameters must be {"enabled": true|false, ...}',
-                        ),
-                    )
-                fid = await conn.fetch_val(
-                    select([Feature.id]).where(Feature.name == feature.name),
-                )
-                if fid is None:
-                    raise ResponseError(
-                        InvalidRequestError(
-                            pointer=f".[{i}].name",
-                            detail=f"Feature is not supported: {feature.name}",
-                        ),
-                    )
-                query = (await dialect_specific_insert(conn))(AccountFeature)
-                query = query.on_conflict_do_update(
-                    index_elements=AccountFeature.__table__.primary_key.columns,
-                    set_={
-                        AccountFeature.enabled.name: query.excluded.enabled,
-                        AccountFeature.parameters.name: query.excluded.parameters,
-                    },
-                )
-                await conn.execute(
-                    query.values(
-                        AccountFeature(
-                            account_id=id,
-                            feature_id=fid,
-                            enabled=feature.parameters["enabled"],
-                            parameters=feature.parameters.get("parameters"),
-                        )
-                        .create_defaults()
-                        .explode(with_primary_keys=True),
-                    ),
-                )
-    return await _get_account_features(request.sdb, id)
+    return model_response(await _get_account_features(id, request.sdb))
 
 
 @only_admin

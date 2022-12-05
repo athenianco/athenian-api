@@ -676,14 +676,18 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                 request_json = request.json
             except JSONDecodeError:
                 request_json = None
+            canonical = context.match_info.route.resource.canonical
+            route_specs = context.app["route_spec"]
+            if (spec := route_specs.get(canonical, None)) is not None:
+                if spec.get("x-only-god", False) and not hasattr(context, "god_id"):
+                    raise ResponseError(ForbiddenError(detail=f"User {context.uid} must be a god"))
             if isinstance(request_json, dict):
                 if (account := request_json.get("account")) is not None:
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
-                        canonical = context.match_info.route.resource.canonical
-                        route_specs = context.app["route_spec"]
-                        if (spec := route_specs.get(canonical, None)) is not None:
+
+                        if spec is not None:
                             try:
                                 ignore_account = deep_get(
                                     spec, ["requestBody", "x-ignore-account"],
@@ -698,9 +702,7 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                         # we'll report an error later from OpenAPI validator
                         account = None
                 elif (account := getattr(context, "account", None)) is not None:
-                    canonical = context.match_info.route.resource.canonical
-                    route_specs = context.app["route_spec"]
-                    if (spec := route_specs.get(canonical, None)) is not None:
+                    if spec is not None:
                         try:
                             required = "account" in deep_get(
                                 spec,
