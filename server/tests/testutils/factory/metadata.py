@@ -10,6 +10,8 @@ from athenian.api.models.metadata.github import (
     NodePullRequest,
     NodePullRequestJiraIssues,
     PullRequest,
+    PullRequestCommit,
+    PullRequestReview,
     PullRequestReviewRequest,
     Repository,
     Team,
@@ -39,6 +41,36 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class PullRequestCommitFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = PullRequestCommit
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    sha = "a" * 40
+    node_id = factory.Sequence(lambda n: n + 10000)
+    commit_node_id = factory.LazyAttribute(lambda c: c.node_id)
+    committed_date = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    authored_date = factory.LazyAttribute(lambda c: c.committed_date)
+    commit_date = factory.LazyAttribute(lambda c: c.committed_date.isoformat())
+    author_date = factory.LazyAttribute(lambda c: c.authored_date.isoformat())
+    pull_request_node_id = factory.Sequence(lambda n: n + 1)
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
+
+
+class PullRequestReviewFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = PullRequestReview
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 10000)
+    submitted_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    state = "APPROVED"
+    pull_request_node_id = factory.Sequence(lambda n: n + 1)
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
 
 
 class PullRequestReviewRequestFactory(SQLAlchemyModelFactory):
@@ -222,7 +254,7 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
     title = factory.LazyAttribute(lambda issue: f"Issue n. {issue.id}")
     type = "Task"
     type_id = "1"
-    labels = []
+    labels: list[str] = []
     epic_id = factory.Sequence(lambda n: str(n + 1000))
     created = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
     updated = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
