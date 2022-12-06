@@ -13,6 +13,7 @@ from athenian.api.align.goals.dbaccess import (
     delete_goal as db_delete_goal,
     delete_goal_template_from_db,
     dump_goal_repositories,
+    fetch_goal,
     fetch_goal_account,
     fetch_team_goals,
     get_goal_template_from_db,
@@ -57,6 +58,7 @@ from athenian.api.models.web import (
     GoalTemplateUpdateRequest,
     GoalUpdateRequest,
     InvalidRequestError,
+    PullRequestMetricID,
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
@@ -305,7 +307,8 @@ async def update_goal(request: AthenianWebRequest, id: int, body: dict) -> web.R
             account = await fetch_goal_account(id, sdb_conn)
             if not await request_user_belongs_to_account(request, account):
                 raise GoalNotFoundError(id)
-            update_info = await _parse_update_request(account, request, update_req)
+            goal = await fetch_goal(account, id, sdb_conn)
+            update_info = await _parse_update_request(goal, request, update_req)
             await replace_team_goals(account, id, update_info.team_goals, sdb_conn)
             kw = {
                 Goal.repositories.name: update_info.repositories,
@@ -389,10 +392,10 @@ class _GoalUpdateInfo:
 
 @sentry_span
 async def _parse_update_request(
-    account_id: int,
+    goal: Goal,
     request: AthenianWebRequest,
     update_req: GoalUpdateRequest,
-):
+) -> _GoalUpdateInfo:
     duplicates = []
     seen = set()
     team_goals = []
@@ -410,7 +413,9 @@ async def _parse_update_request(
             InvalidRequestError(".team_goals", f"Duplicated teams: {duplicated_repr}"),
         )
 
-    repositories = await parse_request_repositories(update_req.repositories, request, account_id)
+    repositories = await parse_request_repositories(
+        update_req.repositories, request, goal[Goal.account_id.name],
+    )
     if update_req.jira_priorities is None:
         jira_priorities = None
     else:
@@ -419,6 +424,8 @@ async def _parse_update_request(
         jira_issue_types = None
     else:
         jira_issue_types = sorted({normalize_issue_type(t) for t in update_req.jira_issue_types})
+
+    _validate_metric_params(goal[Goal.metric.name], update_req)
 
     return _GoalUpdateInfo(
         archived=update_req.archived,
@@ -429,3 +436,40 @@ async def _parse_update_request(
         jira_priorities=jira_priorities,
         jira_issue_types=jira_issue_types,
     )
+
+
+_NUMERIC_THRESHOLD_METRICS = [
+    PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
+]
+_TIME_DURATION_THRESHOLD_METRICS = [
+    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+]
+
+
+def _validate_metric_params(goal_metric: str, update_req: GoalUpdateRequest) -> None:
+    if goal_metric in _NUMERIC_THRESHOLD_METRICS:
+        _check_team_goals_threshold_type(goal_metric, update_req, (int, float))
+    elif goal_metric in _TIME_DURATION_THRESHOLD_METRICS:
+        _check_team_goals_threshold_type(goal_metric, update_req, str)
+    else:
+        for tg in update_req.team_goals:
+            if tg.metric_params:
+                raise ResponseError(
+                    InvalidRequestError(".team_goals", f'Invalid team goals: "{tg}"'),
+                )
+
+
+def _check_team_goals_threshold_type(
+    metric: str,
+    update_req: GoalUpdateRequest,
+    types: type | tuple[type, ...],
+) -> None:
+    for tg in [tg for tg in update_req.team_goals if tg.metric_params]:
+        if not isinstance(tg.metric_params.get("threshold"), types):
+            msg = "Invalid metric_params {} for metric {metric}"
+            raise ResponseError(InvalidRequestError(".team_goals", msg))
