@@ -931,6 +931,11 @@ class AthenianApp(especifico.AioHttpApp):
 
         self.app["route_spec"] = route_spec
 
+        # collect all schemas from the spec, so that they can be used for custom validation
+        schemas_spec = self.app.get("schemas_spec", {})
+        schemas_spec.update(components["schemas"])
+        self.app["schemas_spec"] = schemas_spec
+
     async def _sample_stack(self):
         blacklist = {
             "_run_app",
