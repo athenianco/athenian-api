@@ -17,17 +17,17 @@ from athenian.api.align.goals.dbaccess import (
     convert_metric_params_datatypes,
     resolve_goal_repositories,
 )
-from athenian.api.align.queries.metrics import (
-    CalcTeamMetricsRequest,
-    MetricWithParams,
-    RequestedTeamDetails,
-    TeamMetricsResult,
-)
 from athenian.api.db import Row
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.internal.team_metrics import (
+    CalcTeamMetricsRequest,
+    MetricWithParams,
+    RequestedTeamDetails,
+    TeamMetricsResult,
+)
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web.goal import (
     GoalMetricSeriesPoint,
