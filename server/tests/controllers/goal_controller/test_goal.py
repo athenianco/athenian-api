@@ -247,7 +247,33 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         await models_insert(sdb, TeamFactory(owner_id=1, id=10))
         body = self._body(team_goals=[(10, 42)], metric_params=0)
         res = await self._request(400, json=body)
-        assert res["detail"] == "0 is not of type 'object' - 'metric_params'"
+        assert "not valid under any of the given schemas" in res["detail"]
+        await self._assert_no_goal_exists(sdb)
+
+    async def test_metric_params_for_not_supporting_metric(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+        metric = PullRequestMetricID.PR_SIZE
+        body = self._body(team_goals=[(10, 42)], metric=metric, metric_params={"threshold": 10})
+        await self._request(400, json=body)
+
+        body = self._body(team_goals=[(10, 42, {"threshold": 1})], metric=metric)
+        await self._request(400, json=body)
+        await self._assert_no_goal_exists(sdb)
+
+    async def test_metric_params_invalid_for_metric(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+        metric = PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO
+        body = self._body(team_goals=[(10, 42)], metric=metric, metric_params={"threshold": 10})
+        res = await self._request(400, json=body)
+        assert "not valid under any of the given schemas" in res["detail"]
+
+        body = self._body(
+            team_goals=[(10, 42, {"threshold": 1})],
+            metric=metric,
+            metric_params={"threshold": "1s"},
+        )
+        res = await self._request(400, json=body)
+        assert "not valid under any of the given schemas" in res["detail"]
         await self._assert_no_goal_exists(sdb)
 
 
@@ -382,17 +408,25 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert tg_row[TeamGoal.jira_priorities.name] == ["high", "low"]
 
     async def test_metric_params(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO
         await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11, parent_id=10))
-        body = self._body(team_goals=[(10, 42), (11, 43, {"p1": 2})], metric_params={"p0": 1})
+        body = self._body(
+            metric=metric,
+            team_goals=[
+                (10, 42),
+                (11, 43, {"threshold": 2}),
+            ],
+            metric_params={"threshold": 1},
+        )
         new_goal_id = (await self._request(json=body))["id"]
         goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
-        assert goal_row[Goal.metric_params.name] == {"p0": 1}
+        assert goal_row[Goal.metric_params.name] == {"threshold": 1}
 
         tg_10_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
         assert tg_10_row[TeamGoal.metric_params.name] is None
 
         tg_11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
-        assert tg_11_row[TeamGoal.metric_params.name] == {"p1": 2}
+        assert tg_11_row[TeamGoal.metric_params.name] == {"threshold": 2}
 
 
 class BaseUpdateGoalTest(BaseGoalTest):
