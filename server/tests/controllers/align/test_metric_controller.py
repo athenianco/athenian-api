@@ -413,6 +413,8 @@ class TestJIRAFiltering(BaseTeamMetricsTest):
 
 
 class TestMetricsNasty(BaseTeamMetricsTest):
+    _dates = {"valid_from": date(2016, 1, 1), "expires_at": date(2017, 1, 1)}
+
     async def test_fetch_bad_team(self) -> None:
         body = self._body(1, [(JIRAMetricID.JIRA_RESOLVED,)], date(2019, 1, 1), date(2022, 1, 1))
         res = await self._request(404, json=body)
@@ -462,8 +464,7 @@ class TestMetricsNasty(BaseTeamMetricsTest):
         body = self._body(
             1,
             [(PullRequestMetricID.PR_ALL_COUNT,)],
-            date(2019, 1, 1),
-            date(2022, 1, 1),
+            **self._dates,
             repositories=["github.com/src-d/not-existing"],
         )
         res = await self._request(403, json=body)
@@ -478,6 +479,48 @@ class TestMetricsNasty(BaseTeamMetricsTest):
         assert res["type"] == "/errors/BadRequest"
         assert res["title"] == "Bad Request"
         assert "metrics_with_params" in res["detail"]
+
+    async def test_metric_params_for_not_supporting_metric(self, sdb: Database) -> None:
+        # metrics_params cannot be passed to metrics not supporting metric params
+        await models_insert(sdb, TeamFactory(id=1, members=[40020]))
+        metric = PullRequestMetricID.PR_SIZE
+        metrics_with_params = [{"name": metric, "metric_params": {"threshold": 5}}]
+        body = self._body(1, **self._dates, metrics_with_params=metrics_with_params)
+        await self._request(400, json=body)
+
+        metrics_with_params = [
+            {
+                "name": metric,
+                "teams_metric_params": [{"team": 1, "metric_params": {"threshold": 1}}],
+            },
+        ]
+        body = self._body(1, **self._dates, metrics_with_params=metrics_with_params)
+        await self._request(400, json=body)
+
+    async def test_invalid_metric_params_dtype(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020]))
+        metric = PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO
+        metrics_with_params = [{"name": metric, "metric_params": {"threshold": 5}}]
+        body = self._body(1, **self._dates, metrics_with_params=metrics_with_params)
+        await self._request(400, json=body)
+
+        metrics_with_params[0]["metric_params"] = {"threshold": "5s"}
+        metrics_with_params[0]["teams_metric_params"] = [
+            {"team": 1, "metric_params": {"threshold": 1}},
+        ]
+        body = self._body(1, **self._dates, metrics_with_params=metrics_with_params)
+        await self._request(400, json=body)
+
+    async def test_team_overrides_invalid_metric_params_dtype(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[40020]))
+        metrics_with_params = [
+            {
+                "name": PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
+                "teams_metric_params": [{"team": 1, "metric_params": {"threshold": "1s"}}],
+            },
+        ]
+        body = self._body(1, **self._dates, metrics_with_params=metrics_with_params)
+        await self._request(400, json=body)
 
 
 class TestMetricsWithParams(BaseTeamMetricsTest):
