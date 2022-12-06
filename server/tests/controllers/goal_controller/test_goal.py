@@ -524,6 +524,20 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         assert res["title"] == "Bad Request"
         assert "team_goals" in res["detail"]
 
+    async def test_invalid_teams_metric_params(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO
+        await models_insert(
+            sdb,
+            GoalFactory(id=100, metric=metric),
+            TeamFactory(id=10),
+            TeamGoalFactory(team_id=10, goal_id=100, metric_params={"threshold": "2s"}),
+        )
+
+        body = self._body(team_goals=[(10, 1, {"threshold": 10})])
+        await self._request(100, 400, json=body)
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
+        assert tg_row[TeamGoal.metric_params.name] == {"threshold": "2s"}
+
 
 class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_deletions(self, sdb: Database) -> None:
@@ -672,8 +686,12 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]
 
     async def test_change_unique_team_goal(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO
         await models_insert(
-            sdb, GoalFactory(id=20), TeamFactory(id=10), TeamGoalFactory(team_id=10, goal_id=20),
+            sdb,
+            GoalFactory(id=20, metric=metric),
+            TeamFactory(id=10),
+            TeamGoalFactory(team_id=10, goal_id=20),
         )
         body = self._body(team_goals=[(10, 2, {"threshold": 1.5})])
         await self._request(20, json=body)
@@ -684,7 +702,11 @@ class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_set_teams_metric_params(self, sdb: Database) -> None:
         await models_insert(
             sdb,
-            GoalFactory(id=100, metric_params={"threshold": 1}),
+            GoalFactory(
+                id=100,
+                metric=PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
+                metric_params={"threshold": 1},
+            ),
             *[TeamFactory(id=id_) for id_ in (10, 20, 30)],
             TeamGoalFactory(team_id=10, goal_id=100, metric_params={"threshold": 2}),
             TeamGoalFactory(team_id=30, goal_id=100, metric_params={"threshold": 3}),

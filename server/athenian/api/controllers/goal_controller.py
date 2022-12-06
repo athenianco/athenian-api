@@ -4,6 +4,7 @@ from operator import itemgetter
 from typing import Optional, Sequence
 
 from aiohttp import web
+import jsonschema
 
 from athenian.api.align.exceptions import GoalNotFoundError, GoalTemplateNotFoundError
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
@@ -13,6 +14,7 @@ from athenian.api.align.goals.dbaccess import (
     delete_goal as db_delete_goal,
     delete_goal_template_from_db,
     dump_goal_repositories,
+    fetch_goal,
     fetch_goal_account,
     fetch_team_goals,
     get_goal_template_from_db,
@@ -305,7 +307,8 @@ async def update_goal(request: AthenianWebRequest, id: int, body: dict) -> web.R
             account = await fetch_goal_account(id, sdb_conn)
             if not await request_user_belongs_to_account(request, account):
                 raise GoalNotFoundError(id)
-            update_info = await _parse_update_request(account, request, update_req)
+            goal = await fetch_goal(account, id, sdb_conn)
+            update_info = await _parse_update_request(goal, request, update_req)
             await replace_team_goals(account, id, update_info.team_goals, sdb_conn)
             kw = {
                 Goal.repositories.name: update_info.repositories,
@@ -389,10 +392,10 @@ class _GoalUpdateInfo:
 
 @sentry_span
 async def _parse_update_request(
-    account_id: int,
+    goal: Goal,
     request: AthenianWebRequest,
     update_req: GoalUpdateRequest,
-):
+) -> _GoalUpdateInfo:
     duplicates = []
     seen = set()
     team_goals = []
@@ -410,7 +413,9 @@ async def _parse_update_request(
             InvalidRequestError(".team_goals", f"Duplicated teams: {duplicated_repr}"),
         )
 
-    repositories = await parse_request_repositories(update_req.repositories, request, account_id)
+    repositories = await parse_request_repositories(
+        update_req.repositories, request, goal[Goal.account_id.name],
+    )
     if update_req.jira_priorities is None:
         jira_priorities = None
     else:
@@ -419,6 +424,19 @@ async def _parse_update_request(
         jira_issue_types = None
     else:
         jira_issue_types = sorted({normalize_issue_type(t) for t in update_req.jira_issue_types})
+
+    # validate the metric parameters in team goals
+    team_goals_validator = _get_update_team_goals_validator(request.app)
+    team_goals_pseudo_instance = {
+        "metric": goal[Goal.metric.name],
+        "team_goals": [tg.to_dict() for tg in update_req.team_goals],
+    }
+    try:
+        team_goals_validator.validate(team_goals_pseudo_instance)
+    except jsonschema.ValidationError as e:
+        raise ResponseError(
+            InvalidRequestError(".team_goals", f'Invalid team goals: "{e.message}"'),
+        )
 
     return _GoalUpdateInfo(
         archived=update_req.archived,
@@ -429,3 +447,24 @@ async def _parse_update_request(
         jira_priorities=jira_priorities,
         jira_issue_types=jira_issue_types,
     )
+
+
+_update_team_goals_validator: Optional[jsonschema.Validator] = None
+
+
+def _get_update_team_goals_validator(app) -> jsonschema.Validator:
+    """Return validator to check update request for the correctness of metric parameters.
+
+    Validator will check an object with the `metric` field which is not really present in
+    the update request, it is manually added since it's required to validate metric parameters.
+
+    """
+    global _update_team_goals_validator
+    if _update_team_goals_validator is None:
+        # recycle oneOf from GoalCreateRequest, this checks "metric" and "team_goals"
+        schema = {
+            "oneOf": app["schemas_spec"]["GoalCreateRequest"]["oneOf"],
+            "components": {"schemas": app["schemas_spec"]},
+        }
+        _update_team_goals_validator = jsonschema.Draft6Validator(schema)
+    return _update_team_goals_validator
