@@ -678,8 +678,8 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                     raise ResponseError(ForbiddenError(detail=f"User {context.uid} must be a god"))
 
             account_validation = _RequestAccountValidation(spec)
-            # TODO: same check can be done for `account` query parameter
             await account_validation.in_request_body(request)
+            await account_validation.in_query(request)
 
             # check whether the account is enabled
             if context.account is not None and await check_account_expired(context, auth.log):
@@ -746,6 +746,17 @@ class _RequestAccountValidation:
         elif request.context.account is not None:
             if self._account_request_body_required():
                 request_json["account"] = request.context.account
+
+    async def in_query(self, request: EspecificoRequest) -> None:
+        """Validate the account in the request query parameters."""
+        try:
+            account = int(request.query["account"][0])
+        except (ValueError, KeyError):
+            return
+
+        self._sentry_scope_set_account(account)
+        if not self._route_ignore_account():
+            await get_user_account_status_from_request(request.context, account)
 
     def _route_ignore_account(self) -> bool:
         if self._route_spec is None:
