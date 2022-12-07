@@ -25,7 +25,6 @@ from athenian.api.align.goals.dbaccess import (
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.measure import GoalToServe
-from athenian.api.align.queries.metrics import calculate_team_metrics
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
@@ -43,6 +42,7 @@ from athenian.api.internal.jira import (
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
+from athenian.api.internal.team_metrics import calculate_team_metrics
 from athenian.api.internal.team_tree import build_team_tree_from_rows
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Goal, GoalTemplate as DBGoalTemplate, Team, TeamGoal

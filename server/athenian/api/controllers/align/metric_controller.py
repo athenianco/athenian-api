@@ -5,13 +5,6 @@ from aiohttp import web
 
 from athenian.api.align.goals.dates import Intervals, goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import convert_metric_params_datatypes
-from athenian.api.align.queries.metrics import (
-    CalcTeamMetricsRequest,
-    MetricWithParams,
-    RequestedTeamDetails,
-    TeamRequestedMetric,
-    calculate_team_metrics,
-)
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.jira import (
@@ -24,6 +17,12 @@ from athenian.api.internal.jira import (
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.team import fetch_teams_recursively, get_team_from_db
+from athenian.api.internal.team_metrics import (
+    CalcTeamMetricsRequest,
+    MetricWithParams,
+    RequestedTeamDetails,
+    calculate_team_metrics,
+)
 from athenian.api.internal.team_tree import build_team_tree_from_rows
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Team
@@ -162,6 +161,26 @@ def _parse_jira_filter(
         )
     else:
         return JIRAFilter.empty()
+
+
+class TeamRequestedMetric:
+    """A metric requested, with optional params and params override per team."""
+
+    def __init__(self, name: str, params: Optional[dict], teams_params: Optional[dict[int, dict]]):
+        """Init the TeamRequestedMetric."""
+        self._name = name
+        self._params = params or {}
+        self._teams_params = teams_params or {}
+
+    @property
+    def name(self) -> str:
+        """Get the name of the metric."""
+        return self._name
+
+    def resolve_for_team(self, team_id: int) -> MetricWithParams:
+        """Resolve the requested metric for a specific team."""
+        params = self._teams_params.get(team_id, self._params)
+        return MetricWithParams(self._name, params)
 
 
 def _parse_requested_metrics(metrics_request: TeamMetricsRequest) -> list[TeamRequestedMetric]:
