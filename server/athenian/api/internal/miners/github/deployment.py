@@ -137,7 +137,7 @@ from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import array_of_objects, is_not_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-from athenian.api.unordered_unique import in1d_str, unordered_unique
+from athenian.api.unordered_unique import in1d_str, map_array_values, unordered_unique
 
 
 async def mine_deployments(
@@ -2858,6 +2858,7 @@ async def _fetch_latest_deployed_components_queries(
 ) -> dict[str, dict[str, tuple[list[int], list[bytes], list[datetime]]]]:
     if not queries:
         return {}
+    log = logging.getLogger(f"{__name__}._fetch_latest_deployed_components_queries")
     query = union_all(*queries) if len(queries) > 1 else queries[0]
     latest_df = await read_sql_query(
         query,
@@ -2875,27 +2876,33 @@ async def _fetch_latest_deployed_components_queries(
         result_cids = defaultdict(lambda: defaultdict(list))
         result_shas = defaultdict(lambda: defaultdict(list))
         result_finisheds = defaultdict(lambda: defaultdict(list))
-        commit_ids = latest_df[DeployedComponent.resolved_commit_node_id.name].unique()
+        commit_ids = latest_df[DeployedComponent.resolved_commit_node_id.name].values
+        unique_commit_ids = np.unique(commit_ids)
         sha_id_df = await read_sql_query(
             select(NodeCommit.id, NodeCommit.sha)
-            .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.id.in_any_values(commit_ids))
+            .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.id.in_any_values(unique_commit_ids))
             .order_by(NodeCommit.id),
             mdb,
             [NodeCommit.id, NodeCommit.sha],
         )
+        commits_shas = map_array_values(
+            commit_ids,
+            sha_id_df[NodeCommit.id.name].values,
+            sha_id_df[NodeCommit.sha.name].values,
+            "",
+        )
+
         result = defaultdict(dict)
         for env, repo, cid, sha, finished_at in zip(
             latest_df[DeploymentNotification.environment.name].values,
             latest_df[DeployedComponent.repository_full_name].values,
             latest_df[DeployedComponent.resolved_commit_node_id.name].values,
-            sha_id_df[NodeCommit.sha.name].values[
-                np.searchsorted(
-                    sha_id_df[NodeCommit.id.name].values,
-                    latest_df[DeployedComponent.resolved_commit_node_id.name].values,
-                ),
-            ],
+            commits_shas,
             latest_df[DeploymentNotification.finished_at.name].values,
         ):
+            if not sha:
+                log.error("Commit id %d not found, ignoring deployed component", cid)
+                continue
             result_shas[env][repo].append(sha)
             result_cids[env][repo].append(cid)
             result_finisheds[env][repo].append(pd.Timestamp(finished_at, tzinfo=timezone.utc))
