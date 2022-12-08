@@ -23,6 +23,7 @@ from numpy cimport (
     ndarray,
 )
 
+from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.native.cpython cimport (
     Py_INCREF,
     Py_None,
@@ -266,3 +267,31 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
                     size = itemsize
                 output[i] = deref(hashtable).find(string_view(s, size)) != end
     return result
+
+
+def map_array_values(
+    ndarray ar not None,
+    ndarray map_keys not None,
+    ndarray map_values not None,
+    miss_value,
+) -> np.ndarray:
+    """Map the values in the array `ar` using the dictionary expressed by two arrays.
+
+    `map_keys` and `map_values` must have the same length and together represent the translation
+    array.
+    `map_keys` must be sorted.
+    Values in `ar` not found in `map_keys` will be mapped to `miss_value`, which datatype should be
+    compatible with `map_values` datatype.
+
+    """
+    cdef:
+        ndarray found_keys_indexes, mapped, non_matching_keys
+    # indexes selecting from map_key in the same order as ar
+    found_keys_indexes = searchsorted_inrange(map_keys, ar)
+    mapped = map_values[found_keys_indexes]
+
+    # found_keys_indexes will also have an index for ar elements not present in map_keys
+    # these positions must be set to miss_value
+    non_matching_keys = map_keys[found_keys_indexes] != ar
+    mapped[non_matching_keys] = miss_value
+    return mapped
