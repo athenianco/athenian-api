@@ -491,7 +491,7 @@ class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
-class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
+class CycleTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
 
     may_have_negative_values = False
@@ -519,30 +519,30 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO)
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME_BELOW_THRESHOLD_RATIO)
-class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+class CycleTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_LEAD_TIME below the threshold."""
 
-    deps = (LeadTimeCalculator,)
+    deps = (CycleTimeCalculator,)
     _compare = np.less_equal
     default_threshold = timedelta(days=5)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
-class LeadCounter(WithoutQuantilesMixin, Counter):
+class CycleCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_CYCLE_TIME disregarding \
     the quantiles."""
 
-    deps = (LeadTimeCalculator,)
+    deps = (CycleTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT_Q)
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
-class LeadCounterWithQuantiles(Counter):
+class CycleCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_CYCLE_TIME respecting \
     the quantiles."""
 
-    deps = (LeadTimeCalculator,)
+    deps = (CycleTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LIVE_CYCLE_TIME)
