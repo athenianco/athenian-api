@@ -490,6 +490,7 @@ class OpenTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
+@register_metric(PullRequestMetricID.PR_CYCLE_TIME)
 class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
 
@@ -517,6 +518,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO)
+@register_metric(PullRequestMetricID.PR_CYCLE_TIME_BELOW_THRESHOLD_RATIO)
 class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
     """Calculate the ratio of PRs with a PR_LEAD_TIME below the threshold."""
 
@@ -526,22 +528,23 @@ class LeadTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
+@register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
 class LeadCounter(WithoutQuantilesMixin, Counter):
-    """Count the number of PRs that were used to calculate PR_LEAD_TIME disregarding \
+    """Count the number of PRs that were used to calculate PR_CYCLE_TIME disregarding \
     the quantiles."""
 
     deps = (LeadTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT_Q)
+@register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
 class LeadCounterWithQuantiles(Counter):
-    """Count the number of PRs that were used to calculate PR_LEAD_TIME respecting \
+    """Count the number of PRs that were used to calculate PR_CYCLE_TIME respecting \
     the quantiles."""
 
     deps = (LeadTimeCalculator,)
 
 
-@register_metric(PullRequestMetricID.PR_CYCLE_TIME)
 @register_metric(PullRequestMetricID.PR_LIVE_CYCLE_TIME)
 class LiveCycleTimeCalculator(MetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, and PR_RELEASE_TIME."""
@@ -611,7 +614,6 @@ class LiveCycleTimeCalculator(MetricCalculator[timedelta]):
         return sumval
 
 
-@register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
 @register_metric(PullRequestMetricID.PR_LIVE_CYCLE_COUNT)
 class LiveCycleCounter(WithoutQuantilesMixin, Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \
@@ -620,7 +622,6 @@ class LiveCycleCounter(WithoutQuantilesMixin, Counter):
     deps = (LiveCycleTimeCalculator,)
 
 
-@register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
 @register_metric(PullRequestMetricID.PR_LIVE_CYCLE_COUNT_Q)
 class LiveCycleCounterWithQuantiles(Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \

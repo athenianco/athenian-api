@@ -1225,7 +1225,7 @@ async def test_calc_pull_request_metrics_deep_filters(
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     qargs = {"quantiles": (0, 1)}
     ensemble = PullRequestMetricCalculatorEnsemble(
-        PullRequestMetricID.PR_CYCLE_TIME,
+        PullRequestMetricID.PR_LIVE_CYCLE_TIME,
         PullRequestMetricID.PR_WIP_COUNT,
         PullRequestMetricID.PR_RELEASE_TIME,
         PullRequestMetricID.PR_CLOSED,
@@ -1262,7 +1262,7 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
         cycle_time(*args)
         closed(*args)
         ensemble_metrics = ensemble.values()
-        assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.values
+        assert ensemble_metrics[PullRequestMetricID.PR_LIVE_CYCLE_TIME] == cycle_time.values
         assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.values
         assert ensemble_metrics[PullRequestMetricID.PR_WIP_COUNT] == wip_count.values
         assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.values
