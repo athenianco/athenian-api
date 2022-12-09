@@ -116,6 +116,7 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
+from athenian.api.unordered_unique import map_array_values
 from athenian.precomputer.db.models import GitHubRebasedPullRequest
 
 
@@ -3152,11 +3153,4 @@ async def fetch_prs_numbers(
     db_node_ids = unsorted_db_node_ids[db_node_ids_sorted_indexes]
     db_numbers = db_df[NodePullRequest.number.name].values[db_node_ids_sorted_indexes]
 
-    # indexes selecting from db_node_ids and db_numbers in the same order as node_ids
-    db_sorted_indexes = searchsorted_inrange(db_node_ids, node_ids)
-
-    numbers = db_numbers[db_sorted_indexes]
-    # db_sorted_index will also have an index for node_ids not present in db_node_ids
-    # (i.e. for node_ids not found in DB): these positions must be set to 0
-    numbers[db_node_ids[db_sorted_indexes] != node_ids] = 0
-    return numbers
+    return map_array_values(node_ids, db_node_ids, db_numbers, 0)
