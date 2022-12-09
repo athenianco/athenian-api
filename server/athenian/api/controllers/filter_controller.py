@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain, repeat
 import logging
 import operator
-from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Set, TypeVar
+from typing import Any, Callable, Generator, Iterable, Iterator, Mapping, Optional, Set, TypeVar
 
 from aiohttp import web
 import aiomcache
@@ -419,7 +419,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         request.cache,
     )
     return await _build_github_prs_response(
-        prs, deployments, prefixer, meta_ids, request.mdb, request.cache,
+        prs, deployments, prefixer, meta_ids, request.mdb, True, request.cache,
     )
 
 
@@ -832,9 +832,9 @@ def _extract_released_prs(
 @weight(0.5)
 async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests by repository and number."""
-    body = GetPullRequestsRequest.from_dict(body)
-    prs_by_repo = {}
-    for p in body.prs:
+    req = GetPullRequestsRequest.from_dict(body)
+    prs_by_repo: dict[str, set[int]] = {}
+    for p in req.prs:
         prs_by_repo.setdefault(p.repository, set()).update(p.numbers)
     (
         release_settings,
@@ -843,23 +843,32 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         account_bots,
         meta_ids,
         prs_by_repo,
-    ) = await _check_github_repos(request, body.account, prs_by_repo, ".prs")
+    ) = await _check_github_repos(request, req.account, prs_by_repo, ".prs")
     prs, deployments = await fetch_pull_requests(
         prs_by_repo,
         account_bots,
         release_settings,
         logical_settings,
-        body.environments,
+        req.environments,
         prefixer,
-        body.account,
+        req.account,
         meta_ids,
         request.mdb,
         request.pdb,
         request.rdb,
         request.cache,
     )
+
+    # order PRs the same as they were requested by user
+    indexed_prs = {(prefixer.prefix_logical_repo(pr.repository), pr.number): pr for pr in prs}
+    ordered_prs = (
+        pr
+        for pr_group in req.prs
+        for pr_number in pr_group.numbers
+        if (pr := indexed_prs.get((pr_group.repository, pr_number))) is not None
+    )
     return await _build_github_prs_response(
-        prs, deployments, prefixer, meta_ids, request.mdb, request.cache,
+        ordered_prs, deployments, prefixer, meta_ids, request.mdb, False, request.cache,
     )
 
 
@@ -943,11 +952,13 @@ async def _build_github_prs_response(
     prefixer: Prefixer,
     meta_ids: tuple[int, ...],
     mdb: Database,
+    sort_prs: bool,
     cache: Optional[aiomcache.Client],
 ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
     prefix_logical_repo = prefixer.prefix_logical_repo
-    web_prs = sorted(web_pr_from_struct(prs, prefixer, log))
+    web_prs_iter: Iterator[WebPullRequest] = web_pr_from_struct(prs, prefixer, log)
+    web_prs = sorted(web_prs_iter) if sort_prs else list(web_prs_iter)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(
         UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache, nodes=users,
