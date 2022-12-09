@@ -21,13 +21,18 @@ from athenian.api.internal.miners.types import (
     PullRequestListItem,
     PullRequestStage,
 )
-from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import LogicalRepositorySettings, Settings
 from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
     GitHubMergedPullRequestFacts,
     GitHubOpenPullRequestFacts,
 )
 from athenian.api.models.web import PullRequestMetricID
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo, pr_models
 
 
 @pytest.fixture(scope="module")
@@ -1255,65 +1260,148 @@ async def test_fetch_pull_requests_smoke(
         )
 
 
-@with_defer
-async def test_fetch_pull_requests_no_merged(
-    mdb,
-    pdb,
-    rdb,
-    release_match_setting_tag,
-    prefixer,
-    bots,
-    cache,
-):
-    prs, _ = await fetch_pull_requests(
-        {"src-d/go-git": {1069}},
-        bots,
-        release_match_setting_tag,
-        LogicalRepositorySettings.empty(),
-        None,
-        prefixer,
-        1,
-        (6366825,),
+class TestFetchPullRequests:
+    @with_defer
+    async def test_no_merged(
+        self,
         mdb,
         pdb,
         rdb,
-        cache,
-    )
-    assert len(prs) == 1
-    assert prs[0].number == 1069
-    assert PullRequestStage.WIP in prs[0].stages_now
-    assert PullRequestEvent.CREATED in prs[0].events_now
-    assert PullRequestEvent.COMMITTED in prs[0].events_now
-    assert prs[0].stages_time_machine is None
-    assert prs[0].events_time_machine is None
-
-
-@with_defer
-async def test_fetch_pull_requests_empty(
-    mdb,
-    pdb,
-    rdb,
-    release_match_setting_tag,
-    prefixer,
-    bots,
-    cache,
-):
-    prs, deployments = await fetch_pull_requests(
-        {"src-d/go-git": {0}},
-        bots,
         release_match_setting_tag,
-        LogicalRepositorySettings.empty(),
-        None,
         prefixer,
-        1,
-        (6366825,),
+        bots,
+    ):
+        prs, _ = await self._fetch(
+            {"src-d/go-git": {1069}},
+            bots,
+            release_match_setting_tag,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        assert len(prs) == 1
+        assert prs[0].number == 1069
+        assert PullRequestStage.WIP in prs[0].stages_now
+        assert PullRequestEvent.CREATED in prs[0].events_now
+        assert PullRequestEvent.COMMITTED in prs[0].events_now
+        assert prs[0].stages_time_machine is None
+        assert prs[0].events_time_machine is None
+
+    @with_defer
+    async def test_empty(
+        self,
         mdb,
         pdb,
         rdb,
-        cache,
-    )
-    assert len(prs) == 0
-    assert len(deployments) == 0
+        release_match_setting_tag,
+        prefixer,
+        bots,
+    ):
+        prs, deployments = await self._fetch(
+            {"src-d/go-git": {0}},
+            bots,
+            release_match_setting_tag,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        assert len(prs) == 0
+        assert len(deployments) == 0
+
+    @with_defer
+    async def test_deployments(
+        self,
+        mdb,
+        pdb,
+        rdb,
+        release_match_setting_tag,
+        prefixer,
+        bots,
+        branches,
+        default_branches,
+    ):
+        time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
+        time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
+        await mine_deployments(
+            ["src-d/go-git"],
+            {},
+            time_from,
+            time_to,
+            ["production", "staging"],
+            [],
+            {},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            branches,
+            default_branches,
+            prefixer,
+            1,
+            None,
+            (6366825,),
+            mdb,
+            pdb,
+            rdb,
+            None,
+        )
+        await wait_deferred()
+        prs, deps = await self._fetch(
+            {"src-d/go-git": {1160, 1168}},
+            bots,
+            release_match_setting_tag,
+            environments=["production"],
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        check_pr_deployments(prs, deps, 1)
+
+    async def test_many_repositories_batching(
+        self,
+        mdb_rw,
+        sdb,
+        pdb,
+        rdb,
+        bots,
+    ):
+        N_PRS = 23
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = []
+            for i in range(1, N_PRS + 1):
+                repo = md_factory.RepositoryFactory(node_id=100 + i, full_name=f"org0/{i}")
+                await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+                models.extend(pr_models(100 + i, 100 + i, i, repository_full_name=f"org0/{i}"))
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
+            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+            release_settings = await settings.list_release_matches()
+            prs, _ = await self._fetch(
+                {f"org0/{i}": {i} for i in range(1, N_PRS + 1)},
+                bots,
+                release_settings,
+                prefixer=prefixer,
+                mdb=mdb_rw,
+                pdb=pdb,
+                rdb=rdb,
+            )
+            assert sorted((pr.number, pr.repository) for pr in prs) == [
+                (i, f"org0/{i}") for i in range(1, N_PRS + 1)
+            ]
+
+    async def _fetch(self, *args, **kwargs):
+        kwargs.setdefault("account", DEFAULT_ACCOUNT_ID)
+        kwargs.setdefault("meta_ids", (DEFAULT_MD_ACCOUNT_ID,))
+        kwargs.setdefault("logical_settings", LogicalRepositorySettings.empty())
+        kwargs.setdefault("cache", None)
+        kwargs.setdefault("environments", None)
+        return await fetch_pull_requests(*args, **kwargs)
 
 
 @with_defer
@@ -1557,58 +1645,3 @@ def check_pr_deployments(
             labels=None,
         ),
     }
-
-
-@with_defer
-async def test_fetch_pull_requests_deployments(
-    mdb,
-    pdb,
-    rdb,
-    release_match_setting_tag,
-    prefixer,
-    bots,
-    branches,
-    default_branches,
-):
-    time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
-    time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
-    await mine_deployments(
-        ["src-d/go-git"],
-        {},
-        time_from,
-        time_to,
-        ["production", "staging"],
-        [],
-        {},
-        {},
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        release_match_setting_tag,
-        LogicalRepositorySettings.empty(),
-        branches,
-        default_branches,
-        prefixer,
-        1,
-        None,
-        (6366825,),
-        mdb,
-        pdb,
-        rdb,
-        None,
-    )
-    await wait_deferred()
-    prs, deps = await fetch_pull_requests(
-        {"src-d/go-git": {1160, 1168}},
-        bots,
-        release_match_setting_tag,
-        LogicalRepositorySettings.empty(),
-        ["production"],
-        prefixer,
-        1,
-        (6366825,),
-        mdb,
-        pdb,
-        rdb,
-        None,
-    )
-    check_pr_deployments(prs, deps, 1)

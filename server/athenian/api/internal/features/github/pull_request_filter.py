@@ -1120,6 +1120,7 @@ async def _fetch_pull_requests(
     dict[str, ReleaseMatch],
     Optional[asyncio.Task],
 ]:
+    assert prs
     branches, default_branches = await BranchMiner.extract_branches(
         prs, prefixer, meta_ids, mdb, cache,
     )
@@ -1131,19 +1132,23 @@ async def _fetch_pull_requests(
         )
         for repo, numbers in prs.items()
     ]
-    queries = [select(PullRequest).where(f) for f in filters]
+    selects = [select(PullRequest).where(f) for f in filters]
+    # execute UNION ALL of at most 10 SELECTs to help PostgreSQL parallelization
+    select_batches = [selects[i : i + 10] for i in range(0, len(selects), 10)]
+    queries = [union_all(*b) if len(b) > 1 else b[0] for b in select_batches]  # sqlite sucks
     tasks = [
-        read_sql_query(
-            union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
-            mdb,
-            PullRequest,
-            index=PullRequest.node_id.name,
-        ),
+        read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.name)
+        for query in queries
+    ]
+    tasks.append(
         DonePRFactsLoader.load_precomputed_done_facts_reponums(
             prs, default_branches, release_settings, prefixer, account, pdb,
         ),
-    ]
-    prs_df, (facts, ambiguous) = await gather(*tasks)
+    )
+
+    *prs_dfs, (facts, ambiguous) = await gather(*tasks)
+    prs_df = pd.concat(prs_dfs)
+
     return await unwrap_pull_requests(
         prs_df,
         facts,
