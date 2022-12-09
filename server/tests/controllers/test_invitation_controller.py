@@ -41,6 +41,7 @@ from athenian.api.models.state.models import (
 from athenian.api.models.web import InvitedUser
 from athenian.api.response import ResponseError
 from tests.testutils.db import assert_existing_row, count
+from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
 
@@ -887,31 +888,53 @@ async def test_progress_idle(client, headers, mdb_rw, sdb):
         )
 
 
-@freeze_time("2020-03-10 18:00:00+00")
-async def test_progress_no_precomputed(client, headers, sdb):
-    await sdb.execute(
-        update(RepositorySet)
-        .where(RepositorySet.id == 1)
-        .values(
-            {
-                RepositorySet.precomputed: False,
-                RepositorySet.updated_at: datetime.now(timezone.utc),
-                RepositorySet.updates_count: 2,
-                RepositorySet.created_at: datetime.now(timezone.utc) - timedelta(days=1),
-            },
-        ),
-    )
-    response = await client.request(
-        method="GET", path="/v1/invite/progress/1", headers=headers, json={},
-    )
-    assert response.status == 200
-    body = json.loads((await response.read()).decode("utf-8"))
-    progress = complete_progress.copy()
-    progress["finished_date"] = None
-    precomputed_table = [t for t in progress["tables"] if t["name"] == "precomputed"][0]
-    precomputed_table["fetched"] = 3571
-    precomputed_table["total"] = 3572
-    assert body == progress
+class TestInviteProgress(Requester):
+    async def _request(self, account: int = 1, assert_status: int = 200) -> dict:
+        path = f"/v1/invite/progress/{account}"
+        response = await self.client.request(method="GET", path=path, headers=self.headers)
+        assert response.status == assert_status
+        return await response.json()
+
+    @freeze_time("2020-03-10 18:00:00+00")
+    async def test_progress_no_precomputed(self, sdb: Database) -> None:
+        await sdb.execute(
+            update(RepositorySet)
+            .where(RepositorySet.id == 1)
+            .values(
+                {
+                    RepositorySet.precomputed: False,
+                    RepositorySet.updated_at: datetime.now(timezone.utc),
+                    RepositorySet.updates_count: 2,
+                    RepositorySet.created_at: datetime.now(timezone.utc) - timedelta(days=1),
+                },
+            ),
+        )
+        body = await self._request(1)
+        progress = complete_progress.copy()
+        progress["finished_date"] = None
+        precomputed_table = [t for t in progress["tables"] if t["name"] == "precomputed"][0]
+        precomputed_table["fetched"] = 3571
+        precomputed_table["total"] = 3572
+        assert body == progress
+
+    @freeze_time("2020-03-10 18:00:00+00")
+    async def test_reposet_created_at_23(self, sdb: Database) -> None:
+        await sdb.execute(
+            update(RepositorySet)
+            .where(RepositorySet.id == 1)
+            .values(
+                {
+                    RepositorySet.precomputed: False,
+                    RepositorySet.updated_at: dt(2020, 3, 10),
+                    RepositorySet.updates_count: 2,
+                    RepositorySet.created_at: dt(2020, 3, 9, 23, 30),
+                },
+            ),
+        )
+        res = await self._request()
+        precomputed_table = [t for t in res["tables"] if t["name"] == "precomputed"][0]
+        assert precomputed_table["fetched"] == 3571
+        assert precomputed_table["total"] == 3572
 
 
 async def test_jira_progress_200(client, headers, app, client_cache):
