@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from athenian.api.db import Database
 from athenian.api.models.web import (
     DeployedComponent,
     DeploymentNotification,
@@ -10,6 +11,9 @@ from athenian.api.models.web import (
     PullRequestSet,
     PullRequestStage,
 )
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.requester import Requester
 
 
@@ -24,6 +28,9 @@ class BaseGetPRsTest(Requester):
     def _body(self, **kwargs: Any) -> dict:
         kwargs.setdefault("account", 1)
         return kwargs
+
+    def _response_pr_numbers(self, response: dict) -> list[int]:
+        return [pr["number"] for pr in response["data"]]
 
 
 class TestGetPRs(BaseGetPRsTest):
@@ -71,6 +78,39 @@ class TestGetPRs(BaseGetPRsTest):
                 labels=None,
             ),
         }
+
+    async def test_prs_order(self, sdb: Database, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=99, full_name="org0/r0")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            repo1 = md_factory.RepositoryFactory(node_id=98, full_name="org0/r1")
+            await insert_repo(repo1, mdb_cleaner, mdb_rw, sdb)
+            models = [
+                *pr_models(99, 10, 1, repository_full_name="org0/r0"),
+                *pr_models(99, 11, 2, repository_full_name="org0/r0"),
+                *pr_models(98, 12, 1, repository_full_name="org0/r1"),
+                *pr_models(98, 13, 3, repository_full_name="org0/r1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            body = self._body(
+                prs=[
+                    {"repository": "github.com/org0/r0", "numbers": [2]},
+                    {"repository": "github.com/org0/r1", "numbers": [3, 1]},
+                    {"repository": "github.com/org0/r0", "numbers": [1]},
+                ],
+            )
+
+            res = await self._request(json=body)
+
+            prs = [(pr["repository"], pr["number"]) for pr in res["data"]]
+            assert prs == [
+                ("github.com/org0/r0", 2),
+                ("github.com/org0/r1", 3),
+                ("github.com/org0/r1", 1),
+                ("github.com/org0/r0", 1),
+            ]
 
 
 class TestGetPRsErrors(BaseGetPRsTest):
