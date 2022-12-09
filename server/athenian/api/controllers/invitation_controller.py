@@ -641,10 +641,9 @@ async def _append_precomputed_progress(
                     break
     # do not merge with the previous block, we may set model.finished_date = None inside
     if model.finished_date is not None:
-        estimated_precompute_time = max(
-            model.finished_date.replace(hour=model.finished_date.hour + 1, minute=30, second=0),
-            created.replace(hour=created.hour + 1, minute=30, second=0),
-        )
+        estimated_precompute_time = (
+            max(model.finished_date, created) + timedelta(hours=1)
+        ).replace(minute=30, second=0)
         fetch_time = model.finished_date - model.started_date
         precompute_workload = max(
             int(fetch_workload * ((estimated_precompute_time - model.finished_date) / fetch_time)),
