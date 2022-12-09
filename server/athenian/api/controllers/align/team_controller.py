@@ -3,7 +3,6 @@ from typing import Optional
 from aiohttp import web
 
 from athenian.api.db import DatabaseLike
-from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.internal.team import fetch_teams_recursively, get_root_team, get_team_from_db
 from athenian.api.internal.team_tree import build_team_tree_from_rows
 from athenian.api.models.state.models import Team
@@ -19,9 +18,6 @@ async def get_team_tree(
     account: Optional[int] = None,
 ) -> web.Response:
     """Retrieve the tree describing requested team."""
-    if account is not None:
-        await get_user_account_status_from_request(request, account)
-
     # team_id 0 means root team
     if team_id == 0:
         if account is None:

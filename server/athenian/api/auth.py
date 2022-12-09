@@ -670,55 +670,17 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                 raise Unauthorized("The endpoint you are calling requires X-API-Key header.")
             # token_info = {"token": <token>, "method": "bearer" or "apikey"}
             await auth._set_user(context := request.context, **token_info)
-            # check whether the user may access the specified account
-            # TODO: same check can be done for `account` query parameter
-            try:
-                request_json = request.json
-            except JSONDecodeError:
-                request_json = None
+
             canonical = context.match_info.route.resource.canonical
             route_specs = context.app["route_spec"]
             if (spec := route_specs.get(canonical, None)) is not None:
                 if spec.get("x-only-god", False) and not hasattr(context, "god_id"):
                     raise ResponseError(ForbiddenError(detail=f"User {context.uid} must be a god"))
-            if isinstance(request_json, dict):
-                if (account := request_json.get("account")) is not None:
-                    if isinstance(account, int):
-                        with sentry_sdk.configure_scope() as scope:
-                            scope.set_tag("account", account)
 
-                        if spec is not None:
-                            try:
-                                ignore_account = deep_get(
-                                    spec, ["requestBody", "x-ignore-account"],
-                                )
-                            except KeyError:
-                                ignore_account = False
-                        else:
-                            ignore_account = False
-                        if not ignore_account:
-                            await get_user_account_status_from_request(context, account)
-                    else:
-                        # we'll report an error later from OpenAPI validator
-                        account = None
-                elif (account := getattr(context, "account", None)) is not None:
-                    if spec is not None:
-                        try:
-                            required = "account" in deep_get(
-                                spec,
-                                [
-                                    "requestBody",
-                                    "content",
-                                    "application/json",
-                                    "schema",
-                                    "required",
-                                ],
-                            )
-                        except KeyError:
-                            required = False
-                        if required:
-                            request_json["account"] = account
-                context.account = account
+            account_validation = _RequestAccountValidation(spec)
+            await account_validation.in_request_body(request)
+            await account_validation.in_query(request)
+
             # check whether the account is enabled
             if context.account is not None and await check_account_expired(context, auth.log):
                 raise Unauthorized(f"Account {context.account} has expired.")
@@ -747,3 +709,75 @@ def ensure_non_default_user(request: AthenianWebRequest):
     """Raise exception if the user on the request is the default user."""
     if request.is_default_user:
         raise ResponseError(ForbiddenError(f"{request.uid} is the default user"))
+
+
+class _RequestAccountValidation:
+    """Vaidate and enforce the account in the HTTP request."""
+
+    def __init__(self, route_spec: dict):
+        self._route_spec = route_spec
+
+    async def in_request_body(self, request: EspecificoRequest) -> None:
+        """Enforce the account in the request body.
+
+        If the request body includes an account check that the authenticated user
+        may access it, and set the account in the AthenianWebRequest.
+
+        If there's no account in request body, but it is required by spec, set it from the
+        authentication info if present (i.e. for apikey authentication).
+
+        """
+        try:
+            request_json = request.json
+        except JSONDecodeError:
+            return
+        if not isinstance(request_json, dict):
+            return
+
+        if (account := request_json.get("account")) is not None:
+            if isinstance(account, int):
+                self._sentry_scope_set_account(account)
+                if not self._route_ignore_account():
+                    await get_user_account_status_from_request(request.context, account)
+            else:
+                # we'll report an error later from OpenAPI validator
+                account = None
+            request.context.account = account
+        elif request.context.account is not None:
+            if self._account_request_body_required():
+                request_json["account"] = request.context.account
+
+    async def in_query(self, request: EspecificoRequest) -> None:
+        """Validate the account in the request query parameters."""
+        try:
+            account = int(request.query["account"][0])
+        except (ValueError, KeyError):
+            return
+
+        self._sentry_scope_set_account(account)
+        if not self._route_ignore_account():
+            await get_user_account_status_from_request(request.context, account)
+
+    def _route_ignore_account(self) -> bool:
+        if self._route_spec is None:
+            return False
+        try:
+            return deep_get(self._route_spec, ["requestBody", "x-ignore-account"])
+        except KeyError:
+            return False
+
+    def _account_request_body_required(self) -> bool:
+        if self._route_spec is None:
+            return False
+        try:
+            return "account" in deep_get(
+                self._route_spec,
+                ["requestBody", "content", "application/json", "schema", "required"],
+            )
+        except KeyError:
+            return False
+
+    @classmethod
+    def _sentry_scope_set_account(cls, account: int) -> None:
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_tag("account", account)

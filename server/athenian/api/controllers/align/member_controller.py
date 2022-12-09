@@ -2,10 +2,7 @@ from typing import Optional
 
 from aiohttp import web
 
-from athenian.api.internal.account import (
-    get_metadata_account_ids,
-    get_user_account_status_from_request,
-)
+from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.team import (
     fetch_team_members_recursively,
     get_all_team_members,
@@ -25,9 +22,6 @@ async def list_team_members(
     account: Optional[int] = None,
 ) -> web.Response:
     """List the members of a team."""
-    if account is not None:
-        await get_user_account_status_from_request(request, account)
-
     sdb, mdb, cache = request.sdb, request.mdb, request.cache
 
     if team_id == 0:
