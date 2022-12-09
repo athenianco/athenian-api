@@ -380,26 +380,25 @@ def _extract_float32_typed_columns(columns: Iterable[Union[Column, str]]) -> set
     }
 
 
-def _unwrap_col(col: Column):
-    if isinstance(col, Label):
-        return _unwrap_col(col.element)
+def _extract_col_property(col: Column, prop: str, default: Any) -> Any:
     if isinstance(table := getattr(col, "table", None), sa.sql.Alias):
-        try:
-            return getattr(table.element.c, col.name)
-        except AttributeError:
-            pass
-
-    return col
+        return _extract_col_property(getattr(table.element.c, col.name, None), prop, default)
+    try:
+        return getattr(col, prop)
+    except AttributeError:
+        if isinstance(col, Label):
+            return _extract_col_property(col.element, prop, default)
+        return default
 
 
 def _get_col_info(col: Column):
     """Get the `info` attribute of the column, unwrapping Label and Alias if needed."""
-    return getattr(_unwrap_col(col), "info", {})
+    return _extract_col_property(col, "info", {})
 
 
 def _get_col_nullable(col: Column):
     """Get the `nullable` attribute of the column, unwrapping Label and Alias if needed."""
-    return getattr(_unwrap_col(col), "nullable", False)
+    return _extract_col_property(col, "nullable", False)
 
 
 def _extract_fixed_string_columns(

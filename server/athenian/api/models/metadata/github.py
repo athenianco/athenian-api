@@ -354,10 +354,10 @@ class NodeCommit(
     message = Column(Text, nullable=False)
     pushed_date = Column(TIMESTAMP(timezone=True))
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
-    committer_user_id = Column(BigInteger)
+    committer_user_id = Column(BigInteger, info={"reset_nulls": True})
     committer_email = Column(Text)
     committer_name = Column(Text)
-    author_user_id = Column(BigInteger)
+    author_user_id = Column(BigInteger, info={"reset_nulls": True})
     author_email = Column(Text)
     author_name = Column(Text)
     additions = Column(BigInteger, nullable=False)
@@ -383,7 +383,7 @@ class NodePullRequest(
     __tablename__ = "node_pullrequest"
 
     title = Column(Text, nullable=False)
-    author_id = Column(BigInteger)
+    author_id = Column(BigInteger, info={"reset_nulls": True})
     user_node_id = synonym("author_id")
     merged = Column(Boolean)
     additions = Column(BigInteger, nullable=False)
