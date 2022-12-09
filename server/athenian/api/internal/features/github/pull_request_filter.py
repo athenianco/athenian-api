@@ -1102,22 +1102,22 @@ async def fetch_pull_requests(
 
 
 async def _fetch_pull_requests(
-    prs: Dict[str, Set[int]],
-    bots: Set[str],
+    prs: dict[str, set[int]],
+    bots: set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[
-    List[MinedPullRequest],
+) -> tuple[
+    list[MinedPullRequest],
     PRDataFrames,
     PullRequestFactsMap,
-    Dict[str, ReleaseMatch],
+    dict[str, ReleaseMatch],
     Optional[asyncio.Task],
 ]:
     branches, default_branches = await BranchMiner.extract_branches(
@@ -1131,7 +1131,7 @@ async def _fetch_pull_requests(
         )
         for repo, numbers in prs.items()
     ]
-    queries = [select([PullRequest]).where(f).order_by(PullRequest.node_id) for f in filters]
+    queries = [select(PullRequest).where(f) for f in filters]
     tasks = [
         read_sql_query(
             union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
