@@ -542,7 +542,8 @@ class LeadCounterWithQuantiles(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
-class CycleTimeCalculator(MetricCalculator[timedelta]):
+@register_metric(PullRequestMetricID.PR_LIVE_CYCLE_TIME)
+class LiveCycleTimeCalculator(MetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, and PR_RELEASE_TIME."""
 
     deps = (
@@ -611,19 +612,21 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
-class CycleCounter(WithoutQuantilesMixin, Counter):
+@register_metric(PullRequestMetricID.PR_LIVE_CYCLE_COUNT)
+class LiveCycleCounter(WithoutQuantilesMixin, Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \
     or PR_RELEASE_TIME disregarding the quantiles."""
 
-    deps = (CycleTimeCalculator,)
+    deps = (LiveCycleTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
-class CycleCounterWithQuantiles(Counter):
+@register_metric(PullRequestMetricID.PR_LIVE_CYCLE_COUNT_Q)
+class LiveCycleCounterWithQuantiles(Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, \
     or PR_RELEASE_TIME respecting the quantiles."""
 
-    deps = (CycleTimeCalculator,)
+    deps = (LiveCycleTimeCalculator,)
 
     def _values(self) -> List[List[Metric[T]]]:
         if self._quantiles == (0, 1):
@@ -1599,11 +1602,11 @@ class LeadDeploymentCounterWithQuantiles(DeploymentMetricBase, Counter):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME)
-class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
+class CycleDeploymentTimeCalculator(DeploymentMetricBase, LiveCycleTimeCalculator):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGING_TIME, PR_RELEASE_TIME, and \
     PR_DEPLOYMENT_TIME."""
 
-    deps = (CycleTimeCalculator, DeploymentTimeCalculator)
+    deps = (LiveCycleTimeCalculator, DeploymentTimeCalculator)
     only_complete = True
 
 
@@ -1617,7 +1620,7 @@ class CycleDeploymentTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator)
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q)
-class CycleDeploymentCounterWithQuantiles(DeploymentMetricBase, CycleCounterWithQuantiles):
+class CycleDeploymentCounterWithQuantiles(DeploymentMetricBase, LiveCycleCounterWithQuantiles):
     """Count the number of PRs that were used to calculate PR_CYCLE_DEPLOYMENT_TIME respecting \
     the quantiles."""
 

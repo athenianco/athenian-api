@@ -310,6 +310,31 @@ class TestCalcPullRequestMetricsLineGithub:
             assert res0[0][0][0][0][intvl_idx][1].value == res1[0][0][0][0][intvl_idx][2].value
             assert res0[0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][intvl_idx][0].value
 
+    @with_defer
+    async def test_pr_live_cycle_time_alias_for_pr_cycle_time(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
+        )
+        res = await calculator.calc_pull_request_metrics_line_github(
+            metrics=[PullRequestMetricID.PR_CYCLE_TIME, PullRequestMetricID.PR_LIVE_CYCLE_TIME],
+            time_intervals=[[dt(2017, 8, 10), dt(2017, 9, 30)]],
+            **self._default_kwargs,
+            **shared_kwargs,
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
+        )
+        # result for the two metrics must be the same
+        assert res[0][0][0][0][0][0] == res[0][0][0][0][0][1]
+        await wait_deferred()
+
 
 class TestBatchCalcPullRequestMetrics:
     @with_defer

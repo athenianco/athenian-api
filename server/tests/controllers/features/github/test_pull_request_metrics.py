@@ -14,14 +14,14 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
     ClosedCalculator,
-    CycleCounter,
-    CycleCounterWithQuantiles,
-    CycleTimeCalculator,
     DoneCalculator,
     FlowRatioCalculator,
     LeadCounter,
     LeadCounterWithQuantiles,
     LeadTimeCalculator,
+    LiveCycleCounter,
+    LiveCycleCounterWithQuantiles,
+    LiveCycleTimeCalculator,
     MergingCounter,
     MergingCounterWithQuantiles,
     MergingTimeCalculator,
@@ -358,7 +358,7 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
         ReleaseCounter,
         OpenCounter,
         LeadCounter,
-        CycleCounter,
+        LiveCycleCounter,
         AllCounter,
     ],
 )
@@ -393,7 +393,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
     else:
         nonones = (peek != 0).sum()
     nones = (peek.shape[0] * peek.shape[1]) - nonones
-    if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
+    if cls not in (WorkInProgressCounter, LiveCycleCounter, AllCounter):
         assert nones > 0, cls
     assert nonones > 0, cls
 
@@ -408,7 +408,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
         (ReleaseCounterWithQuantiles, ReleaseCounter),
         (OpenCounterWithQuantiles, OpenCounter),
         (LeadCounterWithQuantiles, LeadCounter),
-        (CycleCounterWithQuantiles, CycleCounter),
+        (LiveCycleCounterWithQuantiles, LiveCycleCounter),
     ],
 )
 def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
@@ -1234,7 +1234,7 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     )
     release_time = ReleaseTimeCalculator(**qargs)
     wip_count = WorkInProgressCounter(WorkInProgressTimeCalculator(**qargs), **qargs)
-    cycle_time = CycleTimeCalculator(
+    cycle_time = LiveCycleTimeCalculator(
         WorkInProgressTimeCalculator(**qargs),
         ReviewTimeCalculator(**qargs),
         MergingTimeCalculator(**qargs),
