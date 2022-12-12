@@ -72,7 +72,9 @@ def pr_models(
     All other parameters are passed to PullRequestFactory.
     """
     models = [
-        md_factory.PullRequestFactory(node_id=node_id, repository_node_id=repo_id, **kwargs),
+        md_factory.PullRequestFactory(
+            node_id=node_id, repository_node_id=repo_id, number=number, **kwargs,
+        ),
         md_factory.NodePullRequestFactory(node_id=node_id, number=number, repository_id=repo_id),
     ]
     if review_request is not None:
