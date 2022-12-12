@@ -376,8 +376,8 @@ class AthenianApp(especifico.AioHttpApp):
             validate_responses=validate_responses,
             ref_resolver_store=self._get_ref_resolver_store(),
         )
-        self.add_api("openapi.yaml", base_path="/v1", **add_api_kwargs)
-        self.add_api("../align/spec/openapi.yaml", base_path="/private", **add_api_kwargs)
+        self.add_api(_specs_store["public"], base_path="/v1", **add_api_kwargs)
+        self.add_api(_specs_store["private"], base_path="/private", **add_api_kwargs)
         GraphQL(align.create_graphql_schema()).attach(
             self.app, "/align", middlewares + [self._auth0.authenticate],
         )
@@ -876,7 +876,12 @@ class AthenianApp(especifico.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    def add_api(self, specification: str, ref_resolver_store: Optional[dict] = None, **kwargs):
+    def add_api(
+        self,
+        specification: str | dict,
+        ref_resolver_store: Optional[dict] = None,
+        **kwargs,
+    ):
         """Load the API spec and add the defined routes."""
         api = super().add_api(specification, ref_resolver_store=ref_resolver_store, **kwargs)
         api.subapp["aiohttp_jinja2_environment"].autoescape = False
@@ -1002,13 +1007,31 @@ class AthenianApp(especifico.AioHttpApp):
         """
         if cls._ref_resolver_store is None:
             public_schema_url = "https://api.athenian.co/v1/openapi.json"
-            public_schema_path = Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml"
-
-            with public_schema_path.open("r") as fp:
-                public_schema = yaml.load(fp, Loader=yaml.CSafeLoader)
-
-            cls._ref_resolver_store = {public_schema_url: public_schema}
+            cls._ref_resolver_store = {public_schema_url: _specs_store["public"]}
         return cls._ref_resolver_store
+
+
+class _SpecsStore:
+    """Gives access to the OpenAPI specifications."""
+
+    _PATHS = {
+        "public": Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml",
+        "private": Path(athenian.api.__file__).parent / "align" / "spec" / "openapi.yaml",
+    }
+
+    def __init__(self) -> None:
+        self._loaded: dict[str, dict] = {}
+
+    def __getitem__(self, name: str) -> dict:
+        try:
+            return self._loaded[name]
+        except KeyError:
+            with self._PATHS[name].open("r") as fp:
+                self._loaded[name] = yaml.load(fp, Loader=yaml.CSafeLoader)
+            return self._loaded[name]
+
+
+_specs_store = _SpecsStore()
 
 
 def _resolve_operation_req_body(
