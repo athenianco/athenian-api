@@ -1,7 +1,6 @@
 import ast
 import asyncio
 import bdb
-from collections import defaultdict
 from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
@@ -440,7 +439,6 @@ class AthenianApp(especifico.AioHttpApp):
                 raise GracefulExit() from None
 
         self.app.on_shutdown.append(self.shutdown)
-        self._on_dbs_connected_callbacks: list[asyncio.Future] = []
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -461,36 +459,9 @@ class AthenianApp(especifico.AioHttpApp):
         self._report_ready_task = asyncio.ensure_future(self._report_ready())
         self._report_ready_task.set_name("_report_ready")
 
-    def on_dbs_connected(self, callback: Callable[..., Coroutine]) -> None:
-        """Register an async callback on when all DBs connect."""
-
-        async def on_dbs_connected_callback_wrapper(*_) -> bool:
-            await gather(*self._db_futures.values())
-            dbs = {db: self.app[db] for db in self._db_futures}
-            self.app["db_elapsed"].set(defaultdict(float))
-            try:
-                await callback(**dbs)
-                return True
-            except Exception:
-                # otherwise we'll not see any error
-                self.log.exception("Unhandled exception in on_dbs_connected callback")
-                await self._raise_graceful_exit()
-                return False
-
-        self._on_dbs_connected_callbacks.append(
-            asyncio.ensure_future(on_dbs_connected_callback_wrapper()),
-        )
-
-    async def ready(self) -> bool:
-        """
-        Wait until the application has fully loaded, initialized, etc. everything and is \
-        ready to serve.
-
-        :return: Boolean indicating whether the server failed to launch (False).
-        """
+    async def ready(self) -> None:
+        """Wait until the application has fully loaded, initialized, etc. and is ready to serve."""
         await gather(*self._db_futures.values())
-        flags = await gather(*self._on_dbs_connected_callbacks)
-        return not flags or all(flags)
 
     @property
     def load(self) -> float:
@@ -563,8 +534,6 @@ class AthenianApp(especifico.AioHttpApp):
                 await close_event.wait()
         if self._mandrill is not None:
             await self._mandrill.close()
-        for task in self._on_dbs_connected_callbacks:
-            task.cancel()
         for k, f in self._db_futures.items():
             f.cancel()
             if (db := self.app.get(k)) is not None:
@@ -1008,8 +977,6 @@ class AthenianApp(especifico.AioHttpApp):
             )
 
     async def _report_ready(self) -> None:
-        if not await self.ready():
-            return
         self.app["health"] = health = prometheus_client.Info(
             "server_ready",
             "Indicates whether the server is fully up and running",
