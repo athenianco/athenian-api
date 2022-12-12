@@ -1147,7 +1147,7 @@ async def _fetch_pull_requests(
     )
 
     *prs_dfs, (facts, ambiguous) = await gather(*tasks)
-    prs_df = pd.concat(prs_dfs)
+    prs_df = pd.concat(prs_dfs) if len(prs_dfs) > 1 else prs_dfs[0]
 
     return await unwrap_pull_requests(
         prs_df,
