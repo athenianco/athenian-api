@@ -2880,6 +2880,8 @@ async def _fetch_latest_deployed_components_queries(
         result_finisheds = defaultdict(lambda: defaultdict(list))
         commit_ids = latest_df[DeployedComponent.resolved_commit_node_id.name].values
         unique_commit_ids = np.unique(commit_ids)
+        if len(unique_commit_ids) and unique_commit_ids[0] == 0:
+            unique_commit_ids = unique_commit_ids[1:]
         sha_id_df = await read_sql_query(
             select(NodeCommit.id, NodeCommit.sha)
             .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.id.in_any_values(unique_commit_ids))
@@ -2903,7 +2905,14 @@ async def _fetch_latest_deployed_components_queries(
             latest_df[DeploymentNotification.finished_at.name].values,
         ):
             if not sha:
-                log.error("Commit id %d not found, ignoring deployed component", cid)
+                if cid != 0:
+                    log.error("Commit id %d not found, ignoring deployed component", cid)
+                else:
+                    log.warning(
+                        "Skipping unresolved component %s of notification finished at %s",
+                        repo,
+                        finished_at,
+                    )
                 continue
             result_shas[env][repo].append(sha)
             result_cids[env][repo].append(cid)
