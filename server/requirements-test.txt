@@ -7,7 +7,7 @@ pytest-benchmark==4.0.0
 pytest-rerunfailures==10.3
 pytest-xdist==3.1.0
 pytest-timeout==2.1.0
-pytest-sentry==0.1.9
+pytest-sentry==0.1.11
 filelock==3.8.2
 faker==15.3.4
 freezegun==1.2.2
