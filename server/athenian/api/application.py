@@ -243,6 +243,9 @@ ADJUST_LOAD_VAR_NAME = "adjust_load"
 class AthenianApp(especifico.AioHttpApp):
     """Athenian API especifico application, everything roots here."""
 
+    _public_spec: dict | None = None
+    _private_spec: dict | None = None
+
     log = logging.getLogger(metadata.__package__)
     TIMEOUT: Optional[int] = 5 * 60  # max request processing time in seconds
     tty_access_log_format = '%a %t "%r" %s %b "%{User-Agent}i" "%{User}o"'
@@ -376,8 +379,8 @@ class AthenianApp(especifico.AioHttpApp):
             validate_responses=validate_responses,
             ref_resolver_store=self._get_ref_resolver_store(),
         )
-        self.add_api("openapi.yaml", base_path="/v1", **add_api_kwargs)
-        self.add_api("../align/spec/openapi.yaml", base_path="/private", **add_api_kwargs)
+        self.add_api(self._get_public_spec(), base_path="/v1", **add_api_kwargs)
+        self.add_api(self._get_private_spec(), base_path="/private", **add_api_kwargs)
         GraphQL(align.create_graphql_schema()).attach(
             self.app, "/align", middlewares + [self._auth0.authenticate],
         )
@@ -876,7 +879,12 @@ class AthenianApp(especifico.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    def add_api(self, specification: str, ref_resolver_store: Optional[dict] = None, **kwargs):
+    def add_api(
+        self,
+        specification: str | dict,
+        ref_resolver_store: Optional[dict] = None,
+        **kwargs,
+    ):
         """Load the API spec and add the defined routes."""
         api = super().add_api(specification, ref_resolver_store=ref_resolver_store, **kwargs)
         api.subapp["aiohttp_jinja2_environment"].autoescape = False
@@ -994,6 +1002,22 @@ class AthenianApp(especifico.AioHttpApp):
             del self.app["health"]
 
     @classmethod
+    def _get_public_spec(cls) -> dict:
+        if cls._public_spec is None:
+            path = Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml"
+            with path.open("r") as fp:
+                cls._public_spec = yaml.load(fp, Loader=yaml.CSafeLoader)
+        return cls._public_spec
+
+    @classmethod
+    def _get_private_spec(cls) -> dict:
+        if cls._private_spec is None:
+            path = Path(athenian.api.__file__).parent / "align" / "spec" / "openapi.yaml"
+            with path.open("r") as fp:
+                cls._private_spec = yaml.load(fp, Loader=yaml.CSafeLoader)
+        return cls._private_spec
+
+    @classmethod
     def _get_ref_resolver_store(cls) -> dict[str, dict]:
         """Build the custom ref resolver store for especifico.
 
@@ -1002,12 +1026,7 @@ class AthenianApp(especifico.AioHttpApp):
         """
         if cls._ref_resolver_store is None:
             public_schema_url = "https://api.athenian.co/v1/openapi.json"
-            public_schema_path = Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml"
-
-            with public_schema_path.open("r") as fp:
-                public_schema = yaml.load(fp, Loader=yaml.CSafeLoader)
-
-            cls._ref_resolver_store = {public_schema_url: public_schema}
+            cls._ref_resolver_store = {public_schema_url: cls._get_public_spec()}
         return cls._ref_resolver_store
 
 
