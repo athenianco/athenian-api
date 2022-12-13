@@ -13,7 +13,7 @@ from athenian.api.models.web import ContributorIdentity, MatchedIdentity, PullRe
 from athenian.api.serialization import FriendlyJson
 
 
-async def test_match_identities_smoke(client, headers, disable_default_user):
+async def test_match_identities_smoke(client, headers):
     body = {
         "account": 1,
         "identities": [
@@ -57,7 +57,7 @@ async def test_match_identities_smoke(client, headers, disable_default_user):
         ({"account": 4, "identities": [{"emails": ["x@y.co"]}]}, 404),
     ],
 )
-async def test_match_identities_nasty_input(client, headers, body, code, disable_default_user):
+async def test_match_identities_nasty_input(client, headers, body, code):
     response = await client.request(
         method="POST", path="/v1/match/identities", headers=headers, json=body,
     )
