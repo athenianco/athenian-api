@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import IntEnum
+from functools import lru_cache
 from itertools import chain
 import re
 from typing import (
@@ -121,6 +122,18 @@ class ReleaseMatchSetting:
             tags=match_by,
             events=match_by,
             match=release_match,
+        )
+
+    @classmethod
+    @lru_cache(maxsize=1)
+    def default(cls):
+        """Consider all repositories not explicitly configured as \
+        tag_or_branch with default branch alias."""
+        return cls(
+            branches=default_branch_alias,
+            tags=".*",
+            events=".*",
+            match=ReleaseMatch.tag_or_branch,
         )
 
     def compatible_with_db(self, db: str, default_branch: str):
@@ -762,17 +775,7 @@ class Settings:
             if r.is_logical:
                 missing_logical.append(str(r))
             else:
-                settings.append(
-                    (
-                        str(r),
-                        ReleaseMatchSetting(
-                            branches=default_branch_alias,
-                            tags=".*",
-                            events=".*",
-                            match=ReleaseMatch[ReleaseMatchStrategy.TAG_OR_BRANCH],
-                        ),
-                    ),
-                )
+                settings.append((str(r), ReleaseMatchSetting.default()))
 
         if missing_logical:
             raise ResponseError(
