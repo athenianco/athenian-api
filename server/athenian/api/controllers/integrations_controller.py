@@ -14,7 +14,6 @@ from sqlalchemy import select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.internal.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.internal.features.everything import MineTopic, mine_everything
@@ -27,7 +26,6 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 
 
-@disable_default_user
 @weight(1.0)
 async def match_identities(request: AthenianWebRequest, body: dict) -> web.Response:
     """Match provided people names/logins/emails to the account's GitHub organization members."""
