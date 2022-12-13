@@ -15,28 +15,25 @@ from athenian.api.internal.features.github.deployment_metrics import (
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.types import DeploymentFacts, ReleaseParticipationKind
 from athenian.api.internal.settings import LogicalRepositorySettings
-from athenian.api.models.persistentdata.models import DeployedComponent
 from athenian.api.models.web import DeploymentMetricID
 
 
 @pytest.fixture(scope="module")
 def sample_deps() -> pd.DataFrame:
-    rnid = DeployedComponent.repository_node_id.name
-    rpfn = DeployedComponent.repository_full_name
     return pd.DataFrame.from_dict(
         {
-            "components": [
-                pd.DataFrame([{rnid: 1, rpfn: "1"}, {rnid: 2, rpfn: "2"}]),
-                pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 1, rpfn: "1"}]),
-                pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 2, rpfn: "2"}]),
-                pd.DataFrame([{rnid: 1, rpfn: "1"}]),
-                pd.DataFrame([{rnid: 3, rpfn: "3"}]),
-            ],
             DeploymentFacts.f.pr_authors: [[1, 2, 3], [1, 4, 5], [2, 4, 6], [], [3]],
             DeploymentFacts.f.commit_authors: [[1, 2, 3], [1, 4, 5, 6], [2, 4, 6], [7], [3]],
             DeploymentFacts.f.release_authors: [[], [], [1, 2], [], [7]],
-            DeploymentFacts.f.commits_overall: [[1, 1], [1, 1], [1, 0], [1], [1]],
+            DeploymentFacts.f.commits_overall: [[1, 1], [1, 1], [0, 1], [1], [1]],
             "environment": ["1", "2", "1", "3", "3"],
+            DeploymentFacts.f.repositories: [
+                ["1", "2"],
+                ["1", "3"],
+                ["2", "3"],
+                ["1"],
+                ["3"],
+            ],
         },
     )
 
