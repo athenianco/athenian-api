@@ -1,7 +1,6 @@
 import ast
 import asyncio
 import bdb
-from collections import defaultdict
 from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
@@ -377,8 +376,8 @@ class AthenianApp(especifico.AioHttpApp):
             validate_responses=validate_responses,
             ref_resolver_store=self._get_ref_resolver_store(),
         )
-        self.add_api("openapi.yaml", base_path="/v1", **add_api_kwargs)
-        self.add_api("../align/spec/openapi.yaml", base_path="/private", **add_api_kwargs)
+        self.add_api(_specs_store["public"], base_path="/v1", **add_api_kwargs)
+        self.add_api(_specs_store["private"], base_path="/private", **add_api_kwargs)
         GraphQL(align.create_graphql_schema()).attach(
             self.app, "/align", middlewares + [self._auth0.authenticate],
         )
@@ -440,7 +439,6 @@ class AthenianApp(especifico.AioHttpApp):
                 raise GracefulExit() from None
 
         self.app.on_shutdown.append(self.shutdown)
-        self._on_dbs_connected_callbacks: list[asyncio.Future] = []
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -461,36 +459,9 @@ class AthenianApp(especifico.AioHttpApp):
         self._report_ready_task = asyncio.ensure_future(self._report_ready())
         self._report_ready_task.set_name("_report_ready")
 
-    def on_dbs_connected(self, callback: Callable[..., Coroutine]) -> None:
-        """Register an async callback on when all DBs connect."""
-
-        async def on_dbs_connected_callback_wrapper(*_) -> bool:
-            await gather(*self._db_futures.values())
-            dbs = {db: self.app[db] for db in self._db_futures}
-            self.app["db_elapsed"].set(defaultdict(float))
-            try:
-                await callback(**dbs)
-                return True
-            except Exception:
-                # otherwise we'll not see any error
-                self.log.exception("Unhandled exception in on_dbs_connected callback")
-                await self._raise_graceful_exit()
-                return False
-
-        self._on_dbs_connected_callbacks.append(
-            asyncio.ensure_future(on_dbs_connected_callback_wrapper()),
-        )
-
-    async def ready(self) -> bool:
-        """
-        Wait until the application has fully loaded, initialized, etc. everything and is \
-        ready to serve.
-
-        :return: Boolean indicating whether the server failed to launch (False).
-        """
+    async def ready(self) -> None:
+        """Wait until the application has fully loaded, initialized, etc. and is ready to serve."""
         await gather(*self._db_futures.values())
-        flags = await gather(*self._on_dbs_connected_callbacks)
-        return not flags or all(flags)
 
     @property
     def load(self) -> float:
@@ -563,8 +534,6 @@ class AthenianApp(especifico.AioHttpApp):
                 await close_event.wait()
         if self._mandrill is not None:
             await self._mandrill.close()
-        for task in self._on_dbs_connected_callbacks:
-            task.cancel()
         for k, f in self._db_futures.items():
             f.cancel()
             if (db := self.app.get(k)) is not None:
@@ -907,7 +876,12 @@ class AthenianApp(especifico.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    def add_api(self, specification: str, ref_resolver_store: Optional[dict] = None, **kwargs):
+    def add_api(
+        self,
+        specification: str | dict,
+        ref_resolver_store: Optional[dict] = None,
+        **kwargs,
+    ):
         """Load the API spec and add the defined routes."""
         api = super().add_api(specification, ref_resolver_store=ref_resolver_store, **kwargs)
         api.subapp["aiohttp_jinja2_environment"].autoescape = False
@@ -1008,8 +982,6 @@ class AthenianApp(especifico.AioHttpApp):
             )
 
     async def _report_ready(self) -> None:
-        if not await self.ready():
-            return
         self.app["health"] = health = prometheus_client.Info(
             "server_ready",
             "Indicates whether the server is fully up and running",
@@ -1035,13 +1007,31 @@ class AthenianApp(especifico.AioHttpApp):
         """
         if cls._ref_resolver_store is None:
             public_schema_url = "https://api.athenian.co/v1/openapi.json"
-            public_schema_path = Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml"
-
-            with public_schema_path.open("r") as fp:
-                public_schema = yaml.load(fp, Loader=yaml.CSafeLoader)
-
-            cls._ref_resolver_store = {public_schema_url: public_schema}
+            cls._ref_resolver_store = {public_schema_url: _specs_store["public"]}
         return cls._ref_resolver_store
+
+
+class _SpecsStore:
+    """Gives access to the OpenAPI specifications."""
+
+    _PATHS = {
+        "public": Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml",
+        "private": Path(athenian.api.__file__).parent / "align" / "spec" / "openapi.yaml",
+    }
+
+    def __init__(self) -> None:
+        self._loaded: dict[str, dict] = {}
+
+    def __getitem__(self, name: str) -> dict:
+        try:
+            return self._loaded[name]
+        except KeyError:
+            with self._PATHS[name].open("r") as fp:
+                self._loaded[name] = yaml.load(fp, Loader=yaml.CSafeLoader)
+            return self._loaded[name]
+
+
+_specs_store = _SpecsStore()
 
 
 def _resolve_operation_req_body(
