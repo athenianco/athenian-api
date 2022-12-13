@@ -14,11 +14,11 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
     ClosedCalculator,
+    CycleCounter,
+    CycleCounterWithQuantiles,
+    CycleTimeCalculator,
     DoneCalculator,
     FlowRatioCalculator,
-    LeadCounter,
-    LeadCounterWithQuantiles,
-    LeadTimeCalculator,
     LiveCycleCounter,
     LiveCycleCounterWithQuantiles,
     LiveCycleTimeCalculator,
@@ -106,7 +106,7 @@ def random_dropout(pr, prob):
         ReviewTimeCalculator,
         MergingTimeCalculator,
         ReleaseTimeCalculator,
-        LeadTimeCalculator,
+        CycleTimeCalculator,
         WaitFirstReviewTimeCalculator,
     ],
 )
@@ -131,7 +131,7 @@ def test_pull_request_metrics_2d(pr_samples, cls):  # noqa: F811
         ReviewTimeCalculator,
         MergingTimeCalculator,
         ReleaseTimeCalculator,
-        LeadTimeCalculator,
+        CycleTimeCalculator,
         WaitFirstReviewTimeCalculator,
     ],
 )
@@ -176,7 +176,7 @@ def test_pull_request_metrics_empty_group(pr_samples, fill_val):
         (ReviewTimeCalculator, "approved,last_review"),
         (MergingTimeCalculator, "closed"),
         (ReleaseTimeCalculator, "released"),
-        (LeadTimeCalculator, "released"),
+        (CycleTimeCalculator, "released"),
         (WaitFirstReviewTimeCalculator, "first_comment_on_first_review"),
     ],
 )
@@ -357,7 +357,7 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
         MergingCounter,
         ReleaseCounter,
         OpenCounter,
-        LeadCounter,
+        CycleCounter,
         LiveCycleCounter,
         AllCounter,
     ],
@@ -407,7 +407,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
         (MergingCounterWithQuantiles, MergingCounter),
         (ReleaseCounterWithQuantiles, ReleaseCounter),
         (OpenCounterWithQuantiles, OpenCounter),
-        (LeadCounterWithQuantiles, LeadCounter),
+        (CycleCounterWithQuantiles, CycleCounter),
         (LiveCycleCounterWithQuantiles, LiveCycleCounter),
     ],
 )
@@ -1225,7 +1225,7 @@ async def test_calc_pull_request_metrics_deep_filters(
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     qargs = {"quantiles": (0, 1)}
     ensemble = PullRequestMetricCalculatorEnsemble(
-        PullRequestMetricID.PR_CYCLE_TIME,
+        PullRequestMetricID.PR_LIVE_CYCLE_TIME,
         PullRequestMetricID.PR_WIP_COUNT,
         PullRequestMetricID.PR_RELEASE_TIME,
         PullRequestMetricID.PR_CLOSED,
@@ -1262,7 +1262,7 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
         cycle_time(*args)
         closed(*args)
         ensemble_metrics = ensemble.values()
-        assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.values
+        assert ensemble_metrics[PullRequestMetricID.PR_LIVE_CYCLE_TIME] == cycle_time.values
         assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.values
         assert ensemble_metrics[PullRequestMetricID.PR_WIP_COUNT] == wip_count.values
         assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.values

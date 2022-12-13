@@ -17,7 +17,7 @@ from athenian.api.serialization import FriendlyJson
     "metric, cached, result",
     itertools.chain(
         zip(
-            (PullRequestMetricID.PR_CYCLE_TIME, PullRequestMetricID.PR_LEAD_TIME),
+            (PullRequestMetricID.PR_LIVE_CYCLE_TIME, PullRequestMetricID.PR_LEAD_TIME),
             itertools.repeat(False),
             [
                 (

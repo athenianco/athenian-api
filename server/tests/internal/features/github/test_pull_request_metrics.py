@@ -9,8 +9,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
     AverageReviewCommentsCalculator,
     ClosedCalculator,
-    LeadTimeBelowThresholdRatio,
-    LeadTimeCalculator,
+    CycleTimeBelowThresholdRatio,
+    CycleTimeCalculator,
     NotReviewedCalculator,
     OpenTimeBelowThresholdRatio,
     OpenTimeCalculator,
@@ -470,8 +470,8 @@ class TestLeadTimeBelowThresholdRatio:
 
         facts = df_from_structs(prs)
 
-        lead_time_calc = LeadTimeCalculator(quantiles=quantiles)
-        calc = LeadTimeBelowThresholdRatio(lead_time_calc, quantiles=quantiles)
+        lead_time_calc = CycleTimeCalculator(quantiles=quantiles)
+        calc = CycleTimeBelowThresholdRatio(lead_time_calc, quantiles=quantiles)
 
         lead_time_calc(facts, min_times, max_times, None, groups_mask)
         calc(facts, min_times, max_times, None, groups_mask)

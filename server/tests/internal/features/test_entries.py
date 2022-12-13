@@ -311,7 +311,7 @@ class TestCalcPullRequestMetricsLineGithub:
             assert res0[0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][intvl_idx][0].value
 
     @with_defer
-    async def test_pr_live_cycle_time_alias_for_pr_cycle_time(
+    async def test_lead_time_alias_for_pr_cycle_time(
         self,
         mdb: Database,
         pdb: Database,
@@ -324,7 +324,7 @@ class TestCalcPullRequestMetricsLineGithub:
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
         )
         res = await calculator.calc_pull_request_metrics_line_github(
-            metrics=[PullRequestMetricID.PR_CYCLE_TIME, PullRequestMetricID.PR_LIVE_CYCLE_TIME],
+            metrics=[PullRequestMetricID.PR_CYCLE_TIME, PullRequestMetricID.PR_LEAD_TIME],
             time_intervals=[[dt(2017, 8, 10), dt(2017, 9, 30)]],
             **self._default_kwargs,
             **shared_kwargs,
