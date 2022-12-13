@@ -1,4 +1,4 @@
-add-trailing-comma==2.3.0
+add-trailing-comma==2.4.0
 bandit==1.7.4
 black==22.6.0
 chorny==1.6.1
