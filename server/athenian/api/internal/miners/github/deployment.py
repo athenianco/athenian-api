@@ -107,6 +107,7 @@ from athenian.api.internal.settings import (
     LogicalDeploymentSettings,
     LogicalRepositorySettings,
     ReleaseMatch,
+    ReleaseMatchSetting,
     ReleaseSettings,
 )
 from athenian.api.models.metadata.github import (
@@ -706,20 +707,32 @@ async def _finalize_release_settings(
     cache: Optional[aiomcache.Client],
 ) -> tuple[set[str], ReleaseSettings]:
     assert not notifications.empty
-    rows = await rdb.fetch_all(
+    deployed_repos_df = await read_sql_query(
         select(distinct(DeployedComponent.repository_node_id)).where(
             DeployedComponent.account_id == account,
             DeployedComponent.deployment_name.in_any_values(notifications.index.values),
         ),
+        rdb,
+        [DeployedComponent.repository_node_id],
     )
     repos = logical_settings.with_logical_deployments(
-        prefixer.repo_node_to_name[r[0]] for r in rows
+        prefixer.repo_node_to_name.get(r)
+        for r in deployed_repos_df[DeployedComponent.repository_node_id.name].values
     )
+    del deployed_repos_df
     need_disambiguate = []
+    log = logging.getLogger(f"{metadata.__package__}._finalize_release_settings")
     for repo in repos:
-        if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
+        try:
+            repo_setting = release_settings.native[repo]
+        except KeyError:
+            # not yet added to the reposet
+            log.warning("missing from the global release settings: %s", repo)
+            repo_setting = release_settings.native[repo] = release_settings.prefixed[
+                prefixer.repo_name_to_prefixed_name[repo]
+            ] = ReleaseMatchSetting.default()
+        if repo_setting.match == ReleaseMatch.tag_or_branch:
             need_disambiguate.append(repo)
-            break
     if not need_disambiguate:
         return repos, release_settings
     _, matched_bys = await ReleaseLoader.load_releases(
