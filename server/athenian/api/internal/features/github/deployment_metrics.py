@@ -65,8 +65,8 @@ def group_deployments_by_repositories(
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(repositories)
-    df_repos = [c[DeployedComponent.repository_full_name].values for c in df["components"].values]
-    df_repos_flat = np.concatenate(df_repos).astype("U", copy=False)
+    df_repos = df[DeploymentFacts.f.repositories].values
+    df_repos_flat = np.concatenate(df_repos)
     # DEV-4112 exclude empty deployments
     df_commits = np.concatenate(
         df[DeploymentFacts.f.commits_overall].values, dtype=int, casting="unsafe",
