@@ -11,6 +11,8 @@ env:
     ~/.cache/pip
     ~/.local/bin
     ~/.local/lib/python3.*/site-packages
+  PYTEST_SENTRY_TRACES_SAMPLE_RATE: 0.001
+  SENTRY_ENVIRONMENT: test
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
