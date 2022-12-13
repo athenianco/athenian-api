@@ -152,7 +152,9 @@ override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
 os.environ["SENTRY_SAMPLING_RATE"] = "0.001"  # ~20 transactions per day
+# do not forget to update PYTEST_SENTRY_TRACES_SAMPLE_RATE in GHA
 os.environ["SENTRY_ENV"] = "test"
+# do not forget to update SENTRY_ENVIRONMENT in GHA
 if _init_sentry(
     log := logging.getLogger("test-api"),
     _ApplicationEnvironment.discover(log),
