@@ -47,6 +47,7 @@ async def test_heavy_load(client, headers):
 
 
 @pytest.mark.app_validate_responses(False)
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 async def test_timeout(client, headers, app):
     req_body = {
         "for": [
