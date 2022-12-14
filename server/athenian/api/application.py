@@ -27,6 +27,7 @@ from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
 import ariadne
+import asyncpg
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
 from especifico.apis import aiohttp_api
 from especifico.decorators import validation
@@ -416,9 +417,19 @@ class AthenianApp(especifico.AioHttpApp):
                         self.log.warning(
                             "%d/%d timed out connecting to %s", i + 1, attempts, db_conn,
                         )
-                        timeout = e  # `e` goes out of scope before `else`
+                        exc = e  # `e` goes out of scope before `else`
+                    except asyncpg.TooManyConnectionsError as e:
+                        self.log.warning(
+                            '%d/%d server responded with "sorry, too many clients already" while '
+                            "connecting to %s",
+                            i + 1,
+                            attempts,
+                            db_conn,
+                        )
+                        await asyncio.sleep(0.1)
+                        exc = e
                 else:
-                    raise timeout from None
+                    raise exc from None
                 self.log.info("Connected to the %s DB on %s", name, db.url.obscure_password)
                 self.app[shortcut] = measure_db_overhead_and_retry(db, shortcut, self.app)
                 if shortcut == "pdb":
@@ -436,6 +447,13 @@ class AthenianApp(especifico.AioHttpApp):
                 return
             except Exception:
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
+                for k, f in self._db_futures.items():
+                    f.cancel()
+                    try:
+                        del self.app[k]
+                    except KeyError:
+                        continue
+                self._db_futures = {}
                 raise GracefulExit() from None
 
         self.app.on_shutdown.append(self.shutdown)
