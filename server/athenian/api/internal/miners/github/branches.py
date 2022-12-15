@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
 from typing import Iterable, Optional
@@ -18,6 +19,14 @@ from athenian.api.models.metadata.github import Branch, NodeCommit, NodeReposito
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
+
+
+@dataclass(slots=True)
+class BranchMinerMetrics:
+    """Branch source data error statistics."""
+
+    empty: int
+    no_default: int
 
 
 @cached_methods
@@ -44,11 +53,13 @@ class BranchMiner:
         mdb: DatabaseLike,
         cache: Optional[aiomcache.Client],
         strip: bool = False,
+        metrics: Optional[BranchMinerMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
         :param strip: Value indicating whether the repository names are prefixed.
+        :param metrics: Report error statistics by mutating this object.
         """
         if strip and repos is not None:
             repos = [r.split("/", 1)[1] for r in repos]
@@ -96,6 +107,8 @@ class BranchMiner:
                     len(repo_branch_names),
                     default_branch,
                 )
+                if metrics is not None:
+                    metrics.no_default += 1
             default_branches[repo] = default_branch
             pos = next_pos
         if ambiguous_defaults:
@@ -162,6 +175,8 @@ class BranchMiner:
                 for report, items in ((log.warning, warnings), (log.error, errors)):
                     if items:
                         report("the following repositories have 0 branches: %s", items)
+                        if metrics is not None:
+                            metrics.empty += len(items)
         return branches, default_branches
 
     @classmethod
