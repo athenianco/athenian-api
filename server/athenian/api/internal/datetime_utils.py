@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Optional, Tuple, Union
 
 from athenian.api.models.web import Granularity, InvalidRequestError
@@ -65,3 +65,24 @@ def split_to_time_intervals(
         return split(granularities, ".granularity"), tz_timedelta
 
     return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tz_timedelta
+
+
+def closed_dates_interval_to_datetimes(from_: date, to_: date) -> tuple[datetime, datetime]:
+    """Convert a closed dates interval to a datetimes interval.
+
+    Dates interval is closed in the sense that both `from_` and `to_` days are included
+    in the interval.
+
+    """
+    from_dt = datetime.combine(from_, time.min, tzinfo=timezone.utc)
+    # set datetime to the start of the following day
+    to_dt = datetime.combine(to_ + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return (from_dt, to_dt)
+
+
+def datetimes_to_closed_dates_interval(from_: datetime, to_: datetime) -> tuple[date, date]:
+    """Convert a datetime interval to a closed dates interval.
+
+    This is the inverse function of `closed_dates_interval_to_datetimes`.
+    """
+    return (from_.date(), to_.date() - timedelta(days=1))
