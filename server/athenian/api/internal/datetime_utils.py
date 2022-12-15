@@ -9,8 +9,12 @@ def coarsen_time_interval(time_from: datetime, time_to: datetime) -> Tuple[date,
     """Extend the time interval to align at the date boarders."""
     assert time_to > time_from
     zerotd = timedelta(0)
-    assert isinstance(time_from, datetime) and time_from.tzinfo.utcoffset(time_from) == zerotd
-    assert isinstance(time_to, datetime) and time_to.tzinfo.utcoffset(time_to) == zerotd
+    for t in time_to, time_from:
+        assert (
+            isinstance(t, datetime)
+            and t.tzinfo is not None
+            and t.tzinfo.utcoffset(time_from) == zerotd
+        )
     date_from = time_from.date()
     date_to = time_to.date()
     if time_to.time() != datetime.min.time():
@@ -39,7 +43,7 @@ def split_to_time_intervals(
                 pointer=".date_from",
             ),
         )
-    tzoffset = timedelta(minutes=-tzoffset) if tzoffset is not None else timedelta(0)
+    tz_timedelta = timedelta(minutes=-tzoffset) if tzoffset is not None else timedelta(0)
 
     def split(granularity: str, ptr: str) -> List[datetime]:
         try:
@@ -53,11 +57,11 @@ def split_to_time_intervals(
                 ),
             )
         return [
-            datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc) + tzoffset
+            datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc) + tz_timedelta
             for i in intervals
         ]
 
     if isinstance(granularities, str):
-        return split(granularities, ".granularity"), tzoffset
+        return split(granularities, ".granularity"), tz_timedelta
 
-    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
+    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tz_timedelta
