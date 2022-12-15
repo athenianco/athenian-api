@@ -1,13 +1,6 @@
 from aiohttp import web
 
-from athenian.api.internal.dashboard import (
-    build_dashboard_web_model,
-    get_dashboard as get_dashboard_from_db,
-    get_dashboard_charts,
-)
-from athenian.api.internal.team import get_team_from_db
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response
 
 
 async def get_dashboard(
@@ -16,15 +9,6 @@ async def get_dashboard(
     dashboard_id: int,
 ) -> web.Response:
     """Retrieve a team dashboard."""
-    await get_team_from_db(team_id, account_id=None, user_id=request.uid, sdb_conn=request.sdb)
-    if dashboard_id == 0:
-        pass
-    else:
-        dashboard = await get_dashboard_from_db(dashboard_id, request.sdb)
-
-    charts = await get_dashboard_charts(dashboard_id, request.sdb)
-    dashboard_model = build_dashboard_web_model(dashboard, charts)
-    return model_response(dashboard_model)
 
 
 async def update_dashboard(
