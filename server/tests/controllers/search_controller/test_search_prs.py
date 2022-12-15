@@ -25,13 +25,7 @@ from tests.testutils.time import dt, freeze_time
 
 
 class BaseSearchPRsTest(Requester):
-    async def _request(self, assert_status: int = 200, **kwargs: Any) -> dict:
-        path = "/private/search/pull_requests"
-        client = self.client
-
-        response = await client.request(method="POST", path=path, headers=self.headers, **kwargs)
-        assert response.status == assert_status
-        return await response.json()
+    path = "/private/search/pull_requests"
 
     def _body(
         self,
@@ -49,18 +43,18 @@ class BaseSearchPRsTest(Requester):
         return body
 
     async def _fetch_pr_numbers(self, **kwargs) -> Sequence[int]:
-        res = await self._request(**kwargs)
+        res = await self.post_json(**kwargs)
         return tuple(pr["number"] for pr in res["pull_requests"])
 
 
 class TestSearchPRsError(BaseSearchPRsTest):
     async def test_invalid_repositories(self, sdb: Database) -> None:
         body = self._body(repositories=["github.com/wrong/repo"])
-        await self._request(403, json=body)
+        await self.post_json(403, json=body)
 
     async def test_invalid_team_in_participants(self, sdb: Database) -> None:
         body = self._body(participants={"author": ["{42}"]})
-        res = await self._request(404, json=body)
+        res = await self.post_json(404, json=body)
         assert res["title"] == "Team not found"
 
     @pytest.mark.xfail
@@ -68,29 +62,29 @@ class TestSearchPRsError(BaseSearchPRsTest):
         # TODO: this fails with unhandled exception
         await models_insert(sdb, TeamFactory(id=42, members=[]))
         body = self._body(participants={"author": ["{42}"]})
-        await self._request(400, json=body)
+        await self.post_json(400, json=body)
 
     async def test_jira_not_installed(self, sdb: Database, mdb_rw: Database) -> None:
         await sdb.execute(
             sa.delete(AccountJiraInstallation).where(AccountJiraInstallation.account_id == 1),
         )
         body = self._body(jira={"projects": ["DEV"]})
-        res = await self._request(422, json=body)
+        res = await self.post_json(422, json=body)
         assert res["detail"] == "JIRA has not been installed to the metadata yet."
 
     async def test_invalid_date(self, sdb: Database) -> None:
         body = self._body()
         body["date_from"] = "foo"
-        await self._request(400, json=body)
+        await self.post_json(400, json=body)
 
         body.pop("date_from")
-        await self._request(400, json=body)
+        await self.post_json(400, json=body)
 
 
 class TestSearchPRs(BaseSearchPRsTest):
     async def test_smoke(self, sdb: Database) -> None:
         body = self._body()
-        res = await self._request(json=body)
+        res = await self.post_json(json=body)
         assert len(res["pull_requests"]) == 7
 
     async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
@@ -122,7 +116,7 @@ class TestSearchPRs(BaseSearchPRsTest):
     async def test_participants(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(sdb, TeamFactory(id=10, members=[40390]))
         body = self._body(participants={"author": ["{10}"]})
-        res = await self._request(json=body)
+        res = await self.post_json(json=body)
         assert res["pull_requests"] == [
             {"number": 1247, "repository": "github.com/src-d/go-git"},
         ]
@@ -130,7 +124,7 @@ class TestSearchPRs(BaseSearchPRsTest):
         await models_insert(sdb, TeamFactory(id=11, parent_id=10, members=[39874]))
         # now also PR authored subteam are selected
         body = self._body(participants={"author": ["{10}"]})
-        res = await self._request(json=body)
+        res = await self.post_json(json=body)
         assert sorted(res["pull_requests"], key=itemgetter("number")) == [
             {"number": 1247, "repository": "github.com/src-d/go-git"},
             {"number": 1248, "repository": "github.com/src-d/go-git"},
