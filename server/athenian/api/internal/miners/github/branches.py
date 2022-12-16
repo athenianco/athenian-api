@@ -25,8 +25,14 @@ from athenian.api.tracing import sentry_span
 class BranchMinerMetrics:
     """Branch source data error statistics."""
 
-    empty: int
+    count: int
+    empty_count: int
     no_default: int
+
+    @classmethod
+    def empty(cls) -> "BranchMinerMetrics":
+        """Initialize a new BranchMinerMetrics instance filled with zeros."""
+        return BranchMinerMetrics(0, 0, 0)
 
 
 @cached_methods
@@ -176,7 +182,9 @@ class BranchMiner:
                     if items:
                         report("the following repositories have 0 branches: %s", items)
                         if metrics is not None:
-                            metrics.empty += len(items)
+                            metrics.empty_count += len(items)
+        if metrics is not None:
+            metrics.count = len(branches)
         return branches, default_branches
 
     @classmethod

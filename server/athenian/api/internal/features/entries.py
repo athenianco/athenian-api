@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 import dataclasses
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
 from itertools import chain
@@ -1596,7 +1597,7 @@ def make_calculator(
     )
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class MetricsLineRequest:
     """Common base for multiple metrics request classes."""
 
@@ -1622,7 +1623,7 @@ class MetricsLineRequest:
         return (td.jira_filter for td in self.teams)
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class TeamSpecificFilters:
     """Filters that are different for each team."""
 
@@ -1643,6 +1644,21 @@ class TeamSpecificFilters:
         dikt = dataclasses.asdict(self)
         del dikt["participants"]  # fully defined by the team ID
         return str(dikt)
+
+
+@dataclass(slots=True)
+class MinePullRequestMetrics:
+    """Various statistics about mined pull requests."""
+
+    count: int
+    done_count: int
+    merged_count: int
+    open_count: int
+
+    @classmethod
+    def empty(cls) -> MinePullRequestMetrics:
+        """Initialize a new MinePullRequestMetrics instance filled with zeros."""
+        return MinePullRequestMetrics(0, 0, 0, 0)
 
 
 class PRFactsCalculator:
@@ -1696,6 +1712,7 @@ class PRFactsCalculator:
         with_jira: JIRAEntityToFetch | int,
         branches: Optional[pd.DataFrame] = None,
         default_branches: Optional[dict[str, str]] = None,
+        metrics: Optional[MinePullRequestMetrics] = None,
     ) -> pd.DataFrame:
         """
         Calculate facts about pull request on GitHub.
@@ -1725,6 +1742,8 @@ class PRFactsCalculator:
         )
         if df.empty:
             df = pd.DataFrame(columns=PullRequestFacts.f)
+        if metrics is not None:
+            self._set_count_metrics(df, metrics)
         return df
 
     @sentry_span
@@ -2025,6 +2044,15 @@ class PRFactsCalculator:
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
         )
         return all_facts_df, with_jira
+
+    @staticmethod
+    def _set_count_metrics(facts: pd.DataFrame, metrics: MinePullRequestMetrics) -> None:
+        metrics.prs.count = len(facts)
+        metrics.prs.done_count = facts[PullRequestFacts.f.done].sum()
+        metrics.prs.merged_count = (
+            facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
+        ).sum()
+        metrics.prs.open_count = facts[PullRequestFacts.f.closed].isnull().sum()
 
 
 class ParticipantsMerge:

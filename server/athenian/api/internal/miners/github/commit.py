@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
@@ -65,6 +66,23 @@ class FilterCommitsProperty(Enum):
 
 # hashes, vertex offsets in edges, edge indexes
 DAG = tuple[np.ndarray, np.ndarray, np.ndarray]
+
+
+@dataclass(slots=True)
+class CommitDAGMetrics:
+    """Commit DAG error statistics, per repository.
+
+    Intersections are possible. For example, `bool(pristine & corrupted)` can be `True`.
+    """
+
+    pristine: set[str]
+    corrupted: set[str]
+    orphaned: set[str]
+
+    @classmethod
+    def empty(cls) -> "CommitDAGMetrics":
+        """Initialize a new CommitDAGMetrics instance filled with zeros."""
+        return CommitDAGMetrics(set(), set(), set())
 
 
 def _postprocess_extract_commits(result, with_deployments=True, **_):
@@ -367,6 +385,7 @@ async def fetch_repository_commits(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
+    metrics: Optional[CommitDAGMetrics] = None,
 ) -> dict[str, tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
@@ -379,6 +398,7 @@ async def fetch_repository_commits(
                     3. Commit timestamp. \
                     4. Commit repository name.
     :param prune: Remove any commits that are not accessible from `branches`.
+    :param metrics: Mutable error statistics, will be written on new fetches.
     :return: Map from repository names to their DAG consistency indicators and bodies.
     """
     if branches.empty:
@@ -495,6 +515,8 @@ async def fetch_repository_commits(
     for repo, pdag in repos.items():
         if repo not in result:
             result[repo] = (True, _empty_dag()) if prune else pdag
+        if metrics is not None and len(result[repo][1][0]) == 0:
+            metrics.pristine.add(repo)
     return result
 
 
@@ -636,10 +658,12 @@ async def _fetch_commit_history_dag(
     meta_ids: tuple[int, ...],
     mdb: Database,
     alloc=None,
+    metrics: Optional[CommitDAGMetrics] = None,
 ) -> tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
+    # these are some approximately sensible defaults, found by experiment
     max_stop_heads = 25
     max_inner_partitions = 25
-    log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
+    log = logging.getLogger(f"{metadata.__package__}._fetch_commit_history_dag")
     # there can be duplicates, remove them
     head_hashes = np.asarray(head_hashes, dtype="S40")
     head_ids = np.asarray(head_ids, dtype=int)
@@ -688,13 +712,16 @@ async def _fetch_commit_history_dag(
         bads, bad_seeds, bad_hashes = verify_edges_integrity(new_edges, alloc)
         if bads:
             log.warning(
-                "%d @ %d new DAG edges are not consistent (%d commits / %d existing): %s",
+                "%s: %d @ %d new DAG edges are not consistent (%d commits / %d existing): %s",
+                repo,
                 len(bads),
                 len(bad_seeds),
                 len(bad_hashes),
                 len(hashes),
                 [new_edges[i] for i in bad_seeds[:10]],
             )
+            if metrics is not None:
+                metrics.corrupted.add(repo)
             consistent = False
             for i in bads[::-1]:
                 new_edges.pop(i)
@@ -733,6 +760,8 @@ async def _fetch_commit_history_dag(
                     "skipping orphans which are suspiciously young: %s",
                     ", ".join(removed_orphans_hashes),
                 )
+                if metrics is not None:
+                    metrics.orphaned.add(repo)
                 consistent = False
                 for i in sorted(removed_orphans_indexes, reverse=True):
                     new_edges.pop(i)

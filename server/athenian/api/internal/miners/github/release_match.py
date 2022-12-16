@@ -33,6 +33,7 @@ from athenian.api.internal.miners.github.branches import load_branch_commit_date
 from athenian.api.internal.miners.github.commit import (
     DAG,
     RELEASE_FETCH_COMMITS_COLUMNS,
+    CommitDAGMetrics,
     fetch_precomputed_commit_history_dags,
     fetch_repository_commits,
 )
@@ -533,7 +534,7 @@ class ReleaseToPullRequestMapper:
             matched_bys,
             release_settings,
             dags,
-        ) = await cls._find_releases_for_matching_prs(
+        ) = await cls.find_releases_for_matching_prs(
             repos,
             branches,
             default_branches,
@@ -599,7 +600,7 @@ class ReleaseToPullRequestMapper:
 
     @classmethod
     @sentry_span
-    async def _find_releases_for_matching_prs(
+    async def find_releases_for_matching_prs(
         cls,
         repos: Iterable[str],  # logical
         branches: pd.DataFrame,
@@ -618,6 +619,7 @@ class ReleaseToPullRequestMapper:
         rdb: Database,
         cache: Optional[aiomcache.Client],
         releases_in_time_range: Optional[pd.DataFrame] = None,
+        metrics: Optional[CommitDAGMetrics] = None,
     ) -> Tuple[
         pd.DataFrame,
         pd.DataFrame,
@@ -632,6 +634,9 @@ class ReleaseToPullRequestMapper:
         2. Use those matches to load enough releases before `time_from` to ensure we don't get \
            "release leakages" in the commit DAG.
         3. Optionally, use those matches to load all the releases after `time_to`.
+
+        :param releases_in_time_range: If set, we rely on that instead of loading releases \
+                                       between `time_from` and `time_to`.
         """
         if releases_in_time_range is None:
             # we have to load releases in two separate batches: before and after time_from
@@ -690,6 +695,7 @@ class ReleaseToPullRequestMapper:
                 mdb,
                 pdb,
                 cache,
+                metrics=metrics,
             )
 
         if has_logical := contains_logical_repos(existing_repos):

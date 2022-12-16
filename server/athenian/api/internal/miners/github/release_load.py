@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -39,6 +40,7 @@ from athenian.api.internal.logical_repos import (
 from athenian.api.internal.miners.github.branches import load_branch_commit_dates
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
+    CommitDAGMetrics,
     compose_commit_url,
     fetch_precomputed_commit_history_dags,
     fetch_repository_commits,
@@ -70,6 +72,23 @@ unfresh_releases_threshold = 50
 unfresh_releases_lag = timedelta(hours=1)
 
 
+@dataclass(slots=True)
+class MineReleaseMetrics:
+    """Release mining error statistics."""
+
+    commits: CommitDAGMetrics
+    count_by_branch: int
+    count_by_event: int
+    count_by_tag: int
+    empty_releases: dict[str, int]
+    unresolved: int
+
+    @classmethod
+    def empty(cls) -> "MineReleaseMetrics":
+        """Initialize a new MineReleaseMetrics instance filled with zeros."""
+        return MineReleaseMetrics(CommitDAGMetrics.empty(), 0, 0, 0, {}, 0)
+
+
 class ReleaseLoader:
     """Loader for releases."""
 
@@ -93,6 +112,7 @@ class ReleaseLoader:
         cache: Optional[aiomcache.Client],
         index: Optional[str | Sequence[str]] = None,
         force_fresh: bool = False,
+        metrics: Optional[MineReleaseMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, ReleaseMatch]]:
         """
         Fetch releases from the metadata DB according to the match settings.
@@ -145,6 +165,7 @@ class ReleaseLoader:
                 rdb,
                 cache,
                 index=index,
+                metrics=metrics,
             ),
         )
         # Uncomment to ignore pdb
@@ -609,10 +630,12 @@ class ReleaseLoader:
         rdb: Database,
         cache: Optional[aiomcache.Client],
         index: Optional[str | Sequence[str]] = None,
+        metrics: Optional[MineReleaseMetrics] = None,
     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
         if not repos:
             return dummy_releases_df(index)
+        log = logging.getLogger(f"{metadata.__package__}._fetch_release_events")
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_patterns = {}
         for pattern, pattern_repos in repos.items():
@@ -633,8 +656,10 @@ class ReleaseLoader:
         )
         unresolved_commits_short = defaultdict(list)
         unresolved_commits_long = defaultdict(list)
+        unresolved_count = 0
         for row in release_rows:
             if row[ReleaseNotification.resolved_commit_node_id.name] is None:
+                unresolved_count += 1
                 repo = row[ReleaseNotification.repository_node_id.name]
                 commit = row[ReleaseNotification.commit_hash_prefix.name]
                 if len(commit) == 7:
@@ -767,6 +792,11 @@ class ReleaseLoader:
                         matched_by_column: ReleaseMatch.event.value,
                     },
                 )
+        if unresolved_count > 0:
+            log.info("resolved %d / %d event releases", len(updated), unresolved_count)
+            if metrics is not None:
+                metrics.unresolved += unresolved_count - len(updated)
+
         if updated:
 
             async def update_pushed_release_commits():
