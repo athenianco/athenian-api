@@ -125,3 +125,18 @@ class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Ba
     # de-referenced commit node ID in metadata DB
     resolved_commit_node_id = Column(BigInteger(), info={"reset_nulls": True})
     resolved_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+
+class HealthMetric(Base):
+    """Account data health statistics."""
+
+    __tablename__ = "health_metrics"
+
+    name = Column(Text(), primary_key=True)
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        primary_key=True,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    value = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)

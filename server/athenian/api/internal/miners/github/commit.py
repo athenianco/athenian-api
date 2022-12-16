@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Collection, Iterable, KeysView, Mapping, Optional, Sequence, Union
+from typing import Collection, Iterable, Iterator, KeysView, Mapping, Optional, Sequence, Union
 
 import aiomcache
 import numpy as np
@@ -48,6 +48,7 @@ from athenian.api.models.metadata.github import (
     PushCommit,
     Release,
 )
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
@@ -83,6 +84,12 @@ class CommitDAGMetrics:
     def empty(cls) -> "CommitDAGMetrics":
         """Initialize a new CommitDAGMetrics instance filled with zeros."""
         return CommitDAGMetrics(set(), set(), set())
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="commits_pristine", value=len(self.pristine))
+        yield HealthMetric(name="commits_corrupted", value=len(self.corrupted))
+        yield HealthMetric(name="commits_orphaned", value=len(self.orphaned))
 
 
 def _postprocess_extract_commits(result, with_deployments=True, **_):

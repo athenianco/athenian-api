@@ -6,7 +6,7 @@ from itertools import chain, groupby, product, repeat
 import json
 import logging
 from operator import attrgetter
-from typing import Any, Collection, KeysView, Mapping, NamedTuple, Optional, Sequence
+from typing import Any, Collection, Iterator, KeysView, Mapping, NamedTuple, Optional, Sequence
 
 import aiomcache
 import numpy as np
@@ -124,6 +124,7 @@ from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
     DeploymentNotification,
+    HealthMetric,
     ReleaseNotification,
 )
 from athenian.api.models.precomputed.models import (
@@ -152,6 +153,11 @@ class MineDeploymentsMetrics:
     def empty(cls) -> "MineDeploymentsMetrics":
         """Initialize a new MineDeploymentsMetrics instance filled with zeros."""
         return MineDeploymentsMetrics(0, 0)
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="deployments_count", value=self.count)
+        yield HealthMetric(name="deployments_unresolved", value=self.unresolved)
 
 
 async def mine_deployments(

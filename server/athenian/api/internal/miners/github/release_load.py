@@ -5,7 +5,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Iterable, KeysView, Mapping, Optional, Sequence
+from typing import Iterable, Iterator, KeysView, Mapping, Optional, Sequence
 
 import aiomcache
 import morcilla
@@ -57,7 +57,7 @@ from athenian.api.internal.settings import (
     default_branch_alias,
 )
 from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
-from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.api.models.persistentdata.models import HealthMetric, ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseMatchTimespan,
@@ -87,6 +87,15 @@ class MineReleaseMetrics:
     def empty(cls) -> "MineReleaseMetrics":
         """Initialize a new MineReleaseMetrics instance filled with zeros."""
         return MineReleaseMetrics(CommitDAGMetrics.empty(), 0, 0, 0, {}, 0)
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield from self.commits.as_db()
+        yield HealthMetric(name="releases_by_branch", value=self.count_by_branch)
+        yield HealthMetric(name="releases_by_tag", value=self.count_by_tag)
+        yield HealthMetric(name="releases_by_event", value=self.count_by_event)
+        yield HealthMetric(name="releases_empty", value=sum(self.empty_releases.values()))
+        yield HealthMetric(name="releases_unresolved", value=self.unresolved)
 
 
 class ReleaseLoader:

@@ -30,6 +30,7 @@ from athenian.api.internal.miners.access import AccessChecker
 from athenian.api.internal.miners.access_classes import access_classes
 from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.models.metadata.github import AccountRepository, NodeUser
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import LogicalRepository, RepositorySet, UserAccount
 from athenian.api.models.web import (
     ForbiddenError,
@@ -48,13 +49,18 @@ from athenian.api.tracing import sentry_span
 class RepositorySetMetrics:
     """Reposet synchronization error statistics."""
 
-    count: int
+    length: int
     undead: int
 
     @classmethod
     def empty(cls) -> RepositorySetMetrics:
         """Initialize a new RepositorySetMetrics instance filled with zeros."""
         return RepositorySetMetrics(0, 0)
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="reposet_length", value=self.length)
+        yield HealthMetric(name="reposet_undead", value=self.undead)
 
 
 def reposet_items_to_refs(items: list[tuple[int, str, str]]) -> Iterator[RepositoryReference]:
