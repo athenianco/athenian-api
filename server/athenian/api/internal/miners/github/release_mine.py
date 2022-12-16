@@ -58,6 +58,7 @@ from athenian.api.internal.miners.github.precomputed_releases import (
 )
 from athenian.api.internal.miners.github.rebased_pr import match_rebased_prs
 from athenian.api.internal.miners.github.release_load import (
+    MineReleaseMetrics,
     ReleaseLoader,
     group_repos_by_release_match,
 )
@@ -124,6 +125,7 @@ async def mine_releases(
     with_deployments: bool = True,
     with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     releases_in_time_range: Optional[pd.DataFrame] = None,
+    metrics: Optional[MineReleaseMetrics] = None,
 ) -> tuple[
     pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
@@ -146,6 +148,7 @@ async def mine_releases(
                       the released PR mapped to JIRA issues.
     :param releases_in_time_range: Shortcut to skip the initial loading of releases in \
                                    [time_from, time_to).
+    :param metrics: Report any mining error statistics there.
     :return: 1. list of releases (general info, computed facts). \
              2. User avatars if `with_avatars` else *only newly mined* mentioned people nodes. \
              3. Release matched_by-s.
@@ -175,7 +178,10 @@ async def mine_releases(
         with_deployments,
         with_jira,
         releases_in_time_range,
+        metrics=metrics,
     )
+    if metrics is not None:
+        _set_count_metrics(result[0], metrics)
     return result[:4]
 
 
@@ -281,6 +287,7 @@ async def _mine_releases(
     with_deployments: bool,
     with_jira: JIRAEntityToFetch,
     releases_in_time_range: Optional[pd.DataFrame],
+    metrics: Optional[MineReleaseMetrics],
 ) -> tuple[
     pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
@@ -311,6 +318,7 @@ async def _mine_releases(
             rdb,
             cache,
             force_fresh=force_fresh,
+            metrics=metrics,
         )
         release_settings = ReleaseLoader.disambiguate_release_settings(
             release_settings, matched_bys,
@@ -402,7 +410,7 @@ async def _mine_releases(
                 ),
             )
         (releases, *_, dags), first_commit_dates = await gather(
-            ReleaseToPullRequestMapper._find_releases_for_matching_prs(
+            ReleaseToPullRequestMapper.find_releases_for_matching_prs(
                 missing_repos,
                 branches,
                 default_branches,
@@ -424,6 +432,7 @@ async def _mine_releases(
                 # if releases_in_time_range was specified by the caller, there is no
                 # guarantee
                 releases_in_time_range=releases_in_time_range if internal_releases else None,
+                metrics=metrics.commits if metrics is not None else None,
             ),
             ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
                 coerce_logical_repos(missing_repos).keys(), account, meta_ids, mdb, pdb, cache,
@@ -508,6 +517,8 @@ async def _mine_releases(
                         repo_release_count,
                     )
                     log.debug("%s", releases.take(repo_indexes))
+                    if metrics is not None:
+                        metrics.empty_releases[repo] = len(really_missing)
 
             grouped_owned_hashes = group_hashes_by_ownership(
                 ownership, hashes, repo_release_count, on_missing,
@@ -883,6 +894,16 @@ async def _mine_releases(
         with_deployments,
         with_jira,
     )
+
+
+def _set_count_metrics(releases: pd.DataFrame, metrics: MineReleaseMetrics) -> None:
+    metrics.count_by_tag = (releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag).sum()
+    metrics.count_by_branch = (
+        releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
+    ).sum()
+    metrics.count_by_event = (
+        releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.event
+    ).sum()
 
 
 def _empty_mined_releases_df():

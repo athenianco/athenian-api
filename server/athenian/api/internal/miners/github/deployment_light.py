@@ -244,10 +244,8 @@ async def fetch_components_and_prune_unresolved(
     """Remove deployment notifications with unresolved components. Fetch the components."""
     components = await read_sql_query(
         select(DeployedComponent).where(
-            and_(
-                DeployedComponent.account_id == account,
-                DeployedComponent.deployment_name.in_any_values(notifications.index.values),
-            ),
+            DeployedComponent.account_id == account,
+            DeployedComponent.deployment_name.in_any_values(notifications.index.values),
         ),
         rdb,
         DeployedComponent,

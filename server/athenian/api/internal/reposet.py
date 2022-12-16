@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
@@ -41,6 +42,19 @@ from athenian.api.models.web.generic_error import BadRequestError, DatabaseConfl
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
+
+
+@dataclass(slots=True)
+class RepositorySetMetrics:
+    """Reposet synchronization error statistics."""
+
+    count: int
+    undead: int
+
+    @classmethod
+    def empty(cls) -> RepositorySetMetrics:
+        """Initialize a new RepositorySetMetrics instance filled with zeros."""
+        return RepositorySetMetrics(0, 0)
 
 
 def reposet_items_to_refs(items: list[tuple[int, str, str]]) -> Iterator[RepositoryReference]:

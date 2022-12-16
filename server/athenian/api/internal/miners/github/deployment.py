@@ -141,6 +141,19 @@ from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, map_array_values, unordered_unique
 
 
+@dataclass(slots=True)
+class MineDeploymentsMetrics:
+    """Deployment mining error statistics."""
+
+    count: int
+    unresolved: int
+
+    @classmethod
+    def empty(cls) -> "MineDeploymentsMetrics":
+        """Initialize a new MineDeploymentsMetrics instance filled with zeros."""
+        return MineDeploymentsMetrics(0, 0)
+
+
 async def mine_deployments(
     repositories: Collection[str],
     participants: ReleaseParticipants,
@@ -166,6 +179,7 @@ async def mine_deployments(
     cache: Optional[aiomcache.Client],
     with_extended_prs: bool = False,
     with_jira: bool = False,
+    metrics: Optional[MineDeploymentsMetrics] = None,
 ) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
 
@@ -209,6 +223,7 @@ async def mine_deployments(
         cache,
         with_extended_prs,
         with_jira,
+        metrics,
     )
     if notifications.empty:
         return pd.DataFrame()
@@ -239,6 +254,9 @@ async def mine_deployments(
     subst = np.empty(no_labels.sum(), dtype=object)
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
+
+    if metrics is not None:
+        metrics.count = len(joined)
 
     return joined
 
@@ -327,6 +345,7 @@ async def _mine_deployments(
     cache: Optional[aiomcache.Client],
     with_extended_prs: bool,
     with_jira: bool,
+    metrics: Optional[MineDeploymentsMetrics],
 ) -> tuple[
     pd.DataFrame,
     pd.DataFrame,
@@ -338,6 +357,7 @@ async def _mine_deployments(
     bool,
     bool,
 ]:
+    log = logging.getLogger(f"{metadata.__package__}.mine_deployments")
     if not isinstance(repositories, (set, frozenset, KeysView)):
         repositories = set(repositories)
     if repositories:
@@ -361,10 +381,19 @@ async def _mine_deployments(
         rdb,
         cache,
     )
+    notifications_count_before_pruning = len(notifications)
     (notifications, components), labels = await gather(
         fetch_components_and_prune_unresolved(notifications, prefixer, account, rdb),
         fetch_labels(notifications.index.values, account, rdb),
     )
+    if unresolved := notifications_count_before_pruning - len(notifications):
+        log.warning(
+            "removed %d / %d unresolved notifications",
+            unresolved,
+            notifications_count_before_pruning,
+        )
+        if metrics is not None:
+            metrics.unresolved = unresolved
     if notifications.empty:
         return (*repeat(pd.DataFrame(), 7), with_extended_prs, with_jira)
 
@@ -409,7 +438,7 @@ async def _mine_deployments(
             rdb,
             cache,
         ),
-        name="_fetch_precomputed_deployed_releases(%d)" % len(notifications),
+        name=f"_fetch_precomputed_deployed_releases({len(notifications)})",
     )
     facts = await _fetch_precomputed_deployment_facts(
         notifications.index.values, default_branches, release_settings, account, pdb,
@@ -579,7 +608,6 @@ async def _invalidate_precomputed_on_out_of_order_notifications(
     not yet precomputed.
 
     A unicode string array with the names of affected precomputed deployments is returned.
-
     """
     if len(to_invalidate := _find_invalid_precomputed_deploys(notifications, missed_mask)):
         log = logging.getLogger(f"{metadata.__package__}.mine_deployments")

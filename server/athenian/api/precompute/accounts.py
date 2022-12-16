@@ -22,6 +22,7 @@ from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
 from athenian.api.internal.account_feature import is_feature_enabled
+from athenian.api.internal.data_health_metrics import DataHealthMetrics
 from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.jira import disable_empty_projects, match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -38,10 +39,9 @@ from athenian.api.internal.miners.github.release_mine import (
     hide_first_releases,
     mine_releases,
 )
-from athenian.api.internal.miners.types import PullRequestFacts, ReleaseFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import reposet_items_to_refs
-from athenian.api.internal.settings import ReleaseMatch, Settings
+from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
 from athenian.api.models.state.models import Feature, RepositorySet, Team
@@ -201,6 +201,7 @@ async def precompute_reposet(
         context.cache,
         context.slack,
     )
+    health_metrics = DataHealthMetrics.empty()
     try:
         prefixer, bots = await gather(
             Prefixer.load(meta_ids, mdb, cache),
@@ -231,6 +232,8 @@ async def precompute_reposet(
             reposet.owner_id,
             ", ".join("(%s, %d, %s)" % tuple(i) for i in missing),
         )
+        health_metrics.reposet.undead += len(missing)
+    # TODO(vmarkovtsev): DEV-5557 check if there are new repositories outside of the reposet
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
         num_teams, num_bots = await ensure_teams(
@@ -256,6 +259,7 @@ async def precompute_reposet(
         reposet.owner_id,
         len(deref_items),
     )
+    health_metrics.reposet.count = len(deref_items)
     try:
         settings = Settings.from_account(reposet.owner_id, prefixer, sdb, mdb, cache, None)
         repos = {r.unprefixed for r in deref_items}
@@ -263,9 +267,10 @@ async def precompute_reposet(
         logical_settings, release_settings, (branches, default_branches) = await gather(
             settings.list_logical_repositories(prefixed_repos),
             settings.list_release_matches(prefixed_repos),
-            BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
+            BranchMiner.extract_branches(
+                repos, prefixer, meta_ids, mdb, None, metrics=health_metrics.branches,
+            ),
         )
-        branches_count = len(branches)
         if not args.skip_releases:
             log.info("Mining the releases")
             releases, _, matches, _ = await mine_releases(
@@ -289,19 +294,13 @@ async def precompute_reposet(
                 force_fresh=True,
                 with_extended_pr_details=False,
                 with_deployments=False,
+                metrics=health_metrics.releases,
             )
             if (releases_count := len(releases)) > 0:
-                releases_by_tag = (
-                    releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag
-                ).sum()
-                releases_by_branch = (
-                    releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
-                ).sum()
                 ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
                     releases,
                 )
             else:
-                releases_by_tag = releases_by_branch = 0
                 ignored_first_releases = pd.DataFrame()
                 ignored_released_prs = {}
             del releases
@@ -319,15 +318,14 @@ async def precompute_reposet(
                     repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
                 )
             log.info("Extracting PR facts")
-            pr_facts_calc = PRFactsCalculator(
+            await PRFactsCalculator(
                 reposet.owner_id,
                 meta_ids,
                 mdb,
                 pdb,
                 rdb,
                 cache=None,  # yes, disable the cache
-            )
-            facts = await pr_facts_calc(
+            )(
                 time_from,
                 time_to,
                 repos,
@@ -343,15 +341,8 @@ async def precompute_reposet(
                 0,
                 branches=branches,
                 default_branches=default_branches,
+                metrics=health_metrics.prs,
             )
-            if not reposet.precomputed and slack is not None:
-                prs = len(facts)
-                prs_done = facts[PullRequestFacts.f.done].sum()
-                prs_merged = (
-                    facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
-                ).sum()
-                prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
-            del facts  # free some memory
             await wait_deferred()
 
         if not args.skip_releases:
@@ -391,6 +382,7 @@ async def precompute_reposet(
                 pdb,
                 rdb,
                 None,  # yes, disable the cache
+                metrics=health_metrics.deployments,
             )
             await wait_deferred()
             await hide_outlier_first_deployments(
@@ -404,15 +396,15 @@ async def precompute_reposet(
                     "precomputed_account.jinja2",
                     account=reposet.owner_id,
                     prefixes={r.owner for r in deref_items},
-                    prs=prs,
-                    prs_done=prs_done,
-                    prs_merged=prs_merged,
-                    prs_open=prs_open,
+                    prs=health_metrics.prs.count,
+                    prs_done=health_metrics.prs.done_count,
+                    prs_merged=health_metrics.prs.merged_count,
+                    prs_open=health_metrics.prs.open_count,
                     releases=releases_count,
                     ignored_first_releases=ignored_releases_count,
-                    releases_by_tag=releases_by_tag,
-                    releases_by_branch=releases_by_branch,
-                    branches=branches_count,
+                    releases_by_tag=health_metrics.releases.count_by_tag,
+                    releases_by_branch=health_metrics.releases.count_by_branch,
+                    branches=health_metrics.branches.count,
                     repositories=len(repos),
                     bots_team_name=Team.BOTS,
                     bots=num_bots,
