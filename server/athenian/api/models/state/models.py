@@ -484,3 +484,81 @@ class Share(create_time_mixin(created_at=True), Base):
     created_by = Column(String(), nullable=False)
     divine = Column(Boolean, nullable=False, default=False, server_default="false")
     data = Column(JSONType, nullable=False)
+
+
+class TeamDashboard(create_time_mixin(created_at=True, updated_at=True), Base):
+    """A dashboard displaying information for a team."""
+
+    __tablename__ = "team_dashboards"
+
+    id = Column(Integer(), primary_key=True)
+    team_id = Column(
+        Integer(),
+        ForeignKey("teams.id", name="fk_team_dashboard_team", ondelete="CASCADE"),
+        nullable=False,
+        comment="The team this dashboard belongs to.",
+    )
+
+
+class DashboardChart(create_time_mixin(created_at=True, updated_at=True), Base):
+    """A chart showing metric values in a dashboard."""
+
+    __tablename__ = "dashboard_charts"
+
+    id = Column(Integer(), primary_key=True)
+    dashboard_id = Column(
+        Integer(),
+        ForeignKey("team_dashboards.id", name="fk_chart_dashboard", ondelete="CASCADE"),
+        nullable=False,
+    )
+    position = Column(
+        Integer(), nullable=False, comment="Position of the chart in the containing dashboard.",
+    )
+
+    metric = Column(String, nullable=False, comment="The metric this chart is displaying.")
+
+    time_from = Column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="Start of the fixed time interval of the chart",
+    )
+    time_to = Column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="End of the fixed time interval of the chart",
+    )
+    """`time_from` and `time_to` together represents the fixed time interval of the chart.
+
+    If `time_from` and `time_to` are set `time_interval` is NULL.
+    """
+    time_interval = Column(
+        String,
+        nullable=True,
+        comment="The relative time interval of the chart in ISO-8601 format.",
+    )
+    """
+    "The relative time interval of the chart in ISO-8601 format."
+
+    Examples: "P1W", "P10D".
+    If `time_interval` is set `time_from` and `time_to` are NULL.
+    """
+
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+
+    # deferred constraint is useful to update positions easier but it's only available on postgres
+    __table_args__ = (
+        UniqueConstraint(
+            "dashboard_id",
+            "position",
+            name="uc_chart_dashboard_id_position",
+            deferrable=True,
+            _create_rule=lambda compiler: compiler.dialect.name == "postgresql",
+        ),
+        UniqueConstraint(
+            "dashboard_id",
+            "position",
+            name="uc_chart_dashboard_id_position",
+            _create_rule=lambda compiler: compiler.dialect.name != "postgresql",
+        ),
+    )
