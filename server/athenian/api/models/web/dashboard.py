@@ -31,3 +31,13 @@ class DashboardChartCreateRequest(_CommonChartInfo):
     """Dashboard chart creation request."""
 
     position: Optional[int]
+
+
+class _DashboardUpdateChart(Model):
+    id: int
+
+
+class DashboardUpdateRequest(Model):
+    """Dashboard update request."""
+
+    charts: list[_DashboardUpdateChart]
