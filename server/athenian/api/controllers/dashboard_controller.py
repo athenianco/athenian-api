@@ -4,6 +4,7 @@ from athenian.api.db import Row
 from athenian.api.internal.dashboard import (
     build_dashboard_web_model,
     create_dashboard_chart as create_dashboard_chart_in_db,
+    delete_dashboard_chart as delete_dashboard_chart_from_db,
     get_dashboard as get_dashboard_from_db,
     get_dashboard_charts,
     get_team_default_dashboard,
@@ -60,6 +61,9 @@ async def delete_dashboard_chart(
     chart_id: int,
 ) -> web.Response:
     """Delete an existing dashboard chart."""
+    dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
+    await delete_dashboard_chart_from_db(dashboard[TeamDashboard.id.name], chart_id, request.sdb)
+    return web.Response(status=204)
 
 
 async def _get_request_dashboard(

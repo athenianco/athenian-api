@@ -1,5 +1,6 @@
 from typing import Any
 
+from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient
 import pytest
 
@@ -17,7 +18,7 @@ class Requester:
     def build_path(self, **kwargs: Any) -> str:
         return self.path.format(**kwargs)
 
-    async def get(self, assert_status: int = 200, **kwargs) -> Any:
+    async def get(self, assert_status: int = 200, **kwargs) -> ClientResponse:
         response = await self._request(method="GET", **kwargs)
         assert response.status == assert_status, response.status
         return response
@@ -26,7 +27,7 @@ class Requester:
         response = await self.get(*args, **kwargs)
         return await response.json()
 
-    async def post(self, assert_status: int = 200, **kwargs) -> Any:
+    async def post(self, assert_status: int = 200, **kwargs) -> ClientResponse:
         response = await self._request(method="POST", **kwargs)
         assert response.status == assert_status, response.status
         return response
@@ -35,6 +36,11 @@ class Requester:
         response = await self.post(*args, **kwargs)
         return await response.json()
 
-    async def _request(self, *, path_kwargs=None, **kwargs) -> Any:
+    async def delete(self, assert_status: int = 204, **kwargs) -> ClientResponse:
+        response = await self._request(method="DELETE", **kwargs)
+        assert response.status == assert_status, response.status
+        return response
+
+    async def _request(self, *, path_kwargs=None, **kwargs) -> ClientResponse:
         path = self.build_path(**(path_kwargs or {}))
         return await self.client.request(path=path, headers=self.headers, **kwargs)

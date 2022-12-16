@@ -105,6 +105,18 @@ async def create_dashboard_chart(
     return await sdb_conn.execute(insert_stmt)
 
 
+async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: DatabaseLike) -> None:
+    """Delete a dashboard chart, raise errors if not existing."""
+    where = (DashboardChart.dashboard_id == dashboard_id, DashboardChart.id == chart_id)
+    # no rowcount is returned with aysncpg
+    select_stmt = sa.select([1]).where(*where)
+    if (await sdb_conn.fetch_val(select_stmt)) is None:
+        raise DashboardChartNotFoundError(chart_id)
+
+    delete_stmt = sa.delete(DashboardChart).where(*where)
+    await sdb_conn.execute(delete_stmt)
+
+
 def build_dashboard_web_model(dashboard: Row, charts: Sequence[Row]) -> TeamDashboard:
     """Build the web model for a dashboard given the dashboard and charts DB rows."""
     return WebTeamDashboard(
@@ -222,5 +234,19 @@ class MultipleTeamDashboardsError(ResponseError):
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail=f"Team {team_id} has multiple dashboards",
             title="Multiple team dashboards",
+        )
+        super().__init__(wrapped_error)
+
+
+class DashboardChartNotFoundError(ResponseError):
+    """A dashboard chart was not found."""
+
+    def __init__(self, chart_id: int):
+        """Init the DashboardChartNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/dashboards/DashboardChartNotFoundError",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Dashboard chart {chart_id} not found or access denied",
+            title=" Chart not found",
         )
         super().__init__(wrapped_error)
