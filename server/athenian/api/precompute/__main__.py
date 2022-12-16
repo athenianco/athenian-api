@@ -116,6 +116,11 @@ def _parse_args() -> argparse.Namespace:
         "--skip-teams", action="store_true", help="Do not touch anything related to teams.",
     )
     accounts_parser.add_argument(
+        "--skip-health-metrics",
+        action="store_true",
+        help="Neither measure nor persist account data health metrics.",
+    )
+    accounts_parser.add_argument(
         "--time-from",
         type=deserialize_datetime,
         default=None,

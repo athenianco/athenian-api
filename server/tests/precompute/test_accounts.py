@@ -235,6 +235,7 @@ def _namespace(**kwargs: Any) -> Namespace:
     kwargs.setdefault("skip_prs", False)
     kwargs.setdefault("skip_releases", False)
     kwargs.setdefault("skip_deployments", False)
+    kwargs.setdefault("skip_health_metrics", False)
     ns = Namespace(**kwargs)
     ns.time_from = None
     return ns

@@ -129,6 +129,7 @@ from athenian.api.models.metadata.github import (
     Release,
 )
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.response import ResponseError
@@ -1660,6 +1661,13 @@ class MinePullRequestMetrics:
         """Initialize a new MinePullRequestMetrics instance filled with zeros."""
         return MinePullRequestMetrics(0, 0, 0, 0)
 
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="prs_count", value=self.count)
+        yield HealthMetric(name="prs_done_count", value=self.done_count)
+        yield HealthMetric(name="prs_merged_count", value=self.merged_count)
+        yield HealthMetric(name="prs_open_count", value=self.open_count)
+
 
 class PRFactsCalculator:
     """Calculator for Pull Requests facts."""
@@ -2047,12 +2055,12 @@ class PRFactsCalculator:
 
     @staticmethod
     def _set_count_metrics(facts: pd.DataFrame, metrics: MinePullRequestMetrics) -> None:
-        metrics.prs.count = len(facts)
-        metrics.prs.done_count = facts[PullRequestFacts.f.done].sum()
-        metrics.prs.merged_count = (
+        metrics.count = len(facts)
+        metrics.done_count = facts[PullRequestFacts.f.done].sum()
+        metrics.merged_count = (
             facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
         ).sum()
-        metrics.prs.open_count = facts[PullRequestFacts.f.closed].isnull().sum()
+        metrics.open_count = facts[PullRequestFacts.f.closed].isnull().sum()
 
 
 class ParticipantsMerge:

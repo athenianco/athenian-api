@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, Iterator, Optional
 
 import aiomcache
 import numpy as np
@@ -16,6 +16,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
@@ -33,6 +34,12 @@ class BranchMinerMetrics:
     def empty(cls) -> "BranchMinerMetrics":
         """Initialize a new BranchMinerMetrics instance filled with zeros."""
         return BranchMinerMetrics(0, 0, 0)
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="branches_count", value=self.count)
+        yield HealthMetric(name="branches_empty_count", value=self.empty_count)
+        yield HealthMetric(name="branches_no_default", value=self.no_default)
 
 
 @cached_methods

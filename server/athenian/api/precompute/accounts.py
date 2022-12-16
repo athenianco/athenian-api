@@ -201,7 +201,9 @@ async def precompute_reposet(
         context.cache,
         context.slack,
     )
-    health_metrics = DataHealthMetrics.empty()
+    health_metrics = (
+        DataHealthMetrics.empty() if not args.skip_health_metrics else DataHealthMetrics.skip()
+    )
     try:
         prefixer, bots = await gather(
             Prefixer.load(meta_ids, mdb, cache),
@@ -259,7 +261,7 @@ async def precompute_reposet(
         reposet.owner_id,
         len(deref_items),
     )
-    health_metrics.reposet.count = len(deref_items)
+    health_metrics.reposet.length = len(deref_items)
     try:
         settings = Settings.from_account(reposet.owner_id, prefixer, sdb, mdb, cache, None)
         repos = {r.unprefixed for r in deref_items}
@@ -413,6 +415,12 @@ async def precompute_reposet(
 
             await defer(
                 report_precompute_success(), f"report precompute success {reposet.owner_id}",
+            )
+
+        if not args.skip_health_metrics:
+            await defer(
+                health_metrics.persist(reposet.owner_id, rdb),
+                f"store account health metrics {reposet.owner_id}",
             )
     except Exception as e:
         log.warning(
