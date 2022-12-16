@@ -25,4 +25,4 @@ See [`SECURITY.md`](SECURITY.md).
 ### License
 
 Proprietary until further notice.
-The end.
+
