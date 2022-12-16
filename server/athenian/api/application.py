@@ -36,6 +36,7 @@ import especifico.lifecycle
 import especifico.security
 from especifico.spec import OpenAPISpecification
 from flogging import flogging
+import jinja2
 from jsonschema import RefResolver
 import prometheus_client
 import psutil
@@ -347,15 +348,17 @@ class AthenianApp(especifico.AioHttpApp):
             self.postprocess_response,
             self.manhole,
         ]
+        api_arguments = {
+            "title": metadata.__description__,
+            "server_url": self._auth0.audience.rstrip("/"),
+            "server_description": os.getenv("SENTRY_ENV", "development"),
+            "server_version": metadata.__version__,
+            "commit": getattr(metadata, "__commit__", "N/A"),
+            "build_date": getattr(metadata, "__date__", "N/A"),
+        }
+        self._specs_store = _SpecsStore(api_arguments)
         add_api_kwargs = dict(  # noqa: C408
-            arguments={
-                "title": metadata.__description__,
-                "server_url": self._auth0.audience.rstrip("/"),
-                "server_description": os.getenv("SENTRY_ENV", "development"),
-                "server_version": metadata.__version__,
-                "commit": getattr(metadata, "__commit__", "N/A"),
-                "build_date": getattr(metadata, "__date__", "N/A"),
-            },
+            arguments=api_arguments,
             pass_context_arg_name="request",
             options={
                 "middlewares": middlewares,
@@ -377,8 +380,8 @@ class AthenianApp(especifico.AioHttpApp):
             validate_responses=validate_responses,
             ref_resolver_store=self._get_ref_resolver_store(),
         )
-        self.add_api(_specs_store["public"], base_path="/v1", **add_api_kwargs)
-        self.add_api(_specs_store["private"], base_path="/private", **add_api_kwargs)
+        self.add_api(self._specs_store["public"], base_path="/v1", **add_api_kwargs)
+        self.add_api(self._specs_store["private"], base_path="/private", **add_api_kwargs)
         GraphQL(align.create_graphql_schema()).attach(
             self.app, "/align", middlewares + [self._auth0.authenticate],
         )
@@ -1016,17 +1019,16 @@ class AthenianApp(especifico.AioHttpApp):
             self.app[PROMETHEUS_REGISTRY_VAR_NAME].unregister(health)
             del self.app["health"]
 
-    @classmethod
-    def _get_ref_resolver_store(cls) -> dict[str, dict]:
+    def _get_ref_resolver_store(self) -> dict[str, dict]:
         """Build the custom ref resolver store for especifico.
 
         This store avoids network access to resolve references to public API schema.
 
         """
-        if cls._ref_resolver_store is None:
+        if self.__class__._ref_resolver_store is None:
             public_schema_url = "https://api.athenian.co/v1/openapi.json"
-            cls._ref_resolver_store = {public_schema_url: _specs_store["public"]}
-        return cls._ref_resolver_store
+            self.__class__._ref_resolver_store = {public_schema_url: self._specs_store["public"]}
+        return self.__class__._ref_resolver_store
 
 
 class _SpecsStore:
@@ -1037,19 +1039,22 @@ class _SpecsStore:
         "private": Path(athenian.api.__file__).parent / "align" / "spec" / "openapi.yaml",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, arguments: dict) -> None:
         self._loaded: dict[str, dict] = {}
+        self._arguments = arguments
 
     def __getitem__(self, name: str) -> dict:
         try:
             return self._loaded[name]
         except KeyError:
-            with self._PATHS[name].open("r") as fp:
-                self._loaded[name] = yaml.load(fp, Loader=yaml.CSafeLoader)
+            self._loaded[name] = self._load_spec(name)
             return self._loaded[name]
 
-
-_specs_store = _SpecsStore()
+    def _load_spec(self, name: str) -> dict:
+        with self._PATHS[name].open("r") as fp:
+            spec_string = fp.read()
+        openapi_string = jinja2.Template(spec_string).render(**self._arguments)
+        return yaml.load(openapi_string, Loader=yaml.CSafeLoader)
 
 
 def _resolve_operation_req_body(
