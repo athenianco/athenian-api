@@ -26,3 +26,4 @@ See [`SECURITY.md`](SECURITY.md).
 
 Proprietary until further notice.
 
+### The end.
