@@ -897,13 +897,15 @@ async def _mine_releases(
 
 
 def _set_count_metrics(releases: pd.DataFrame, metrics: MineReleaseMetrics) -> None:
-    metrics.count_by_tag = (releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag).sum()
-    metrics.count_by_branch = (
-        releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch
-    ).sum()
-    metrics.count_by_event = (
-        releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.event
-    ).sum()
+    metrics.count_by_tag = int(
+        (releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.tag).sum(),
+    )
+    metrics.count_by_branch = int(
+        (releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.branch).sum(),
+    )
+    metrics.count_by_event = int(
+        (releases[ReleaseFacts.f.matched_by].values == ReleaseMatch.event).sum(),
+    )
 
 
 def _empty_mined_releases_df():

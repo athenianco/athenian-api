@@ -4,6 +4,7 @@ from sqlite3 import IntegrityError, OperationalError
 from typing import Optional
 
 from aiohttp import web
+import aiohttp.web
 import aiomcache
 from asyncpg import IntegrityConstraintViolationError
 import sentry_sdk
@@ -502,3 +503,13 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                     ),
                 )
     return model_response(await get_account_features(id, request.sdb))
+
+
+async def get_account_health(
+    request: AthenianWebRequest,
+    id: Optional[int] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+) -> aiohttp.web.Response:
+    """Return the account health metrics measured per hour."""
+    raise NotImplementedError
