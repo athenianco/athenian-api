@@ -894,6 +894,7 @@ class AthenianApp(especifico.AioHttpApp):
         loop = asyncio.get_event_loop()
         loop.remove_signal_handler(signal.SIGINT)
         loop.remove_signal_handler(signal.SIGTERM)
+        await self._shutdown()
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
