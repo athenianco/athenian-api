@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from sqlite3 import IntegrityError, OperationalError
 from typing import Optional
@@ -7,6 +7,7 @@ from aiohttp import web
 import aiohttp.web
 import aiomcache
 from asyncpg import IntegrityConstraintViolationError
+from dateutil.rrule import HOURLY, rrule
 import sentry_sdk
 from sqlalchemy import delete, insert, select, union_all, update
 
@@ -19,6 +20,7 @@ from athenian.api.internal.account import (
     get_user_account_status_from_request,
 )
 from athenian.api.internal.account_feature import get_account_features
+from athenian.api.internal.data_health_metrics import measure_accounts_health
 from athenian.api.internal.jira import fetch_jira_installation_progress, get_jira_id
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -37,6 +39,7 @@ from athenian.api.models.state.models import (
     UserAccount,
 )
 from athenian.api.models.web import (
+    AccountsHealth,
     DatabaseConflict,
     ForbiddenError,
     InvalidRequestError,
@@ -508,8 +511,40 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
 async def get_account_health(
     request: AthenianWebRequest,
     id: Optional[int] = None,
-    since: Optional[datetime] = None,
-    until: Optional[datetime] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
 ) -> aiohttp.web.Response:
     """Return the account health metrics measured per hour."""
-    raise NotImplementedError
+    try:
+        if since is not None:
+            since = deserialize_datetime(since)
+        else:
+            since = datetime.now(timezone.utc) - timedelta(hours=1)
+        if until is not None:
+            until = deserialize_datetime(until)
+        else:
+            until = datetime.now(timezone.utc)
+    except ValueError as e:
+        e.path = "since" if isinstance(since, str) else "until"
+        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    if id is not None:
+        ids = [id]
+    else:
+        ids = (
+            await read_sql_query(
+                select(Account.id)
+                .where(Account.expires_at > datetime.now(timezone.utc))
+                .order_by(Account.id),
+                request.sdb,
+                [Account.id],
+            )
+        )[Account.id.name].values
+    since = (since + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    until = until.replace(minute=0, second=0, microsecond=0)
+    datetimes = list(rrule(HOURLY, dtstart=since, until=until))
+    return model_response(
+        AccountsHealth(
+            datetimes=datetimes,
+            accounts=await measure_accounts_health(ids, datetimes, request.rdb),
+        ),
+    )

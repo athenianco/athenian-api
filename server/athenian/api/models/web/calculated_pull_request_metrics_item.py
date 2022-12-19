@@ -1,5 +1,3 @@
-from typing import List
-
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
@@ -11,4 +9,4 @@ class CalculatedPullRequestMetricsItem(Model, GranularityMixin):
 
     for_: (ForSetPullRequests, "for")
     granularity: str
-    values: List[CalculatedLinearMetricValues]
+    values: list[CalculatedLinearMetricValues]

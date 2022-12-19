@@ -21,7 +21,7 @@ def coarsen_time_interval(time_from: datetime, time_to: datetime) -> Tuple[date,
 def split_to_time_intervals(
     date_from: date,
     date_to: date,
-    granularities: Union[str, List[str]],
+    granularities: str | list[str],
     tzoffset: Optional[int],
 ) -> Tuple[Union[List[datetime], List[List[datetime]]], timedelta]:
     """Produce time interval boundaries from the min and the max dates and the interval lengths \
