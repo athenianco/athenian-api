@@ -2056,11 +2056,11 @@ class PRFactsCalculator:
     @staticmethod
     def _set_count_metrics(facts: pd.DataFrame, metrics: MinePullRequestMetrics) -> None:
         metrics.count = len(facts)
-        metrics.done_count = facts[PullRequestFacts.f.done].sum()
-        metrics.merged_count = (
-            facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
-        ).sum()
-        metrics.open_count = facts[PullRequestFacts.f.closed].isnull().sum()
+        metrics.done_count = int(facts[PullRequestFacts.f.done].sum())
+        metrics.merged_count = int(
+            (facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]).sum(),
+        )
+        metrics.open_count = int(facts[PullRequestFacts.f.closed].isnull().sum())
 
 
 class ParticipantsMerge:

@@ -18,6 +18,7 @@ from athenian.api.precompute import (
     discover_accounts,
     notify_almost_expired_accounts,
     resolve_deployments,
+    store_external_health,
     sync_labels,
 )
 from athenian.api.precompute.context import PrecomputeContext
@@ -29,6 +30,7 @@ commands = {
     "notify-almost-expired-accounts": notify_almost_expired_accounts.main,
     "discover-accounts": discover_accounts.main,
     "accounts": accounts.main,
+    "store-external-health": store_external_health.main,
 }
 
 
@@ -133,6 +135,14 @@ def _parse_args() -> argparse.Namespace:
     )
     accounts_parser.add_argument(
         "--timeout", type=int, default=20 * 60, help="Maximum processing time for one account",
+    )
+
+    store_external_health_parser = subparsers.add_parser(
+        "store-external-health",
+        help="Persist external account data health metrics: metadata and performance",
+    )
+    store_external_health_parser.add_argument(
+        "--prometheus", type=str, help="Prometheus API endpoint",
     )
     return parser.parse_args()
 

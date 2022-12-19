@@ -818,7 +818,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
 
 
 @expires_header(short_term_exptime)
-@weight(1)
+@weight(2)
 async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
     etc."""
