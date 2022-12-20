@@ -1,5 +1,6 @@
 import asyncio
 import functools
+from typing import Callable, ParamSpec, TypeVar
 
 import sentry_sdk
 
@@ -9,7 +10,11 @@ from athenian.api import typing_utils
 MAX_SENTRY_STRING_LENGTH = 4096
 
 
-def sentry_span(func):
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def sentry_span(func: Callable[P, R]) -> Callable[P, R]:
     """Wrap the function in a Sentry span to trace the elapsed time."""
     if asyncio.iscoroutinefunction(func):
 
@@ -20,9 +25,9 @@ def sentry_span(func):
                     return await func(*args, **kwargs)
 
         # forward the @cached service sub-routines
-        if hasattr(func, "reset_cache"):
-            wrapped_async_sentry_span.reset_cache = func.reset_cache
-            wrapped_async_sentry_span.cache_key = func.cache_key
+        if hasattr(func, "reset_cache") and hasattr(func, "cache_key"):
+            wrapped_async_sentry_span.reset_cache = func.reset_cache  # type: ignore
+            wrapped_async_sentry_span.cache_key = func.cache_key  # type: ignore
 
         return typing_utils.wraps(wrapped_async_sentry_span, func)
 
