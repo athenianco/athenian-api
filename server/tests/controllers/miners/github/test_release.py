@@ -15,6 +15,7 @@ from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.commit import (
+    CommitDAGMetrics,
     _empty_dag,
     _fetch_commit_history_dag,
     fetch_repository_commits,
@@ -26,7 +27,10 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     mark_dag_parents,
     partition_dag,
 )
-from athenian.api.internal.miners.github.release_load import group_repos_by_release_match
+from athenian.api.internal.miners.github.release_load import (
+    MineReleaseMetrics,
+    group_repos_by_release_match,
+)
 from athenian.api.internal.miners.github.release_mine import (
     mine_releases,
     mine_releases_by_name,
@@ -847,6 +851,7 @@ async def test_load_releases_events_unresolved(
             .explode(with_primary_keys=True),
         ),
     )
+    metrics = MineReleaseMetrics.empty()
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
         branches,
@@ -863,9 +868,12 @@ async def test_load_releases_events_unresolved(
         rdb,
         None,
         index=Release.node_id.name,
+        metrics=metrics,
     )
     assert releases.empty
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
+    assert metrics.count_by_event == 0
+    assert metrics.unresolved == 1
 
 
 @pytest.fixture(scope="module")
@@ -981,6 +989,7 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_d
 @with_defer
 @freeze_time("2015-04-05")
 async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune, heads_df1):
+    metrics = CommitDAGMetrics.empty()
     dags = await fetch_repository_commits(
         {
             "src-d/go-git": (
@@ -1000,7 +1009,10 @@ async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune, heads_df1)
         mdb,
         pdb,
         None,
+        metrics=metrics,
     )
+    if prune:
+        assert metrics.pristine == {"src-d/go-git"}
     hashes, vertexes, edges = dags["src-d/go-git"][1]
     if prune:
         assert len(hashes) == 0
@@ -1553,6 +1565,7 @@ class TestMineReleases:
     ):
         time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
         time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+        metrics = MineReleaseMetrics.empty()
         kwargs = self._kwargs(
             time_from=time_from,
             time_to=time_to,
@@ -1561,9 +1574,11 @@ class TestMineReleases:
             mdb=mdb,
             pdb=pdb,
             rdb=rdb,
+            metrics=metrics,
         )
         await mine_releases(**kwargs)
         await wait_deferred()
+        assert metrics.count_by_tag == 53
         kwargs["with_deployments"] = False
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 53

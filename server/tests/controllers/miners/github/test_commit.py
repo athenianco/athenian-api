@@ -8,6 +8,7 @@ from sqlalchemy import delete, insert
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import (
+    CommitDAGMetrics,
     FilterCommitsProperty,
     _fetch_commit_history_dag,
     extract_commits,
@@ -253,6 +254,7 @@ async def test__fetch_commit_history_dag_inconsistent(mdb_rw, dag):
             },
         ),
     )
+    metrics = CommitDAGMetrics.empty()
     try:
         consistent, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
             True,
@@ -264,9 +266,12 @@ async def test__fetch_commit_history_dag_inconsistent(mdb_rw, dag):
             "src-d/go-git",
             (6366825,),
             mdb_rw,
+            metrics=metrics,
         )
     finally:
         await mdb_rw.execute(delete(NodeCommitParent).where(NodeCommitParent.parent_id == 100500))
     assert not consistent
     assert len(newhashes) == len(hashes)
     assert b"1" * 40 not in newhashes
+    assert metrics.corrupted == {"src-d/go-git"}
+    assert metrics.orphaned == {"src-d/go-git"}

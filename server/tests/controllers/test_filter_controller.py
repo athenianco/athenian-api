@@ -2696,6 +2696,7 @@ async def test_filter_labels_nasty_input(client, headers, account, repos, status
     assert response.status == status, response_body
 
 
+@pytest.mark.flaky(reruns=3)
 async def test_get_releases_smoke(client, headers):
     body = {
         "account": 1,

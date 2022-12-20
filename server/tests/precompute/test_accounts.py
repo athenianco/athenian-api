@@ -171,11 +171,14 @@ class TestPrecomputeReposet:
 
         reposet_row = await assert_existing_row(sdb, RepositorySet, owner_id=11)
         reposet = RepositorySet(**reposet_row)
+        reposet.items = [["github.com", 40550, ""]]
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
 
-        await precompute_reposet(
+        metrics = await precompute_reposet(
             reposet, (1011,), ctx, _namespace(), dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
         )
+        assert metrics.reposet.length == 0
+        assert metrics.reposet.undead == 1
 
     @with_defer
     async def test_bots_team_members_are_synced(

@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 from datetime import datetime, timezone
 import logging
 from typing import Any
@@ -17,7 +18,7 @@ from athenian.api.precompute.context import PrecomputeContext
 async def _record_performance_metrics(
     prometheus_endpoint: str,
     rdb: Database,
-):
+) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_performance_metrics")
     for pct in ("50", "95"):
         inserted = []
@@ -62,13 +63,10 @@ async def _record_performance_metrics(
 
 async def _record_inconsistency_metrics(
     prometheus_endpoint: str,
-    sdb: Database,
+    acc_id_map_task: asyncio.Task,
     rdb: Database,
-):
+) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_inconsistency_metrics")
-    acc_id_map = dict(
-        await sdb.fetch_all(select(AccountGitHubAccount.id, AccountGitHubAccount.account_id)),
-    )
     inserted = []
     for attempt in range(3):
         async with aiohttp.ClientSession() as session:
@@ -87,7 +85,10 @@ async def _record_inconsistency_metrics(
                         await response.text(),
                     )
                     continue
-                for obj in (await response.json())["data"]["result"]:
+                objs = (await response.json())["data"]["result"]
+                await acc_id_map_task
+                acc_id_map = acc_id_map_task.result()
+                for obj in objs:
                     try:
                         account = acc_id_map[int(obj["metric"]["acc_id"])]
                     except KeyError:
@@ -105,9 +106,30 @@ async def _record_inconsistency_metrics(
         await rdb.execute_many(insert(HealthMetric), inserted)
 
 
+async def _record_pending_fetch_metrics(
+    acc_id_map_task: asyncio.Task,
+    mdb: Database,
+    rdb: Database,
+) -> None:
+    log = logging.getLogger(f"{metadata.__package__}._record_pending_fetch_metrics")
+    inserted = []
+    # df_pending_prs, df_pending_commits = await gather()
+    if inserted:
+        log.info("inserting %d data inconsistency records", len(inserted))
+        await rdb.execute_many(insert(HealthMetric), inserted)
+
+
+async def _fetch_acc_id_map(sdb: Database) -> dict[int, int]:
+    return dict(
+        await sdb.fetch_all(select(AccountGitHubAccount.id, AccountGitHubAccount.account_id)),
+    )
+
+
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> Any:
     """Fill missing commit references in the deployed components."""
+    acc_id_map_task = asyncio.create_task(_fetch_acc_id_map(context.sdb), name="_fetch_acc_id_map")
     await gather(
         _record_performance_metrics(args.prometheus, context.rdb),
-        _record_inconsistency_metrics(args.prometheus, context.sdb, context.rdb),
+        _record_inconsistency_metrics(args.prometheus, acc_id_map_task, context.rdb),
+        _record_pending_fetch_metrics(acc_id_map_task, context.mdb, context.rdb),
     )
