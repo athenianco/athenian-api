@@ -9,7 +9,7 @@ from sqlalchemy import insert, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.db import Database
+from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import AccountGitHubAccount
 from athenian.api.precompute.context import PrecomputeContext
@@ -113,10 +113,84 @@ async def _record_pending_fetch_metrics(
 ) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_pending_fetch_metrics")
     inserted = []
-    # df_pending_prs, df_pending_commits = await gather()
+    now = datetime.now(timezone.utc)
+    pending_prs_rows, pending_branches_rows, _ = await gather(
+        mdb.fetch_all(
+            """
+        SELECT edges.acc_id, (edges.value - nodes.value) AS diff
+        FROM (
+            SELECT
+                re.acc_id, count(*) AS value
+            FROM github.node_repository_edge_pullrequests re
+                JOIN github.account_repos pa
+                    ON re.parent_id = pa.repo_graph_id AND re.acc_id = pa.acc_id
+            GROUP BY re.acc_id
+        ) AS edges JOIN (
+            SELECT pr.acc_id, count(DISTINCT pr.database_id) AS value
+            FROM github.node_pullrequest pr
+            WHERE
+            EXISTS (
+                SELECT 1 FROM github.graph_nodes prn
+                WHERE prn.acc_id = pr.acc_id AND prn.node_id = pr.graph_id AND NOT prn.deleted)
+            AND
+            EXISTS (
+                SELECT 1 FROM github.account_repos pa
+                WHERE pr.repository_id = pa.repo_graph_id AND pr.acc_id = pa.acc_id)
+            GROUP BY pr.acc_id
+        ) AS nodes
+        ON edges.acc_id = nodes.acc_id;
+        """,
+        ),
+        mdb.fetch_all(
+            """
+        SELECT edges.acc_id, (edges.value - nodes.value) AS diff
+        FROM (
+            SELECT
+                re.acc_id, count(*) AS value
+            FROM github.node_repository_edge_refs re
+                JOIN github.account_repos pa
+                    ON re.parent_id = pa.repo_graph_id AND re.acc_id = pa.acc_id
+            GROUP BY re.acc_id
+        ) AS edges JOIN (
+            SELECT ref.acc_id, count(*) AS value
+            FROM github.node_ref ref
+            WHERE EXISTS (
+                SELECT 1 FROM github.graph_nodes prn
+                WHERE prn.acc_id = ref.acc_id AND prn.node_id = ref.graph_id AND not prn.deleted)
+            AND EXISTS (
+                SELECT 1 FROM github.account_repos pa
+                WHERE pa.acc_id = ref.acc_id AND pa.repo_graph_id = ref.repository_id)
+            GROUP BY ref.acc_id
+        ) AS nodes
+        ON edges.acc_id = nodes.acc_id;
+        """,
+        ),
+        acc_id_map_task,
+    )
+    acc_id_map = acc_id_map_task.result()
+    for name, rows in (
+        ("pending_prs", pending_prs_rows),
+        ("pending_branches", pending_branches_rows),
+    ):
+        for row in rows:
+            acc, diff = row
+            try:
+                acc = acc_id_map[acc]
+            except KeyError:
+                continue
+            inserted.append(
+                HealthMetric(
+                    account_id=acc,
+                    created_at=now,
+                    name=name,
+                    value=diff,
+                ).explode(with_primary_keys=True),
+            )
     if inserted:
-        log.info("inserting %d data inconsistency records", len(inserted))
-        await rdb.execute_many(insert(HealthMetric), inserted)
+        log.info("inserting %d pending fetch records", len(inserted))
+        await rdb.execute_many(
+            (await dialect_specific_insert(rdb))(HealthMetric).on_conflict_do_nothing(), inserted,
+        )
 
 
 async def _fetch_acc_id_map(sdb: Database) -> dict[int, int]:

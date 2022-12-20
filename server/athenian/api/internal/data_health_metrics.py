@@ -124,6 +124,10 @@ async def measure_accounts_health(
                 model.prs_count[pos] = val
             case "prs_done_count":
                 model.released_prs_ratio[pos] = val
+            case "pending_prs":
+                model.pending_fetch_prs[pos] = val
+            case "pending_branches":
+                model.pending_fetch_branches[pos] = val
             case p50 if p50.startswith("p50/"):
                 endpoint = p50[4:]
                 try:
