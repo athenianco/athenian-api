@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain, repeat
 import logging
 import operator
-from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Set, TypeVar
+from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Sequence, Set, TypeVar
 
 from aiohttp import web
 import aiomcache
@@ -861,12 +861,13 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
 
     # order PRs the same as they were requested by user
     indexed_prs = {(prefixer.prefix_logical_repo(pr.repository), pr.number): pr for pr in prs}
-    ordered_prs = (
+    ordered_prs = [
         pr
         for pr_group in req.prs
         for pr_number in pr_group.numbers
         if (pr := indexed_prs.get((pr_group.repository, pr_number))) is not None
-    )
+    ]
+
     return await _build_github_prs_response(
         ordered_prs, deployments, prefixer, meta_ids, request.mdb, request.cache,
     )
@@ -947,7 +948,7 @@ def webify_deployment(val: Deployment, prefix_logical_repo) -> WebDeploymentNoti
 
 @sentry_span
 async def _build_github_prs_response(
-    prs: list[PullRequestListItem],
+    prs: Sequence[PullRequestListItem],
     deployments: dict[str, Deployment],
     prefixer: Prefixer,
     meta_ids: tuple[int, ...],

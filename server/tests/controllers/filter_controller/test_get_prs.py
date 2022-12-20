@@ -41,6 +41,7 @@ class TestGetPRs(BaseGetPRsTest):
         res = await self._request(json=body)
         model = PullRequestSet.from_dict(res)
         assert len(model.data) == 51
+        assert len(model.include.users) == 40
 
     async def test_get_prs_deployments(self, precomputed_deployments, detect_deployments) -> None:
         body = self._body(
