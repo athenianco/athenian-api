@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Collection, Optional, Sequence
 
 from aiohttp import web
 
@@ -69,8 +69,8 @@ class FilterPRs:
     """Compiled pull requests filter."""
 
     service: str
-    repogroups: List[Set[str]]
-    participants: List[Dict[PRParticipationKind, Set[str]]]
+    repogroups: list[set[str]]
+    participants: list[dict[PRParticipationKind, set[str]]]
     labels: LabelFilter
     jira: JIRAFilter
     for_set_index: int
@@ -84,8 +84,8 @@ class FilterDevs:
     """Compiled developers filter."""
 
     service: str
-    repogroups: List[Set[str]]
-    developers: List[PRParticipants]
+    repogroups: list[set[str]]
+    developers: list[PRParticipants]
     labels: LabelFilter
     jira: JIRAFilter
     for_set: ForSetDevelopers
@@ -97,8 +97,8 @@ class FilterChecks:
     """Compiled checks filter."""
 
     service: str
-    repogroups: List[Set[str]]
-    pusher_groups: List[Sequence[str]]
+    repogroups: list[set[str]]
+    pusher_groups: list[Sequence[str]]
     labels: LabelFilter
     jira: JIRAFilter
     for_set: ForSetCodeChecks
@@ -110,11 +110,11 @@ class FilterDeployments:
     """Compiled deployments filter."""
 
     service: str
-    repogroups: List[Set[str]]
-    participant_groups: List[Dict[ReleaseParticipationKind, List[int]]]
-    envgroups: List[List[str]]
-    with_labels: Dict[str, Any]
-    without_labels: Dict[str, Any]
+    repogroups: list[set[str]]
+    participant_groups: list[dict[ReleaseParticipationKind, list[int]]]
+    envgroups: list[list[str]]
+    with_labels: dict[str, Any]
+    without_labels: dict[str, Any]
     pr_labels: LabelFilter
     jira: JIRAFilter
     for_set: ForSetDeployments
@@ -247,13 +247,13 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
 
 
 async def compile_filters_prs(
-    for_sets: List[ForSetPullRequests],
+    for_sets: list[ForSetPullRequests],
     request: AthenianWebRequest,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
-) -> Tuple[List[FilterPRs], Set[str]]:
+) -> tuple[list[FilterPRs], set[str]]:
     """
     Build the list of filters for a given list of ForSetPullRequests-s.
 
@@ -322,13 +322,13 @@ def check_environments(
 
 
 async def _compile_filters_devs(
-    for_sets: List[ForSetDevelopers],
+    for_sets: list[ForSetDevelopers],
     request: AthenianWebRequest,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
-) -> Tuple[List[FilterDevs], Set[str]]:
+) -> tuple[list[FilterDevs], set[str]]:
     """
     Build the list of filters for a given list of ForSetDevelopers'.
 
@@ -370,13 +370,13 @@ async def _compile_filters_devs(
 
 
 async def compile_filters_checks(
-    for_sets: List[ForSetCodeChecks],
+    for_sets: list[ForSetCodeChecks],
     request: AthenianWebRequest,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
-) -> List[FilterChecks]:
+) -> list[FilterChecks]:
     """
     Build the list of filters for a given list of ForSetCodeChecks'.
 
@@ -437,13 +437,13 @@ async def compile_filters_checks(
 
 
 async def _compile_filters_deployments(
-    for_sets: List[ForSetDeployments],
+    for_sets: list[ForSetDeployments],
     request: AthenianWebRequest,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
-) -> List[FilterDeployments]:
+) -> list[FilterDeployments]:
     filters = []
     checkers = {}
     all_repos = set()
@@ -513,12 +513,12 @@ async def _compile_jira(for_set, account: int, request: AthenianWebRequest) -> J
 async def _extract_repos(
     request: AthenianWebRequest,
     account: int,
-    meta_ids: Tuple[int, ...],
-    for_set: List[str],
+    meta_ids: tuple[int, ...],
+    for_set: list[str],
     for_set_index: int,
-    all_repos: Set[str],
-    checkers: Dict[str, AccessChecker],
-) -> Tuple[List[Set[str]], str, str]:
+    all_repos: set[str],
+    checkers: dict[str, AccessChecker],
+) -> tuple[list[set[str]], str, str]:
     pointer = ".for[%d].repositories" % for_set_index
     resolved, prefix = await resolve_repos_with_request(
         for_set,
@@ -566,7 +566,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         with_committer,
         filt.only_default_branch,
         prefixer,
-    )  # type: List[CodeStats]
+    )  # type: list[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
@@ -685,16 +685,16 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
 
 async def _compile_filters_releases(
     request: AthenianWebRequest,
-    for_sets: List[List[str]],
-    with_: Optional[List[ReleaseWith]],
+    for_sets: list[list[str]],
+    with_: Optional[list[ReleaseWith]],
     account: int,
-    meta_ids: Tuple[int, ...],
-) -> Tuple[
-    List[Tuple[str, str, Tuple[Set[str], List[str]]]],
-    Set[str],
+    meta_ids: tuple[int, ...],
+) -> tuple[
+    list[tuple[str, str, tuple[set[str], list[str]]]],
+    set[str],
     Prefixer,
     LogicalRepositorySettings,
-    List[ReleaseParticipants],
+    list[ReleaseParticipants],
 ]:
     filters = []
     checkers = {}
