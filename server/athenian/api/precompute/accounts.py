@@ -185,7 +185,7 @@ async def precompute_reposet(
     time_to: datetime,
     no_time_from: datetime,
     time_from: datetime,
-) -> None:
+) -> DataHealthMetrics:
     """
     Execute precomputations for a single reposet.
 
@@ -212,7 +212,7 @@ async def precompute_reposet(
     except Exception as e:
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
-        return
+        return health_metrics
     deref_items, missing = prefixer.dereference_repositories(
         reposet_items_to_refs(reposet.items), return_missing=True, logger=log,
     )
@@ -446,6 +446,7 @@ async def precompute_reposet(
             )
     finally:
         await wait_deferred()
+    return health_metrics
 
 
 async def ensure_teams(

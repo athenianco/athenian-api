@@ -2,14 +2,17 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.github.branches import BranchMinerMetrics
 from athenian.api.models.metadata.github import Branch
 
 
 async def test_extract_branches_zero(mdb, branch_miner, prefixer):
+    metrics = BranchMinerMetrics.empty()
     branches, defaults = await branch_miner.extract_branches(
-        ["src-d/gitbase"], prefixer, (6366825,), mdb, None,
+        ["src-d/gitbase"], prefixer, (6366825,), mdb, None, metrics=metrics,
     )
     assert branches.empty
+    assert metrics.empty_count == 1
     assert defaults == {"src-d/gitbase": "master"}
     branches, defaults = await branch_miner.extract_branches(
         ["src-d/gitbase"], prefixer, (6366825,), mdb, None,
@@ -48,6 +51,7 @@ async def test_extract_branches_cache(mdb, cache, branch_miner, prefixer):
 
 async def test_extract_branches_main(mdb_rw, branch_miner, prefixer):
     mdb = mdb_rw
+    metrics = BranchMinerMetrics.empty()
     await mdb.execute(
         update(Branch)
         .where(Branch.branch_name == "master")
@@ -60,7 +64,7 @@ async def test_extract_branches_main(mdb_rw, branch_miner, prefixer):
     )
     try:
         _, defaults = await branch_miner.extract_branches(
-            ["src-d/go-git"], prefixer, (6366825,), mdb, None,
+            ["src-d/go-git"], prefixer, (6366825,), mdb, None, metrics=metrics,
         )
         assert defaults == {"src-d/go-git": "main", "src-d/юникод": "вадим"}
     finally:
@@ -74,6 +78,8 @@ async def test_extract_branches_main(mdb_rw, branch_miner, prefixer):
                 },
             ),
         )
+    assert metrics.count == 5
+    assert metrics.no_default == 1
 
 
 async def test_extract_branches_max_date(mdb_rw, branch_miner, prefixer):

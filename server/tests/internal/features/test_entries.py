@@ -13,6 +13,7 @@ from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
     MetricEntriesCalculator,
     MetricsLineRequest,
+    MinePullRequestMetrics,
     PRFactsCalculator,
     TeamSpecificFilters,
     make_calculator,
@@ -64,9 +65,14 @@ class TestPRFactsCalculator:
         calculator = PRFactsCalculator(
             1, meta_ids, mdb, pdb, rdb, **self._init_kwargs(), cache=None,
         )
+        metrics = MinePullRequestMetrics.empty()
 
         base_kwargs = await self._kwargs(meta_ids, mdb, sdb)
+        base_kwargs["metrics"] = metrics
         facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
+        assert metrics == MinePullRequestMetrics(
+            count=33, done_count=29, merged_count=3, open_count=1,
+        )
         last_review = facts[facts.node_id == 163078].last_review.values[0]
 
         await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 8, 20), **base_kwargs)

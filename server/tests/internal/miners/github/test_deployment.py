@@ -15,6 +15,7 @@ from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import (
+    MineDeploymentsMetrics,
     deployment_facts_extract_mentioned_people,
     hide_outlier_first_deployments,
     mine_deployments,
@@ -59,6 +60,7 @@ async def test_mine_deployments_from_scratch(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    metrics = MineDeploymentsMetrics.empty()
     await mine_releases(
         ["src-d/go-git"],
         {},
@@ -82,6 +84,7 @@ async def test_mine_deployments_from_scratch(
         with_deployments=False,
     )
     await wait_deferred()
+
     deps = await mine_deployments(
         ["src-d/go-git"],
         {},
@@ -105,12 +108,15 @@ async def test_mine_deployments_from_scratch(
         pdb,
         rdb,
         cache,
+        metrics=metrics,
     )
     _validate_deployments(deps, 9, True)
     deployment_facts_extract_mentioned_people(deps)
     await wait_deferred()
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
+    assert metrics.count == 18
+    assert metrics.unresolved == 0
 
     # test the cache
     deps = await mine_deployments(
@@ -138,6 +144,73 @@ async def test_mine_deployments_from_scratch(
         cache,
     )
     _validate_deployments(deps, 9, True)
+
+
+@with_defer
+async def test_mine_deployments_unresolved(
+    sample_deployments,
+    release_match_setting_tag_or_branch,
+    branches,
+    default_branches,
+    prefixer,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    metrics = MineDeploymentsMetrics.empty()
+
+    await rdb.execute(
+        insert(DeploymentNotification).values(
+            account_id=1,
+            name="whatever",
+            conclusion="SUCCESS",
+            environment="production",
+            started_at=datetime(2019, 11, 2, tzinfo=timezone.utc),
+            finished_at=datetime(2019, 11, 2, 0, 10, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        ),
+    )
+    await rdb.execute(
+        insert(DeployedComponent).values(
+            account_id=1,
+            deployment_name="whatever",
+            repository_node_id=40550,
+            reference="not exists",
+            created_at=datetime.now(timezone.utc),
+        ),
+    )
+
+    await mine_deployments(
+        ["src-d/go-git"],
+        {},
+        time_from,
+        time_to,
+        ["production", "staging"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        None,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        cache,
+        metrics=metrics,
+    )
+    assert metrics.count == 18
+    assert metrics.unresolved == 1
 
 
 @with_defer
