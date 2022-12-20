@@ -9,23 +9,13 @@ ForSetLike = TypeVar("ForSetLike", bound=Model)
 class RepositoryGroupsMixin:
     """Mixin to add support for `repositories` and `repogroups`."""
 
-    def validate_repositories(self, repositories: list[str]) -> list[str]:
+    def validate_repositories(self, repositories: Optional[list[str]]) -> Optional[list[str]]:
         """Sets the repositories of this ForSetPullRequests.
 
         :param repositories: The repositories of this ForSetPullRequests.
         """
-        if repositories is None:
-            raise ValueError("Invalid value for `repositories`, must not be `None`")
-        if len(repositories) == 0:
-            raise ValueError("Invalid value for `repositories`, must not be an empty list")
-        if (repogroups := getattr(self, "_repogroups", None)) is not None:
-            for i, group in enumerate(repogroups):
-                for j, v in enumerate(group):
-                    if v >= len(repositories):
-                        raise ValueError(
-                            "`repogroups[%d][%d]` = %s must be less than the number of "
-                            "repositories (%d)" % (i, j, v, len(repositories)),
-                        )
+        repogroups = getattr(self, "_repogroups", None)
+        self._validate_repogroups_and_repos(repogroups, repositories)
 
         return repositories
 
@@ -37,25 +27,7 @@ class RepositoryGroupsMixin:
 
         :param repogroups: The repogroups of this ForSetPullRequests.
         """
-        if repogroups is not None:
-            if len(repogroups) == 0:
-                raise ValueError("`repogroups` must contain at least one list")
-            for i, group in enumerate(repogroups):
-                if len(group) == 0:
-                    raise ValueError("`repogroups[%d]` must contain at least one element" % i)
-                for j, v in enumerate(group):
-                    if v < 0:
-                        raise ValueError(
-                            "`repogroups[%d][%d]` = %s must not be negative" % (i, j, v),
-                        )
-                    if self._repositories is not None and v >= len(self._repositories):
-                        raise ValueError(
-                            "`repogroups[%d][%d]` = %s must be less than the number of "
-                            "repositories (%d)" % (i, j, v, len(self._repositories)),
-                        )
-                if len(set(group)) < len(group):
-                    raise ValueError("`repogroups[%d]` has duplicate items" % i)
-
+        self._validate_repogroups_and_repos(repogroups, getattr(self, "_repositories", None))
         return repogroups
 
     def select_repogroup(self: ForSetLike, index: int) -> ForSetLike:
@@ -70,6 +42,37 @@ class RepositoryGroupsMixin:
         fs.repogroups = None
         fs.repositories = [self.repositories[i] for i in self.repogroups[index]]
         return fs
+
+    @classmethod
+    def _validate_repogroups_and_repos(
+        self,
+        repogroups: Optional[list[list[int]]],
+        repositories: Optional[list[str]],
+    ) -> None:
+        if repositories is not None and len(repositories) == 0:
+            raise ValueError("Invalid value for `repositories`, must not be an empty list")
+        if repogroups is not None and len(repogroups) == 0:
+            raise ValueError("`repogroups` must contain at least one list")
+
+        if repogroups is None:
+            return
+
+        if repositories is None:
+            raise ValueError("`repogroups` cannot be used with no repositories")
+
+        for i, group in enumerate(repogroups):
+            if len(group) == 0:
+                raise ValueError("`repogroups[%d]` must contain at least one element" % i)
+            for j, v in enumerate(group):
+                if v < 0:
+                    raise ValueError(f"`repogroups[{i}][{j}]` = {v} must not be negative")
+                if repositories is not None and v >= len(repositories):
+                    raise ValueError(
+                        f"`repogroups[{i}][{j}]` = {v} must be less than the number of "
+                        f"repositories ({len(repositories)})",
+                    )
+            if len(set(group)) < len(group):
+                raise ValueError("`repogroups[%d]` has duplicate items" % i)
 
 
 def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
@@ -102,7 +105,7 @@ CommonPullRequestFilters = make_common_pull_request_filters("")
 class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
     """Support for splitting metrics by the number of changed lines."""
 
-    repositories: list[str]
+    repositories: Optional[list[str]]
     repogroups: Optional[list[list[int]]]
     lines: Optional[list[int]]
 

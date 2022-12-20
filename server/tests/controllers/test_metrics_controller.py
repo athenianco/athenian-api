@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import json
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,7 @@ from athenian.api.models.web import (
 )
 from athenian.api.serialization import FriendlyJson
 from tests.testutils.db import models_insert
+from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import ReleaseSettingFactory
 from tests.testutils.requester import Requester
 
@@ -130,6 +132,16 @@ class TestCalcMetricsPRs(Requester):
         )
         assert response.status == assert_status, (await response.read()).decode()
         return await response.json()
+
+    @classmethod
+    def _body(self, **kwargs: Any) -> dict:
+        kwargs.setdefault("account", DEFAULT_ACCOUNT_ID)
+        kwargs.setdefault("exclude_inactive", False)
+        kwargs.setdefault("granularities", ["all"])
+
+        if "for" not in kwargs and "for_" in kwargs:
+            kwargs["for"] = kwargs.pop("for_")
+        return kwargs
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
@@ -256,21 +268,14 @@ class TestCalcMetricsPRs(Requester):
     )
     async def test_empty_devs_tight_date(self, devs, date_from):
         """https://athenianco.atlassian.net/browse/ENG-126"""
-        body = {
-            "date_from": date_from,
-            "date_to": "2020-01-16",
-            "for": [
-                {
-                    **devs,
-                    "repositories": ["github.com/src-d/go-git"],
-                    "environments": ["production"],
-                },
-            ],
-            "granularities": ["month"],
-            "exclude_inactive": False,
-            "account": 1,
-            "metrics": list(PullRequestMetricID),
-        }
+        repos = ["github.com/src-d/go-git"]
+        body = self._body(
+            date_from=date_from,
+            date_to="2020-01-16",
+            for_=[{**devs, "repositories": repos, "environments": ["production"]}],
+            granularities=["month"],
+            metrics=list(PullRequestMetricID),
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
@@ -312,9 +317,7 @@ class TestCalcMetricsPRs(Requester):
                 },
                 {
                     "with": {"releaser": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
-                    "repositories": [
-                        "github.com/src-d/go-git",
-                    ],
+                    "repositories": ["github.com/src-d/go-git"],
                 },
             ],
             "metrics": [PullRequestMetricID.PR_LEAD_TIME],
@@ -325,26 +328,32 @@ class TestCalcMetricsPRs(Requester):
             "exclude_inactive": False,
             "account": account,
         }
-        self._request(assert_status=code, json=body)
+        await self._request(assert_status=code, json=body)
+
+    async def test_repogroups_with_no_repositories(self) -> None:
+        body = self._body(
+            for_=[{"repogroups": [[0]]}],
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2017-10-13",
+            date_to="2018-01-23",
+        )
+        await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_reposet(self):
         """Substitute {id} with the real repos."""
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                     "repositories": ["{1}"],
                 },
             ],
-            "metrics": [PullRequestMetricID.PR_LEAD_TIME],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
@@ -376,8 +385,8 @@ class TestCalcMetricsPRs(Requester):
         ],
     )
     async def test_counts_sums(self, metric, count):
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "with": {
                         k: ["github.com/vmarkovtsev", "github.com/mcuadros"]
@@ -386,13 +395,11 @@ class TestCalcMetricsPRs(Requester):
                     "repositories": ["{1}"],
                 },
             ],
-            "metrics": [metric],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["month"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            metrics=[metric],
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+            granularities=["month"],
+        )
         res = await self._request(json=body)
         s = 0
         for item in res["calculated"][0]["values"]:
@@ -438,35 +445,30 @@ class TestCalcMetricsPRs(Requester):
                     Team(owner_id=1, name=Team.BOTS, members=[39789]).create_defaults().explode(),
                 ),
             )
-        body = {
-            "for": [{"with": {}, "repositories": ["{1}"]}],
-            "metrics": [
+        body = self._body(
+            for_=[{"with": {}, "repositories": ["{1}"]}],
+            metrics=[
                 PullRequestMetricID.PR_PARTICIPANTS_PER,
                 PullRequestMetricID.PR_REVIEWS_PER,
                 PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
                 PullRequestMetricID.PR_COMMENTS_PER,
             ],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["year"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+            granularities=["year"],
+        )
         res = await self._request(json=body)
         assert [v["values"] for v in res["calculated"][0]["values"]] == values
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_sizes(self):
-        body = {
-            "for": [{"with": {}, "repositories": ["{1}"]}],
-            "metrics": [PullRequestMetricID.PR_SIZE, PullRequestMetricID.PR_MEDIAN_SIZE],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+        body = self._body(
+            for_=[{"with": {}, "repositories": ["{1}"]}],
+            metrics=[PullRequestMetricID.PR_SIZE, PullRequestMetricID.PR_MEDIAN_SIZE],
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+        )
         rbody = await self._request(json=body)
         values = [v["values"] for v in rbody["calculated"][0]["values"]]
         assert values == [[296, 54]]
@@ -487,45 +489,36 @@ class TestCalcMetricsPRs(Requester):
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_index_error(self):
-        body = {
-            "for": [
-                {
-                    "with": {},
-                    "repositories": ["github.com/src-d/go-git"],
-                },
-            ],
-            "metrics": [
+        body = self._body(
+            for_=[{"with": {}, "repositories": ["github.com/src-d/go-git"]}],
+            metrics=[
                 PullRequestMetricID.PR_WIP_TIME,
                 PullRequestMetricID.PR_REVIEW_TIME,
                 PullRequestMetricID.PR_MERGING_TIME,
                 PullRequestMetricID.PR_RELEASE_TIME,
                 PullRequestMetricID.PR_LEAD_TIME,
             ],
-            "date_from": "2019-02-25",
-            "date_to": "2019-02-28",
-            "granularities": ["week"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            date_from="2019-02-25",
+            date_to="2019-02-28",
+            granularities=["week"],
+        )
         await self._request(json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_ratio_flow(self, headers):
         """https://athenianco.atlassian.net/browse/ENG-411"""
-        body = {
-            "date_from": "2016-01-01",
-            "date_to": "2020-01-16",
-            "for": [{"repositories": ["github.com/src-d/go-git"]}],
-            "granularities": ["month"],
-            "exclude_inactive": False,
-            "account": 1,
-            "metrics": [
+        body = self._body(
+            date_from="2016-01-01",
+            date_to="2020-01-16",
+            for_=[{"repositories": ["github.com/src-d/go-git"]}],
+            granularities=["month"],
+            metrics=[
                 PullRequestMetricID.PR_FLOW_RATIO,
                 PullRequestMetricID.PR_OPENED,
                 PullRequestMetricID.PR_CLOSED,
             ],
-        }
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
@@ -547,15 +540,13 @@ class TestCalcMetricsPRs(Requester):
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_exclude_inactive_full_span(self):
-        body = {
-            "date_from": "2017-01-01",
-            "date_to": "2017-01-11",
-            "for": [{"repositories": ["github.com/src-d/go-git"]}],
-            "granularities": ["all"],
-            "account": 1,
-            "metrics": [PullRequestMetricID.PR_ALL_COUNT],
-            "exclude_inactive": True,
-        }
+        body = self._body(
+            date_from="2017-01-01",
+            date_to="2017-01-11",
+            for_=[{"repositories": ["github.com/src-d/go-git"]}],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+            exclude_inactive=True,
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 6
@@ -563,15 +554,14 @@ class TestCalcMetricsPRs(Requester):
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_exclude_inactive_split(self):
-        body = {
-            "date_from": "2016-12-21",
-            "date_to": "2017-01-11",
-            "for": [{"repositories": ["github.com/src-d/go-git"]}],
-            "granularities": ["11 day"],
-            "account": 1,
-            "metrics": [PullRequestMetricID.PR_ALL_COUNT],
-            "exclude_inactive": True,
-        }
+        body = self._body(
+            date_from="2016-12-21",
+            date_to="2017-01-11",
+            for_=[{"repositories": ["github.com/src-d/go-git"]}],
+            granularities=["11 day"],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+            exclude_inactive=True,
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert cm.calculated[0].values[0].values[0] == 1
@@ -842,21 +832,18 @@ class TestCalcMetricsPRs(Requester):
     @pytest.mark.app_validate_responses(False)
     async def test_groups_smoke(self):
         """Two repository groups."""
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                     "repositories": ["{1}", "github.com/src-d/go-git"],
                     "repogroups": [[0], [0]],
                 },
             ],
-            "metrics": [PullRequestMetricID.PR_LEAD_TIME],
-            "date_from": "2017-10-13",
-            "date_to": "2018-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2017-10-13",
+            date_to="2018-01-23",
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated) == 2
@@ -867,42 +854,36 @@ class TestCalcMetricsPRs(Requester):
     @pytest.mark.parametrize("repogroups", [[[0, 0]], [[0, -1]], [[0, 1]]])
     async def test_groups_nasty(self, repogroups):
         """Two repository groups."""
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                     "repositories": ["{1}"],
                     "repogroups": repogroups,
                 },
             ],
-            "metrics": [PullRequestMetricID.PR_LEAD_TIME],
-            "date_from": "2017-10-13",
-            "date_to": "2018-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2017-10-13",
+            date_to="2018-01-23",
+        )
         await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_lines_smoke(self):
         """Two repository groups."""
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                     "repositories": ["{1}", "github.com/src-d/go-git"],
                     "lines": [50, 200, 100000, 100500],
                 },
             ],
-            "metrics": [PullRequestMetricID.PR_OPENED],
-            "date_from": "2017-10-13",
-            "date_to": "2018-03-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            metrics=[PullRequestMetricID.PR_OPENED],
+            date_from="2017-10-13",
+            date_to="2018-03-23",
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated) == 3
@@ -933,43 +914,33 @@ class TestCalcMetricsPRs(Requester):
             PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
         ],
     )
-    async def test_calc_metrics_prs_deployments_no_env(self, metric):
-        body = {
-            "for": [
-                {
-                    "with": {},
-                    "repositories": ["{1}"],
-                    **({"environments": []} if "time" in metric else {}),
-                },
-            ],
-            "metrics": [metric],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["year"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+    async def test_deployments_no_env(self, metric):
+        envs = {"environments": []} if "time" in metric else {}
+        body = self._body(
+            for_=[{"with": {}, "repositories": ["{1}"], **envs}],
+            metrics=[metric],
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+            granularities=["year"],
+        )
         await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_deployments_smoke(self, precomputed_deployments):
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {"repositories": ["{1}"], "environments": ["staging", "production"]},
             ],
-            "metrics": [
+            metrics=[
                 PullRequestMetricID.PR_DEPLOYMENT_TIME,
                 PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
                 PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
                 PullRequestMetricID.PR_DEPLOYMENT_COUNT,
             ],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+        )
         res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
@@ -987,14 +958,13 @@ class TestCalcMetricsPRs(Requester):
     )
     async def test_logical_smoke(
         self,
-        client,
         logical_settings_db,
         release_match_setting_tag_logical_db,
         second_repo,
         counts,
     ):
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "repositories": [
                         "github.com/src-d/go-git/alpha",
@@ -1002,18 +972,15 @@ class TestCalcMetricsPRs(Requester):
                     ],
                 },
             ],
-            "metrics": [
+            metrics=[
                 PullRequestMetricID.PR_MERGED,
                 PullRequestMetricID.PR_REJECTED,
                 PullRequestMetricID.PR_REVIEW_COUNT,
                 PullRequestMetricID.PR_RELEASE_COUNT,
             ],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+        )
         res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [counts]
@@ -1031,8 +998,8 @@ class TestCalcMetricsPRs(Requester):
             ),
         )
 
-        body = {
-            "for": [
+        body = self._body(
+            for_=[
                 {
                     "repositories": [
                         "github.com/src-d/go-git/alpha",
@@ -1040,18 +1007,15 @@ class TestCalcMetricsPRs(Requester):
                     ],
                 },
             ],
-            "metrics": [
+            metrics=[
                 PullRequestMetricID.PR_MERGED,
                 PullRequestMetricID.PR_REJECTED,
                 PullRequestMetricID.PR_REVIEW_COUNT,
                 PullRequestMetricID.PR_RELEASE_COUNT,
             ],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["all"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+            date_from="2015-10-13",
+            date_to="2020-01-23",
+        )
         res = await self._request(json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [[250, 49, 194, 189]]
@@ -1061,7 +1025,6 @@ class TestCalcMetricsPRs(Requester):
     @with_defer
     async def test_calc_metrics_prs_release_ignored(
         self,
-        client,
         mdb,
         pdb,
         rdb,
@@ -1120,20 +1083,18 @@ class TestCalcMetricsPRs(Requester):
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
-    async def test_pr_reviewed_ratio(self, headers):
-        body = {
-            "date_from": "2016-01-01",
-            "date_to": "2020-01-16",
-            "for": [{"repositories": ["github.com/src-d/go-git"]}],
-            "granularities": ["month"],
-            "exclude_inactive": False,
-            "account": 1,
-            "metrics": [
+    async def test_pr_reviewed_ratio(self) -> None:
+        body = self._body(
+            date_from="2016-01-01",
+            date_to="2020-01-16",
+            for_=[{"repositories": ["github.com/src-d/go-git"]}],
+            granularities=["month"],
+            metrics=[
                 PullRequestMetricID.PR_REVIEWED_RATIO,
                 PullRequestMetricID.PR_REVIEWED,
                 PullRequestMetricID.PR_NOT_REVIEWED,
             ],
-        }
+        )
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
 
@@ -1145,6 +1106,29 @@ class TestCalcMetricsPRs(Requester):
                 assert ratio == 0
             else:
                 assert ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_no_repositories(self) -> None:
+        body = self._body(
+            date_from="2016-01-01",
+            date_to="2016-03-01",
+            for_=[
+                {},
+                {
+                    "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                },
+            ],
+            granularities=["all"],
+            metrics=[PullRequestMetricID.PR_SIZE],
+        )
+        res = await self._request(json=body)
+        calculated = sorted(res["calculated"], key=lambda c: "with" in c["for"])
+
+        assert calculated[0]["for"] == {}
+        assert calculated[0]["values"][0]["values"] == [179]
+        assert calculated[1]["for"] == body["for"][1]
+        assert calculated[1]["values"][0]["values"] == [386]
 
 
 # TODO: fix response validation against the schema
