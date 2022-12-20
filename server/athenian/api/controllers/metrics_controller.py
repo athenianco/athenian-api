@@ -266,8 +266,8 @@ async def compile_filters_prs(
              2. The set of all repositories after dereferencing, with service prefixes.
     """
     filters = []
-    checkers = {}
-    all_repos = set()
+    checkers: dict[str, AccessChecker] = {}
+    all_repos: set[str] = set()
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
@@ -342,8 +342,8 @@ async def _compile_filters_devs(
              with service prefixes.
     """
     filters = []
-    checkers = {}
-    all_repos = set()
+    checkers: dict[str, AccessChecker] = {}
+    all_repos: set[str] = set()
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
@@ -388,8 +388,8 @@ async def compile_filters_checks(
     :return: Resulting list of filters.
     """
     filters = []
-    checkers = {}
-    all_repos = set()
+    checkers: dict[str, AccessChecker] = {}
+    all_repos: set[str] = set()
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
@@ -409,7 +409,7 @@ async def compile_filters_checks(
         pusher_groups = (for_set.pusher_groups or []) + (
             [for_set.pushers] if for_set.pushers else []
         )
-        teams = set()
+        teams: set[int] = set()
 
         def ptr(j: int) -> str:
             return ".for[%d].%s" % (
@@ -420,7 +420,7 @@ async def compile_filters_checks(
         for j, pushers in enumerate(pusher_groups):
             scan_for_teams(pushers, teams, ptr(j))
         teams_map = await fetch_teams_map(teams, account, request.sdb)
-        commit_author_groups = []
+        commit_author_groups: list[Sequence[str]] = []
         for j, pushers in enumerate(pusher_groups):
             if len(
                 ca_group := compile_developers(
@@ -445,8 +445,8 @@ async def _compile_filters_deployments(
     logical_settings: LogicalRepositorySettings,
 ) -> list[FilterDeployments]:
     filters = []
-    checkers = {}
-    all_repos = set()
+    checkers: dict[str, AccessChecker] = {}
+    all_repos: set[str] = set()
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
@@ -653,14 +653,15 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
             for granularity, ts, dev_metrics in zip(
                 filt.granularities, time_intervals, repogroup_metrics,
             ):
-                values = []
+                values: list[list[CalculatedLinearMetricValues]] = []
                 for ts_metrics in dev_metrics:
                     values.append(ts_values := [])
                     for date, metrics in zip(ts, ts_metrics):
                         metrics = [metrics[i] for i in topic_order]
-                        confidence_mins = [m.confidence_min for m in metrics]
-                        if any(confidence_mins):
-                            confidence_maxs = [m.confidence_max for m in metrics]
+                        metrics_confidence_mins: list = [m.confidence_min for m in metrics]
+                        if any(metrics_confidence_mins):
+                            confidence_mins: list | None = metrics_confidence_mins
+                            confidence_maxs: list | None = [m.confidence_max for m in metrics]
                             confidence_scores = [m.confidence_score() for m in metrics]
                         else:
                             confidence_mins = confidence_maxs = confidence_scores = None
@@ -697,8 +698,8 @@ async def _compile_filters_releases(
     list[ReleaseParticipants],
 ]:
     filters = []
-    checkers = {}
-    all_repos = set()
+    checkers: dict[str, AccessChecker] = {}
+    all_repos: set[str] = set()
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, account, prefixer)
     logical_settings = await settings.list_logical_repositories()
