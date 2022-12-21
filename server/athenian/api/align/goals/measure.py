@@ -5,11 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from athenian.api.align.goals.dates import (
-    GoalTimeseriesSpec,
-    goal_datetimes_to_dates,
-    goal_initial_query_interval,
-)
+from athenian.api.align.goals.dates import GoalTimeseriesSpec, goal_initial_query_interval
 from athenian.api.align.goals.dbaccess import (
     AliasedGoalColumns,
     GoalColumnAlias,
@@ -18,6 +14,7 @@ from athenian.api.align.goals.dbaccess import (
     resolve_goal_repositories,
 )
 from athenian.api.db import Row
+from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
@@ -54,7 +51,7 @@ class _GoalTreeGenerator:
         logical_settings: LogicalRepositorySettings,
     ) -> GoalTree:
         """Compose the GoalTree for a goal from various piece of information."""
-        valid_from, expires_at = goal_datetimes_to_dates(
+        valid_from, expires_at = datetimes_to_closed_dates_interval(
             goal_row[Goal.valid_from.name], goal_row[Goal.expires_at.name],
         )
         team_goal_rows_map = {row[TeamGoal.team_id.name]: row for row in team_goal_rows}

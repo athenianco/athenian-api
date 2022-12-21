@@ -3,10 +3,11 @@ from typing import Any, Optional, Sequence
 
 from aiohttp import web
 
-from athenian.api.align.goals.dates import Intervals, goal_dates_to_datetimes
+from athenian.api.align.goals.dates import Intervals
 from athenian.api.align.goals.dbaccess import convert_metric_params_datatypes
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import (
     JIRAConfig,
     check_jira_installation,
@@ -111,7 +112,9 @@ def _parse_time_interval(metrics_request: TeamMetricsRequest) -> Intervals:
         raise ResponseError(
             InvalidRequestError(pointer="valid_from", detail="valid_from cannot be in the future"),
         )
-    return goal_dates_to_datetimes(metrics_request.valid_from, metrics_request.expires_at)
+    return closed_dates_interval_to_datetimes(
+        metrics_request.valid_from, metrics_request.expires_at,
+    )
 
 
 async def _parse_repositories(

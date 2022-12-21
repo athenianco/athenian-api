@@ -8,7 +8,6 @@ from ariadne import MutationType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.exceptions import GoalMutationError
-from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
     GoalCreationInfo,
     TeamGoalTargetAssignment,
@@ -33,6 +32,7 @@ from athenian.api.align.serialization import parse_metric_params, parse_union_va
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
 from athenian.api.controllers.goal_controller import parse_request_repositories
+from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import normalize_issue_type, normalize_priority
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
@@ -145,7 +145,7 @@ async def _parse_create_goal_input(
     """Parse CreateGoalInput into GoalCreationInfo."""
     validate_goal_metric(input[CreateGoalInputFields.metric])
 
-    valid_from, expires_at = goal_dates_to_datetimes(
+    valid_from, expires_at = closed_dates_interval_to_datetimes(
         input[CreateGoalInputFields.validFrom], input[CreateGoalInputFields.expiresAt],
     )
     if expires_at < valid_from:

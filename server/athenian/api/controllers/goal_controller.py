@@ -6,7 +6,6 @@ from typing import Optional, Sequence
 from aiohttp import web
 
 from athenian.api.align.exceptions import GoalNotFoundError, GoalTemplateNotFoundError
-from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import (
     GoalCreationInfo,
     TeamGoalTargetAssignment,
@@ -35,6 +34,7 @@ from athenian.api.internal.account import (
     get_user_account_status_from_request,
     request_user_belongs_to_account,
 )
+from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
     normalize_issue_type,
@@ -328,7 +328,9 @@ async def _parse_create_request(
     request: AthenianWebRequest,
     creat_req: GoalCreateRequest,
 ) -> GoalCreationInfo:
-    valid_from, expires_at = goal_dates_to_datetimes(creat_req.valid_from, creat_req.expires_at)
+    valid_from, expires_at = closed_dates_interval_to_datetimes(
+        creat_req.valid_from, creat_req.expires_at,
+    )
     if expires_at < valid_from:
         raise ResponseError(BadRequestError(detail="Goal expires_at cannot precede valid_from"))
 

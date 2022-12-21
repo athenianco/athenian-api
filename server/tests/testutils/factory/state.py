@@ -10,6 +10,7 @@ from athenian.api.models.state.models import (
     AccountFeature,
     AccountGitHubAccount,
     AccountJiraInstallation,
+    DashboardChart,
     Feature,
     FeatureComponent,
     Goal,
@@ -19,6 +20,7 @@ from athenian.api.models.state.models import (
     ReleaseSetting,
     RepositorySet,
     Team,
+    TeamDashboard,
     TeamGoal,
     UserAccount,
     UserToken,
@@ -198,3 +200,24 @@ class MappedJIRAIdentityFactory(SQLAlchemyModelFactory):
     github_user_id = factory.Sequence(lambda n: n + 1)
     jira_user_id = factory.LazyAttribute(lambda jira_ident: f"jira-{jira_ident.github_user_id}")
     confidence = 1
+
+
+class TeamDashboardFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = TeamDashboard
+
+    id = factory.Sequence(lambda n: n + 1)
+    team_id = factory.Sequence(lambda n: n + 10)
+
+
+class DashboardChartFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = DashboardChart
+
+    id = factory.Sequence(lambda n: n + 1)
+    dashboard_id = factory.Sequence(lambda n: n + 1)
+    position = factory.Sequence(lambda n: n + 1)
+    metric = PullRequestMetricID.PR_REVIEW_TIME
+    time_interval = factory.LazyAttribute(lambda chart: "P1M" if chart.time_from is None else None)
+    name = factory.LazyAttribute(lambda chart: f"Chart {chart.id}")
+    description = factory.LazyAttribute(lambda chart: f"This is chart {chart.id}")
