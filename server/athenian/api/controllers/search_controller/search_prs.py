@@ -15,7 +15,7 @@ import pandas as pd
 import sentry_sdk
 
 from athenian.api.async_utils import gather
-from athenian.api.db import DatabaseLike
+from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.features.github.pull_request_filter import (
@@ -180,9 +180,9 @@ class _SearchPRsReposSettings:
 
 @dataclasses.dataclass
 class _SearchPRsConnectors:
-    mdb: DatabaseLike
-    pdb: DatabaseLike
-    rdb: DatabaseLike
+    mdb: Database
+    pdb: Database
+    rdb: Database
     cache: Optional[aiomcache.Client]
 
 
@@ -305,7 +305,7 @@ class _OrderBy(metaclass=abc.ABCMeta):
     def apply_expression(
         self,
         expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDarray[int],
+        current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
         """Parse an expression and return a tuple with ordered indexes and discard indexes.
 
@@ -319,7 +319,7 @@ class _OrderBy(metaclass=abc.ABCMeta):
     def _ordered_indexes(
         cls,
         expr: SearchPullRequestsOrderByExpression,
-        ordered_indexes: npt.NDarray[int],
+        ordered_indexes: npt.NDArray[int],
         values: npt.NDArray,
         nulls: npt.NDArray[int],
     ) -> npt.NDArray[int]:
@@ -385,7 +385,7 @@ class _OrderByMetrics(_OrderBy):
     def apply_expression(
         self,
         expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDarray[int],
+        current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
         calc = self._calc_ensemble[expr.field][0]
         values = calc.peek[0][current_indexes]
@@ -412,7 +412,7 @@ class _OrderByStageTimings(_OrderBy):
         SearchPullRequestsOrderByStageTiming.PR_RELEASE_STAGE_TIMING.value: "release",
     }
 
-    def __init__(self, stage_timings: dict[str, npt.NDArray]):
+    def __init__(self, stage_timings: dict[str, list[npt.NDArray]]):
         self._stage_timings = stage_timings
 
     @classmethod
@@ -433,7 +433,7 @@ class _OrderByStageTimings(_OrderBy):
     def apply_expression(
         self,
         expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDarray[int],
+        current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
         stage = self._FIELD_TO_STAGE[expr.field]
         values = self._stage_timings[stage][0][current_indexes]
@@ -452,7 +452,7 @@ class _OrderByTraits(_OrderBy):
     def apply_expression(
         self,
         expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDarray[int],
+        current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
         values = self._get_values(expr).copy()[current_indexes]
         nulls = values != values
