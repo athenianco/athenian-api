@@ -1,0 +1,12 @@
+--- rules	2022-11-16 12:34:58.128078268 +0100
++++ rules.bolt	2022-11-16 12:37:40.129579671 +0100
+@@ -394,7 +394,8 @@
+ 	  CPPFLAGS="$(DPKG_CPPFLAGS)" LDFLAGS="$(DPKG_LDFLAGS) $(LTO_CFLAGS)" \
+ 	    $(config_site) \
+ 	    ../configure \
+-		$(common_configure_args)
++		$(common_configure_args) \
++		--with-llvm=/usr/lib/llvm-16/bin --enable-bolt
+ 
+ 	$(call __post_configure,$(buildd_static))
+ 	touch $@
