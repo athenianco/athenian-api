@@ -517,13 +517,17 @@ async def get_account_health(
     """Return the account health metrics measured per hour."""
     try:
         if since is not None:
-            since = deserialize_datetime(since)
+            since = deserialize_datetime(since).astimezone(timezone.utc)
         else:
-            since = datetime.now(timezone.utc) - timedelta(hours=1)
+            since = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(
+                minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
+            )
         if until is not None:
-            until = deserialize_datetime(until)
+            until = deserialize_datetime(until).astimezone(timezone.utc)
         else:
-            until = datetime.now(timezone.utc)
+            until = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(
+                minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
+            )
     except ValueError as e:
         e.path = "since" if isinstance(since, str) else "until"
         raise ResponseError(InvalidRequestError.from_validation_error(e))
@@ -539,10 +543,6 @@ async def get_account_health(
                 [Account.id],
             )
         )[Account.id.name].values
-    since = (since + timedelta(hours=1)).replace(
-        minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
-    )
-    until = until.replace(minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     datetimes = list(rrule(HOURLY, dtstart=since, until=until))
     return model_response(
         AccountsHealth(
