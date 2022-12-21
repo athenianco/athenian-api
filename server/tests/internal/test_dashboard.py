@@ -1,17 +1,23 @@
 import asyncio
+from datetime import date
+from typing import Any
 
 import pytest
+import sqlalchemy as sa
 
-from athenian.api.db import Database, is_postgresql
+from athenian.api.db import Database, ensure_db_datetime_tz, is_postgresql
 from athenian.api.internal.dashboard import (
     MultipleTeamDashboardsError,
     TeamDashboardNotFoundError,
+    create_dashboard_chart,
     get_dashboard,
     get_team_default_dashboard,
 )
-from athenian.api.models.state.models import TeamDashboard
-from tests.testutils.db import assert_existing_row, models_insert
-from tests.testutils.factory.state import TeamDashboardFactory, TeamFactory
+from athenian.api.models.state.models import DashboardChart, TeamDashboard
+from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
+from tests.testutils.db import assert_existing_row, models_insert, transaction_conn
+from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
+from tests.testutils.time import dt
 
 
 class TestGetDashboard:
@@ -72,3 +78,76 @@ class TestGetTeamDefaultDashboard:
         # only one row has been created
         assert len(set(dashboard_ids)) == 1
         await assert_existing_row(sdb, TeamDashboard, team_id=10, id=dashboard_ids[0])
+
+
+class TestCreateDashboardChart:
+    async def test_create_first(self, sdb: Database) -> None:
+        create_req = self._create_request()
+        await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+
+        row = await assert_existing_row(
+            sdb, DashboardChart, dashboard_id=1, id=chart_id, name="n", description="d",
+        )
+        assert row[DashboardChart.time_interval.name] == "P1Y"
+        assert row[DashboardChart.time_from.name] is None
+        assert row[DashboardChart.time_to.name] is None
+        assert row[DashboardChart.position.name] == 0
+
+    async def test_static_time_interval(self, sdb: Database) -> None:
+        create_req = self._create_request(
+            time_interval=None, date_from=date(2001, 1, 1), date_to=date(2001, 1, 31),
+        )
+        await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+
+        row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
+        assert row[DashboardChart.time_interval.name] is None
+        assert ensure_db_datetime_tz(row[DashboardChart.time_from.name], sdb) == dt(2001, 1, 1)
+        assert ensure_db_datetime_tz(row[DashboardChart.time_to.name], sdb) == dt(2001, 2, 1)
+
+    async def test_append_to_existing_charts(self, sdb: Database) -> None:
+        create_req = self._create_request()
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=6, position=1, dashboard_id=1),
+            DashboardChartFactory(id=7, position=0, dashboard_id=1),
+        )
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+
+        row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
+        assert row[DashboardChart.position.name] == 2
+
+    async def test_insert_custom_position(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            *[
+                DashboardChartFactory(id=_id, position=pos, dashboard_id=1)
+                for _id, pos in ((6, 3), (7, 0), (8, 2))
+            ],
+        )
+        create_req = self._create_request(position=1)
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+
+        row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
+        assert row[DashboardChart.position.name] == 2
+
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 7), (2, chart_id), (3, 8), (4, 6)]
+
+    @classmethod
+    def _create_request(cls, **kwargs: Any) -> DashboardChartCreateRequest:
+        kwargs.setdefault("time_interval", "P1Y")
+        kwargs.setdefault("description", "d")
+        kwargs.setdefault("name", "n")
+        kwargs.setdefault("metric", PullRequestMetricID.PR_REJECTED)
+
+        return DashboardChartCreateRequest(**kwargs)

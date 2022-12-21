@@ -1,13 +1,18 @@
+from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Sequence
 
 import sqlalchemy as sa
 
-from athenian.api.db import Connection, DatabaseLike, Row, is_postgresql
-from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
+from athenian.api.db import Connection, DatabaseLike, Row, conn_in_transaction, is_postgresql
+from athenian.api.internal.datetime_utils import (
+    closed_dates_interval_to_datetimes,
+    datetimes_to_closed_dates_interval,
+)
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import (
     DashboardChart as WebDashboardChart,
+    DashboardChartCreateRequest,
     GenericError,
     TeamDashboard as WebTeamDashboard,
 )
@@ -53,7 +58,6 @@ async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Seq
     """Fetch the rows for the charts of a dashboard from DB.
 
     Charts are returned with the proper order they have in the dashboard.
-
     """
     stmt = (
         sa.select(DashboardChart)
@@ -61,6 +65,44 @@ async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Seq
         .order_by(DashboardChart.position)
     )
     return await sdb_conn.fetch_all(stmt)
+
+
+async def create_dashboard_chart(
+    dashboard_id: int,
+    req: DashboardChartCreateRequest,
+    sdb_conn: Connection,
+) -> int:
+    """Create a new dashboard chart and return its ID."""
+    assert await conn_in_transaction(sdb_conn)
+    # lock existing chart rows, to ensure the position of the new chart is correct and unique
+    existing_stmt = (
+        sa.select(DashboardChart.id, DashboardChart.position)
+        .where(DashboardChart.dashboard_id == dashboard_id)
+        .order_by(DashboardChart.position)
+        .with_for_update()
+    )
+    existing_rows = await sdb_conn.fetch_all(existing_stmt)
+
+    now = datetime.now(timezone.utc)
+
+    if not existing_rows:
+        # first chart of the dashboard gets position 0 regardless of user request
+        position = 0
+    else:
+        if req.position is None or req.position > len(existing_rows) - 1:
+            # by default new chart is appended, position it's max + 1
+            position = existing_rows[-1][DashboardChart.position.name] + 1
+        else:
+            # if there's a requested position new chart will get the position of the
+            # chart at that index; following charts will shift by 1
+            position = existing_rows[req.position][DashboardChart.position.name]
+            ids_to_update = [r[DashboardChart.id.name] for r in existing_rows[req.position :]]
+            await _reassign_charts_positions(ids_to_update, position + 1, now, sdb_conn)
+
+    values = _build_chart_row_values(req, now)
+    values.update({DashboardChart.dashboard_id: dashboard_id, DashboardChart.position: position})
+    insert_stmt = sa.insert(DashboardChart).values(values)
+    return await sdb_conn.execute(insert_stmt)
 
 
 def build_dashboard_web_model(dashboard: Row, charts: Sequence[Row]) -> TeamDashboard:
@@ -90,6 +132,70 @@ def _build_chart_web_model(chart: Row) -> WebDashboardChart:
         date_to=date_to,
         time_interval=chart[DashboardChart.time_interval.name],
     )
+
+
+def _build_chart_row_values(chart: DashboardChartCreateRequest, now: datetime) -> dict:
+    if chart.date_from is None or chart.date_to is None:
+        time_from = time_to = None
+    else:
+        time_from, time_to = closed_dates_interval_to_datetimes(chart.date_from, chart.date_to)
+
+    return {
+        DashboardChart.metric: chart.metric,
+        DashboardChart.name: chart.name,
+        DashboardChart.description: chart.description,
+        DashboardChart.time_to: time_to,
+        DashboardChart.time_from: time_from,
+        DashboardChart.time_interval: chart.time_interval,
+        DashboardChart.created_at: now,
+        DashboardChart.updated_at: now,
+    }
+
+
+async def _reassign_charts_positions(
+    chart_ids: Sequence[int],
+    first_position: int,
+    now: datetime,
+    sdb_conn: DatabaseLike,
+) -> None:
+    # reassign the positions for the chart with given IDs starting from first_position
+    new_positions = range(first_position, first_position + len(chart_ids))
+    if await is_postgresql(sdb_conn):
+        # a single UPDATE FROM VALUES will set all new positions
+        # positions will be unique when all updates have been done so constraint is deferred
+        await sdb_conn.execute("SET CONSTRAINTS uc_chart_dashboard_id_position DEFERRED")
+        update_from = sa.values(
+            sa.column("id", sa.Integer),
+            sa.column("position", sa.Integer),
+            name="newpositions",
+            literal_binds=True,
+        ).data(list(zip(chart_ids, new_positions)))
+        stmt = (
+            sa.update(DashboardChart)
+            .where(DashboardChart.id == update_from.c.id)
+            .values(
+                {DashboardChart.position: update_from.c.position, DashboardChart.updated_at: now},
+            )
+        )
+        await sdb_conn.execute(stmt)
+    else:
+        # for sqlite first set all positions to negative to avoid duplicate, then invert position
+        # execute_many doesn't seem to work with morcilla/sqlite
+        for id_, pos in zip(chart_ids, new_positions):
+            values = {DashboardChart.position: -(pos + 1), DashboardChart.updated_at: now}
+            stmt = sa.update(DashboardChart).where(DashboardChart.id == id_).values(values)
+            await sdb_conn.execute(stmt)
+
+        global_update_values = {
+            DashboardChart.position: -DashboardChart.position - 1,
+            DashboardChart.updated_at: now,
+        }
+        global_update = (
+            sa.update(DashboardChart)
+            .where(DashboardChart.id.in_(chart_ids))
+            .values(global_update_values)
+        )
+        await sdb_conn.execute(global_update)
 
 
 class TeamDashboardNotFoundError(ResponseError):
