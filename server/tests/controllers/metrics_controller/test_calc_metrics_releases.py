@@ -275,3 +275,21 @@ class TestCalcMetricsReleases(Requester):
         assert len(models) == 2
         assert models[0].values[0].values[0] == 12
         assert models[1].values[0].values[0] == 20
+
+    async def test_no_repositories(self) -> None:
+        body = self._body(
+            date_from="2018-01-01",
+            date_to="2020-03-01",
+            metrics=[ReleaseMetricID.RELEASE_COUNT],
+            for_=[None, ["{1}"]],
+        )
+        rbody = await self._request(assert_status=200, json=body)
+
+        calculated = sorted(rbody, key=lambda calc: "for" in calc)
+
+        assert "for" not in calculated[0]
+        assert calculated[0]["values"] == [{"date": "2018-01-01", "values": [22]}]
+
+        assert calculated[1]["for"] == ["{1}"]
+        # all repositories is the same as ALL reposet repositories, metric values are the same
+        assert calculated[1]["values"] == calculated[0]["values"]

@@ -10,7 +10,7 @@ from athenian.api.models.web.release_with import ReleaseWith
 class CalculatedReleaseMetric(Model, GranularityMixin):
     """Response from `/metrics/releases`."""
 
-    for_: (List[str], "for")
+    for_: (Optional[List[str]], "for")
     with_: (Optional[ReleaseWith], "with")
     matches: Dict[str, str]
     metrics: List[str]
