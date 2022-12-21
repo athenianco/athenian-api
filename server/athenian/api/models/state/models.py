@@ -24,8 +24,9 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import always_unequal, create_base
+from athenian.precomputer.db.base import BaseType
 
-Base = create_base()
+Base: BaseType = create_base()
 
 
 JSONType = JSONB().with_variant(JSON(), sqlite.dialect.name)
