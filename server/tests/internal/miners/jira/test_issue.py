@@ -205,7 +205,7 @@ class TestFetchReleasedPRs:
         done_prs_facts_loader,
         prefixer,
     ):
-        samples = pr_samples(12)  # type: Sequence[PullRequestFacts]
+        samples: Sequence[PullRequestFacts] = pr_samples(12)
         names = ["one", "two", "three"]
         settings = ReleaseSettings(
             {

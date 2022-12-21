@@ -576,7 +576,7 @@ class Auth0:
             return user, await request.sdb.fetch_val(
                 select([UserAccount.account_id]).where(UserAccount.user_id == user),
             )
-        kms = request.app["kms"]  # type: AthenianKMS
+        kms: AthenianKMS = request.app["kms"]
         if kms is None:
             raise AuthenticationProblem(
                 status=HTTPStatus.UNAUTHORIZED,

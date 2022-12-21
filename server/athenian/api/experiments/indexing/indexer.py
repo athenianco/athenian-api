@@ -184,7 +184,7 @@ class BaseIndexer:
         ]:
             print(f"Building for layer {layer_level}...")
             df_level = df.groupby(col).agg({"values": sum}).reset_index()
-            df_level["values"] = df_level["values"].apply(lambda l: list(set(l)))
+            df_level["values"] = df_level["values"].apply(lambda lv: list(set(lv)))
             df_level = df_level.rename(columns={col: "timestamp"})
 
             layers[layer_level] = layer(df_level)

@@ -52,7 +52,7 @@ def gen_dummy_df(dt: datetime) -> pd.DataFrame:
 
 
 async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts_loader, prefixer):
-    samples = pr_samples(200)  # type: Sequence[PullRequestFacts]
+    samples: Sequence[PullRequestFacts] = pr_samples(200)
     for i in range(1, 6):
         # merged but unreleased
         kwargs = dict(**samples[-i])

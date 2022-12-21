@@ -39,10 +39,10 @@ def main():
     args = parse_args()
     bar = tqdm(total=11)
     engine = create_engine(args.metadata_db)
-    mdb = sessionmaker(bind=engine)()  # type: Session
+    mdb: Session = sessionmaker(bind=engine)()
     bar.update(1)
     engine = create_engine(args.state_db)
-    sdb = sessionmaker(bind=engine)()  # type: Session
+    sdb: Session = sessionmaker(bind=engine)()
     bar.update(1)
     meta_id = (
         sdb.query(AccountGitHubAccount.id)
