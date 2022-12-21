@@ -539,8 +539,10 @@ async def get_account_health(
                 [Account.id],
             )
         )[Account.id.name].values
-    since = (since + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-    until = until.replace(minute=0, second=0, microsecond=0)
+    since = (since + timedelta(hours=1)).replace(
+        minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
+    )
+    until = until.replace(minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     datetimes = list(rrule(HOURLY, dtstart=since, until=until))
     return model_response(
         AccountsHealth(

@@ -14,6 +14,13 @@ from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import AccountGitHubAccount
 from athenian.api.precompute.context import PrecomputeContext
 
+endpoints = [
+    "/v1/(metrics|histograms)/.*",
+    "/v1/(get|filter|paginate)/.*",
+    "/v1/(events|invite|settings)/.*",
+    "/private/.*",
+]
+
 
 async def _record_performance_metrics(
     prometheus_endpoint: str,
@@ -22,40 +29,42 @@ async def _record_performance_metrics(
     log = logging.getLogger(f"{metadata.__package__}._record_performance_metrics")
     for pct in ("50", "95"):
         inserted = []
-        for attempt in range(3):
-            async with aiohttp.ClientSession() as session:
-                now = datetime.now(timezone.utc)
-                async with session.get(
-                    f"{prometheus_endpoint}/api/v1/query",
-                    params={
-                        "query": (
-                            f"histogram_quantile(0.{pct}, "
-                            "sum(rate(request_latency_seconds_bucket[24h])) by "
-                            "(endpoint, account, le))"
-                        ),
-                    },
-                ) as response:
-                    if not response.ok:
-                        log.error(
-                            "[%d] failed to query Prometheus: %d: %s",
-                            attempt + 1,
-                            response.status,
-                            await response.text(),
-                        )
-                        continue
-                    for obj in (await response.json())["data"]["result"]:
-                        if (value := obj["value"][1]) != "NaN" and (
-                            account := obj["metric"]["account"]
-                        ) != "N/A":
-                            inserted.append(
-                                HealthMetric(
-                                    account_id=int(account),
-                                    name=f'p{pct}/{obj["metric"]["endpoint"]}',
-                                    created_at=now,
-                                    value=float(value),
-                                ).explode(with_primary_keys=True),
+        for endpoint in endpoints:
+            for attempt in range(3):
+                async with aiohttp.ClientSession() as session:
+                    now = datetime.now(timezone.utc)
+                    async with session.get(
+                        f"{prometheus_endpoint}/api/v1/query",
+                        params={
+                            "query": (
+                                f"histogram_quantile(0.{pct}, "
+                                "sum(rate(request_latency_seconds_bucket"
+                                f'{{endpoint=~"{endpoint}"}}'
+                                "[24h])) by (endpoint, account, le))"
+                            ),
+                        },
+                    ) as response:
+                        if not response.ok:
+                            log.error(
+                                "[%d] failed to query Prometheus: %d: %s",
+                                attempt + 1,
+                                response.status,
+                                await response.text(),
                             )
-                    break
+                            continue
+                        for obj in (await response.json())["data"]["result"]:
+                            if (value := obj["value"][1]) != "NaN" and (
+                                account := obj["metric"]["account"]
+                            ) != "N/A":
+                                inserted.append(
+                                    HealthMetric(
+                                        account_id=int(account),
+                                        name=f'p{pct}/{obj["metric"]["endpoint"]}',
+                                        created_at=now,
+                                        value=float(value),
+                                    ).explode(with_primary_keys=True),
+                                )
+                        break
         if inserted:
             log.info("inserting %d p%s records", len(inserted), pct)
             await rdb.execute_many(insert(HealthMetric), inserted)

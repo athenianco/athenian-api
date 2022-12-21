@@ -594,9 +594,7 @@ class Auth0:
             token_id = struct.unpack("<q", plaintext)[0]
         except (ValueError, struct.error):
             raise Unauthorized() from None
-        token_obj = await request.sdb.fetch_one(
-            select([UserToken]).where(UserToken.id == token_id),
-        )
+        token_obj = await request.sdb.fetch_one(select(UserToken).where(UserToken.id == token_id))
         if token_obj is None:
             raise Unauthorized()
         uid = token_obj[UserToken.user_id.name]
