@@ -1,7 +1,7 @@
 from asyncio import Event, current_task, ensure_future, gather, shield, sleep
 from contextvars import ContextVar
 import logging
-from typing import Awaitable, Coroutine, List
+from typing import Awaitable, Coroutine
 
 from aiohttp import web
 import asyncpg
@@ -47,7 +47,7 @@ def launch_defer(delay: float, name: str, detached: bool = False) -> None:
         if launch_event.is_set():
             log.warning("launch_defer() called multiple times")
             return
-        transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
+        transaction_ptr: list[Transaction] = _defer_transaction.get()
         deferred_count_ptr = _defer_counter.get()
         explicit_launch = _defer_explicit.get()
     except LookupError:

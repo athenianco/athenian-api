@@ -202,11 +202,11 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                         ]
                         total_group_suites = my_suite_counts.sum()
                         for suite_size_group_index, suite_size_group in enumerate(lines_group):
-                            group_for_set = (
+                            group_for_set: ForSetCodeChecks = (
                                 for_set.select_pushers_group(pushers_group_index)
                                 .select_repogroup(repos_group_index)
                                 .select_lines(lines_index)
-                            )  # type: ForSetCodeChecks
+                            )
                             if filt.split_by_check_runs:
                                 suite_size = suite_sizes[suite_size_group_index]
                                 group_suites_count_ratio = (

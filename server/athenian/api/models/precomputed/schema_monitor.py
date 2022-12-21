@@ -1,7 +1,6 @@
 import asyncio
 from collections import defaultdict
 import logging
-from typing import List, Optional
 
 import aiohttp
 from alembic import script
@@ -16,7 +15,7 @@ def schedule_pdb_schema_check(
     pdb: morcilla.Database,
     app: aiohttp.web.Application,
     interval: float = 15 * 60,
-) -> List[asyncio.Task]:
+) -> list[asyncio.Task]:
     """
     Execute the precomputed DB schema version check every `interval` seconds.
 
@@ -27,7 +26,7 @@ def schedule_pdb_schema_check(
     log = logging.getLogger("%s.scheduled_pdb_schema_check" % metadata.__package__)
     req_rev = script.ScriptDirectory(str(template.parent)).get_current_head()
     sql = MigrationContext.configure(url=str(pdb.url), opts={"as_sql": True})._version.select()
-    task_box = [None]  # type: List[Optional[asyncio.Task]]
+    task_box: list[asyncio.Task | None] = [None]
 
     async def pdb_schema_check_callback() -> None:
         await asyncio.sleep(interval)

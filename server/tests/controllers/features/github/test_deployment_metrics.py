@@ -157,9 +157,7 @@ async def test_deployment_metrics_calculators_smoke(
     default_branches,
 ):
     for i in range(2):
-        calc = metrics_calculator_factory(
-            1, (6366825,), with_cache=True,
-        )  # type: MetricEntriesCalculator
+        calc: MetricEntriesCalculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
         if i == 1:
             calc._mdb = None
             calc._rdb = None
