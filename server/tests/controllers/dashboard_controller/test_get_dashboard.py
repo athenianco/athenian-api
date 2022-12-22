@@ -3,7 +3,8 @@ from typing import Any
 from athenian.api.db import Database
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import PullRequestMetricID
-from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
@@ -129,3 +130,40 @@ class TestGetDashboard(BaseGetDashboardTest):
         assert res["team"] == 10
         assert res["id"] == 5
         assert [chart["id"] for chart in res["charts"]] == [2, 1]
+
+
+class TestGetDashboardFilters(BaseGetDashboardTest):
+    async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(
+                id=1, position=1, dashboard_id=5, repositories=[[3, None], [4, None]],
+            ),
+            DashboardChartFactory(id=2, position=2, dashboard_id=5, repositories=None),
+            DashboardChartFactory(
+                id=3, position=3, dashboard_id=5, repositories=[[3, "logical1"]],
+            ),
+            DashboardChartFactory(id=4, position=4, dashboard_id=5, repositories=[[4, None]]),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=3, full_name="org/repo-A"),
+                md_factory.RepositoryFactory(node_id=4, full_name="org/repo-B"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self.get_json(10, 0)
+
+            assert [chart["id"] for chart in res["charts"]] == [1, 2, 3, 4]
+
+            assert res["charts"][0]["filters"] == {
+                "repositories": ["github.com/org/repo-A", "github.com/org/repo-B"],
+            }
+            assert res["charts"][1].get("filters") is None
+            assert res["charts"][2]["filters"] == {
+                "repositories": ["github.com/org/repo-A/logical1"],
+            }
+            assert res["charts"][3]["filters"] == {"repositories": ["github.com/org/repo-B"]}

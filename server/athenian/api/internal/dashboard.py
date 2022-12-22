@@ -9,10 +9,13 @@ from athenian.api.internal.datetime_utils import (
     closed_dates_interval_to_datetimes,
     datetimes_to_closed_dates_interval,
 )
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.repos import parse_db_repositories
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import (
     DashboardChart as WebDashboardChart,
     DashboardChartCreateRequest,
+    DashboardChartFilters,
     GenericError,
     TeamDashboard as WebTeamDashboard,
 )
@@ -147,16 +150,20 @@ async def reorder_dashboard_charts(
         await _reassign_charts_positions(chart_ids, 0, datetime.now(timezone.utc), sdb_conn)
 
 
-def build_dashboard_web_model(dashboard: Row, charts: Sequence[Row]) -> TeamDashboard:
+def build_dashboard_web_model(
+    dashboard: Row,
+    charts: Sequence[Row],
+    prefixer: Prefixer,
+) -> TeamDashboard:
     """Build the web model for a dashboard given the dashboard and charts DB rows."""
     return WebTeamDashboard(
         id=dashboard[TeamDashboard.id.name],
         team=dashboard[TeamDashboard.team_id.name],
-        charts=[_build_chart_web_model(chart) for chart in charts],
+        charts=[_build_chart_web_model(chart, prefixer) for chart in charts],
     )
 
 
-def _build_chart_web_model(chart: Row) -> WebDashboardChart:
+def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
     time_from = chart[DashboardChart.time_from.name]
     time_to = chart[DashboardChart.time_to.name]
 
@@ -164,6 +171,12 @@ def _build_chart_web_model(chart: Row) -> WebDashboardChart:
         date_from = date_to = None
     else:
         date_from, date_to = datetimes_to_closed_dates_interval(time_from, time_to)
+
+    if (db_repos := parse_db_repositories(chart[DashboardChart.repositories.name])) is None:
+        filters = None
+    else:
+        repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
+        filters = DashboardChartFilters(repositories=repositories)
 
     return WebDashboardChart(
         description=chart[DashboardChart.description.name],
@@ -173,6 +186,7 @@ def _build_chart_web_model(chart: Row) -> WebDashboardChart:
         date_from=date_from,
         date_to=date_to,
         time_interval=chart[DashboardChart.time_interval.name],
+        filters=filters,
     )
 
 
