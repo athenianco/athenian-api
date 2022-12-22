@@ -784,6 +784,7 @@ async def _finalize_release_settings(
         pdb,
         rdb,
         cache,
+        only_applied_matches=True,
     )
     return repos, ReleaseLoader.disambiguate_release_settings(release_settings, matched_bys)
 

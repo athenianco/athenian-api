@@ -557,9 +557,12 @@ class AthenianApp(especifico.AioHttpApp):
             await self._mandrill.close()
         for k, f in self._db_futures.items():
             f.cancel()
-            if (db := self.app.get(k)) is not None:
-                await db.disconnect()
+            try:
+                if (db := self.app[k]) is not None:
+                    await db.disconnect()
                 del self.app[k]
+            except KeyError:
+                continue
         self._db_futures.clear()
         if (cache := self.app[CACHE_VAR_NAME]) is not None:
             if (f := getattr(cache, "version_future", None)) is not None:

@@ -121,6 +121,7 @@ class ReleaseLoader:
         cache: Optional[aiomcache.Client],
         index: Optional[str | Sequence[str]] = None,
         force_fresh: bool = False,
+        only_applied_matches: bool = False,
         metrics: Optional[MineReleaseMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, ReleaseMatch]]:
         """
@@ -130,6 +131,8 @@ class ReleaseLoader:
         :param account: Account ID of the releases' owner. Needed to query persistentdata.
         :param branches: DataFrame with all the branches in `repos`.
         :param default_branches: Mapping from repository name to default branch name.
+        :param force_fresh: Disable the "unfresh" mode on big accounts.
+        :param only_applied_matches: The caller doesn't care about the actual releases.
         :return: 1. Pandas DataFrame with the loaded releases (columns match the Release model + \
                     `matched_by_column`.)
                  2. map from repository names (without the service prefix) to the effective
@@ -262,7 +265,7 @@ class ReleaseLoader:
             if applied_match == ReleaseMatch.tag_or_branch:
                 matches = (ReleaseMatch.branch, ReleaseMatch.tag)
                 ambiguous_branches_scanned.add(repo)
-            elif applied_match == ReleaseMatch.event:
+            elif only_applied_matches or applied_match == ReleaseMatch.event:
                 continue
             else:
                 matches = (applied_match,)
@@ -348,7 +351,7 @@ class ReleaseLoader:
                     index=index,
                 ),
             )
-        add_pdb_misses(pdb, "releases/all", len(missing_all))
+            add_pdb_misses(pdb, "releases/all", len(missing_all))
         if tasks:
             missings = await gather(*tasks)
             if inconsistent := list(chain.from_iterable(m[1] for m in missings)):
@@ -407,6 +410,9 @@ class ReleaseLoader:
                 store_precomputed_releases(),
                 "store_precomputed_releases(%d, %d)" % (len(missings), repos_count),
             )
+
+        if only_applied_matches:
+            return releases.iloc[:0], applied_matches
 
         if Release.acc_id.name in releases:
             del releases[Release.acc_id.name]
@@ -1231,6 +1237,22 @@ class ReleaseMatcher:
             else:
                 # time_from..time_to will not help
                 # we don't know the row counts but these convince PG to plan properly
+
+                # account 231 likes an alternative
+                """
+                Rows(repo_2 n2_2 *100)
+                Rows(repo_2 ref_2 *10000)
+                Rows(repo_2 n2_2 ref_2 *100)
+                Rows(c_2 n3_2 *1000)
+                Rows(c_2 ref_2 *10)
+                Rows(c_2 t_2 *10)
+                Rows(repo_3 n2_3 *100)
+                Rows(repo_3 ref_3 *10000)
+                Rows(repo_3 n2_3 ref_3 *100)
+                Rows(c_3 n3_3 *1000)
+                Rows(c_3 ref_3 *10)
+                """
+
                 hints = (
                     "Leading((((((repo rrs) rel) n1) n2) u))",
                     "Rows(repo rrs #2000)",
