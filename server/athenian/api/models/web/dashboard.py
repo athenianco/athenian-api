@@ -4,6 +4,12 @@ from typing import Optional, Sequence
 from athenian.api.models.web.base_model_ import Model
 
 
+class DashboardChartFilters(Model):
+    """Collection of filters applied to the chart."""
+
+    repositories: Optional[list[str]]
+
+
 class _CommonChartInfo(Model):
     date_from: Optional[date]
     date_to: Optional[date]
@@ -11,6 +17,7 @@ class _CommonChartInfo(Model):
     metric: str
     name: str
     time_interval: Optional[str]
+    filters: Optional[DashboardChartFilters]
 
 
 class DashboardChart(_CommonChartInfo):
