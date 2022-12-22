@@ -17,10 +17,15 @@ import sentry_sdk
 import sqlalchemy as sa
 from tqdm import tqdm
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
+from athenian.api.internal.account import (
+    copy_teams_as_needed,
+    get_account_name_or_stub,
+    get_multiple_metadata_account_ids,
+)
 from athenian.api.internal.account_feature import is_feature_enabled
 from athenian.api.internal.data_health_metrics import DataHealthMetrics
 from athenian.api.internal.features.entries import PRFactsCalculator
@@ -44,9 +49,10 @@ from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
-from athenian.api.models.state.models import Feature, RepositorySet, Team
+from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
+from athenian.api.segment import SegmentClient
 from athenian.api.tracing import sentry_span
 
 
@@ -205,9 +211,13 @@ async def precompute_reposet(
         DataHealthMetrics.empty() if not args.skip_health_metrics else DataHealthMetrics.skip()
     )
     try:
-        prefixer, bots = await gather(
+        prefixer, bots, user_rows, account_name = await gather(
             Prefixer.load(meta_ids, mdb, cache),
             fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
+            sdb.fetch_all(
+                sa.select(UserAccount.user_id).where(UserAccount.account_id == reposet.owner_id),
+            ),
+            get_account_name_or_stub(reposet.owner_id, sdb, mdb, cache, meta_ids=meta_ids),
         )
     except Exception as e:
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
@@ -422,6 +432,12 @@ async def precompute_reposet(
                 health_metrics.persist(reposet.owner_id, rdb),
                 f"store account health metrics {reposet.owner_id}",
             )
+            await defer(
+                submit_health_metrics_to_segment(
+                    [r[0] for r in user_rows], health_metrics, reposet.owner_id, account_name,
+                ),
+                f"submit account health metrics to Segment {reposet.owner_id}",
+            )
     except Exception as e:
         log.warning(
             "reposet %d: %s: %s\n%s",
@@ -634,3 +650,29 @@ class _StatusTracker:
 
 def _github_account_tracking_label(meta_ids: Sequence[int]) -> str:
     return ",".join(map(str, sorted(meta_ids)))
+
+
+async def submit_health_metrics_to_segment(
+    users: list[str],
+    metrics: DataHealthMetrics,
+    account_id: int,
+    account_name: str,
+) -> None:
+    """Send the same account health metrics for each user in batches."""
+    log = logging.getLogger(f"{metadata.__package__}.submit_health_metrics_to_segment")
+    if not (key := os.getenv("ATHENIAN_SEGMENT_KEY")):
+        log.warning("skipped sending health metrics to Segment: no API key")
+        return
+    log.info("sending health metrics for %d users", len(users))
+    segment = SegmentClient(key)
+    batch_size = 10
+    try:
+        for i in range(0, len(users), batch_size):
+            await gather(
+                *(
+                    segment.track_health_metrics(user, metrics.to_dict(), account_id, account_name)
+                    for user in users[i : i + batch_size]
+                ),
+            )
+    finally:
+        await segment.close()

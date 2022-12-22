@@ -1655,11 +1655,12 @@ class MinePullRequestMetrics:
     done_count: int
     merged_count: int
     open_count: int
+    undead_count: int
 
     @classmethod
     def empty(cls) -> MinePullRequestMetrics:
         """Initialize a new MinePullRequestMetrics instance filled with zeros."""
-        return MinePullRequestMetrics(0, 0, 0, 0)
+        return MinePullRequestMetrics(0, 0, 0, 0, 0)
 
     def as_db(self) -> Iterator[HealthMetric]:
         """Generate HealthMetric-s from this instance."""
@@ -1667,6 +1668,7 @@ class MinePullRequestMetrics:
         yield HealthMetric(name="prs_done_count", value=self.done_count)
         yield HealthMetric(name="prs_merged_count", value=self.merged_count)
         yield HealthMetric(name="prs_open_count", value=self.open_count)
+        yield HealthMetric(name="prs_undead_count", value=self.undead_count)
 
 
 class PRFactsCalculator:
@@ -2061,6 +2063,7 @@ class PRFactsCalculator:
             (facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]).sum(),
         )
         metrics.open_count = int(facts[PullRequestFacts.f.closed].isnull().sum())
+        metrics.undead_count = int(facts[PullRequestFacts.f.force_push_dropped].sum())
 
 
 class ParticipantsMerge:

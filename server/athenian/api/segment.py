@@ -32,7 +32,7 @@ class SegmentClient:
         """Initialize a new isntance of SegmentClient."""
         self._session = aiohttp.ClientSession()
         self._key = key
-        self.log.info("Enabled tracking user actions")
+        self.log.info("enabled tracking API calls")
 
     async def submit(self, request: AthenianWebRequest) -> None:
         """Ensure that the user is identified and track another API call."""
@@ -50,6 +50,23 @@ class SegmentClient:
     ) -> bool:
         """Update the name and the email of the user."""
         return await self._identify_with_overrides(request, name, email)
+
+    async def track_health_metrics(
+        self,
+        user: str,
+        account_id: int,
+        account_name: str,
+        metrics: dict[str, Any],
+    ) -> None:
+        """Submit account data health metrics."""
+        data = {
+            "userId": user,
+            "groupId": str(account_id),
+            "traits": metrics.copy(),
+            **self._common_data(),
+        }
+        data["traits"].update(id=str(account_id), name=account_name)
+        await self._post(data, "group")
 
     def _check_identify_full(result: bool, **_) -> bool:
         if not result:

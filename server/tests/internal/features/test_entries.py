@@ -71,7 +71,7 @@ class TestPRFactsCalculator:
         base_kwargs["metrics"] = metrics
         facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
         assert metrics == MinePullRequestMetrics(
-            count=33, done_count=29, merged_count=3, open_count=1,
+            count=33, done_count=29, merged_count=3, open_count=1, undead_count=1,
         )
         last_review = facts[facts.node_id == 163078].last_review.values[0]
 

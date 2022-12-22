@@ -122,14 +122,14 @@ async def defer(coroutine: Awaitable, name: str) -> None:
             except AssertionError as e:
                 coroutine.close()
                 raise e from None
-    sync = _defer_sync.get()  # type: Event
+    sync: Event = _defer_sync.get()
     sync.clear()
-    counter_ptr = _defer_counter.get()  # type: List[int]
+    counter_ptr: list[int] = _defer_counter.get()
     counter_ptr[0] += 1
     _global_defer_sync.clear()
     global _global_defer_counter
     _global_defer_counter += 1
-    launch_event = _defer_launch_event.get()  # type: Event
+    launch_event: Event = _defer_launch_event.get()
     transaction_ptr = _defer_transaction.get()
     explicit_launch = _defer_explicit.get()
     _log.debug("planned %s %d %r", name, counter_ptr[0], launch_event)

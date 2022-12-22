@@ -1,7 +1,7 @@
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Collection
+from typing import Any, Collection
 
 from sqlalchemy import insert, select
 
@@ -37,6 +37,15 @@ class DataHealthMetrics:
         """Initialize a new DataHealthMetrics instance filled with None-s, effectively disabling \
         the feature."""
         return DataHealthMetrics(**{f.name: None for f in dataclasses.fields(cls)})
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert all the metrics to a flat JSON-friendly dictionary."""
+        result = {}
+        for f in dataclasses.fields(self):
+            v = getattr(self, f.name)
+            for m in v.as_db():
+                result[m.name] = m.value
+        return result
 
     async def persist(self, account: int, rdb: DatabaseLike) -> None:
         """Insert all the measured metrics to the database."""
