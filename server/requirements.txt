@@ -20,7 +20,7 @@ pandas==1.1.5
 python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
 pyffx==0.3.0
-aiomcache==v0.7.0
+aiomcache==v0.8.0
 uvloop==0.17.0
 bootstrapped==0.0.2
 tqdm==4.64.1
