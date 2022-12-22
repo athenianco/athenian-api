@@ -1,3 +1,4 @@
+import asyncio
 from asyncio import IncompleteReadError
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,8 @@ pickle.dumps = _pickle_dumps
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 short_term_exptime = 5 * 60  # 5 minutes
 middle_term_exptime = 60 * 60  # 1 hour
+max_size = 32 * 1024 * 1024
+get_timeout = 0.1
 
 
 class CancelCache(Exception):
@@ -146,10 +149,22 @@ def cached(
                     for retry in range(1, 4):
                         try:
                             with sentry_sdk.start_span(
-                                op=f"get {cache_key.hex()} [{retry}]",
+                                op=f"get {cache_key.decode()} [{retry}]",
                             ) as span:
-                                if (buffer := await client.get(cache_key)) is not None:
+                                if (
+                                    buffer := await asyncio.wait_for(
+                                        client.get(cache_key), get_timeout,
+                                    )
+                                ) is not None:
                                     span.description = str(len(buffer))
+                            break
+                        except TimeoutError:
+                            log.warning(
+                                "Timed out while fetching cached %s/%s [%d]",
+                                full_name,
+                                cache_key.decode(),
+                                retry,
+                            )
                             break
                         except (
                             aiomcache.exceptions.ClientException,
@@ -223,6 +238,10 @@ def cached(
                         payload = serialize(submitted)
                         uncompressed_payload_size = len(payload)
                         span.description = str(uncompressed_payload_size)
+                        if uncompressed_payload_size > max_size:
+                            # TODO(vmarkovtsev): support serialize_size_hint() to drop earlier
+                            span.description += " [dropped]"
+                            payload = None
                 except Exception as e:
                     log.error(
                         "Failed to serialize %s/%s: %s: %s",
@@ -255,10 +274,11 @@ def cached(
                                 cache_key.decode(),
                             )
 
-                    await defer(
-                        set_cache_item(),
-                        "set_cache_items(%s, %d)" % (func.__qualname__, len(payload)),
-                    )
+                    if payload is not None:
+                        await defer(
+                            set_cache_item(),
+                            "set_cache_items(%s, %d)" % (func.__qualname__, len(payload)),
+                        )
                     client.metrics["misses"].labels(__package__, __version__, short_name).inc()
                     client.metrics["miss_latency"].labels(
                         __package__, __version__, short_name,
