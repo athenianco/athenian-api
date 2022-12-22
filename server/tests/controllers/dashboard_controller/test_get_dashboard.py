@@ -167,3 +167,25 @@ class TestGetDashboardFilters(BaseGetDashboardTest):
                 "repositories": ["github.com/org/repo-A/logical1"],
             }
             assert res["charts"][3]["filters"] == {"repositories": ["github.com/org/repo-B"]}
+
+    async def test_multiple_filters(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(
+                id=1,
+                position=1,
+                dashboard_id=5,
+                repositories=None,
+                environments=["production", "qa"],
+            ),
+        )
+
+        res = await self.get_json(10, 5)
+        assert [chart["id"] for chart in res["charts"]] == [1]
+
+        chart = res["charts"][0]
+        assert chart["filters"] == {
+            "environments": ["production", "qa"],
+        }

@@ -8,6 +8,7 @@ class DashboardChartFilters(Model):
     """Collection of filters applied to the chart."""
 
     repositories: Optional[list[str]]
+    environments: Optional[list[str]]
 
 
 class _CommonChartInfo(Model):

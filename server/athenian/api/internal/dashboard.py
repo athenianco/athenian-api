@@ -174,11 +174,11 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
     else:
         date_from, date_to = datetimes_to_closed_dates_interval(time_from, time_to)
 
-    if (db_repos := parse_db_repositories(chart[DashboardChart.repositories.name])) is None:
-        filters = None
-    else:
-        repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
-        filters = DashboardChartFilters(repositories=repositories)
+    filters_kw = {}
+    if (db_repos := parse_db_repositories(chart[DashboardChart.repositories.name])) is not None:
+        filters_kw["repositories"] = [str(r) for r in prefixer.dereference_repositories(db_repos)]
+    if chart[DashboardChart.environments.name] is not None:
+        filters_kw["environments"] = chart[DashboardChart.environments.name]
 
     return WebDashboardChart(
         description=chart[DashboardChart.description.name],
@@ -188,7 +188,7 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
         date_from=date_from,
         date_to=date_to,
         time_interval=chart[DashboardChart.time_interval.name],
-        filters=filters,
+        filters=DashboardChartFilters(**filters_kw) if filters_kw else None,
     )
 
 
