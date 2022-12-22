@@ -20,24 +20,18 @@ from athenian.api.align.goals.dbaccess import (
     delete_empty_goals,
     delete_goal_template_from_db,
     delete_team_goals,
-    dump_goal_repositories,
     fetch_goal_account,
     fetch_team_goals,
     get_goal_template_from_db,
     get_goal_templates_from_db,
     insert_goal_template,
-    parse_goal_repositories,
     replace_team_goals,
-    resolve_goal_repositories,
     update_goal,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
-from athenian.api.internal.prefixer import RepositoryName, RepositoryReference
-from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
-from tests.controllers.test_prefixer import mk_prefixer
 from tests.testutils.db import (
     SKIP_MODEL_FIELD,
     assert_existing_row,
@@ -450,80 +444,6 @@ class TestCreateDefaultGoalTemplates:
         rows = await assert_existing_rows(sdb, GoalTemplate)
         assert len(rows) == len(TEMPLATES_COLLECTION)
         await assert_existing_rows(sdb, GoalTemplate, id=555, name=TEMPLATES_COLLECTION[0]["name"])
-
-
-class TestParseGoalRepositories:
-    def test_unset(self) -> None:
-        assert parse_goal_repositories(None) is None
-
-    def test_empty(self) -> None:
-        assert parse_goal_repositories([]) == []
-
-    def test_base(self) -> None:
-        val: list[list] = [[123, None], [456, "logical"]]
-        identities = parse_goal_repositories(val)
-        assert identities is not None
-        assert all(isinstance(ident, RepositoryReference) for ident in identities)
-        assert identities[0].node_id == 123
-        assert identities[0].logical_name is None
-        assert identities[1].node_id == 456
-        assert identities[1].logical_name == "logical"
-
-
-class TestDumpGoalRepositories:
-    def test_none(self) -> None:
-        assert dump_goal_repositories(None) is None
-
-    def test_some_identities(self) -> None:
-        idents = [
-            RepositoryReference("github.com", 1, "a"),
-            RepositoryReference("github.com", 2, ""),
-        ]
-        assert dump_goal_repositories(idents) == [(1, "a"), (2, "")]
-
-
-class TestResolveGoalRepositories:
-    def test_empty(self, logical_settings_full) -> None:
-        prefixer = mk_prefixer()
-        assert resolve_goal_repositories([], 0, prefixer, logical_settings_full) == ()
-
-    def test_base(self) -> None:
-        prefixer = mk_prefixer(
-            repo_node_to_prefixed_name={
-                1: "github.com/athenianco/a",
-                2: "github.com/athenianco/b",
-            },
-        )
-        logical_settings = LogicalRepositorySettings(
-            {
-                "athenianco/a": {"labels": ["a"]},
-                "athenianco/b": {"labels": ["b"]},
-                "athenianco/b/logic": {"labels": ["logic"]},
-            },
-            {},
-        )
-
-        res = resolve_goal_repositories(
-            [(1, None), (2, None), (2, "logic"), (2, "xxx")], 1, prefixer, logical_settings,
-        )
-
-        assert res == (
-            RepositoryName("github.com", "athenianco", "a", ""),
-            RepositoryName("github.com", "athenianco", "b", ""),
-            RepositoryName("github.com", "athenianco", "b", "logic"),
-        )
-
-    def test_unknown_ids_are_ignored(self) -> None:
-        prefixer = mk_prefixer(repo_node_to_prefixed_name={1: "github.com/athenianco/a"})
-        logical_settings = LogicalRepositorySettings(
-            {
-                "athenianco/a": {"labels": ["a"]},
-            },
-            {},
-        )
-        res = resolve_goal_repositories([(1, None), (2, None)], 1, prefixer, logical_settings)
-
-        assert res == (RepositoryName("github.com", "athenianco", "a", ""),)
 
 
 class TestConvertMetricParamsDatatypes:

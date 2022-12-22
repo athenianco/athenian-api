@@ -3122,7 +3122,7 @@ class PullRequestFactsMiner:
 
 async def fetch_prs_numbers(
     node_ids: npt.NDArray[int],
-    meta_ids: tuple[int],
+    meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
 ) -> npt.NDArray[int]:
     """Given an array of PR node identifiers return an array with their PR numbers.

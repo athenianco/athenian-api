@@ -11,13 +11,13 @@ from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
     TeamGoalColumns,
     convert_metric_params_datatypes,
-    resolve_goal_repositories,
 )
 from athenian.api.db import Row
 from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.repos import dereference_db_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.internal.team_metrics import (
     CalcTeamMetricsRequest,
@@ -59,9 +59,7 @@ class _GoalTreeGenerator:
         if (repos := goal_row[GoalColumnAlias.REPOSITORIES.value]) is not None:
             repos = [
                 str(repo_name)
-                for repo_name in resolve_goal_repositories(
-                    repos, goal_row[Goal.id.name], prefixer, logical_settings,
-                )
+                for repo_name in dereference_db_repositories(repos, prefixer, logical_settings)
             ]
 
         team_goal = self._team_tree_to_team_goal_tree(team_tree, team_goal_rows_map, metric_values)
@@ -275,9 +273,7 @@ class GoalToServe:
                 goal_id = team_goal_row[TeamGoal.goal_id.name]
             repositories = team_goal_row[columns[TeamGoal.repositories.name]]
             if repositories is not None:
-                repo_names = resolve_goal_repositories(
-                    repositories, goal_id, prefixer, logical_settings,
-                )
+                repo_names = dereference_db_repositories(repositories, prefixer, logical_settings)
                 repositories = tuple(name.unprefixed for name in repo_names)
 
             jira_projects = team_goal_row[columns[TeamGoal.jira_projects.name]]

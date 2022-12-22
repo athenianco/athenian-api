@@ -145,6 +145,13 @@ class TestRepoIdentitiesMapper:
 
 def mk_prefixer(**kwargs: Any) -> Prefixer:
     """Construct a Prefixer to be used in tests."""
+
+    if "repo_node_to_prefixed_name" in kwargs and "repo_node_to_name" not in kwargs:
+        kwargs["repo_node_to_name"] = {
+            k: RepositoryName.from_prefixed(v).unprefixed
+            for k, v in kwargs["repo_node_to_prefixed_name"].items()
+        }
+
     for field in dataclasses.fields(Prefixer):
         if field.name != "do_not_construct_me_directly":
             kwargs.setdefault(field.name, {})

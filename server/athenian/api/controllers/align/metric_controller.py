@@ -118,7 +118,7 @@ def _parse_time_interval(metrics_request: TeamMetricsRequest) -> Intervals:
 
 
 async def _parse_repositories(
-    request_repos: Sequence[str],
+    request_repos: Sequence[str] | None,
     account_id: int,
     meta_ids: tuple[int, ...],
     request: AthenianWebRequest,

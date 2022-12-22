@@ -573,7 +573,7 @@ class LogicalRepositorySettings:
             ),
         ).union(repos)
 
-    def prs(self, repo: str) -> Optional[LogicalPRSettings]:
+    def prs(self, repo: str) -> LogicalPRSettings:
         """Return PR match rules for the given repository native name."""
         return self._prs[repo]
 
@@ -629,6 +629,14 @@ class LogicalRepositorySettings:
             except KeyError:
                 continue
         return repos
+
+    def repo_exists(self, logical_repo: RepositoryName) -> bool:
+        """Return whether the logical repository exists."""
+        try:
+            physical_repo_settings = self.prs(logical_repo.unprefixed_physical)
+        except KeyError:
+            return False
+        return logical_repo.unprefixed in physical_repo_settings.logical_repositories
 
 
 class Settings:
