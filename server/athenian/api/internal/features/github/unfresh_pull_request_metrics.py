@@ -118,6 +118,7 @@ class UnfreshPullRequestFactsFetcher:
                 pdb,
                 rdb,
                 cache,
+                only_applied_matches=True,
             ),
             miner.fetch_prs(
                 time_from,
