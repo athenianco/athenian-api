@@ -573,7 +573,7 @@ class LogicalRepositorySettings:
             ),
         ).union(repos)
 
-    def prs(self, repo: str) -> Optional[LogicalPRSettings]:
+    def prs(self, repo: str) -> LogicalPRSettings:
         """Return PR match rules for the given repository native name."""
         return self._prs[repo]
 
