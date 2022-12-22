@@ -11,7 +11,6 @@ from athenian.api.align.goals.dbaccess import (
     TeamGoalTargetAssignment,
     delete_goal as db_delete_goal,
     delete_goal_template_from_db,
-    dump_goal_repositories,
     fetch_goal,
     fetch_goal_account,
     fetch_team_goals,
@@ -19,7 +18,6 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_templates_from_db,
     insert_goal,
     insert_goal_template,
-    parse_goal_repositories,
     replace_team_goals,
     update_goal as update_goal_in_db,
     update_goal_template_in_db,
@@ -41,6 +39,7 @@ from athenian.api.internal.jira import (
     normalize_priority,
 )
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.repos import dump_db_repositories, parse_db_repositories
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.team_metrics import calculate_team_metrics
@@ -86,7 +85,7 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
     if not await request_user_belongs_to_account(request, account):
         # do not leak the account that owns this template
         raise GoalTemplateNotFoundError(id)
-    if (db_repos := parse_goal_repositories(row[DBGoalTemplate.repositories.name])) is not None:
+    if (db_repos := parse_db_repositories(row[DBGoalTemplate.repositories.name])) is not None:
         prefixer = await Prefixer.from_request(request, account)
         repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
     else:
@@ -112,7 +111,7 @@ async def list_goal_templates(
     models = []
     for row in rows:
         raw_db_repos = row[DBGoalTemplate.repositories.name]
-        if (db_repos := parse_goal_repositories(raw_db_repos)) is not None:
+        if (db_repos := parse_db_repositories(raw_db_repos)) is not None:
             repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
         else:
             repositories = None
@@ -196,7 +195,7 @@ async def parse_request_repositories(
         return None
     prefixer = await Prefixer.from_request(request, account_id)
     try:
-        return dump_goal_repositories(prefixer.reference_repositories(repo_names))
+        return dump_db_repositories(prefixer.reference_repositories(repo_names))
     except ValueError as e:
         raise ResponseError(InvalidRequestError(".repositories", str(e)))
 

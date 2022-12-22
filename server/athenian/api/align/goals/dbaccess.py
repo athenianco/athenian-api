@@ -9,7 +9,6 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import sqlalchemy as sa
 
-from athenian.api import metadata
 from athenian.api.align.exceptions import (
     GoalMutationError,
     GoalNotFoundError,
@@ -25,8 +24,6 @@ from athenian.api.db import (
     dialect_specific_insert,
     is_postgresql,
 )
-from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
-from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.serialization import deserialize_timedelta
 from athenian.api.tracing import sentry_span
@@ -363,60 +360,6 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     insert = await dialect_specific_insert(sdb_conn)
     stmt = insert(GoalTemplate).on_conflict_do_nothing()
     await sdb_conn.execute_many(stmt, values)
-
-
-def parse_goal_repositories(val: Optional[list[list]]) -> Optional[list[RepositoryReference]]:
-    """Parse the raw value in DB repositories JSON column as list of `RepositoryReference`."""
-    if val is None:
-        return val
-    return [
-        RepositoryReference("github.com", repo_id, logical_name) for repo_id, logical_name in val
-    ]
-
-
-def dump_goal_repositories(
-    repo_idents: Optional[Sequence[RepositoryReference]],
-) -> Optional[list[tuple[int, str]]]:
-    """Dump the sequence of RepositoryReference-s in the format used by DB repositories JSON \
-    column."""
-    if repo_idents is None:
-        return None
-    return [(ident.node_id, ident.logical_name) for ident in repo_idents]
-
-
-def resolve_goal_repositories(
-    repos: Iterable[tuple[int, Optional[str]]],
-    goal_id: int,
-    prefixer: Prefixer,
-    logical_settings: LogicalRepositorySettings,
-) -> tuple[RepositoryName, ...]:
-    """Dereference the repository IDs into a RepositoryName sequence."""
-    node_to_prefixed = prefixer.repo_node_to_prefixed_name.__getitem__
-    repos, to_resolve = [], repos
-    deleted = []
-    for node_id, logical in to_resolve:
-        try:
-            prefixed = node_to_prefixed(node_id)
-        except KeyError:
-            continue
-        name = RepositoryName.from_prefixed(prefixed)
-        if logical:
-            name = name.with_logical(logical)
-            try:
-                if (
-                    name.unprefixed
-                    not in logical_settings.prs(name.unprefixed_physical).logical_repositories
-                ):
-                    raise KeyError
-            except KeyError:
-                deleted.append(str(name))
-                continue
-        repos.append(name)
-    if deleted:
-        logging.getLogger(f"{metadata.__package__}.resolve_goal_repositories").warning(
-            "removed deleted repositories from the goal %d: %s", goal_id, deleted,
-        )
-    return tuple(repos)
 
 
 def convert_metric_params_datatypes(metric_params: Optional[dict]) -> dict:
