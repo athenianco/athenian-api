@@ -14,15 +14,17 @@ from athenian.api.internal.dashboard import (
     reorder_dashboard_charts,
 )
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.repos import dump_db_repositories
 from athenian.api.internal.team import get_team_from_db
-from athenian.api.models.state.models import Team, TeamDashboard
+from athenian.api.models.state.models import DashboardChart, Team, TeamDashboard
 from athenian.api.models.web import (
     CreatedIdentifier,
     DashboardChartCreateRequest,
     DashboardUpdateRequest,
+    InvalidRequestError,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
-from athenian.api.response import model_response
+from athenian.api.response import ResponseError, model_response
 
 
 async def get_dashboard(
@@ -59,10 +61,12 @@ async def create_dashboard_chart(
     dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
     create_request = model_from_body(DashboardChartCreateRequest, body)
 
+    extra_values = await _parse_request_chart_filters(create_request, dashboard.account, request)
+
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             chart_id = await create_dashboard_chart_in_db(
-                dashboard.row[TeamDashboard.id.name], create_request, sdb_conn,
+                dashboard.row[TeamDashboard.id.name], create_request, extra_values, sdb_conn,
             )
     return model_response(CreatedIdentifier(id=chart_id))
 
@@ -100,6 +104,23 @@ async def _get_request_dashboard(
     else:
         dashboard = await get_dashboard_from_db(dashboard_id, request.sdb)
     return _RequestDashboard(dashboard, team[Team.owner_id.name])
+
+
+async def _parse_request_chart_filters(
+    create_req: DashboardChartCreateRequest,
+    account: int,
+    request: AthenianWebRequest,
+) -> dict:
+    values = {}
+    if create_req.filters and (req_repositories := create_req.filters.repositories):
+        prefixer = await Prefixer.from_request(request, account)
+        try:
+            values[DashboardChart.repositories] = dump_db_repositories(
+                prefixer.reference_repositories(req_repositories),
+            )
+        except ValueError as e:
+            raise ResponseError(InvalidRequestError.from_validation_error(e))
+    return values
 
 
 async def _dashboard_response(

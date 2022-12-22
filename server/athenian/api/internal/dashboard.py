@@ -73,6 +73,7 @@ async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Seq
 async def create_dashboard_chart(
     dashboard_id: int,
     req: DashboardChartCreateRequest,
+    extra_values: dict,
     sdb_conn: Connection,
 ) -> int:
     """Create a new dashboard chart and return its ID."""
@@ -103,6 +104,7 @@ async def create_dashboard_chart(
             await _reassign_charts_positions(ids_to_update, position + 1, now, sdb_conn)
 
     values = _build_chart_row_values(req, now)
+    values.update(extra_values)
     values.update({DashboardChart.dashboard_id: dashboard_id, DashboardChart.position: position})
     insert_stmt = sa.insert(DashboardChart).values(values)
     return await sdb_conn.execute(insert_stmt)
