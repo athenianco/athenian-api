@@ -7,15 +7,22 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz, is_postgresql
 from athenian.api.internal.dashboard import (
+    DashboardChartNotFoundError,
     MultipleTeamDashboardsError,
     TeamDashboardNotFoundError,
     create_dashboard_chart,
+    delete_dashboard_chart,
     get_dashboard,
     get_team_default_dashboard,
 )
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
-from tests.testutils.db import assert_existing_row, models_insert, transaction_conn
+from tests.testutils.db import (
+    assert_existing_row,
+    assert_missing_row,
+    models_insert,
+    transaction_conn,
+)
 from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
 from tests.testutils.time import dt
 
@@ -151,3 +158,28 @@ class TestCreateDashboardChart:
         kwargs.setdefault("metric", PullRequestMetricID.PR_REJECTED)
 
         return DashboardChartCreateRequest(**kwargs)
+
+
+class TestDeleteDashboardChart:
+    async def test_delete(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=10, dashboard_id=1),
+        )
+        await delete_dashboard_chart(1, 10, sdb)
+        await assert_missing_row(sdb, DashboardChart, id=10)
+
+    async def test_not_found(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=10, dashboard_id=1),
+        )
+        with pytest.raises(DashboardChartNotFoundError):
+            await delete_dashboard_chart(1, 11, sdb)
+
+        with pytest.raises(DashboardChartNotFoundError):
+            await delete_dashboard_chart(2, 10, sdb)
