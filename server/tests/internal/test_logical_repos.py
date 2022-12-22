@@ -2,16 +2,7 @@ from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     contains_logical_repos,
     drop_logical_repo,
-    drop_prefixed_logical_repo,
 )
-
-
-class TestDropPrefixedLogicalRepo:
-    def test(self) -> None:
-        assert drop_prefixed_logical_repo("github.com/org/repo/logical") == "github.com/org/repo"
-
-    def test_on_unprefixed(self) -> None:
-        assert drop_prefixed_logical_repo("org/repo/logical") == "org/repo/logical"
 
 
 def test_drop_logical_repo() -> None:
