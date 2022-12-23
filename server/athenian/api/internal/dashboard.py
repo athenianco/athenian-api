@@ -17,6 +17,7 @@ from athenian.api.models.web import (
     DashboardChartCreateRequest,
     DashboardChartFilters,
     GenericError,
+    JIRAFilter,
     TeamDashboard as WebTeamDashboard,
 )
 from athenian.api.response import ResponseError
@@ -179,6 +180,19 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
         filters_kw["repositories"] = [str(r) for r in prefixer.dereference_repositories(db_repos)]
     if chart[DashboardChart.environments.name] is not None:
         filters_kw["environments"] = chart[DashboardChart.environments.name]
+
+    jira_filter_kw = {
+        arg: chart[col.name]
+        for col, arg in (
+            (DashboardChart.jira_issue_types, "issue_types"),
+            (DashboardChart.jira_labels, "labels_include"),
+            (DashboardChart.jira_priorities, "priorities"),
+            (DashboardChart.jira_projects, "projects"),
+        )
+        if chart[col.name] is not None
+    }
+    if jira_filter_kw:
+        filters_kw["jira"] = JIRAFilter(**jira_filter_kw)
 
     return WebDashboardChart(
         description=chart[DashboardChart.description.name],

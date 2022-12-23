@@ -168,6 +168,29 @@ class TestGetDashboardFilters(BaseGetDashboardTest):
             }
             assert res["charts"][3]["filters"] == {"repositories": ["github.com/org/repo-B"]}
 
+    async def test_jira(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(
+                id=1,
+                position=1,
+                dashboard_id=5,
+                jira_issue_types=["bug", "task"],
+                jira_projects=["DEV", "PROD"],
+                jira_labels=["l0"],
+                jira_priorities=["high"],
+            ),
+        )
+        res = await self.get_json(10, 5)
+        assert res["charts"][0]["filters"]["jira"] == {
+            "issue_types": ["bug", "task"],
+            "labels_include": ["l0"],
+            "projects": ["DEV", "PROD"],
+            "priorities": ["high"],
+        }
+
     async def test_multiple_filters(self, sdb: Database) -> None:
         await models_insert(
             sdb,
@@ -179,6 +202,7 @@ class TestGetDashboardFilters(BaseGetDashboardTest):
                 dashboard_id=5,
                 repositories=None,
                 environments=["production", "qa"],
+                jira_issue_types=["bug"],
             ),
         )
 
@@ -188,4 +212,5 @@ class TestGetDashboardFilters(BaseGetDashboardTest):
         chart = res["charts"][0]
         assert chart["filters"] == {
             "environments": ["production", "qa"],
+            "jira": {"issue_types": ["bug"]},
         }

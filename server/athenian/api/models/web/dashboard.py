@@ -2,6 +2,7 @@ from datetime import date
 from typing import Optional, Sequence
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_filter import JIRAFilter
 
 
 class DashboardChartFilters(Model):
@@ -9,6 +10,7 @@ class DashboardChartFilters(Model):
 
     repositories: Optional[list[str]]
     environments: Optional[list[str]]
+    jira: Optional[JIRAFilter]
 
 
 class _CommonChartInfo(Model):
