@@ -111,15 +111,22 @@ async def _parse_request_chart_filters(
     account: int,
     request: AthenianWebRequest,
 ) -> dict:
-    values = {}
-    if create_req.filters and (req_repositories := create_req.filters.repositories):
+    values: dict = {}
+    if not (filters := create_req.filters):
+        return values
+
+    if filters.repositories is not None:
         prefixer = await Prefixer.from_request(request, account)
         try:
             values[DashboardChart.repositories] = dump_db_repositories(
-                prefixer.reference_repositories(req_repositories),
+                prefixer.reference_repositories(filters.repositories),
             )
         except ValueError as e:
             raise ResponseError(InvalidRequestError.from_validation_error(e))
+
+    if filters.environments is not None:
+        values[DashboardChart.environments] = filters.environments
+
     return values
 
 

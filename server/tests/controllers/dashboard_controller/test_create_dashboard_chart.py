@@ -129,6 +129,7 @@ class TestCreateDashboardChart(BaseCreateDashboardChartTest):
             metric=PullRequestMetricID.PR_REVIEW_PENDING_COUNT,
             dashboard_id=1,
             repositories=None,
+            environments=None,
         )
 
     async def test_static_interval(self, sdb: Database) -> None:
@@ -247,3 +248,11 @@ class TestCreateWithFilters(BaseCreateDashboardChartTest):
 
         chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
         assert chart[DashboardChart.repositories.name] == [[200, ""], [200, "logical"]]
+
+    async def test_environments(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9), TeamDashboardFactory(team_id=9, id=10))
+        body = self._body(filters={"environments": ["production"]})
+        res = await self.post_json(9, 10, json=body)
+
+        chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        assert chart[DashboardChart.environments.name] == ["production"]
