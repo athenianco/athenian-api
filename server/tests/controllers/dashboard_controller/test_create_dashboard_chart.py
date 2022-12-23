@@ -256,3 +256,22 @@ class TestCreateWithFilters(BaseCreateDashboardChartTest):
 
         chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
         assert chart[DashboardChart.environments.name] == ["production"]
+
+    async def test_jira(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9), TeamDashboardFactory(team_id=9, id=10))
+        body = self._body(
+            filters={
+                "jira": {
+                    "priorities": ["high"],
+                    "issue_types": ["Task", "bug"],
+                    "labels_include": ["l1", "l0"],
+                },
+            },
+        )
+
+        res = await self.post_json(9, 10, json=body)
+
+        chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        assert chart[DashboardChart.jira_priorities.name] == ["high"]
+        assert chart[DashboardChart.jira_issue_types.name] == ["bug", "task"]
+        assert chart[DashboardChart.jira_labels.name] == ["l1", "l0"]

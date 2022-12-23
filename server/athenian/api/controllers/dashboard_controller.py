@@ -13,6 +13,7 @@ from athenian.api.internal.dashboard import (
     get_team_default_dashboard,
     reorder_dashboard_charts,
 )
+from athenian.api.internal.jira import parse_request_issue_types, parse_request_priorities
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import dump_db_repositories
 from athenian.api.internal.team import get_team_from_db
@@ -126,6 +127,16 @@ async def _parse_request_chart_filters(
 
     if filters.environments is not None:
         values[DashboardChart.environments] = filters.environments
+
+    if (jira := filters.jira) is not None:
+        if jira.issue_types is not None:
+            values[DashboardChart.jira_issue_types] = parse_request_issue_types(jira.issue_types)
+        if jira.labels_include is not None:
+            values[DashboardChart.jira_labels] = jira.labels_include
+        if jira.priorities is not None:
+            values[DashboardChart.jira_priorities] = parse_request_priorities(jira.priorities)
+        if jira.projects is not None:
+            values[DashboardChart.jira_projects] = jira.projects
 
     return values
 
