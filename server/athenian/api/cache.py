@@ -43,7 +43,7 @@ max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 short_term_exptime = 5 * 60  # 5 minutes
 middle_term_exptime = 60 * 60  # 1 hour
 max_size = 32 * 1024 * 1024
-get_timeout = 0.1
+get_timeout = 0.2
 
 
 class CancelCache(Exception):
@@ -153,7 +153,7 @@ def cached(
                             ) as span:
                                 if (
                                     buffer := await asyncio.wait_for(
-                                        client.get(cache_key), get_timeout,
+                                        asyncio.shield(client.get(cache_key)), get_timeout,
                                     )
                                 ) is not None:
                                     span.description = str(len(buffer))

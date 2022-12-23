@@ -38,7 +38,8 @@ class SegmentClient:
         """Ensure that the user is identified and track another API call."""
         if getattr(request, "god_id", request.uid) != request.uid or request.is_default_user:
             return
-        await self._identify(request)
+        if request.path == "/v1/user":
+            await self._identify(request)
         await self._track(request)
 
     async def update_user(
