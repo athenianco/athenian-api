@@ -782,18 +782,37 @@ def locked_migrations(request):
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--limit", action="store", default=-1, type=float, help="Max number of tests to run.",
+        "--limit", action="store", default=-1, type=float, help="Ratio of suffled tests to run.",
+    )
+    parser.addoption(
+        "--seed",
+        action="store",
+        default=0,
+        type=int,
+        help="Random seed to shuffle the tests, requires --limit.",
+    )
+    parser.addoption(
+        "--offset",
+        action="store",
+        default=0,
+        type=int,
+        help="0-based index of the executed batch of tests, requires --limit.",
     )
 
 
 def pytest_collection_modifyitems(session, config, items):
-    if (limit := config.getoption("--limit")) >= 0:
-        random.seed(time.time() // 60)
-        if limit < 1:
-            limit = len(items) * limit
-        limit = int(limit)
+    offset = config.getoption("--offset")
+    limit = config.getoption("--limit")
+    seed = config.getoption("--seed")
+    if limit >= 0:
+        if seed == 0:
+            seed = time.time() // 60
+        random.seed(seed)
+        offset = int(len(items) * limit * offset)
+        limit = int(len(items) * limit) + 1
         indexes = list(range(len(items)))
-        indexes = sorted(random.sample(indexes, limit))
+        random.shuffle(indexes)
+        indexes = sorted(indexes[offset : offset + limit])
         items[:] = [items[i] for i in indexes]
 
 

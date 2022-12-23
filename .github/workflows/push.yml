@@ -208,11 +208,12 @@ jobs:
       # yes, we over-commit threads to cores x2
       # labels: ubuntu-latest-32-cores
     concurrency:
-      group: auth0-${{ github.actor }}-${{ github.head_ref || github.run_id }}-${{ matrix.db }}-main
+      group: auth0-${{ github.actor }}-${{ github.head_ref || github.run_id }}-${{ matrix.db }}-${{ matrix.batch }}-main
       cancel-in-progress: true
     strategy:
       matrix:
         db: [sqlite, postgres]
+        batch: [0, 1, 2, 3]
       fail-fast: false
     services:
       memcached:
@@ -327,7 +328,7 @@ jobs:
         set -x
         while ! psql -c "show max_connections" -U postgres -h 0.0.0.0 -p 5432; do sleep 1; done
         for db in state metadata precomputed persistentdata; do
-          for i in $(seq 0 63); do
+          for i in $(seq 0 3); do
             psql -c "create database ${db}_gw$i template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
           done
           psql -c "create database ${db}_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
@@ -369,14 +370,12 @@ jobs:
       working-directory: server
       run: |
         set -x
-        exit 0
         if [ ${{ matrix.db }} = "sqlite" ]; then
           export SLACK_API_TOKEN=xxx
           export MANDRILL_API_KEY=
         fi
-        # export LIMIT="--limit 0.9"  # choose 90% of the tests by random
         # update "setup postgres" above if you change the number of workers (-n)
-        godotenv -s pytest -n 64 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300
+        godotenv -s pytest --offset ${{ matrix.batch }} --limit 0.25 --seed 777 -n 4 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300
     - name: clear env
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       working-directory: server
