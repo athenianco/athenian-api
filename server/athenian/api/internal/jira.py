@@ -524,6 +524,13 @@ def normalize_user_type(type_: str) -> str:
     return type_
 
 
+def parse_request_priorities(req_priorities: Optional[list[str]]) -> Optional[list[str]]:
+    """Parse the raw Jira priorities received in a request."""
+    if req_priorities is None:
+        return None
+    return sorted({normalize_priority(p) for p in req_priorities})
+
+
 async def disable_empty_projects(
     account: int,
     meta_ids: tuple[int, ...],

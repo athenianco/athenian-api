@@ -36,7 +36,7 @@ from athenian.api.internal.datetime_utils import closed_dates_interval_to_dateti
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
     normalize_issue_type,
-    normalize_priority,
+    parse_request_priorities,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import dump_db_repositories, parse_db_repositories
@@ -337,10 +337,7 @@ async def _parse_create_request(
         creat_req.repositories, request, creat_req.account,
     )
     jira_projects = creat_req.jira_projects
-    if creat_req.jira_priorities is None:
-        jira_priorities = None
-    else:
-        jira_priorities = sorted({normalize_priority(p) for p in creat_req.jira_priorities})
+    jira_priorities = parse_request_priorities(creat_req.jira_priorities)
     if creat_req.jira_issue_types is None:
         jira_issue_types = None
     else:
@@ -417,10 +414,7 @@ async def _parse_update_request(
     repositories = await parse_request_repositories(
         update_req.repositories, request, goal[Goal.account_id.name],
     )
-    if update_req.jira_priorities is None:
-        jira_priorities = None
-    else:
-        jira_priorities = sorted({normalize_priority(p) for p in update_req.jira_priorities})
+    jira_priorities = parse_request_priorities(update_req.jira_priorities)
     if update_req.jira_issue_types is None:
         jira_issue_types = None
     else:
