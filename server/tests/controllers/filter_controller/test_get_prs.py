@@ -113,6 +113,16 @@ class TestGetPRs(BaseGetPRsTest):
                 ("github.com/org0/r0", 1),
             ]
 
+    async def test_no_matching_prs(self, sdb: Database) -> None:
+        body = self._body(
+            prs=[
+                {"repository": "github.com/src-d/go-git", "numbers": [567891234]},
+            ],
+        )
+        res = await self._request(json=body)
+        assert res["data"] == []
+        assert res["include"]["users"] == {}
+
 
 class TestGetPRsErrors(BaseGetPRsTest):
     @pytest.mark.parametrize(
@@ -128,3 +138,8 @@ class TestGetPRsErrors(BaseGetPRsTest):
     async def test_get_prs_nasty_input(self, account, repo, numbers, status):
         body = self._body(account=account, prs=[{"repository": repo, "numbers": numbers}])
         await self._request(status, json=body)
+
+    async def test_no_pr_number_in_request(self, sdb: Database) -> None:
+        body = self._body(prs=[])
+        res = await self._request(400, json=body)
+        assert res["detail"] == "[] is too short - 'prs'"
