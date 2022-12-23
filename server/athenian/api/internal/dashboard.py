@@ -117,6 +117,36 @@ async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: Dat
     await sdb_conn.execute(delete_stmt)
 
 
+async def reorder_dashboard_charts(
+    dashboard_id: int,
+    chart_ids: Sequence[int],
+    sdb_conn: Connection,
+) -> None:
+    """Apply the given order to the existing chart dashboards.
+
+    `chart_ids` are the identifiers of all the existing charts in the desired.
+    """
+    existing_stmt = (
+        sa.select(DashboardChart.id)
+        .where(DashboardChart.dashboard_id == dashboard_id)
+        .with_for_update()
+    )
+    existing_rows = await sdb_conn.fetch_all(existing_stmt)
+    existing_ids = [r[0] for r in existing_rows]
+
+    if sorted(existing_ids) != sorted(chart_ids):
+        existing_repr = ",".join(sorted(map(str, existing_ids)))
+        requested_repr = ",".join(sorted(map(str, chart_ids)))
+        raise InvalidDashboardChartOrder(
+            dashboard_id,
+            "Charts in requested ordering does not matc existing charts. "
+            f"existing: {existing_repr}; requested: {requested_repr}",
+        )
+
+    if chart_ids:
+        await _reassign_charts_positions(chart_ids, 0, datetime.now(timezone.utc), sdb_conn)
+
+
 def build_dashboard_web_model(dashboard: Row, charts: Sequence[Row]) -> TeamDashboard:
     """Build the web model for a dashboard given the dashboard and charts DB rows."""
     return WebTeamDashboard(
@@ -248,5 +278,19 @@ class DashboardChartNotFoundError(ResponseError):
             status=HTTPStatus.NOT_FOUND,
             detail=f"Dashboard chart {chart_id} not found or access denied",
             title=" Chart not found",
+        )
+        super().__init__(wrapped_error)
+
+
+class InvalidDashboardChartOrder(ResponseError):
+    """An invalid order of the dashboard charts was requested."""
+
+    def __init__(self, dashboard_id: int, msg: str):
+        """Init the InvalidDashboardChartOrder."""
+        wrapped_error = GenericError(
+            type="/errors/dashboards/InvalidDashboardChartOrder",
+            status=HTTPStatus.BAD_REQUEST,
+            detail=f"Invalid charts ordering for dashboard {dashboard_id}: {msg}",
+            title=" Invalid dashboard charts order",
         )
         super().__init__(wrapped_error)

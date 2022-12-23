@@ -8,12 +8,14 @@ import sqlalchemy as sa
 from athenian.api.db import Database, ensure_db_datetime_tz, is_postgresql
 from athenian.api.internal.dashboard import (
     DashboardChartNotFoundError,
+    InvalidDashboardChartOrder,
     MultipleTeamDashboardsError,
     TeamDashboardNotFoundError,
     create_dashboard_chart,
     delete_dashboard_chart,
     get_dashboard,
     get_team_default_dashboard,
+    reorder_dashboard_charts,
 )
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
@@ -183,3 +185,108 @@ class TestDeleteDashboardChart:
 
         with pytest.raises(DashboardChartNotFoundError):
             await delete_dashboard_chart(2, 10, sdb)
+
+
+class TestReorderDashboardCharts:
+    async def test_missing_charts(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+            DashboardChartFactory(id=2, position=0, dashboard_id=1),
+            DashboardChartFactory(id=3, position=2, dashboard_id=1),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(InvalidDashboardChartOrder):
+                await reorder_dashboard_charts(1, [3, 1], sdb_conn)
+
+            with pytest.raises(InvalidDashboardChartOrder):
+                await reorder_dashboard_charts(1, [], sdb_conn)
+
+    async def test_unknown_chart_ids(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+            DashboardChartFactory(id=2, position=0, dashboard_id=1),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(InvalidDashboardChartOrder):
+                await reorder_dashboard_charts(1, [1, 2, 3], sdb_conn)
+
+            with pytest.raises(InvalidDashboardChartOrder):
+                await reorder_dashboard_charts(1, [3], sdb_conn)
+
+    async def test_chart_id_duplicate(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+            DashboardChartFactory(id=2, position=0, dashboard_id=1),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(InvalidDashboardChartOrder):
+                await reorder_dashboard_charts(1, [1, 2, 2], sdb_conn)
+
+    async def test_reorder(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+            DashboardChartFactory(id=2, position=0, dashboard_id=1),
+            DashboardChartFactory(id=3, position=4, dashboard_id=1),
+            DashboardChartFactory(id=4, position=2, dashboard_id=1),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [4, 1, 2, 3], sdb_conn)
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 4), (1, 1), (2, 2), (3, 3)]
+
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [2, 3, 4, 1], sdb_conn)
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 2), (1, 3), (2, 4), (3, 1)]
+
+    async def test_no_charts(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [], sdb_conn)
+
+    async def test_reorder_single_chart(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+        )
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [1], sdb_conn)
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 1)]
+
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [1], sdb_conn)
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 1)]
+
+    async def test_reorder_same_order(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=1, position=1, dashboard_id=1),
+            DashboardChartFactory(id=2, position=0, dashboard_id=1),
+            DashboardChartFactory(id=3, position=2, dashboard_id=1),
+        )
+        async with transaction_conn(sdb) as sdb_conn:
+            await reorder_dashboard_charts(1, [2, 1, 3], sdb_conn)
+        rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
+        assert sorted(rows) == [(0, 2), (1, 1), (2, 3)]

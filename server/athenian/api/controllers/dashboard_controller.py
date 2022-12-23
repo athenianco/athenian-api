@@ -8,10 +8,15 @@ from athenian.api.internal.dashboard import (
     get_dashboard as get_dashboard_from_db,
     get_dashboard_charts,
     get_team_default_dashboard,
+    reorder_dashboard_charts,
 )
 from athenian.api.internal.team import get_team_from_db
 from athenian.api.models.state.models import TeamDashboard
-from athenian.api.models.web import CreatedIdentifier, DashboardChartCreateRequest
+from athenian.api.models.web import (
+    CreatedIdentifier,
+    DashboardChartCreateRequest,
+    DashboardUpdateRequest,
+)
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
 
@@ -32,8 +37,17 @@ async def update_dashboard(
     request: AthenianWebRequest,
     team_id: int,
     dashboard_id: int,
+    body: dict,
 ) -> web.Response:
     """Update an existing team dashboard."""
+    dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
+    update_request = model_from_body(DashboardUpdateRequest, body)
+    chart_ids = [c.id for c in update_request.charts]
+    await reorder_dashboard_charts(dashboard[TeamDashboard.id.name], chart_ids, request.sdb)
+
+    charts = await get_dashboard_charts(dashboard[TeamDashboard.id.name], request.sdb)
+    dashboard_model = build_dashboard_web_model(dashboard, charts)
+    return model_response(dashboard_model)
 
 
 async def create_dashboard_chart(

@@ -41,6 +41,15 @@ class Requester:
         assert response.status == assert_status, response.status
         return response
 
+    async def put(self, assert_status: int = 200, **kwargs) -> ClientResponse:
+        response = await self._request(method="PUT", **kwargs)
+        assert response.status == assert_status, response.status
+        return response
+
+    async def put_json(self, *args, **kwargs) -> Any:
+        response = await self.put(*args, **kwargs)
+        return await response.json()
+
     async def _request(self, *, path_kwargs=None, **kwargs) -> ClientResponse:
         path = self.build_path(**(path_kwargs or {}))
         return await self.client.request(path=path, headers=self.headers, **kwargs)
