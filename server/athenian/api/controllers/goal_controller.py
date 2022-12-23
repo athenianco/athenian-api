@@ -35,7 +35,7 @@ from athenian.api.internal.account import (
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
-    normalize_issue_type,
+    parse_request_issue_types,
     parse_request_priorities,
 )
 from athenian.api.internal.prefixer import Prefixer
@@ -338,10 +338,7 @@ async def _parse_create_request(
     )
     jira_projects = creat_req.jira_projects
     jira_priorities = parse_request_priorities(creat_req.jira_priorities)
-    if creat_req.jira_issue_types is None:
-        jira_issue_types = None
-    else:
-        jira_issue_types = sorted({normalize_issue_type(t) for t in creat_req.jira_issue_types})
+    jira_issue_types = parse_request_issue_types(creat_req.jira_issue_types)
 
     # user cannot directly set TeamGoal filter fields, received goal values are applied
     extra_team_goal_info = {
@@ -415,10 +412,7 @@ async def _parse_update_request(
         update_req.repositories, request, goal[Goal.account_id.name],
     )
     jira_priorities = parse_request_priorities(update_req.jira_priorities)
-    if update_req.jira_issue_types is None:
-        jira_issue_types = None
-    else:
-        jira_issue_types = sorted({normalize_issue_type(t) for t in update_req.jira_issue_types})
+    jira_issue_types = parse_request_issue_types(update_req.jira_issue_types)
 
     _validate_metric_params(goal[Goal.metric.name], update_req)
 

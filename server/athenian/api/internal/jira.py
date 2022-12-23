@@ -531,6 +531,13 @@ def parse_request_priorities(req_priorities: Optional[list[str]]) -> Optional[li
     return sorted({normalize_priority(p) for p in req_priorities})
 
 
+def parse_request_issue_types(req_issue_types: Optional[list[str]]) -> Optional[list[str]]:
+    """Parse the raw Jira issue types received in a request."""
+    if req_issue_types is None:
+        return None
+    return sorted({normalize_issue_type(t) for t in req_issue_types})
+
+
 async def disable_empty_projects(
     account: int,
     meta_ids: tuple[int, ...],
