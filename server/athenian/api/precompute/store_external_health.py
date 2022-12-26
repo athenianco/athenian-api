@@ -225,7 +225,7 @@ async def _record_idv2_migrated(
     feature_rows, _ = await gather(
         mdb.fetch_all(
             """
-            select id, 'github.force_idv2' = any(features) from github.accounts
+            select id, coalesce('github.force_idv2' = any(features), false) from github.accounts
         """,
         ),
         acc_id_map_task,
