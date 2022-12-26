@@ -563,3 +563,22 @@ class DashboardChart(create_time_mixin(created_at=True, updated_at=True), Base):
             _create_rule=lambda compiler: compiler.dialect.name != "postgresql",
         ),
     )
+
+    repositories = Column(
+        JSONType, nullable=True, comment="Filter repositories for chart metric data",
+    )
+    jira_issue_types = Column(
+        JSONType, nullable=True, comment="Filter Jira issue types for chart metric data",
+    )
+    jira_labels = Column(
+        JSONType, nullable=True, comment="Filter Jira labels for chart metric data",
+    )
+    jira_priorities = Column(
+        JSONType, nullable=True, comment="Filter Jira priorities for chart metric data",
+    )
+    jira_projects = Column(
+        JSONType, nullable=True, comment="Filter Jira projects for chart metric data",
+    )
+    environments = Column(
+        JSONType, nullable=True, comment="Filter environments for chart metric data",
+    )
