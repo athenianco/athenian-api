@@ -44,7 +44,7 @@ pluralizer==1.2.0
 --extra-index-url https://pypi.fury.io/arrow-nightlies
 --prefer-binary
 --pre
-pyarrow==11.0.0.dev308
+pyarrow==11.0.0.dev325
 email-validator==1.3.0
 ariadne==0.17.0
 aiomonitor==0.4.5
