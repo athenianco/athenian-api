@@ -209,9 +209,12 @@ class BranchMiner:
                 Branch.acc_id.in_(meta_ids),
             )
             .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+            .with_statement_hint("IndexScan(ref node_ref_heads_repository_id)")
             .with_statement_hint("Rows(ref rr n1 n2 *250)")
             .with_statement_hint("Rows(ref rr n1 *250)")
             .with_statement_hint("Rows(ref rr n2 *250)")
+            .with_statement_hint("Rows(ref c repo *100)")
+            .with_statement_hint("Rows(ref c repo rr *100)")
         )
         df = await read_sql_query_with_join_collapse(query, mdb, Branch)
         for left_join_col in (Branch.repository_full_name.name,):
