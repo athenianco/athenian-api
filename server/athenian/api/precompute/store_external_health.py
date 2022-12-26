@@ -5,13 +5,13 @@ import logging
 from typing import Any
 
 import aiohttp
-from sqlalchemy import insert, select
+from sqlalchemy import insert, join, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.models.persistentdata.models import HealthMetric
-from athenian.api.models.state.models import AccountGitHubAccount
+from athenian.api.models.state.models import Account, AccountGitHubAccount
 from athenian.api.precompute.context import PrecomputeContext
 
 endpoints = [
@@ -59,7 +59,7 @@ async def _record_performance_metrics(
                                 inserted.append(
                                     HealthMetric(
                                         account_id=int(account),
-                                        name=f'p{pct}/{obj["metric"]["endpoint"]}',
+                                        name=f'p{pct}{obj["metric"]["endpoint"]}',
                                         created_at=now,
                                         value=float(value),
                                     ).explode(with_primary_keys=True),
@@ -204,7 +204,13 @@ async def _record_pending_fetch_metrics(
 
 async def _fetch_acc_id_map(sdb: Database) -> dict[int, int]:
     return dict(
-        await sdb.fetch_all(select(AccountGitHubAccount.id, AccountGitHubAccount.account_id)),
+        await sdb.fetch_all(
+            select(AccountGitHubAccount.id, AccountGitHubAccount.account_id)
+            .select_from(
+                join(AccountGitHubAccount, Account, AccountGitHubAccount.account_id == Account.id),
+            )
+            .where(Account.expires_at > datetime.now(timezone.utc)),
+        ),
     )
 
 
