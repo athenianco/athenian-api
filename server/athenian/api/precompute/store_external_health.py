@@ -214,6 +214,44 @@ async def _fetch_acc_id_map(sdb: Database) -> dict[int, int]:
     )
 
 
+async def _record_idv2_migrated(
+    acc_id_map_task: asyncio.Task,
+    mdb: Database,
+    rdb: Database,
+) -> None:
+    log = logging.getLogger(f"{metadata.__package__}._record_idv2_migrated")
+    inserted = []
+    now = datetime.now(timezone.utc)
+    feature_rows, _ = await gather(
+        mdb.fetch_all(
+            """
+            select id, 'github.force_idv2' = any(features) from github.accounts
+        """,
+        ),
+        acc_id_map_task,
+    )
+    acc_id_map = acc_id_map_task.result()
+    for row in feature_rows:
+        acc, idv2 = row
+        try:
+            acc = acc_id_map[acc]
+        except KeyError:
+            continue
+        inserted.append(
+            HealthMetric(
+                account_id=acc,
+                created_at=now,
+                name="forced_idv2",
+                value=idv2,
+            ).explode(with_primary_keys=True),
+        )
+    if inserted:
+        log.info("inserting %d forced idv2 records", len(inserted))
+        await rdb.execute_many(
+            (await dialect_specific_insert(rdb))(HealthMetric).on_conflict_do_nothing(), inserted,
+        )
+
+
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> Any:
     """Fill missing commit references in the deployed components."""
     acc_id_map_task = asyncio.create_task(_fetch_acc_id_map(context.sdb), name="_fetch_acc_id_map")
@@ -221,4 +259,5 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Any:
         _record_performance_metrics(args.prometheus, context.rdb),
         _record_inconsistency_metrics(args.prometheus, acc_id_map_task, context.rdb),
         _record_pending_fetch_metrics(acc_id_map_task, context.mdb, context.rdb),
+        _record_idv2_migrated(acc_id_map_task, context.mdb, context.rdb),
     )
