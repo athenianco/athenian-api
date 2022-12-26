@@ -14,9 +14,7 @@ class RepositoryGroupsMixin:
 
         :param repositories: The repositories of this ForSetPullRequests.
         """
-        repogroups = getattr(self, "_repogroups", None)
-        self._validate_repogroups_and_repos(repogroups, repositories)
-
+        self._validate_repogroups_and_repos(getattr(self, "_repogroups", None), repositories)
         return repositories
 
     def validate_repogroups(
@@ -58,7 +56,7 @@ class RepositoryGroupsMixin:
             return
 
         if repositories is None:
-            raise ValueError("`repogroups` cannot be used with no repositories")
+            raise ValueError("`repogroups` cannot be used with missing `repositories`")
 
         for i, group in enumerate(repogroups):
             if len(group) == 0:
