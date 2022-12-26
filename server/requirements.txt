@@ -25,7 +25,7 @@ uvloop==0.17.0
 bootstrapped==0.0.2
 tqdm==4.64.1
 slack_sdk[optional]==3.19.5
-gcloud-aio-kms==4.0.0
+gcloud-aio-kms==4.1.0
 # gcloud-aio-kms does not pin the exact versions of the following packages
 gcloud-aio-auth==4.0.1
 backoff==2.2.1
