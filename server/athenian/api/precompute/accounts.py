@@ -670,7 +670,7 @@ async def submit_health_metrics_to_segment(
         for i in range(0, len(users), batch_size):
             await gather(
                 *(
-                    segment.track_health_metrics(user, metrics.to_dict(), account_id, account_name)
+                    segment.track_health_metrics(user, account_id, account_name, metrics.to_dict())
                     for user in users[i : i + batch_size]
                 ),
             )
