@@ -375,7 +375,7 @@ jobs:
           export MANDRILL_API_KEY=
         fi
         # update "setup postgres" above if you change the number of workers (-n)
-        godotenv -s pytest --offset ${{ matrix.batch }} --limit 0.25 --seed 777 -n 4 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300 --exclude tests/controllers/test_user_controller.py
+        godotenv -s pytest --offset ${{ matrix.batch }} --limit 0.25 --seed 777 -n 4 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300 --ignore tests/controllers/test_user_controller.py
     - name: clear env
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       working-directory: server
