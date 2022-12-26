@@ -66,6 +66,7 @@ class SegmentClient:
             **self._common_data(),
         }
         data["traits"].update(id=str(account_id), name=account_name)
+        data["context"]["active"] = False
         await self._post(data, "group")
 
     def _check_identify_full(result: bool, **_) -> bool:
