@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
@@ -11,9 +11,9 @@ from athenian.api.models.web.release_with import ReleaseWith
 class _ReleaseMetricsRequest(Model, sealed=False):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
-    for_: (List[List[str]], "for")
-    with_: (Optional[List[ReleaseWith]], "with")
-    metrics: List[str]
+    for_: (list[Optional[list[str]]], "for")
+    with_: (Optional[list[ReleaseWith]], "with")
+    metrics: list[str]
 
     def validate_metrics(self, metrics: list[str]) -> list[str]:
         """Sets the metrics of this ReleaseMetricsRequest.
