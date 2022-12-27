@@ -14,11 +14,14 @@ from typing import Callable, Optional, Sequence
 import aiomcache
 import pandas as pd
 import sentry_sdk
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
+from sqlalchemy import select
 from tqdm import tqdm
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
+from athenian.api.cache import cached
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import (
@@ -49,6 +52,7 @@ from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
@@ -401,31 +405,34 @@ async def precompute_reposet(
                 deployment_facts, reposet.owner_id, meta_ids, mdb, pdb,
             )
 
-        if not reposet.precomputed and slack is not None:
+        if slack is not None:
+            if not reposet.precomputed:
 
-            async def report_precompute_success():
-                await slack.post_install(
-                    "precomputed_account.jinja2",
-                    account=reposet.owner_id,
-                    prefixes={r.owner for r in deref_items},
-                    prs=health_metrics.prs.count,
-                    prs_done=health_metrics.prs.done_count,
-                    prs_merged=health_metrics.prs.merged_count,
-                    prs_open=health_metrics.prs.open_count,
-                    releases=releases_count,
-                    ignored_first_releases=ignored_releases_count,
-                    releases_by_tag=health_metrics.releases.count_by_tag,
-                    releases_by_branch=health_metrics.releases.count_by_branch,
-                    branches=health_metrics.branches.count,
-                    repositories=len(repos),
-                    bots_team_name=Team.BOTS,
-                    bots=num_bots,
-                    teams=num_teams,
+                async def report_precompute_success():
+                    await slack.post_install(
+                        "precomputed_account.jinja2",
+                        account=reposet.owner_id,
+                        prefixes={r.owner for r in deref_items},
+                        prs=health_metrics.prs.count,
+                        prs_done=health_metrics.prs.done_count,
+                        prs_merged=health_metrics.prs.merged_count,
+                        prs_open=health_metrics.prs.open_count,
+                        releases=releases_count,
+                        ignored_first_releases=ignored_releases_count,
+                        releases_by_tag=health_metrics.releases.count_by_tag,
+                        releases_by_branch=health_metrics.releases.count_by_branch,
+                        branches=health_metrics.branches.count,
+                        repositories=len(repos),
+                        bots_team_name=Team.BOTS,
+                        bots=num_bots,
+                        teams=num_teams,
+                    )
+
+                await defer(
+                    report_precompute_success(), f"report precompute success {reposet.owner_id}",
                 )
 
-            await defer(
-                report_precompute_success(), f"report precompute success {reposet.owner_id}",
-            )
+            await alert_bad_health(health_metrics, reposet.owner_id, rdb, slack, cache)
 
         if not args.skip_health_metrics:
             await defer(
@@ -676,3 +683,48 @@ async def submit_health_metrics_to_segment(
             )
     finally:
         await segment.close()
+
+
+@cached(
+    exptime=24 * 3600,  # 1 day
+    serialize=lambda _: b"1",
+    deserialize=lambda _: None,
+    key=lambda account, **_: (account,),
+)
+async def alert_bad_health(
+    metrics: DataHealthMetrics,
+    account: int,
+    rdb: Database,
+    slack: SlackWebClient,
+    cache: Optional[aiomcache.Client],
+) -> None:
+    """Apply 101 rules to detect some common data issues and report them to Slack."""
+    msgs = []
+    if metrics.releases.commits.pristine:
+        msgs.append(f"repositories with 0 commits: `{metrics.releases.commits.pristine}`")
+    if metrics.releases.commits.corrupted:
+        msgs.append(
+            f"repositories with corrupted commit DAGs: `{metrics.releases.commits.corrupted}`",
+        )
+    if metrics.releases.commits.orphaned:
+        msgs.append(f"repositories with commit DAG orphans: `{metrics.releases.commits.orphaned}`")
+    previous_done_prs = await rdb.fetch_val(
+        select(HealthMetric.value).where(
+            HealthMetric.account_id == account,
+            HealthMetric.name == "prs_done_count",
+            HealthMetric.created_at
+            < datetime.now(timezone.utc).replace(
+                minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
+            ),
+        ),
+    )
+    if previous_done_prs is not None and previous_done_prs > metrics.prs.done_count:
+        msgs.append(
+            f"number of done PRs decreased: {previous_done_prs} -> {metrics.prs.done_count}",
+        )
+    if msgs:
+
+        async def report_msg():
+            await slack.post_health("bad_health.jinja2", account=account, msgs=msgs)
+
+        await defer(report_msg(), "report bad health to Slack")
