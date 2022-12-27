@@ -507,7 +507,10 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_client.post_event = post_event
     slack_client.post_performance = post_performance
     slack_client.post_health = post_health
-    log.info("Slack messaging to %s is enabled 👍", [account_channel, install_channel])
+    log.info(
+        "Slack messaging to %s is enabled 👍",
+        [account_channel, install_channel, performance_channel, health_channel],
+    )
     return slack_client
 
 

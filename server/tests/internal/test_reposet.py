@@ -1,12 +1,17 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.internal.account import RepositoryReference
+from athenian.api.internal.data_health_metrics import DataHealthMetrics
+from athenian.api.internal.prefixer import RepositoryName
 from athenian.api.internal.reposet import load_account_reposets, load_account_state
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import RepositorySet
+from athenian.api.precompute.accounts import insert_new_repositories, refresh_reposet
 from athenian.api.response import ResponseError
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import LogicalRepositoryFactory
@@ -98,3 +103,71 @@ async def test_load_account_state_no_reposet(sdb, mdb):
     await sdb.execute(sa.delete(RepositorySet))
     state = await load_account_state(1, sdb, mdb, None, None)
     assert state is not None
+
+
+@pytest.mark.parametrize(
+    "tracking_re, names, refs",
+    [
+        (
+            ".*",
+            [
+                RepositoryName("github.com", "src-d", "go-git", "alpha"),
+                RepositoryName("github.com", "src-d", "gitbase", ""),
+            ],
+            [
+                RepositoryReference("github.com", 40550, "alpha"),
+                RepositoryReference("github.com", 39652699, ""),
+            ],
+        ),
+        (
+            "(?!src-d/gitbase).*",
+            [RepositoryName("github.com", "src-d", "go-git", "alpha")],
+            [RepositoryReference("github.com", 40550, "alpha")],
+        ),
+        (
+            "src-d/gitbase",
+            [
+                RepositoryName("github.com", "src-d", "go-git", "alpha"),
+                RepositoryName("github.com", "src-d", "gitbase", ""),
+            ],
+            [
+                RepositoryReference("github.com", 40550, "alpha"),
+                RepositoryReference("github.com", 39652699, ""),
+            ],
+        ),
+    ],
+)
+async def test_insert_new_repositories_smoke(mdb, tracking_re, names, refs):
+    new_names, new_refs = await insert_new_repositories(
+        [RepositoryName("github.com", "src-d", "go-git", "alpha")],
+        [RepositoryReference("github.com", 40550, "alpha")],
+        tracking_re,
+        (6366825,),
+        mdb,
+    )
+    assert new_names == names
+    assert new_refs == refs
+
+
+async def test_refresh_reposet_smoke(sdb, mdb, prefixer, meta_ids):
+    reposet = RepositorySet(
+        id=1,
+        tracking_re=".*",
+        items=[
+            RepositoryReference("github.com", 40550, ""),
+            RepositoryReference("github.com", 100500, ""),
+        ],
+    )
+    metrics = DataHealthMetrics.empty()
+    deref_items = await refresh_reposet(
+        reposet, prefixer, meta_ids, sdb, mdb, logging.getLogger(), metrics,
+    )
+    assert deref_items == [
+        RepositoryName("github.com", "src-d", "go-git", ""),
+        RepositoryName("github.com", "src-d", "gitbase", ""),
+    ]
+    saved_items = await sdb.fetch_val(sa.select(RepositorySet.items).where(RepositorySet.id == 1))
+    assert saved_items == [
+        RepositoryReference("github.com", 40550, ""),
+        RepositoryReference("github.com", 39652699, ""),
+    ]
