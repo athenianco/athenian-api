@@ -46,6 +46,7 @@ from tests.testutils.factory.persistentdata import (
 from tests.testutils.time import dt
 
 
+@pytest.mark.parametrize("eager_filter_repositories", [False, True])
 @with_defer
 async def test_mine_deployments_from_scratch(
     sample_deployments,
@@ -57,6 +58,7 @@ async def test_mine_deployments_from_scratch(
     pdb,
     rdb,
     cache,
+    eager_filter_repositories,
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -109,13 +111,16 @@ async def test_mine_deployments_from_scratch(
         rdb,
         cache,
         metrics=metrics,
+        eager_filter_repositories=eager_filter_repositories,
     )
-    _validate_deployments(deps, 9, True)
+    _validate_deployments(
+        deps, 7 if eager_filter_repositories else 9, True, eager_filter_repositories,
+    )
     deployment_facts_extract_mentioned_people(deps)
     await wait_deferred()
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
-    assert metrics.count == 18
+    assert metrics.count == 14 if eager_filter_repositories else 18
     assert metrics.unresolved == 0
 
     # test the cache
@@ -142,8 +147,11 @@ async def test_mine_deployments_from_scratch(
         None,
         None,
         cache,
+        eager_filter_repositories=eager_filter_repositories,
     )
-    _validate_deployments(deps, 9, True)
+    _validate_deployments(
+        deps, 7 if eager_filter_repositories else 9, True, eager_filter_repositories,
+    )
 
 
 @with_defer
@@ -207,6 +215,7 @@ async def test_mine_deployments_unresolved(
         pdb,
         rdb,
         cache,
+        eager_filter_repositories=False,
         metrics=metrics,
     )
     assert metrics.count == 18
@@ -275,8 +284,9 @@ async def test_mine_deployments_addons_cache(
         cache,
         with_extended_prs=True,
         with_jira=True,
+        eager_filter_repositories=False,
     )
-    _validate_deployments(deps, 9, True)
+    _validate_deployments(deps, 9, True, False)
     deployment_facts_extract_mentioned_people(deps)
     await wait_deferred()
 
@@ -303,8 +313,9 @@ async def test_mine_deployments_addons_cache(
         None,
         None,
         cache,
+        eager_filter_repositories=False,
     )
-    _validate_deployments(deps, 9, True)
+    _validate_deployments(deps, 9, True, False)
 
 
 @with_defer
@@ -367,8 +378,9 @@ async def test_mine_deployments_middle(
         pdb,
         rdb,
         cache,
+        eager_filter_repositories=False,
     )
-    _validate_deployments(deps, 7, False)
+    _validate_deployments(deps, 7, False, False)
     deployment_facts_extract_mentioned_people(deps)
 
 
@@ -409,6 +421,7 @@ async def test_mine_deployments_append(
         pdb,
         rdb,
         cache,
+        eager_filter_repositories=False,
     )
     await wait_deferred()
     name = "%s_%d_%02d_%02d" % ("production", 2019, 11, 2)
@@ -457,6 +470,7 @@ async def test_mine_deployments_append(
         pdb,
         rdb,
         cache,
+        eager_filter_repositories=False,
     )
     await wait_deferred()
     assert len(deps.loc[name]["prs"]) == 0
@@ -604,6 +618,7 @@ async def test_mine_deployments_only_failed(
     assert len(rows) == 340
 
 
+@pytest.mark.parametrize("eager_filter_repositories", [False, True])
 @with_defer
 async def test_mine_deployments_logical(
     sample_deployments,
@@ -616,6 +631,7 @@ async def test_mine_deployments_logical(
     pdb,
     rdb,
     cache,
+    eager_filter_repositories,
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -665,8 +681,9 @@ async def test_mine_deployments_logical(
         pdb,
         rdb,
         cache,
+        eager_filter_repositories=eager_filter_repositories,
     )
-    assert len(deps) == 18
+    assert len(deps) == 6 if eager_filter_repositories else 18
     physical_count = alpha_count = beta_count = beta_releases = 0
     for deployment_name, components, releases in zip(
         deps.index.values,
@@ -700,9 +717,9 @@ async def test_mine_deployments_logical(
             assert release_repos.tolist() in ([], ["src-d/go-git"])
 
     assert alpha_count == 6
-    assert beta_count == 10
-    assert physical_count == 6
-    assert beta_releases == 6
+    assert beta_count == 4 if eager_filter_repositories else 10
+    assert physical_count == 0 if eager_filter_repositories else 6
+    assert beta_releases == 2 if eager_filter_repositories else 6
 
 
 @with_defer
@@ -4432,6 +4449,7 @@ async def test_mine_deployments_precomputed_sample(
         pdb,
         rdb,
         None,
+        eager_filter_repositories=False,
     )
     people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
@@ -4458,6 +4476,7 @@ async def test_mine_deployments_precomputed_sample(
         pdb,
         rdb,
         None,
+        eager_filter_repositories=False,
     )
     people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 2 * 9
@@ -4513,6 +4532,7 @@ async def test_mine_deployments_reversed(
         pdb,
         rdb,
         None,
+        eager_filter_repositories=False,
     )
     deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
@@ -4564,6 +4584,7 @@ async def test_mine_deployments_reversed(
         pdb,
         rdb,
         None,
+        eager_filter_repositories=False,
     )
     deployment_facts_extract_mentioned_people(deps2)
     assert len(deps2) == len(deps1) + 1
@@ -5011,17 +5032,18 @@ async def _validate_deployed_prs(pdb: morcilla.Database) -> None:
     assert len(rows) == 0, rows
 
 
-def _validate_deployments(deps, count, with_2016):
+def _validate_deployments(deps, count, with_2016, eager):
     assert len(deps) == count * 2
     for env in ("staging", "production"):
         assert (
             deps.loc[f"{env}_2018_01_11"]["conclusion"]
             == DeploymentNotification.CONCLUSION_SUCCESS
         )
-        assert (
-            deps.loc[f"{env}_2018_01_12"]["conclusion"]
-            == DeploymentNotification.CONCLUSION_FAILURE
-        )
+        if not eager:
+            assert (
+                deps.loc[f"{env}_2018_01_12"]["conclusion"]
+                == DeploymentNotification.CONCLUSION_FAILURE
+            )
     assert (deps["environment"] == "production").sum() == count
     assert (deps["environment"] == "staging").sum() == count
     components = deps["components"]
@@ -5037,10 +5059,12 @@ def _validate_deployments(deps, count, with_2016):
         assert commits_overall["production_2016_12_01"] == [14]
     assert commits_overall["production_2018_01_10"] == [832]
     assert commits_overall["production_2018_01_11"] == [832]
-    assert commits_overall["production_2018_01_12"] == [0]
+    if not eager:
+        assert commits_overall["production_2018_01_12"] == [0]
     assert commits_overall["production_2018_08_01"] == [122]
     assert commits_overall["production_2018_12_01"] == [198]
-    assert commits_overall["production_2018_12_02"] == [0]
+    if not eager:
+        assert commits_overall["production_2018_12_02"] == [0]
     assert commits_overall["production_2019_11_01"] == [176]
     pdeps = deps[deps["environment"] == "production"].copy()
     releases = pdeps["releases"]
@@ -5097,7 +5121,8 @@ def _validate_deployments(deps, count, with_2016):
         "v4.0.0-rc4",
         "v4.0.0-rc11",
     }
-    assert releases["production_2018_01_12"].empty
+    if not eager:
+        assert releases["production_2018_01_12"].empty
     assert set(releases["production_2018_08_01"]["tag"]) == {
         "v4.3.1",
         "v4.5.0",
@@ -5116,7 +5141,8 @@ def _validate_deployments(deps, count, with_2016):
         "v4.8.1",
         "v4.7.0",
     }
-    assert releases["production_2018_12_02"].empty
+    if not eager:
+        assert releases["production_2018_12_02"].empty
     assert set(releases["production_2019_11_01"]["tag"]) == {
         "v4.13.0",
         "v4.12.0",
@@ -5265,6 +5291,7 @@ class TestHideOutlierFirstDeployments:
             mdb=mdb,
             pdb=pdb,
             rdb=rdb,
+            eager_filter_repositories=False,
         )
         await wait_deferred()
 
