@@ -488,6 +488,10 @@ def _convert_integer(
             arr[nulls] = 0
 
 
+class CatchNothing(Exception):
+    """Suppress all errors inside gather()."""
+
+
 async def gather(
     *coros_or_futures: Optional[Awaitable],
     op: Optional[str] = None,

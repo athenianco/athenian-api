@@ -1,14 +1,18 @@
 import argparse
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 from typing import Any
 
 import aiohttp
+import aiomcache
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import insert, join, select
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather
+from athenian.api.async_utils import CatchNothing, gather
+from athenian.api.cache import cached
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Account, AccountGitHubAccount
@@ -25,8 +29,11 @@ endpoints = [
 async def _record_performance_metrics(
     prometheus_endpoint: str,
     rdb: Database,
+    slack: SlackWebClient | None,
+    cache: aiomcache.Client | None,
 ) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_performance_metrics")
+    alerts = defaultdict(list)
     for pct in ("50", "95"):
         inserted = []
         for endpoint in endpoints:
@@ -56,18 +63,55 @@ async def _record_performance_metrics(
                             if (value := obj["value"][1]) != "NaN" and (
                                 account := obj["metric"]["account"]
                             ) != "N/A":
+                                account = int(account)
+                                endpoint = obj["metric"]["endpoint"]
+                                value = float(value)
                                 inserted.append(
                                     HealthMetric(
-                                        account_id=int(account),
-                                        name=f'p{pct}{obj["metric"]["endpoint"]}',
+                                        account_id=account,
+                                        name=f"p{pct}{endpoint}",
                                         created_at=now,
-                                        value=float(value),
+                                        value=value,
                                     ).explode(with_primary_keys=True),
                                 )
+                                alert = False
+                                if pct == "95" and value > 3.0:
+                                    if "code_checks" in endpoint:
+                                        if value > 6.0:
+                                            alert = 6.0
+                                    else:
+                                        alert = 3.0
+                                if alert:
+                                    alerts[account].append((endpoint, value, alert))
                         break
+        if alerts and slack is not None:
+            log.info("reporting bad performance of accounts: %s", sorted(alerts.keys()))
+            await gather(
+                *(_alert_performance(account, items, cache) for account, items in alerts.items()),
+                catch=CatchNothing,
+            )
         if inserted:
             log.info("inserting %d p%s records", len(inserted), pct)
             await rdb.execute_many(insert(HealthMetric), inserted)
+
+
+@cached(
+    serialize=lambda _: b"1",
+    deserialize=lambda _: None,
+    key=lambda account, **_: (account,),
+    exptime=24 * 3600,  # 1 day
+)
+async def _alert_performance(
+    account: int,
+    alerts: list[str, float, float],
+    slack: SlackWebClient,
+    cache: aiomcache.Client | None,
+) -> None:
+    await slack.post_performance(
+        "performance_report.jinja2",
+        account=account,
+        alerts=sorted(alerts),
+    )
 
 
 async def _record_inconsistency_metrics(

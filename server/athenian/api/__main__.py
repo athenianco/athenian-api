@@ -452,6 +452,8 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     account_channel = os.getenv("SLACK_ACCOUNT_CHANNEL")
     install_channel = os.getenv("SLACK_INSTALL_CHANNEL")
     event_channel = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL")
+    performance_channel = os.getenv("SLACK_PERFORMANCE_CHANNEL")
+    health_channel = os.getenv("SLACK_HEALTH_CHANNEL")
     if not account_channel:
         raise ValueError("SLACK_ACCOUNT_CHANNEL may not be empty if SLACK_API_TOKEN exists")
     if not install_channel:
@@ -494,9 +496,17 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     async def post_event(template: str, **kwargs) -> None:
         return await post(template, event_channel, **kwargs)
 
+    async def post_performance(template: str, **kwargs) -> None:
+        return await post(template, performance_channel, **kwargs)
+
+    async def post_health(template: str, **kwargs) -> None:
+        return await post(template, health_channel, **kwargs)
+
     slack_client.post_account = post_account
     slack_client.post_install = post_install
     slack_client.post_event = post_event
+    slack_client.post_performance = post_performance
+    slack_client.post_health = post_health
     log.info("Slack messaging to %s is enabled 👍", [account_channel, install_channel])
     return slack_client
 
