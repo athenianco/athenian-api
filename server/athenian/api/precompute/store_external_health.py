@@ -87,7 +87,10 @@ async def _record_performance_metrics(
         if alerts and slack is not None:
             log.info("reporting bad performance of accounts: %s", sorted(alerts.keys()))
             await gather(
-                *(_alert_performance(account, items, cache) for account, items in alerts.items()),
+                *(
+                    _alert_performance(account, items, slack, cache)
+                    for account, items in alerts.items()
+                ),
                 catch=CatchNothing,
             )
         if inserted:
