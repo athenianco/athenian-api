@@ -300,7 +300,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Any:
     """Fill missing commit references in the deployed components."""
     acc_id_map_task = asyncio.create_task(_fetch_acc_id_map(context.sdb), name="_fetch_acc_id_map")
     await gather(
-        _record_performance_metrics(args.prometheus, context.rdb),
+        _record_performance_metrics(args.prometheus, context.rdb, context.slack, context.cache),
         _record_inconsistency_metrics(args.prometheus, acc_id_map_task, context.rdb),
         _record_pending_fetch_metrics(acc_id_map_task, context.mdb, context.rdb),
         _record_idv2_migrated(acc_id_map_task, context.mdb, context.rdb),
