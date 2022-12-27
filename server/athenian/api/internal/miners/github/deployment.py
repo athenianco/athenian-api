@@ -185,6 +185,7 @@ async def mine_deployments(
     cache: Optional[aiomcache.Client],
     with_extended_prs: bool = False,
     with_jira: bool = False,
+    eager_filter_repositories: bool = True,
     metrics: Optional[MineDeploymentsMetrics] = None,
 ) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
@@ -192,6 +193,10 @@ async def mine_deployments(
     This is a join()-ing wrapper around _mine_deployments(). The reason why we split the code
     is that serialization of independent DataFrame-s is much more efficient than the final
     DataFrame with nested DataFrame-s.
+
+    :param eager_filter_repositories: Value indicating whether we should exclude deployments \
+    where all specified repositories having 0 deployed commits, even if they own corresponding \
+    components.
 
     :return: Deployment stats with deployed components and releases sub-dataframes.
     """
@@ -229,6 +234,7 @@ async def mine_deployments(
         cache,
         with_extended_prs,
         with_jira,
+        eager_filter_repositories,
         metrics,
     )
     if notifications.empty:
@@ -306,7 +312,7 @@ def _postprocess_deployments(
     exptime=short_term_exptime,
     serialize=serialize_args,
     deserialize=deserialize_args,
-    key=lambda repositories, participants, time_from, time_to, environments, conclusions, with_labels, without_labels, pr_labels, jira, release_settings, logical_settings, default_branches, **_: (  # noqa
+    key=lambda repositories, participants, time_from, time_to, environments, conclusions, with_labels, without_labels, pr_labels, jira, release_settings, logical_settings, default_branches, eager_filter_repositories, **_: (  # noqa
         ",".join(sorted(repositories)),
         ",".join(
             "%s: %s" % (k, "+".join(str(p) for p in sorted(v)))
@@ -323,6 +329,7 @@ def _postprocess_deployments(
         release_settings,
         logical_settings,
         ",".join("%s: %s" % p for p in sorted(default_branches.items())),
+        "1" if eager_filter_repositories else "0",
     ),
     postprocess=_postprocess_deployments,
 )
@@ -351,6 +358,7 @@ async def _mine_deployments(
     cache: Optional[aiomcache.Client],
     with_extended_prs: bool,
     with_jira: bool,
+    eager_filter_repositories: bool,
     metrics: Optional[MineDeploymentsMetrics],
 ) -> tuple[
     pd.DataFrame,
@@ -547,6 +555,9 @@ async def _mine_deployments(
         add_pdb_misses(pdb, "deployments", misses)
 
     facts = await _filter_by_participants(facts, participants)
+    if eager_filter_repositories:
+        # DEV-5482: remove deployments which have 0 deployed commits of the given repositories
+        facts = await _filter_by_repositories(facts, repositories)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
 
@@ -1010,6 +1021,27 @@ async def _filter_by_participants(
         mask[passing] = True
     df.disable_consolidate()
     return df.take(np.flatnonzero(mask))
+
+
+@sentry_span
+async def _filter_by_repositories(
+    df: pd.DataFrame,
+    repos: set[str] | frozenset[str] | KeysView[str],
+) -> pd.DataFrame:
+    if df.empty or not repos:
+        return df
+    df_repos = np.concatenate(df[DeploymentFacts.f.repositories].values)
+    df_deployed_commits = np.concatenate(df[DeploymentFacts.f.commits_overall].values)
+    df_repos[df_deployed_commits == 0] = ""
+    passed = np.in1d(df_repos, list(repos))
+    lengths = nested_lengths(df[DeploymentFacts.f.repositories].values)
+    offsets = np.empty(len(lengths), dtype=int)
+    np.cumsum(lengths[:-1], out=offsets[1:])
+    offsets[0] = 0
+    indexes = np.flatnonzero(np.logical_or.reduceat(passed, offsets))
+    if len(indexes) < len(df):
+        return df.take(indexes)
+    return df
 
 
 @sentry_span

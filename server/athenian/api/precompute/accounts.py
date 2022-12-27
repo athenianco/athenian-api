@@ -398,6 +398,7 @@ async def precompute_reposet(
                 pdb,
                 rdb,
                 None,  # yes, disable the cache
+                eager_filter_repositories=False,
                 metrics=health_metrics.deployments,
             )
             await wait_deferred()
