@@ -1,0 +1,6 @@
+*Performance is on 🔥 in {{ env }}*
+
+Account: *{{ account }}*
+{% for alert in alerts %}
+* `{{ alert[0] }}`: *{{ "%.4f"|format(alert[1]) }}s* > {{ alert[2] }}s
+{% endfor %}

@@ -525,7 +525,7 @@ async def get_account_health(
         if until is not None:
             until = deserialize_datetime(until).astimezone(timezone.utc)
         else:
-            until = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(
+            until = datetime.now(timezone.utc).replace(
                 minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
             )
     except ValueError as e:
