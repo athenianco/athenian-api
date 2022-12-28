@@ -776,7 +776,7 @@ async def is_github_login_enabled(account: int, sdb: DatabaseLike) -> bool:
 async def check_account_expired(context: AthenianWebRequest, log: logging.Logger) -> bool:
     """Return the value indicating whether the account's expiration datetime is in the past."""
     expires_at = await context.sdb.fetch_val(
-        select([Account.expires_at]).where(Account.id == context.account),
+        select(Account.expires_at).where(Account.id == context.account),
     )
     if getattr(context, "god_id", context.uid) == context.uid and (
         expires_at is None or expires_at < datetime.now(expires_at.tzinfo)
@@ -817,7 +817,7 @@ async def report_user_account_expired(
     user_info: Callable[..., Coroutine],
     slack: Optional[SlackWebClient],
     cache: Optional[aiomcache.Client],
-):
+) -> bytes:
     """Send a Slack message about the user who accessed an expired account."""
 
     async def dummy_user():
