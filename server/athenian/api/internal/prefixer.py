@@ -239,30 +239,34 @@ class Prefixer:
     def dereference_repositories(
         self,
         repo_refs: Iterable[RepositoryReference],
-        return_missing: bool = False,
-        logger: Optional[logging.Logger] = _dereference_repositories_logger,
+        return_refs: bool = False,
+        logger: Optional[logging.Logger] = None,
     ) -> list[RepositoryName] | tuple[list[RepositoryName], list[RepositoryReference]]:
         """Convert a list of RepositoryReference to a list of prefixed repository names."""
         repo_names = []
         repo_node_to_name = self.repo_node_to_name.__getitem__
-        missing = []
+        filtered_refs = []
+        repo_refs_list = []
         for repo in repo_refs:
+            repo_refs_list.append(repo)
             try:
                 physical_name = repo.prefix + "/" + repo_node_to_name(repo.node_id)
             except KeyError:
-                missing.append(repo)
                 continue
             repo_names.append(
                 RepositoryName.from_prefixed(physical_name).with_logical(repo.logical_name),
             )
-        if missing:
+            filtered_refs.append(repo)
+        if diff := len(repo_refs_list) - len(filtered_refs):
+            if logger is None:
+                logger = self._dereference_repositories_logger
             logger.error(
                 "reposet-sync did not delete %d repositories: %s",
-                len(missing),
-                ", ".join("(%s, %d, %s)" % r for r in missing),
+                diff,
+                ", ".join("(%s, %d, %s)" % r for r in repo_refs_list if r not in filtered_refs),
             )
-        if return_missing:
-            return repo_names, missing
+        if return_refs:
+            return repo_names, filtered_refs
         return repo_names
 
     def __str__(self) -> str:

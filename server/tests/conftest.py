@@ -921,6 +921,11 @@ def release_match_setting_tag_logical(release_match_setting_tag):
     )
 
 
+@pytest.fixture(scope="session")
+def meta_ids() -> tuple[int, ...]:
+    return (6366825,)
+
+
 def get_default_branches() -> dict:
     return {
         "src-d/go-git": "master",
@@ -938,19 +943,19 @@ _branches = None
 
 
 @pytest.fixture(scope="function")
-async def branches(mdb, branch_miner, prefixer):
+async def branches(mdb, branch_miner, prefixer, meta_ids):
     global _branches
     if _branches is None:
         _branches, _ = await branch_miner.extract_branches(
-            ["src-d/go-git"], prefixer, (6366825,), mdb, None,
+            ["src-d/go-git"], prefixer, meta_ids, mdb, None,
         )
     return _branches
 
 
 @pytest.fixture(scope="function")
 @with_defer
-async def prefixer(mdb):
-    return await Prefixer.load((6366825,), mdb, None)
+async def prefixer(mdb, meta_ids):
+    return await Prefixer.load(meta_ids, mdb, None)
 
 
 @pytest.fixture(scope="session")
@@ -970,29 +975,29 @@ def logical_settings_full():
 _dag = None
 
 
-async def fetch_dag(mdb, heads=None):
+async def fetch_dag(meta_ids, mdb, heads=None):
     if heads is None:
         heads = [
             2755363,
         ]
-    edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
+    edges = await _fetch_commit_history_edges(heads, [], meta_ids, mdb)
     return {"src-d/go-git": (True, join_dags(*_empty_dag(), edges))}
 
 
 @pytest.fixture(scope="function")  # we cannot declare it "module" because of mdb's scope
-async def dag(mdb):
+async def dag(mdb, meta_ids):
     global _dag
     if _dag is not None:
         return _dag
-    _dag = await fetch_dag(mdb)
+    _dag = await fetch_dag(meta_ids, mdb)
     return _dag  # _dag is global # noqa: PIE781
 
 
 @pytest.fixture(scope="function")
 @with_defer
-async def precomputed_dead_prs(mdb, pdb, branches, dag) -> None:
+async def precomputed_dead_prs(mdb, pdb, branches, dag, meta_ids) -> None:
     prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
-    await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
+    await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, meta_ids, mdb, pdb)
 
 
 @pytest.fixture(scope="function")

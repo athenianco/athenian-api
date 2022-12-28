@@ -1918,9 +1918,9 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner, pref
 
 
 @with_defer
-async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
+async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer, meta_ids):
     branches, _ = await branch_miner.extract_branches(
-        ["src-d/go-git"], prefixer, (6366825,), mdb, None,
+        ["src-d/go-git"], prefixer, meta_ids, mdb, None,
     )
     branches = branches[branches[Branch.branch_name.name] == "master"]
     branches[Branch.commit_date] = datetime.now(timezone.utc)
@@ -1937,7 +1937,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
         branches,
         None,
         1,
-        (6366825,),
+        meta_ids,
         mdb,
         pdb,
         None,
@@ -1945,7 +1945,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
     prs, xdags, _ = await pr_miner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
     pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
-    dag = await fetch_dag(mdb, branches[Branch.commit_id.name].tolist())
+    dag = await fetch_dag(meta_ids, mdb, branches[Branch.commit_id.name].tolist())
     assert not (set(dag["src-d/go-git"][1][0]) - set(pdb_dag.hashes))
     for i in range(3):
         assert_array_equal(

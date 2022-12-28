@@ -5,13 +5,16 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import logging
 import os
+import re
 import signal
 import sys
 import time
 import traceback
 from typing import Callable, Optional, Sequence
+from urllib.parse import urlparse
 
 import aiomcache
+import numpy as np
 import pandas as pd
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -20,11 +23,12 @@ from sqlalchemy import select
 from tqdm import tqdm
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import (
+    RepositoryReference,
     copy_teams_as_needed,
     get_account_name_or_stub,
     get_multiple_metadata_account_ids,
@@ -47,11 +51,12 @@ from athenian.api.internal.miners.github.release_mine import (
     hide_first_releases,
     mine_releases,
 )
-from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
+from athenian.api.models.metadata.github import AccountRepository, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
 from athenian.api.precompute.context import PrecomputeContext
@@ -227,29 +232,7 @@ async def precompute_reposet(
         log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
         return health_metrics
-    deref_items, missing = prefixer.dereference_repositories(
-        reposet_items_to_refs(reposet.items), return_missing=True, logger=log,
-    )
-    if missing:
-        await sdb.execute(
-            sa.update(RepositorySet)
-            .where(RepositorySet.id == reposet.id)
-            .values(
-                {
-                    RepositorySet.updates_count: RepositorySet.updates_count + 1,
-                    RepositorySet.updated_at: datetime.now(timezone.utc),
-                    RepositorySet.items: [r for r in reposet.items if r not in missing],
-                },
-            ),
-        )
-        log.error(
-            "reposet-sync did not delete %d repositories in account %d: %s",
-            len(missing),
-            reposet.owner_id,
-            ", ".join("(%s, %d, %s)" % tuple(i) for i in missing),
-        )
-        health_metrics.reposet.undead += len(missing)
-    # TODO(vmarkovtsev): DEV-5557 check if there are new repositories outside of the reposet
+    deref_items = await refresh_reposet(reposet, prefixer, meta_ids, sdb, mdb, log, health_metrics)
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
         num_teams, num_bots = await ensure_teams(
@@ -471,6 +454,95 @@ async def precompute_reposet(
     finally:
         await wait_deferred()
     return health_metrics
+
+
+async def refresh_reposet(
+    reposet: RepositorySet,
+    prefixer: Prefixer,
+    meta_ids: tuple[int, ...],
+    sdb: Database,
+    mdb: Database,
+    log: logging.Logger,
+    health_metrics: DataHealthMetrics,
+) -> list[RepositoryName]:
+    """Remove non-existing and add missing repositories in the reposet."""
+    deref_items, filtered_refs = prefixer.dereference_repositories(
+        reposet_items_to_refs(reposet.items), return_refs=True, logger=log,
+    )
+    health_metrics.reposet.undead = len(reposet.items) - len(filtered_refs)
+    deref_items, refreshed_refs = await insert_new_repositories(
+        deref_items, filtered_refs, reposet.tracking_re, meta_ids, mdb, logger=log,
+    )
+    health_metrics.reposet.overlooked = len(refreshed_refs) - len(filtered_refs)
+    if health_metrics.reposet.undead or health_metrics.reposet.overlooked:
+        log.info("updating reposet: %d -> %d items", len(reposet.items), len(refreshed_refs))
+        await sdb.execute(
+            sa.update(RepositorySet)
+            .where(RepositorySet.id == reposet.id)
+            .values(
+                {
+                    RepositorySet.updates_count: RepositorySet.updates_count + 1,
+                    RepositorySet.updated_at: datetime.now(timezone.utc),
+                    RepositorySet.items: refreshed_refs,
+                },
+            ),
+        )
+    return deref_items
+
+
+async def insert_new_repositories(
+    filtered_names: list[RepositoryName],
+    filtered_refs: list[RepositoryReference],
+    tracking_re: str,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    logger: Optional[logging.Logger] = None,
+) -> tuple[list[RepositoryName], list[RepositoryReference]]:
+    """Load all the repositories currently attached to the account and insert to `filtered_*` \
+    those which are missing.
+
+    :param tracking_re: Regular expression that must match on a repository name for the repo \
+                        to be included.
+    """
+    repo_node_ids = await read_sql_query(
+        select(AccountRepository.repo_graph_id).where(AccountRepository.acc_id.in_(meta_ids)),
+        mdb,
+        [AccountRepository.repo_graph_id],
+    )
+    existing = np.fromiter((r.node_id for r in filtered_refs), int, len(filtered_refs))
+    registered = repo_node_ids[AccountRepository.repo_graph_id.name].values
+    new_nodes = np.setdiff1d(registered, existing)
+    if len(new_nodes) == 0:
+        return filtered_names, filtered_refs
+    new_repo_rows = await mdb.fetch_all(
+        select(Repository.node_id, Repository.html_url, Repository.full_name).where(
+            Repository.acc_id.in_(meta_ids),
+            Repository.node_id.in_(new_nodes),
+        ),
+    )
+    if not new_repo_rows:
+        return filtered_names, filtered_refs
+    tracking_re = re.compile(tracking_re)
+    passed_names = filtered_names.copy()
+    passed_refs = filtered_refs.copy()
+    for row in new_repo_rows:
+        if not tracking_re.fullmatch(row[Repository.full_name.name]):
+            continue
+        prefix = urlparse(row[Repository.html_url.name]).hostname
+        passed_names.append(
+            RepositoryName(prefix, *row[Repository.full_name.name].split("/", 1), ""),
+        )
+        passed_refs.append(RepositoryReference(prefix, row[Repository.node_id.name], ""))
+    if logger is None:
+        logger = logging.getLogger(f"{metadata.__package__}.insert_new_repositories")
+    logger.error(
+        "reposet-sync did not add %d / %d new repositories: %s",
+        len(passed_refs) - len(filtered_refs),
+        len(new_repo_rows),
+        passed_refs[len(filtered_refs) :],
+    )
+    passed_refs.sort()
+    return passed_names, passed_refs
 
 
 async def ensure_teams(

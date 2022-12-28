@@ -51,16 +51,18 @@ class RepositorySetMetrics:
 
     length: int
     undead: int
+    overlooked: int
 
     @classmethod
     def empty(cls) -> RepositorySetMetrics:
         """Initialize a new RepositorySetMetrics instance filled with zeros."""
-        return RepositorySetMetrics(0, 0)
+        return RepositorySetMetrics(0, 0, 0)
 
     def as_db(self) -> Iterator[HealthMetric]:
         """Generate HealthMetric-s from this instance."""
         yield HealthMetric(name="reposet_length", value=self.length)
         yield HealthMetric(name="reposet_undead", value=self.undead)
+        yield HealthMetric(name="reposet_overlooked", value=self.overlooked)
 
 
 def reposet_items_to_refs(items: list[tuple[int, str, str]]) -> Iterator[RepositoryReference]:
