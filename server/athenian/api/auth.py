@@ -491,9 +491,7 @@ class Auth0:
         else:
             raise AssertionError("Unsupported auth method: %s" % method)
 
-        god = await request.sdb.fetch_one(
-            select([God.mapped_id]).where(God.user_id == request.uid),
-        )
+        god = await request.sdb.fetch_one(select(God.mapped_id).where(God.user_id == request.uid))
         if god is not None:
             request.god_id = request.uid
             if "X-Identity" in request.headers:

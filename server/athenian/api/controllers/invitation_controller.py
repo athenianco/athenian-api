@@ -415,6 +415,10 @@ async def _join_account(
             )
     if user is None:
         user = await request.user()
+
+    async def cached_user():
+        return user
+
     user.accounts = await load_user_accounts(
         user.id,
         getattr(request, "god_id", user.id),
@@ -422,7 +426,7 @@ async def _join_account(
         mdb,
         rdb,
         slack,
-        request.user,
+        cached_user,
         cache,
     )
     return acc_id, user
