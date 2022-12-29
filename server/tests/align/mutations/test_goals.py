@@ -309,7 +309,11 @@ class TestCreateGoals(BaseCreateGoalTest):
         new_goal_id = await self._create(variables)
 
         await assert_existing_row(
-            sdb, Goal, id=new_goal_id, name="G1", metric=PullRequestMetricID.PR_REVIEW_TIME,
+            sdb,
+            Goal,
+            id=new_goal_id,
+            name="G1",
+            metric=PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
         )
 
         team_goals = await sdb.fetch_all(
