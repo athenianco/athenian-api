@@ -791,9 +791,13 @@ async def alert_bad_health(
             ),
         ),
     )
-    if previous_done_prs is not None and previous_done_prs > metrics.prs.done_count:
+    if (
+        previous_done_prs is not None
+        and (previous_done_prs - metrics.prs.done_count) > 0.05 * previous_done_prs
+    ):
         msgs.append(
-            f"number of done PRs decreased: {previous_done_prs} -> {metrics.prs.done_count}",
+            "number of done PRs decreased by more than 5%: "
+            f"{previous_done_prs} -> {metrics.prs.done_count}",
         )
     if msgs:
 
