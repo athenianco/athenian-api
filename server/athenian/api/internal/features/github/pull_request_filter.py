@@ -1392,6 +1392,8 @@ def pr_facts_stages_masks(pr_facts: pd.DataFrame) -> npt.NDArray[int]:
     """
     # 8 stages, use stage int value in the enum as position in the bitmask
     masks = np.zeros(len(pr_facts), np.uint8)
+    if pr_facts.empty:
+        return masks
 
     force_push_dropped_mask = pr_facts.done.values & pr_facts.force_push_dropped.values
     masks[force_push_dropped_mask] |= _pr_stage_enum_mask(PullRequestStage.FORCE_PUSH_DROPPED)
