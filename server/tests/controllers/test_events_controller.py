@@ -728,7 +728,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
                 repository_node_id=40550,
                 reference="bbb",
                 created_at=datetime.now(timezone.utc)
-                - (timedelta(hours=3) if unresolved else timedelta(days=2)),
+                - (timedelta(hours=3) if unresolved else timedelta(days=14, minutes=1)),
             ).explode(with_primary_keys=True),
             DeployedComponent(
                 account_id=1,
@@ -736,7 +736,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
                 repository_node_id=40550,
                 reference="ccc",
                 resolved_commit_node_id=commit,
-                created_at=datetime.now(timezone.utc) - timedelta(days=2),
+                created_at=datetime.now(timezone.utc) - timedelta(days=14, minutes=1),
             ).explode(with_primary_keys=True),
         ],
     )

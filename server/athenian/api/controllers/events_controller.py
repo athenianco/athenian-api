@@ -740,20 +740,16 @@ async def _resolve_deployed_component_references(
 ) -> None:
     await rdb.execute(
         delete(DeployedComponent).where(
-            and_(
-                DeployedComponent.resolved_commit_node_id.is_(None),
-                DeployedComponent.created_at < datetime.now(timezone.utc) - timedelta(days=1),
-            ),
+            DeployedComponent.resolved_commit_node_id.is_(None),
+            DeployedComponent.created_at < datetime.now(timezone.utc) - timedelta(days=14),
         ),
     )
     discarded_notifications = await rdb.fetch_all(
         select(DeploymentNotification.account_id, DeploymentNotification.name).where(
             not_(
                 exists().where(
-                    and_(
-                        DeploymentNotification.account_id == DeployedComponent.account_id,
-                        DeploymentNotification.name == DeployedComponent.deployment_name,
-                    ),
+                    DeploymentNotification.account_id == DeployedComponent.account_id,
+                    DeploymentNotification.name == DeployedComponent.deployment_name,
                 ),
             ),
         ),
@@ -767,20 +763,16 @@ async def _resolve_deployed_component_references(
     tasks = [
         rdb.execute(
             delete(DeployedLabel).where(
-                and_(
-                    DeployedLabel.account_id == acc,
-                    DeployedLabel.deployment_name.in_(discarded),
-                ),
+                DeployedLabel.account_id == acc,
+                DeployedLabel.deployment_name.in_(discarded),
             ),
         )
         for acc, discarded in discarded_by_account.items()
     ] + [
         rdb.execute(
             delete(DeployedComponent).where(
-                and_(
-                    DeployedComponent.account_id == acc,
-                    DeployedComponent.deployment_name.in_(discarded),
-                ),
+                DeployedComponent.account_id == acc,
+                DeployedComponent.deployment_name.in_(discarded),
             ),
         )
         for acc, discarded in discarded_by_account.items()
@@ -800,11 +792,9 @@ async def _resolve_deployed_component_references(
     await gather(*tasks, op="resolve_deployed_component_references/delete/notifications")
     unresolved = await rdb.fetch_all(
         select(
-            [
-                DeployedComponent.account_id,
-                DeployedComponent.repository_node_id,
-                DeployedComponent.reference,
-            ],
+            DeployedComponent.account_id,
+            DeployedComponent.repository_node_id,
+            DeployedComponent.reference,
         ).where(DeployedComponent.resolved_commit_node_id.is_(None)),
     )
     unresolved_by_account = defaultdict(list)
