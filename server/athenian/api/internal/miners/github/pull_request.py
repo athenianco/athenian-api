@@ -907,7 +907,7 @@ class PullRequestMiner:
         physical_repositories: Optional[set[str] | KeysView[str]] = None,
     ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         assert prs.index.nlevels == 1
-        node_ids = prs.index if len(prs) > 0 else pd.Series([], dtype=int)
+        node_ids = prs.index.values if len(prs) > 0 else np.array([], dtype=int)
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
         unreleased_prs_event: asyncio.Event = None
         merged_unreleased_indexes = []
@@ -1204,8 +1204,8 @@ class PullRequestMiner:
 
         async def fetch_check_runs() -> pd.DataFrame:
             anyhow_merged_mask = prs[PullRequest.merged_at.name].notnull().values
-            merged_node_ids = node_ids.values[anyhow_merged_mask]
-            open_node_ids = node_ids.values[~anyhow_merged_mask]
+            merged_node_ids = node_ids[anyhow_merged_mask]
+            open_node_ids = node_ids[~anyhow_merged_mask]
             return await cls.fetch_pr_check_runs(
                 merged_node_ids, open_node_ids, account, meta_ids, mdb, pdb, cache,
             )
@@ -2046,7 +2046,7 @@ class PullRequestMiner:
             if len(pr_node_ids) >= 100
             else ghprd.pull_request_id.in_(pr_node_ids)
         )
-        query = sql.select(cols).where(sql.and_(ghprd.acc_id == account, pull_request_id_cond))
+        query = sql.select(*cols).where(ghprd.acc_id == account, pull_request_id_cond)
         if len(pr_node_ids) >= 100:
             query = query.with_statement_hint(
                 f"Rows({ghprd.__tablename__} *VALUES* #{len(pr_node_ids)})",
@@ -2101,13 +2101,11 @@ class PullRequestMiner:
         if not isinstance(open_pr_node_ids, (set, KeysView)):
             open_pr_node_ids = set(open_pr_node_ids)
         rows = await pdb.fetch_all(
-            sql.select([prcrs.pr_node_id, prcrs.data]).where(
-                sql.and_(
-                    prcrs.acc_id == account,
-                    prcrs.format_version
-                    == prcrs.__table__.columns[prcrs.format_version.key].default.arg,
-                    prcrs.pr_node_id.in_(merged_pr_node_ids | open_pr_node_ids),
-                ),
+            sql.select(prcrs.pr_node_id, prcrs.data).where(
+                prcrs.acc_id == account,
+                prcrs.format_version
+                == prcrs.__table__.columns[prcrs.format_version.key].default.arg,
+                prcrs.pr_node_id.in_(merged_pr_node_ids | open_pr_node_ids),
             ),
         )
         if rows:

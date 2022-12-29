@@ -538,12 +538,15 @@ async def notify_deployments(request: AthenianWebRequest, body: list[dict]) -> w
         mdb,
         False,
     )
+    log.info(
+        "persisting %d deployments with %d resolved references", len(notifications), len(resolved),
+    )
     tasks = [
         _notify_deployment(notification, account, rdb, resolved, checker.installed_repos)
         for notification in notifications
     ]
     try:
-        await gather(*tasks, op=f"_notify_deployment_interval({len(tasks)})")
+        await gather(*tasks, op=f"_notify_deployment({len(tasks)})")
     except (sqlite3.IntegrityError, asyncpg.IntegrityConstraintViolationError):
         raise ResponseError(DatabaseConflict("Specified deployment(s) already exist.")) from None
     return web.json_response({})
