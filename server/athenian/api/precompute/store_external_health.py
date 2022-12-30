@@ -3,6 +3,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
 import logging
+import os
 from typing import Any
 
 import aiohttp
@@ -84,7 +85,7 @@ async def _record_performance_metrics(
                                 if alert:
                                     alerts[account].append((endpoint, value, alert))
                         break
-        if alerts and slack is not None:
+        if alerts and slack is not None and os.getenv("SENTRY_ENV") == "production":
             log.info("reporting bad performance of accounts: %s", sorted(alerts.keys()))
             await gather(
                 *(
