@@ -1,6 +1,6 @@
 from typing import Optional
 
-from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
+from athenian.api.internal.miners.participation import JIRAParticipants, JIRAParticipationKind
 from athenian.api.models.web.base_model_ import Model
 
 

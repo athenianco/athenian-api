@@ -26,7 +26,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
-from athenian.api.internal.miners.types import PRParticipationKind, PullRequestFacts
+from athenian.api.internal.miners.participation import PRParticipationKind
+from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples
 from tests.testutils.factory.miners import PullRequestFactsFactory

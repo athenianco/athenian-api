@@ -27,10 +27,9 @@ from athenian.api.internal.miners.github.precomputed_prs.utils import (
     labels_are_compatible,
     triage_by_release_match,
 )
+from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
     MinedPullRequest,
-    PRParticipants,
-    PRParticipationKind,
     PullRequestFacts,
     PullRequestFactsMap,
 )

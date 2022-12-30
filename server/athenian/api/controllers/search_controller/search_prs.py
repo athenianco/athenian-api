@@ -32,12 +32,8 @@ from athenian.api.internal.jira import get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.pull_request import fetch_prs_numbers
-from athenian.api.internal.miners.types import (
-    JIRAEntityToFetch,
-    PRParticipants,
-    PRParticipationKind,
-    PullRequestFacts,
-)
+from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings

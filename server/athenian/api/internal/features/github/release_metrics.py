@@ -15,11 +15,11 @@ from athenian.api.internal.features.metric_calculator import (
     make_register_metric,
 )
 from athenian.api.internal.miners.github.released_pr import matched_by_column
-from athenian.api.internal.miners.types import (
-    ReleaseFacts,
+from athenian.api.internal.miners.participation import (
     ReleaseParticipants,
     ReleaseParticipationKind,
 )
+from athenian.api.internal.miners.types import ReleaseFacts
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID

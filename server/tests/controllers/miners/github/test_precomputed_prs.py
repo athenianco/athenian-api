@@ -22,9 +22,9 @@ from athenian.api.internal.miners.github.precomputed_prs import (
 )
 from athenian.api.internal.miners.github.release_match import PullRequestToReleaseMapper
 from athenian.api.internal.miners.github.released_pr import matched_by_column, new_released_prs_df
+from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.internal.miners.types import (
     MinedPullRequest,
-    PRParticipationKind,
     PullRequestCheckRun,
     PullRequestFacts,
 )

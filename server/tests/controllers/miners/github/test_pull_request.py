@@ -21,11 +21,11 @@ from athenian.api.internal.miners.github.precomputed_prs import (
     store_open_pull_request_facts,
 )
 from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
+from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.internal.miners.types import (
     DAG,
     JIRAEntityToFetch,
     MinedPullRequest,
-    PRParticipationKind,
     PullRequestCheckRun,
     PullRequestFacts,
 )

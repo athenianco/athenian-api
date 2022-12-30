@@ -53,19 +53,21 @@ from athenian.api.internal.miners.github.release_mine import (
 from athenian.api.internal.miners.github.repository import mine_repositories
 from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues_by_keys
+from athenian.api.internal.miners.participation import (
+    PRParticipants,
+    PRParticipationKind,
+    ReleaseParticipationKind,
+)
 from athenian.api.internal.miners.types import (
     Deployment,
     DeploymentConclusion,
     DeploymentFacts,
     JIRAEntityToFetch,
-    PRParticipants,
-    PRParticipationKind,
     PullRequestEvent,
     PullRequestJIRAIssueItem,
     PullRequestListItem,
     PullRequestStage,
     ReleaseFacts,
-    ReleaseParticipationKind,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import resolve_repos_with_request

@@ -13,7 +13,8 @@ from athenian.api.internal.features.github.deployment_metrics import (
     group_deployments_by_repositories,
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.types import DeploymentFacts, ReleaseParticipationKind
+from athenian.api.internal.miners.participation import ReleaseParticipationKind
+from athenian.api.internal.miners.types import DeploymentFacts
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.web import DeploymentMetricID
 

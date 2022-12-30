@@ -1,6 +1,6 @@
 from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
-from athenian.api.internal.miners.types import PRParticipationKind
+from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams, resolve_withgroups

@@ -108,17 +108,15 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     participant_columns,
 )
-from athenian.api.internal.miners.types import (
-    JIRAEntityToFetch,
+from athenian.api.internal.miners.participation import (
     JIRAParticipants,
     JIRAParticipationKind,
     PRParticipants,
     PRParticipationKind,
-    PullRequestFacts,
-    ReleaseFacts,
     ReleaseParticipants,
     ReleaseParticipationKind,
 )
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts, ReleaseFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (

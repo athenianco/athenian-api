@@ -41,10 +41,9 @@ from athenian.api.internal.miners.github.release_load import (
     match_groups_to_sql,
 )
 from athenian.api.internal.miners.github.released_pr import matched_by_column, new_released_prs_df
+from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
     MinedPullRequest,
-    PRParticipants,
-    PRParticipationKind,
     PullRequestFacts,
     PullRequestFactsMap,
     PullRequestID,

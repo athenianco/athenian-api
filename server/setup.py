@@ -42,7 +42,9 @@ setup(
                 code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
                 code_root / "internal" / "miners" / "github" / "deployment_accelerated.pyx",
                 code_root / "internal" / "miners" / "github" / "precomputed_prs" / "utils_accelerated.pyx",  # noqa
+                code_root / "internal" / "miners" / "types_accelerated.pyx",
                 code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",  # noqa
+                code_root / "internal" / "features" / "github" / "pull_request_filter_accelerated.pyx",  # noqa
                 code_root / "internal" / "logical_accelerated.pyx",
                 code_root / "to_object_arrays.pyx",
                 code_root / "unordered_unique.pyx",

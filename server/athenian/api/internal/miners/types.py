@@ -1,63 +1,21 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum, auto
-from typing import Any, Mapping, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Optional, Sequence, Type, TypeVar, Union
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from sqlalchemy.orm import InstrumentedAttribute
 
-from athenian.api.models.metadata.github import (
-    NodePullRequest,
-    PullRequest,
-    PullRequestComment,
-    PullRequestCommit,
-    PullRequestReview,
-    Release,
+from athenian.api.internal.miners.participation import PRParticipants
+from athenian.api.internal.miners.types_accelerated import (
+    extract_participant_nodes,
+    find_truncated_datetime,
 )
+from athenian.api.models.metadata.github import NodePullRequest, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.typing_utils import numpy_struct
-
-
-class PRParticipationKind(IntEnum):
-    """Developer relationship with a pull request.
-
-    These values are written to the precomputed DB, so be careful with changing them.
-    """
-
-    AUTHOR = auto()
-    REVIEWER = auto()
-    COMMENTER = auto()
-    COMMIT_AUTHOR = auto()
-    COMMIT_COMMITTER = auto()
-    MERGER = auto()
-    RELEASER = auto()
-
-
-PRParticipants = Mapping[PRParticipationKind, set[str]]
-
-
-class ReleaseParticipationKind(IntEnum):
-    """Developer relationship with a release."""
-
-    PR_AUTHOR = auto()
-    COMMIT_AUTHOR = auto()
-    RELEASER = auto()
-
-
-ReleaseParticipants = Mapping[ReleaseParticipationKind, Sequence[int]]
-
-
-class JIRAParticipationKind(IntEnum):
-    """User relationship with a JIRA issue."""
-
-    ASSIGNEE = auto()
-    REPORTER = auto()
-    COMMENTER = auto()
-
-
-JIRAParticipants = Mapping[JIRAParticipationKind, Sequence[str]]
 
 
 class JIRAEntityToFetch(IntEnum):
@@ -212,6 +170,8 @@ class MinedPullRequest:
     1. pull request id
     2. own id
     The artificial first index layer makes it is faster to select data belonging to a certain PR.
+
+    Do not reorder the fields! The native extension depends on it.
     """
 
     pr: dict[str, Any]
@@ -226,37 +186,9 @@ class MinedPullRequest:
     deployments: pd.DataFrame
     check_run: dict[str, Any]
 
-    def participant_nodes(self) -> PRParticipants:
+    def participant_nodes(self, alloc=None) -> PRParticipants:
         """Collect unique developer node IDs that are mentioned in this pull request."""
-        author = self.pr[PullRequest.user_node_id.name]
-        merger = self.pr[PullRequest.merged_by_id.name]
-        releaser = self.release[Release.author_node_id.name]
-        participants = {
-            PRParticipationKind.AUTHOR: {author} if author else set(),
-            PRParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_node_id.name,
-            ),
-            PRParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_node_id.name,
-            ),
-            PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_user_id.name,
-            ),
-            PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_user_id.name,
-            ),
-            PRParticipationKind.MERGER: {merger} if merger else set(),
-            PRParticipationKind.RELEASER: {releaser} if releaser else set(),
-        }
-        reviewers = participants[PRParticipationKind.REVIEWER]
-        if author in reviewers:
-            reviewers.remove(author)
-        return participants
-
-    @staticmethod
-    def _extract_people(df: pd.DataFrame, col: str) -> set[str]:
-        values = df[col].values
-        return set(np.unique(values[np.flatnonzero(values)]).tolist())
+        return extract_participant_nodes(self, alloc)
 
 
 class DeploymentConclusion(IntEnum):
@@ -386,21 +318,16 @@ class PullRequestFacts:
             if t is not None
         )
 
-    def truncate(self, after_dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
+    def truncate(self, after_dt: np.datetime64) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
-        changed = []
         assert self.created <= after_dt
-        if after_dt.tzinfo is not None:
-            after_dt = after_dt.replace(tzinfo=None)
-        for field_name, (field_dtype, _) in self.dtype.fields.items():
-            if np.issubdtype(field_dtype, np.datetime64):
-                if (dt := getattr(self, field_name)) is not None and dt >= after_dt:
-                    changed.append(field_name)
+        changed = find_truncated_datetime(self, self.dt64_offsets, after_dt)
         if not changed:
             return self
         arr = self._arr.copy()
+        dt64_names = self.dt64_names
         for k in changed:
-            arr[k] = None
+            arr[dt64_names[k]] = None
         arr["done"] = (
             (released := arr["released"]) == released
             or arr["force_push_dropped"]
@@ -428,6 +355,20 @@ class PullRequestFacts:
         if self.work_began != other.work_began:
             return self.work_began < other.work_began
         return self.created < other.created
+
+
+PullRequestFacts.dt64_names = [
+    name
+    for name, (dtype, _) in PullRequestFacts.dtype.fields.items()
+    if np.issubdtype(dtype, np.datetime64)
+]
+PullRequestFacts.dt64_offsets = np.array(
+    [
+        offset
+        for dtype, offset in PullRequestFacts.dtype.fields.values()
+        if np.issubdtype(dtype, np.datetime64)
+    ],
+)
 
 
 # a PullRequest is identified by the couple (pull_request_node_id, repository_full_name)

@@ -1,5 +1,5 @@
 from cpython cimport PyObject
-from numpy cimport dtype as npdtype, npy_intp
+from numpy cimport dtype as npdtype, npy_int64, npy_intp
 
 from athenian.api.native.cpython cimport PyTypeObject
 
@@ -11,6 +11,8 @@ cdef extern from "numpy/arrayobject.h":
     PyTypeObject PyIntegerArrType_Type
     PyTypeObject PyFloatArrType_Type
     PyTypeObject PyTimedeltaArrType_Type
+
+    enum: NPY_DATETIME_NAT
 
     ctypedef struct PyArray_Descr:
         char kind
@@ -45,3 +47,27 @@ cdef extern from "numpy/arrayobject.h":
     bint PyArray_IS_C_CONTIGUOUS(PyObject *) nogil
     bint PyArray_IS_F_CONTIGUOUS(PyObject *) nogil
     void PyArray_ScalarAsCtype(PyObject *scalar, void *ctypeptr) nogil
+
+    ctypedef enum NPY_DATETIMEUNIT:
+        NPY_FR_ERROR = -1
+        NPY_FR_M = 1
+        NPY_FR_W = 2
+        NPY_FR_D = 4
+        NPY_FR_h = 5
+        NPY_FR_m = 6
+        NPY_FR_s = 7
+        NPY_FR_ms = 8
+        NPY_FR_us = 9
+        NPY_FR_ns = 10
+        NPY_FR_ps = 11
+        NPY_FR_fs = 12
+        NPY_FR_as = 13
+        NPY_FR_GENERIC = 14
+
+    ctypedef struct PyArray_DatetimeMetaData:
+        NPY_DATETIMEUNIT base
+        int num
+
+    ctypedef struct PyDatetimeScalarObject:
+        npy_int64 obval
+        PyArray_DatetimeMetaData obmeta

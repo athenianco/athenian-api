@@ -22,7 +22,7 @@ from athenian.api.internal.features.metric_calculator import (
 )
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
-from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
+from athenian.api.internal.miners.participation import JIRAParticipants, JIRAParticipationKind
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, Status
 from athenian.api.models.web import JIRAMetricID
 from athenian.api.unordered_unique import in1d_str, unordered_unique

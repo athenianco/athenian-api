@@ -76,13 +76,12 @@ from athenian.api.internal.miners.github.release_match import (
 )
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
+from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     JIRAEntityToFetch,
     LoadedJIRADetails,
     MinedPullRequest,
-    PRParticipants,
-    PRParticipationKind,
     PullRequestCheckRun,
     PullRequestFacts,
     PullRequestFactsMap,

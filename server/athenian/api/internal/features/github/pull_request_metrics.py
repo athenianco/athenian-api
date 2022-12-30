@@ -36,12 +36,8 @@ from athenian.api.internal.features.metric_calculator import (
 )
 from athenian.api.internal.logical_accelerated import drop_logical_in_array
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
-from athenian.api.internal.miners.types import (
-    DeploymentConclusion,
-    PRParticipants,
-    PRParticipationKind,
-    PullRequestFacts,
-)
+from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
+from athenian.api.internal.miners.types import DeploymentConclusion, PullRequestFacts
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.web import PullRequestMetricID
 from athenian.api.to_object_arrays import nested_lengths

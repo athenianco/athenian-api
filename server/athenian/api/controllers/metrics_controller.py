@@ -19,7 +19,7 @@ from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import FilterCommitsProperty
 from athenian.api.internal.miners.github.developer import DeveloperTopic
-from athenian.api.internal.miners.types import (
+from athenian.api.internal.miners.participation import (
     PRParticipants,
     PRParticipationKind,
     ReleaseParticipants,

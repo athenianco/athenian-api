@@ -12,11 +12,11 @@ from athenian.api.internal.features.github.pull_request_filter import (
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.internal.miners.types import (
     DeployedComponent,
     Deployment,
     DeploymentConclusion,
-    PRParticipationKind,
     PullRequestEvent,
     PullRequestListItem,
     PullRequestStage,

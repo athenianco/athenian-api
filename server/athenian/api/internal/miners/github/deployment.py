@@ -93,14 +93,16 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues_by_prs,
     generate_jira_prs_query,
 )
+from athenian.api.internal.miners.participation import (
+    ReleaseParticipants,
+    ReleaseParticipationKind,
+)
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     DeploymentFacts,
     JIRAEntityToFetch,
     PullRequestJIRAIssueItem,
     ReleaseFacts,
-    ReleaseParticipants,
-    ReleaseParticipationKind,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import (

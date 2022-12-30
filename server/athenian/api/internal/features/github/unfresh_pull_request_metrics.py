@@ -24,11 +24,11 @@ from athenian.api.internal.miners.github.precomputed_prs import (
 from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, generate_jira_prs_query
+from athenian.api.internal.miners.participation import PRParticipants
 from athenian.api.internal.miners.types import (
     DeploymentConclusion,
     JIRAEntityToFetch,
     LoadedJIRADetails,
-    PRParticipants,
     PullRequestFactsMap,
 )
 from athenian.api.internal.prefixer import Prefixer
