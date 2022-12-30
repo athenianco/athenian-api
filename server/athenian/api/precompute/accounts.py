@@ -19,7 +19,6 @@ import pandas as pd
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
-from sqlalchemy import select
 from tqdm import tqdm
 
 from athenian.api import metadata
@@ -170,7 +169,7 @@ async def _get_reposets_to_precompute(
     accounts: Sequence[int],
 ) -> Sequence[RepoSetToPrecompute]:
     reposet_stmt = sa.select(RepositorySet).where(
-        sa.and_(RepositorySet.name == RepositorySet.ALL, RepositorySet.owner_id.in_(accounts)),
+        RepositorySet.name == RepositorySet.ALL, RepositorySet.owner_id.in_(accounts),
     )
     reposet_rows, accounts_meta_ids = await gather(
         sdb.fetch_all(reposet_stmt), get_multiple_metadata_account_ids(accounts, sdb, None),
@@ -505,7 +504,7 @@ async def insert_new_repositories(
                         to be included.
     """
     repo_node_ids = await read_sql_query(
-        select(AccountRepository.repo_graph_id).where(AccountRepository.acc_id.in_(meta_ids)),
+        sa.select(AccountRepository.repo_graph_id).where(AccountRepository.acc_id.in_(meta_ids)),
         mdb,
         [AccountRepository.repo_graph_id],
     )
@@ -515,7 +514,7 @@ async def insert_new_repositories(
     if len(new_nodes) == 0:
         return filtered_names, filtered_refs
     new_repo_rows = await mdb.fetch_all(
-        select(Repository.node_id, Repository.html_url, Repository.full_name).where(
+        sa.select(Repository.node_id, Repository.html_url, Repository.full_name).where(
             Repository.acc_id.in_(meta_ids),
             Repository.node_id.in_(new_nodes),
         ),
@@ -782,14 +781,17 @@ async def alert_bad_health(
     if metrics.releases.commits.orphaned:
         msgs.append(f"repositories with commit DAG orphans: `{metrics.releases.commits.orphaned}`")
     previous_done_prs = await rdb.fetch_val(
-        select(HealthMetric.value).where(
+        sa.select(HealthMetric.value)
+        .where(
             HealthMetric.account_id == account,
             HealthMetric.name == "prs_done_count",
             HealthMetric.created_at
             < datetime.now(timezone.utc).replace(
                 minute=0, second=0, microsecond=0, tzinfo=timezone.utc,
             ),
-        ),
+        )
+        .order_by(sa.desc(HealthMetric.created_at))
+        .limit(1),
     )
     if (
         previous_done_prs is not None
