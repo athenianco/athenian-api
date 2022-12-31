@@ -87,6 +87,10 @@ from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_vector,
 )
 from athenian.api.native.numpy cimport (
+    NPY_DATETIMEUNIT,
+    NPY_FR_ns,
+    NPY_FR_s,
+    NPY_FR_us,
     PyArray_CheckExact,
     PyArray_DATA,
     PyArray_DIM,
@@ -94,6 +98,7 @@ from athenian.api.native.numpy cimport (
     PyArray_NDIM,
     PyArray_ScalarAsCtype,
     PyDatetimeArrType_Type,
+    PyDatetimeScalarObject,
     PyDoubleArrType_Type,
     PyFloatArrType_Type,
     PyIntegerArrType_Type,
@@ -114,32 +119,6 @@ cdef extern from "stdio.h" nogil:
 
 cdef extern from "<stdlib.h>" nogil:
     char *gcvt(double number, int ndigit, char *buf)
-
-
-cdef extern from "numpy/arrayobject.h" nogil:
-    ctypedef enum NPY_DATETIMEUNIT:
-        NPY_FR_ERROR = -1
-        NPY_FR_M = 1
-        NPY_FR_W = 2
-        NPY_FR_D = 4
-        NPY_FR_h = 5
-        NPY_FR_m = 6
-        NPY_FR_s = 7
-        NPY_FR_ms = 8
-        NPY_FR_us = 9
-        NPY_FR_ns = 10
-        NPY_FR_ps = 11
-        NPY_FR_fs = 12
-        NPY_FR_as = 13
-        NPY_FR_GENERIC = 14
-
-    ctypedef struct PyArray_DatetimeMetaData:
-        NPY_DATETIMEUNIT base
-        int num
-
-    ctypedef struct PyDatetimeScalarObject:
-        npy_int64 obval
-        PyArray_DatetimeMetaData obmeta
 
 
 cdef extern from "web_model_io.h" nogil:

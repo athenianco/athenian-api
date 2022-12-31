@@ -46,9 +46,9 @@ class TestGetPRFactsStagesMasks:
             PullRequestFacts.f.first_review_request,
         ]
         df = pd.DataFrame.from_records(rows, columns=columns)
-        df.merged = df.merged.astype(np.dtype("datetime64[ns]"))
-        df.approved = df.approved.astype(np.dtype("datetime64[ns]"))
-        df.first_review_request = df.first_review_request.astype(np.dtype("datetime64[ns]"))
+        df.merged = df.merged.astype(np.dtype("datetime64[s]"))
+        df.approved = df.approved.astype(np.dtype("datetime64[s]"))
+        df.first_review_request = df.first_review_request.astype(np.dtype("datetime64[s]"))
         return df
 
     @classmethod
@@ -76,7 +76,7 @@ class TestGetPRFactsStagesMasks:
         )
         hard_events = {f: False for f in PullRequestEvent}
         collected_stages = PullRequestListMiner._collect_events_and_stages(
-            pr_facts, hard_events, dt(1000, 1, 1).replace(tzinfo=None),
+            pr_facts, hard_events, np.datetime64("1970-01-01", "s"),
         )[1]
         assert sorted(stages) == sorted(collected_stages)
 

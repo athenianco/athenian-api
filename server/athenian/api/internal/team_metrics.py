@@ -30,7 +30,7 @@ from athenian.api.internal.jira import JIRAConfig, check_jira_installation, load
 from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.miners.types import (
+from athenian.api.internal.miners.participation import (
     JIRAParticipants,
     JIRAParticipationKind,
     PRParticipationKind,

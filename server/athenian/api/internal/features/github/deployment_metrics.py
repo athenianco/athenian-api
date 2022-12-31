@@ -14,12 +14,11 @@ from athenian.api.internal.features.metric_calculator import (
     SumMetricCalculator,
     make_register_metric,
 )
-from athenian.api.internal.miners.types import (
-    DeploymentFacts,
-    PullRequestJIRAIssueItem,
+from athenian.api.internal.miners.participation import (
     ReleaseParticipants,
     ReleaseParticipationKind,
 )
+from athenian.api.internal.miners.types import DeploymentFacts, PullRequestJIRAIssueItem
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
 from athenian.api.to_object_arrays import nested_lengths

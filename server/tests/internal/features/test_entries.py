@@ -29,12 +29,12 @@ from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoade
 from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, fetch_jira_issues
-from athenian.api.internal.miners.types import (
-    JIRAEntityToFetch,
+from athenian.api.internal.miners.participation import (
     JIRAParticipationKind,
     PRParticipationKind,
     ReleaseParticipationKind,
 )
+from athenian.api.internal.miners.types import JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID

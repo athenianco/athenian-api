@@ -4,19 +4,7 @@ from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import (
-    Callable,
-    Dict,
-    Generator,
-    Iterable,
-    KeysView,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Callable, Generator, Iterable, KeysView, Optional, Sequence
 
 import aiomcache
 import numpy as np
@@ -36,6 +24,9 @@ from athenian.api.cache import CancelCache, cached, short_term_exptime
 from athenian.api.db import Database, add_pdb_misses, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.internal.datetime_utils import coarsen_time_interval
+from athenian.api.internal.features.github.pull_request_filter_accelerated import (
+    collect_events_and_stages,
+)
 from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
     DeploymentPendingMarker,
@@ -87,13 +78,13 @@ from athenian.api.internal.miners.github.pull_request import (
 from athenian.api.internal.miners.github.release_load import ReleaseLoader, dummy_releases_df
 from athenian.api.internal.miners.github.release_match import load_commit_dags
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
+from athenian.api.internal.miners.participation import PRParticipants
 from athenian.api.internal.miners.types import (
     Deployment,
     JIRAEntityToFetch,
     Label,
     LoadedJIRADetails,
     MinedPullRequest,
-    PRParticipants,
     PullRequestEvent,
     PullRequestFacts,
     PullRequestFactsMap,
@@ -112,17 +103,18 @@ from athenian.api.models.metadata.github import (
     Release,
 )
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
-EventMap = Dict[PullRequestEvent, Set[Union[int, Tuple[int, str]]]]
+EventMap = dict[PullRequestEvent, set[int | tuple[int, str]]]
 
 
 class PullRequestListMiner:
     """Collect various PR metadata for displaying PRs on the frontend."""
 
-    _no_time_from = datetime(year=1970, month=1, day=1)
+    _no_time_from = np.datetime64("1970-01-01", "s")
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
     class DummyAllCounter(AllCounter):
@@ -144,15 +136,15 @@ class PullRequestListMiner:
 
     def __init__(
         self,
-        prs: List[MinedPullRequest],
+        prs: list[MinedPullRequest],
         dfs: PRDataFrames,
         facts: PullRequestFactsMap,
-        events: Set[PullRequestEvent],
-        stages: Set[PullRequestStage],
+        events: set[PullRequestEvent],
+        stages: set[PullRequestStage],
         time_from: datetime,
         time_to: datetime,
         with_time_machine: bool,
-        environments: Dict[str, list[str]],
+        environments: dict[str, list[str]],
     ):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs = prs
@@ -235,55 +227,41 @@ class PullRequestListMiner:
     def _collect_events_and_stages(
         cls,
         facts: PullRequestFacts,
-        hard_events: Dict[PullRequestEvent, bool],
-        time_from: datetime,
-    ) -> Tuple[Set[PullRequestEvent], Set[PullRequestStage]]:
-        events = set()
-        stages = set()
-        if facts.done:
-            if facts.force_push_dropped:
-                stages.add(PullRequestStage.FORCE_PUSH_DROPPED)
-            elif facts.release_ignored:
-                stages.add(PullRequestStage.RELEASE_IGNORED)
-            stages.add(PullRequestStage.DONE)
-        elif facts.merged:
-            stages.add(PullRequestStage.RELEASING)
-        elif facts.approved:
-            stages.add(PullRequestStage.MERGING)
-        elif facts.first_review_request:
-            stages.add(PullRequestStage.REVIEWING)
-        else:
-            stages.add(PullRequestStage.WIP)
-        if facts.created >= time_from:
-            events.add(PullRequestEvent.CREATED)
-        if hard_events[PullRequestEvent.COMMITTED]:
-            events.add(PullRequestEvent.COMMITTED)
-        if hard_events[PullRequestEvent.REVIEWED]:
-            events.add(PullRequestEvent.REVIEWED)
-        if facts.first_review_request_exact and facts.first_review_request_exact >= time_from:
-            events.add(PullRequestEvent.REVIEW_REQUESTED)
-        if facts.approved and facts.approved >= time_from:
-            events.add(PullRequestEvent.APPROVED)
-        if facts.merged and facts.merged >= time_from:
-            events.add(PullRequestEvent.MERGED)
-        if not facts.merged and facts.closed and facts.closed >= time_from:
-            events.add(PullRequestEvent.REJECTED)
-        if facts.released and facts.released >= time_from:
-            events.add(PullRequestEvent.RELEASED)
-        if hard_events[PullRequestEvent.CHANGES_REQUESTED]:
-            events.add(PullRequestEvent.CHANGES_REQUESTED)
-        if hard_events[PullRequestEvent.DEPLOYED]:
-            events.add(PullRequestEvent.DEPLOYED)
-            stages.add(PullRequestStage.DEPLOYED)
-        return events, stages
+        hard_events: dict[PullRequestEvent, bool],
+        time_from: np.datetime64,
+    ) -> tuple[set[PullRequestEvent], set[PullRequestStage]]:
+        return collect_events_and_stages(facts, hard_events, time_from)
+
+    # profiling indicates that we spend a lot of time getting these
+    PullRequest_node_id_name = PullRequest.node_id.name
+    PullRequest_user_login_name = PullRequest.user_login.name
+    PullRequest_repository_full_name_name = PullRequest.repository_full_name.name
+    PullRequest_number_name = PullRequest.number.name
+    PullRequest_title_name = PullRequest.title.name
+    PullRequest_additions_name = PullRequest.additions.name
+    PullRequest_deletions_name = PullRequest.deletions.name
+    PullRequest_changed_files_name = PullRequest.changed_files.name
+    PullRequest_created_at_name = PullRequest.created_at.name
+    PullRequestReview_user_login_name = PullRequestReview.user_login.name
+    PullRequestReview_created_at_name = PullRequestReview.created_at.name
+    PullRequestReviewComment_user_login_name = PullRequestReviewComment.user_login.name
+    PullRequest_updated_at_name = PullRequest.updated_at.name
+    PullRequestLabel_name_name = PullRequestLabel.name.name
+    PullRequestLabel_description_name = PullRequestLabel.description.name
+    PullRequestLabel_color_name = PullRequestLabel.color.name
+    Release_url_name = Release.url.name
+    Issue_title_name = Issue.title.name
+    Issue_labels_name = Issue.labels.name
+    Issue_type_name = Issue.type.name
 
     def _compile(
         self,
         pr: MinedPullRequest,
         facts: PullRequestFacts,
-        stage_timings: Dict[str, Union[timedelta, Dict[str, timedelta]]],
+        stage_timings: dict[str, timedelta | dict[str, timedelta]],
         hard_events_time_machine: EventMap,
         hard_events_now: EventMap,
+        alloc,
     ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties and produce PullRequestListItem.
@@ -291,17 +269,17 @@ class PullRequestListMiner:
         We return None if the PR does not match.
         """
         facts_now = facts
-        pr_node_id = pr.pr[PullRequest.node_id.name]
-        repo = pr.pr[PullRequest.repository_full_name.name]
+        pr_node_id = pr.pr[self.PullRequest_node_id_name]
+        repo = pr.pr[self.PullRequest_repository_full_name_name]
         if self._with_time_machine:
-            facts_time_machine = facts.truncate(self._time_to)
+            facts_time_machine = facts.truncate(np.datetime64(self._time_to, "s"))
             events_time_machine, stages_time_machine = self._collect_events_and_stages(
                 facts_time_machine,
                 {
                     k: (pr_node_id in v or (pr_node_id, repo) in v)
                     for k, v in hard_events_time_machine.items()
                 },
-                self._time_from,
+                np.datetime64(self._time_from, "s"),
             )
             if self._stages or self._events:
                 stages_pass = self._stages and self._stages.intersection(stages_time_machine)
@@ -315,9 +293,9 @@ class PullRequestListMiner:
             {k: (pr_node_id in v or (pr_node_id, repo) in v) for k, v in hard_events_now.items()},
             self._no_time_from,
         )
-        author = pr.pr[PullRequest.user_login.name]
-        external_reviews_mask = pr.reviews[PullRequestReview.user_login.name].values != author
-        external_review_times = pr.reviews[PullRequestReview.created_at.name].values[
+        author = pr.pr[self.PullRequest_user_login_name]
+        external_reviews_mask = pr.reviews[self.PullRequestReview_user_login_name].values != author
+        external_review_times = pr.reviews[self.PullRequestReview_created_at_name].values[
             external_reviews_mask
         ]
         first_review = (
@@ -326,11 +304,11 @@ class PullRequestListMiner:
             else None
         )
         review_comments = (
-            pr.review_comments[PullRequestReviewComment.user_login.name].values != author
+            pr.review_comments[self.PullRequestReviewComment_user_login_name].values != author
         ).sum()
         delta_comments = len(pr.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
-        updated_at = pr.pr[PullRequest.updated_at.name]
+        updated_at = pr.pr[self.PullRequest_updated_at_name]
         assert updated_at == updated_at
         if pr.labels.empty:
             labels = None
@@ -338,9 +316,9 @@ class PullRequestListMiner:
             labels = [
                 Label(name=name, description=description, color=color)
                 for name, description, color in zip(
-                    pr.labels[PullRequestLabel.name.name].values,
-                    pr.labels[PullRequestLabel.description.name].values,
-                    pr.labels[PullRequestLabel.color.name].values,
+                    pr.labels[self.PullRequestLabel_name_name].values,
+                    pr.labels[self.PullRequestLabel_description_name].values,
+                    pr.labels[self.PullRequestLabel_color_name].values,
                 )
             ]
         if pr.jiras.empty:
@@ -352,10 +330,10 @@ class PullRequestListMiner:
                 )
                 for (key, title, epic, labels, itype) in zip(
                     pr.jiras.index.values,
-                    pr.jiras[Issue.title.name].values,
+                    pr.jiras[self.Issue_title_name].values,
                     pr.jiras["epic"].values,
-                    pr.jiras[Issue.labels.name].values,
-                    pr.jiras[Issue.type.name].values,
+                    pr.jiras[self.Issue_labels_name].values,
+                    pr.jiras[self.Issue_type_name].values,
                 )
             ]
         deployments = (
@@ -363,13 +341,13 @@ class PullRequestListMiner:
         )
         return PullRequestListItem(
             node_id=pr_node_id,
-            repository=pr.pr[PullRequest.repository_full_name.name],
-            number=pr.pr[PullRequest.number.name],
-            title=pr.pr[PullRequest.title.name],
-            size_added=pr.pr[PullRequest.additions.name],
-            size_removed=pr.pr[PullRequest.deletions.name],
-            files_changed=pr.pr[PullRequest.changed_files.name],
-            created=pr.pr[PullRequest.created_at.name],
+            repository=pr.pr[self.PullRequest_repository_full_name_name],
+            number=pr.pr[self.PullRequest_number_name],
+            title=pr.pr[self.PullRequest_title_name],
+            size_added=pr.pr[self.PullRequest_additions_name],
+            size_removed=pr.pr[self.PullRequest_deletions_name],
+            files_changed=pr.pr[self.PullRequest_changed_files_name],
+            created=pr.pr[self.PullRequest_created_at_name],
             updated=updated_at,
             closed=self._dt64_to_pydt(facts_now.closed),
             comments=len(pr.comments) + delta_comments,
@@ -382,13 +360,13 @@ class PullRequestListMiner:
             merged=self._dt64_to_pydt(facts_now.merged),
             merged_with_failed_check_runs=facts_now.merged_with_failed_check_runs.tolist(),
             released=self._dt64_to_pydt(facts_now.released),
-            release_url=pr.release[Release.url.name],
+            release_url=pr.release[self.Release_url_name],
             events_now=events_now,
             stages_now=stages_now,
             events_time_machine=events_time_machine,
             stages_time_machine=stages_time_machine,
             stage_timings=stage_timings,
-            participants=pr.participant_nodes(),
+            participants=pr.participant_nodes(alloc),
             labels=labels,
             jira=jira,
             deployments=deployments,
@@ -403,6 +381,7 @@ class PullRequestListMiner:
         facts = self._facts
         node_id_key = PullRequest.node_id.name
         repo_name_key = PullRequest.repository_full_name.name
+        alloc = make_mi_heap_allocator_capsule()
         for i, pr in enumerate(self._prs):
             pr_stage_timings = {}
             for k in self._calcs:
@@ -423,12 +402,13 @@ class PullRequestListMiner:
                 pr_stage_timings,
                 hard_events_time_machine,
                 hard_events_now,
+                alloc,
             )
             if item is not None:
                 yield item
 
     @sentry_span
-    def _calc_stage_timings(self) -> Dict[str, List[np.ndarray]]:
+    def _calc_stage_timings(self) -> dict[str, list[np.ndarray]]:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
@@ -444,9 +424,9 @@ class PullRequestListMiner:
     def calc_stage_timings(
         cls,
         df_facts: pd.DataFrame,
-        calcs: Dict[str, Dict[str, List[MetricCalculator[int]]]],
+        calcs: dict[str, dict[str, list[MetricCalculator[int]]]],
         counter_deps: Iterable[MetricCalculator],
-    ) -> Dict[str, List[np.ndarray]]:  # np.ndarray[int]
+    ) -> dict[str, list[np.ndarray]]:  # np.ndarray[int]
         """
         Calculate PR stage timings.
 
@@ -479,7 +459,7 @@ class PullRequestListMiner:
         return stage_timings
 
     @sentry_span
-    def _calc_hard_events(self) -> Tuple[EventMap, EventMap]:
+    def _calc_hard_events(self) -> tuple[EventMap, EventMap]:
         events_time_machine = {}
         events_now = {}
         dfs = self._dfs
@@ -558,29 +538,29 @@ class PullRequestListMiner:
 
 @sentry_span
 async def filter_pull_requests(
-    events: Set[PullRequestEvent],
-    stages: Set[PullRequestStage],
+    events: set[PullRequestEvent],
+    stages: set[PullRequestStage],
     time_from: datetime,
     time_to: datetime,
-    repos: Set[str],
+    repos: set[str],
     participants: PRParticipants,
     labels: LabelFilter,
     jira: JIRAFilter,
     environments: Optional[Sequence[str]],
     exclude_inactive: bool,
-    bots: Set[str],
+    bots: set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     updated_min: Optional[datetime],
     updated_max: Optional[datetime],
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[List[PullRequestListItem], Dict[str, Deployment]]:
+) -> tuple[list[PullRequestListItem], dict[str, Deployment]]:
     """Filter GitHub pull requests according to the specified criteria.
 
     We call _filter_pull_requests() to ignore all but the first result. We've got
@@ -619,7 +599,7 @@ async def filter_pull_requests(
 
 
 def _postprocess_filtered_prs(
-    result: Tuple[List[PullRequestListItem], Dict[str, Deployment], LabelFilter, JIRAFilter],
+    result: tuple[list[PullRequestListItem], dict[str, Deployment], LabelFilter, JIRAFilter],
     labels: LabelFilter,
     jira: JIRAFilter,
     **_,
@@ -647,13 +627,13 @@ def _postprocess_filtered_prs(
     return prs, deployments, labels, jira
 
 
-def _extract_pr_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
+def _extract_pr_labels(pr: PullRequestListItem) -> Optional[set[str]]:
     if pr.labels is None:
         return None
     return {lbl.name for lbl in pr.labels}
 
 
-def _extract_jira_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
+def _extract_jira_labels(pr: PullRequestListItem) -> Optional[set[str]]:
     if pr.jira is None:
         return None
     labels = set()
@@ -664,10 +644,10 @@ def _extract_jira_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
 
 
 def _filter_by_labels(
-    prs: List[PullRequestListItem],
+    prs: list[PullRequestListItem],
     labels: LabelFilter,
-    labels_getter: Callable[[PullRequestListItem], Optional[Set[str]]],
-) -> List[PullRequestListItem]:
+    labels_getter: Callable[[PullRequestListItem], Optional[set[str]]],
+) -> list[PullRequestListItem]:
     if labels.include:
         singles, multiples = LabelFilter.split(labels.include)
         singles = set(singles)
@@ -696,9 +676,9 @@ def _filter_by_labels(
 
 
 def _filter_by_jira_epics(
-    prs: List[PullRequestListItem],
-    epics: Set[str],
-) -> List[PullRequestListItem]:
+    prs: list[PullRequestListItem],
+    epics: set[str],
+) -> list[PullRequestListItem]:
     new_prs = []
     for pr in prs:
         if pr.jira is None:
@@ -711,9 +691,9 @@ def _filter_by_jira_epics(
 
 
 def _filter_by_jira_issue_types(
-    prs: List[PullRequestListItem],
-    types: Set[str],
-) -> List[PullRequestListItem]:
+    prs: list[PullRequestListItem],
+    types: set[str],
+) -> list[PullRequestListItem]:
     new_prs = []
     for pr in prs:
         if pr.jira is None:
@@ -746,29 +726,29 @@ def _filter_by_jira_issue_types(
     postprocess=_postprocess_filtered_prs,
 )
 async def _filter_pull_requests(
-    events: Set[PullRequestEvent],
-    stages: Set[PullRequestStage],
+    events: set[PullRequestEvent],
+    stages: set[PullRequestStage],
     time_from: datetime,
     time_to: datetime,
-    repos: Set[str],
+    repos: set[str],
     participants: PRParticipants,
     labels: LabelFilter,
     jira: JIRAFilter,
     environments: Optional[Sequence[str]],
     exclude_inactive: bool,
-    bots: Set[str],
+    bots: set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     updated_min: Optional[datetime],
     updated_max: Optional[datetime],
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[List[PullRequestListItem], Dict[str, Deployment], LabelFilter, JIRAFilter]:
+) -> tuple[list[PullRequestListItem], dict[str, Deployment], LabelFilter, JIRAFilter]:
     assert isinstance(events, set)
     assert isinstance(stages, set)
     assert isinstance(repos, set)
@@ -1006,7 +986,7 @@ async def _load_deployments(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -1042,19 +1022,19 @@ async def _load_deployments(
     ),
 )
 async def fetch_pull_requests(
-    prs: Dict[str, Set[int]],
-    bots: Set[str],
+    prs: dict[str, set[int]],
+    bots: set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     environments: Optional[Sequence[str]],
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[List[PullRequestListItem], Dict[str, Deployment]]:
+) -> tuple[list[PullRequestListItem], dict[str, Deployment]]:
     """
     List GitHub pull requests by repository and numbers.
 
@@ -1173,27 +1153,27 @@ async def _fetch_pull_requests(
 async def unwrap_pull_requests(
     prs_df: pd.DataFrame,
     precomputed_done_facts: PullRequestFactsMap,
-    precomputed_ambiguous_done_facts: Dict[str, List[int]],
+    precomputed_ambiguous_done_facts: dict[str, list[int]],
     with_jira: JIRAEntityToFetch | int,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
-    bots: Set[str],
+    default_branches: dict[str, str],
+    bots: set[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
     resolve_rebased: bool = True,
-    repositories: Optional[Union[Set[str], KeysView[str]]] = None,
-) -> Tuple[
-    List[MinedPullRequest],
+    repositories: Optional[set[str] | KeysView[str]] = None,
+) -> tuple[
+    list[MinedPullRequest],
     PRDataFrames,
     PullRequestFactsMap,
-    Dict[str, ReleaseMatch],
+    dict[str, ReleaseMatch],
     Optional[asyncio.Task],
 ]:
     """

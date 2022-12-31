@@ -48,6 +48,9 @@ cdef extern from "Python.h":
     char *PyBytes_AS_STRING(PyObject *) nogil
     Py_ssize_t PyBytes_GET_SIZE(PyObject *) nogil
 
+    bint PyByteArray_CheckExact(PyObject *) nogil
+    char *PyByteArray_AS_STRING(PyObject *) nogil
+
     unsigned int PyUnicode_1BYTE_KIND
     unsigned int PyUnicode_2BYTE_KIND
     unsigned int PyUnicode_4BYTE_KIND
@@ -73,6 +76,8 @@ cdef extern from "Python.h":
     object PyUnicode_New(Py_ssize_t, Py_UCS4)
     PyObject *PyBytes_FromStringAndSize(char *v, Py_ssize_t len)
     PyObject *PyLong_FromLong(long v)
+    PyObject *PyObject_GetItem(PyObject *o, PyObject *key)
+    PyObject *PyObject_GetAttr(PyObject *o, PyObject *attr_name)
 
 cdef extern from "datetime.h" nogil:
     bint PyDateTime_Check(PyObject *)

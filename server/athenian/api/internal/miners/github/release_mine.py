@@ -66,6 +66,10 @@ from athenian.api.internal.miners.github.release_match import ReleaseToPullReque
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
 from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, generate_jira_prs_query
+from athenian.api.internal.miners.participation import (
+    ReleaseParticipants,
+    ReleaseParticipationKind,
+)
 from athenian.api.internal.miners.types import (
     Deployment,
     JIRAEntityToFetch,
@@ -73,8 +77,6 @@ from athenian.api.internal.miners.types import (
     LoadedJIRAReleaseDetails,
     PullRequestFacts,
     ReleaseFacts,
-    ReleaseParticipants,
-    ReleaseParticipationKind,
     released_prs_columns,
 )
 from athenian.api.internal.prefixer import Prefixer

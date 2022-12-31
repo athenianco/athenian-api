@@ -1,6 +1,7 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
+# distutils: extra_compile_args = -std=c++17
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
 
