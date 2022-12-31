@@ -41,8 +41,15 @@ class TestMapArrayValues:
     def test_some_matches(self) -> None:
         ar = np.array([4, 7, 3, -1, 1, 0, -1])
         keys = np.array([0, 1, 3, 4, 5])
-        values = np.array(["a", "b", "c", "d", "e", "f"], dtype="U10")
+        values = np.array(["a", "b", "c", "d", "e"], dtype="U10")
         mapped = map_array_values(ar, keys, values, "MISS")
         assert_array_equal(
             mapped, np.array(["d", "MISS", "c", "MISS", "b", "a", "MISS"], dtype="U10"),
         )
+
+    def test_empty_key_values(self) -> None:
+        ar = np.array([4, 7, 3, -1, 1, 0, -1])
+        keys = np.array([], dtype=int)
+        values = np.array([], dtype=object)
+        mapped = map_array_values(ar, keys, values, "MISS")
+        assert_array_equal(mapped, np.array(["MISS"] * len(ar)))

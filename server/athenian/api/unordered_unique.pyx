@@ -270,28 +270,31 @@ cdef ndarray _in1d_str(ndarray trial, ndarray dictionary, bint is_char, int skip
 
 
 def map_array_values(
-    ndarray ar not None,
+    ndarray arr not None,
     ndarray map_keys not None,
     ndarray map_values not None,
     miss_value,
 ) -> np.ndarray:
-    """Map the values in the array `ar` using the dictionary expressed by two arrays.
+    """Map the values in the array `arr` using the dictionary expressed by two arrays.
 
     `map_keys` and `map_values` must have the same length and together represent the translation
     array.
     `map_keys` must be sorted.
-    Values in `ar` not found in `map_keys` will be mapped to `miss_value`, which datatype should be
-    compatible with `map_values` datatype.
-
+    Values in `arr` not found in `map_keys` will be mapped to `miss_value`, which datatype
+    should be compatible with `map_values` datatype.
     """
     cdef:
         ndarray found_keys_indexes, mapped, non_matching_keys
+
+    assert len(map_keys) == len(map_values)
+    if len(map_keys) == 0:
+        return np.full(len(arr), miss_value)
     # indexes selecting from map_key in the same order as ar
-    found_keys_indexes = searchsorted_inrange(map_keys, ar)
+    found_keys_indexes = searchsorted_inrange(map_keys, arr)
     mapped = map_values[found_keys_indexes]
 
     # found_keys_indexes will also have an index for ar elements not present in map_keys
     # these positions must be set to miss_value
-    non_matching_keys = map_keys[found_keys_indexes] != ar
+    non_matching_keys = map_keys[found_keys_indexes] != arr
     mapped[non_matching_keys] = miss_value
     return mapped
