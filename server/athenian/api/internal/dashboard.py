@@ -9,11 +9,15 @@ from athenian.api.internal.datetime_utils import (
     closed_dates_interval_to_datetimes,
     datetimes_to_closed_dates_interval,
 )
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.repos import parse_db_repositories
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import (
     DashboardChart as WebDashboardChart,
     DashboardChartCreateRequest,
+    DashboardChartFilters,
     GenericError,
+    JIRAFilter,
     TeamDashboard as WebTeamDashboard,
 )
 from athenian.api.response import ResponseError
@@ -70,6 +74,7 @@ async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Seq
 async def create_dashboard_chart(
     dashboard_id: int,
     req: DashboardChartCreateRequest,
+    extra_values: dict,
     sdb_conn: Connection,
 ) -> int:
     """Create a new dashboard chart and return its ID."""
@@ -100,6 +105,7 @@ async def create_dashboard_chart(
             await _reassign_charts_positions(ids_to_update, position + 1, now, sdb_conn)
 
     values = _build_chart_row_values(req, now)
+    values.update(extra_values)
     values.update({DashboardChart.dashboard_id: dashboard_id, DashboardChart.position: position})
     insert_stmt = sa.insert(DashboardChart).values(values)
     return await sdb_conn.execute(insert_stmt)
@@ -147,16 +153,20 @@ async def reorder_dashboard_charts(
         await _reassign_charts_positions(chart_ids, 0, datetime.now(timezone.utc), sdb_conn)
 
 
-def build_dashboard_web_model(dashboard: Row, charts: Sequence[Row]) -> TeamDashboard:
+def build_dashboard_web_model(
+    dashboard: Row,
+    charts: Sequence[Row],
+    prefixer: Prefixer,
+) -> TeamDashboard:
     """Build the web model for a dashboard given the dashboard and charts DB rows."""
     return WebTeamDashboard(
         id=dashboard[TeamDashboard.id.name],
         team=dashboard[TeamDashboard.team_id.name],
-        charts=[_build_chart_web_model(chart) for chart in charts],
+        charts=[_build_chart_web_model(chart, prefixer) for chart in charts],
     )
 
 
-def _build_chart_web_model(chart: Row) -> WebDashboardChart:
+def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
     time_from = chart[DashboardChart.time_from.name]
     time_to = chart[DashboardChart.time_to.name]
 
@@ -164,6 +174,25 @@ def _build_chart_web_model(chart: Row) -> WebDashboardChart:
         date_from = date_to = None
     else:
         date_from, date_to = datetimes_to_closed_dates_interval(time_from, time_to)
+
+    filters_kw = {}
+    if (db_repos := parse_db_repositories(chart[DashboardChart.repositories.name])) is not None:
+        filters_kw["repositories"] = [str(r) for r in prefixer.dereference_repositories(db_repos)]
+    if chart[DashboardChart.environments.name] is not None:
+        filters_kw["environments"] = chart[DashboardChart.environments.name]
+
+    jira_filter_kw = {
+        arg: chart[col.name]
+        for col, arg in (
+            (DashboardChart.jira_issue_types, "issue_types"),
+            (DashboardChart.jira_labels, "labels_include"),
+            (DashboardChart.jira_priorities, "priorities"),
+            (DashboardChart.jira_projects, "projects"),
+        )
+        if chart[col.name] is not None
+    }
+    if jira_filter_kw:
+        filters_kw["jira"] = JIRAFilter(**jira_filter_kw)
 
     return WebDashboardChart(
         description=chart[DashboardChart.description.name],
@@ -173,6 +202,7 @@ def _build_chart_web_model(chart: Row) -> WebDashboardChart:
         date_from=date_from,
         date_to=date_to,
         time_interval=chart[DashboardChart.time_interval.name],
+        filters=DashboardChartFilters(**filters_kw) if filters_kw else None,
     )
 
 

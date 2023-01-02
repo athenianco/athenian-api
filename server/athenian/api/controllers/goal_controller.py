@@ -35,8 +35,8 @@ from athenian.api.internal.account import (
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
-    normalize_issue_type,
-    normalize_priority,
+    parse_request_issue_types,
+    parse_request_priorities,
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import dump_db_repositories, parse_db_repositories
@@ -337,14 +337,8 @@ async def _parse_create_request(
         creat_req.repositories, request, creat_req.account,
     )
     jira_projects = creat_req.jira_projects
-    if creat_req.jira_priorities is None:
-        jira_priorities = None
-    else:
-        jira_priorities = sorted({normalize_priority(p) for p in creat_req.jira_priorities})
-    if creat_req.jira_issue_types is None:
-        jira_issue_types = None
-    else:
-        jira_issue_types = sorted({normalize_issue_type(t) for t in creat_req.jira_issue_types})
+    jira_priorities = parse_request_priorities(creat_req.jira_priorities)
+    jira_issue_types = parse_request_issue_types(creat_req.jira_issue_types)
 
     # user cannot directly set TeamGoal filter fields, received goal values are applied
     extra_team_goal_info = {
@@ -417,14 +411,8 @@ async def _parse_update_request(
     repositories = await parse_request_repositories(
         update_req.repositories, request, goal[Goal.account_id.name],
     )
-    if update_req.jira_priorities is None:
-        jira_priorities = None
-    else:
-        jira_priorities = sorted({normalize_priority(p) for p in update_req.jira_priorities})
-    if update_req.jira_issue_types is None:
-        jira_issue_types = None
-    else:
-        jira_issue_types = sorted({normalize_issue_type(t) for t in update_req.jira_issue_types})
+    jira_priorities = parse_request_priorities(update_req.jira_priorities)
+    jira_issue_types = parse_request_issue_types(update_req.jira_issue_types)
 
     _validate_metric_params(goal[Goal.metric.name], update_req)
 

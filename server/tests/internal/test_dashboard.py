@@ -94,7 +94,7 @@ class TestCreateDashboardChart:
         create_req = self._create_request()
         await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
 
         row = await assert_existing_row(
             sdb, DashboardChart, dashboard_id=1, id=chart_id, name="n", description="d",
@@ -110,7 +110,7 @@ class TestCreateDashboardChart:
         )
         await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.time_interval.name] is None
@@ -127,7 +127,7 @@ class TestCreateDashboardChart:
             DashboardChartFactory(id=7, position=0, dashboard_id=1),
         )
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.position.name] == 2
@@ -144,13 +144,28 @@ class TestCreateDashboardChart:
         )
         create_req = self._create_request(position=1)
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.position.name] == 2
 
         rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
         assert sorted(rows) == [(0, 7), (2, chart_id), (3, 8), (4, 6)]
+
+    async def test_extra_values(self, sdb: Database) -> None:
+        create_req = self._create_request()
+        await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
+        extra_values = {
+            DashboardChart.repositories: [[1, ""]],
+            DashboardChart.jira_labels: ["labelA", "labelB"],
+        }
+
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, extra_values, sdb_conn)
+
+        row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
+        assert row[DashboardChart.repositories.name] == [[1, ""]]
+        assert row[DashboardChart.jira_labels.name] == ["labelA", "labelB"]
 
     @classmethod
     def _create_request(cls, **kwargs: Any) -> DashboardChartCreateRequest:

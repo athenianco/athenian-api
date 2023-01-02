@@ -59,6 +59,7 @@ from athenian.api.models.web.created_token import CreatedToken
 from athenian.api.models.web.dashboard import (
     DashboardChart,
     DashboardChartCreateRequest,
+    DashboardChartFilters,
     DashboardUpdateRequest,
     TeamDashboard,
 )

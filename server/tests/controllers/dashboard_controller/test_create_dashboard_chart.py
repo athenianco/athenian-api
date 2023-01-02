@@ -5,8 +5,13 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
-from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
-from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from athenian.api.models.web import (
+    DashboardChartCreateRequest,
+    DashboardChartFilters,
+    PullRequestMetricID,
+)
+from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
@@ -27,13 +32,19 @@ class BaseCreateDashboardChartTest(Requester):
         description: str = "chart desc",
         metric: str = PullRequestMetricID.PR_SIZE,
         name: str = "chart name",
+        filters: dict | None = None,
         **kwargs: Any,
     ) -> dict:
         if not {"time_interval", "date_from", "date_to"}.intersection(kwargs):
             kwargs["time_interval"] = "P3M"
 
+        if filters:
+            filters = DashboardChartFilters(**filters)
+        else:
+            filters = None
+
         req = DashboardChartCreateRequest(
-            description=description, metric=metric, name=name, **kwargs,
+            description=description, metric=metric, name=name, filters=filters, **kwargs,
         )
         body = req.to_dict()
         if body.get("date_from"):
@@ -87,6 +98,12 @@ class TestCreateDashboardChartErrors(BaseCreateDashboardChartTest):
         await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
         await self.post_json(10, 1, 400, json=body)
 
+    async def test_invalid_repositories_filter(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
+        body = self._body(filters={"repositories": ["github.com/org/repo"]})
+        res = await self.post_json(10, 1, 400, json=body)
+        assert res["detail"] == "Unknown repository github.com/org/repo"
+
 
 class TestCreateDashboardChart(BaseCreateDashboardChartTest):
     async def test_first_chart(self, sdb: Database) -> None:
@@ -111,6 +128,8 @@ class TestCreateDashboardChart(BaseCreateDashboardChartTest):
             time_to=None,
             metric=PullRequestMetricID.PR_REVIEW_PENDING_COUNT,
             dashboard_id=1,
+            repositories=None,
+            environments=None,
         )
 
     async def test_static_interval(self, sdb: Database) -> None:
@@ -208,3 +227,51 @@ class TestCreateDashboardChart(BaseCreateDashboardChartTest):
             sa.select(DashboardChart.id).order_by(DashboardChart.position),
         )
         assert [r[0] for r in chart_id_rows] == [res["id"], res3["id"], res2["id"]]
+
+
+class TestCreateWithFilters(BaseCreateDashboardChartTest):
+    async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9))
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=200, full_name="org/a-repo"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body = self._body(
+                filters={
+                    "repositories": ["github.com/org/a-repo", "github.com/org/a-repo/logical"],
+                },
+            )
+            res = await self.post_json(9, 0, json=body)
+
+        chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        assert chart[DashboardChart.repositories.name] == [[200, ""], [200, "logical"]]
+
+    async def test_environments(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9), TeamDashboardFactory(team_id=9, id=10))
+        body = self._body(filters={"environments": ["production"]})
+        res = await self.post_json(9, 10, json=body)
+
+        chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        assert chart[DashboardChart.environments.name] == ["production"]
+
+    async def test_jira(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9), TeamDashboardFactory(team_id=9, id=10))
+        body = self._body(
+            filters={
+                "jira": {
+                    "priorities": ["high"],
+                    "issue_types": ["Task", "bug"],
+                    "labels_include": ["l1", "l0"],
+                },
+            },
+        )
+
+        res = await self.post_json(9, 10, json=body)
+
+        chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        assert chart[DashboardChart.jira_priorities.name] == ["high"]
+        assert chart[DashboardChart.jira_issue_types.name] == ["bug", "task"]
+        assert chart[DashboardChart.jira_labels.name] == ["l1", "l0"]
