@@ -539,6 +539,21 @@ class TestMetricsWithParams(BaseTeamMetricsTest):
 
         assert 0 < val_threshold_8 < val_threshold_5 < 1
 
+    async def test_jira_lead_time_threshold(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[40020]),
+            MappedJIRAIdentityFactory(
+                github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
+            ),
+        )
+        metric = JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO
+        body = partial(self._body, 1, valid_from=date(2016, 1, 1), expires_at=date(2017, 1, 1))
+
+        metrics_w_params = [{"name": metric, "metric_params": {"threshold": "30s"}}]
+        res = await self._request(json=body(metrics_w_params))
+        assert res[0]["value"]["value"] == 0
+
     async def test_teams_overrides(self, sdb: Database) -> None:
         await models_insert(
             sdb,
