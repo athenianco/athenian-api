@@ -419,7 +419,13 @@ class _OrderByStageTimings(_OrderBy):
     ) -> _OrderByStageTimings:
         fields = [expr.field for expr in order_by if expr.field in cls.FIELDS]
         assert fields
-        stages = [cls._FIELD_TO_STAGE[f] for f in fields]
+
+        # PR_TOTAL_STAGE_TIMING pseudo stage needs the computation of all the other stages
+        if SearchPullRequestsOrderByStageTiming.PR_TOTAL_STAGE_TIMING.value in fields:
+            stages: Collection[str] = cls._FIELD_TO_STAGE.values()
+        else:
+            stages = [cls._FIELD_TO_STAGE[f] for f in fields]
+
         stage_calcs, counter_deps = PullRequestListMiner.create_stage_calcs({}, stages=stages)
         stage_timings = PullRequestListMiner.calc_stage_timings(
             pr_facts, stage_calcs, counter_deps,
@@ -431,8 +437,17 @@ class _OrderByStageTimings(_OrderBy):
         expr: SearchPullRequestsOrderByExpression,
         current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
-        stage = self._FIELD_TO_STAGE[expr.field]
-        values = self._stage_timings[stage][0][current_indexes]
+        if expr.field == SearchPullRequestsOrderByStageTiming.PR_TOTAL_STAGE_TIMING.value:
+            # sum all other stages for PR_TOTAL_STAGE_TIMING
+            all_stages_values = np.array(
+                [t[0][current_indexes] for t in self._stage_timings.values()],
+            )
+            all_stages_values[np.isnat(all_stages_values)] = 0
+            values = np.sum(all_stages_values, axis=0)
+        else:
+            stage = self._FIELD_TO_STAGE[expr.field]
+            values = self._stage_timings[stage][0][current_indexes]
+
         nulls = values != values
         ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
         discard = self._discard_mask(expr, nulls)
