@@ -13,7 +13,7 @@ from athenian.api.models.metadata.github import Repository
 from athenian.api.models.state.models import RepositorySet
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import ReleaseSettingFactory
+from tests.testutils.factory.state import LogicalRepositoryFactory, ReleaseSettingFactory
 
 
 async def insert_repo(
@@ -26,22 +26,10 @@ async def insert_repo(
 
     RepositorySet row must exists before calling this wizard.
     """
-    all_reposet_cond = [RepositorySet.owner_id == 1, RepositorySet.name == RepositorySet.ALL]
-    reposet_items = await sdb.fetch_val(sa.select(RepositorySet.items).where(*all_reposet_cond))
-    assert reposet_items is not None
-
-    ref = ["github.com", repository.node_id, ""]
-    reposet_items.insert(bisect_right(reposet_items, ref), ref)
-
-    values = {
-        RepositorySet.items.name: reposet_items,
-        RepositorySet.updated_at: datetime.now(timezone.utc),
-        RepositorySet.updates_count: RepositorySet.updates_count + 1,
-    }
-    await sdb.execute(sa.update(RepositorySet).where(*all_reposet_cond).values(values))
     await models_insert(
         sdb, ReleaseSettingFactory(repo_id=repository.node_id, match=ReleaseMatch.tag),
     )
+    await _add_repo_to_reposet(repository.node_id, "", sdb)
     md_models = [
         repository,
         # AccountRepository rows are needed to pass GitHubAccessChecker
@@ -53,11 +41,43 @@ async def insert_repo(
     await models_insert(mdb, *md_models)
 
 
+async def insert_logical_repo(
+    repository_id: int,
+    name: str,
+    sdb: Database,
+    **kwargs: Any,
+) -> None:
+    """Insert rows in sdb in order to have a valid logical repository."""
+    models = [
+        LogicalRepositoryFactory(name=name, repository_id=repository_id, **kwargs),
+        ReleaseSettingFactory(logical_name=name, repo_id=repository_id, match=ReleaseMatch.tag),
+    ]
+    await models_insert(sdb, *models)
+    await _add_repo_to_reposet(repository_id, name, sdb)
+
+
+async def _add_repo_to_reposet(repo_id: int, logical_name: str, sdb: Database) -> None:
+    all_reposet_cond = [RepositorySet.owner_id == 1, RepositorySet.name == RepositorySet.ALL]
+    reposet_items = await sdb.fetch_val(sa.select(RepositorySet.items).where(*all_reposet_cond))
+    assert reposet_items is not None
+
+    ref = ["github.com", repo_id, logical_name]
+    reposet_items.insert(bisect_right(reposet_items, ref), ref)
+
+    values = {
+        RepositorySet.items.name: reposet_items,
+        RepositorySet.updated_at: datetime.now(timezone.utc),
+        RepositorySet.updates_count: RepositorySet.updates_count + 1,
+    }
+    await sdb.execute(sa.update(RepositorySet).where(*all_reposet_cond).values(values))
+
+
 def pr_models(
     repo_id: int,
     node_id: int,
     number: int,
     *,
+    title: str | None = None,
     review_request: datetime | None = None,
     review_submit: datetime | None = None,
     commits: Collection[datetime] = (),
@@ -71,11 +91,13 @@ def pr_models(
 
     All other parameters are passed to PullRequestFactory.
     """
+    pr_kwargs: dict = {"node_id": node_id, "number": number}
+    if title is not None:
+        pr_kwargs["title"] = title
+
     models = [
-        md_factory.PullRequestFactory(
-            node_id=node_id, repository_node_id=repo_id, number=number, **kwargs,
-        ),
-        md_factory.NodePullRequestFactory(node_id=node_id, number=number, repository_id=repo_id),
+        md_factory.PullRequestFactory(repository_node_id=repo_id, **pr_kwargs, **kwargs),
+        md_factory.NodePullRequestFactory(repository_id=repo_id, **pr_kwargs),
     ]
     if review_request is not None:
         models.append(
