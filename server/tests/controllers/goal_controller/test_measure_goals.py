@@ -33,6 +33,7 @@ from tests.testutils.factory.state import (
     TeamGoalFactory,
     UserAccountFactory,
 )
+from tests.testutils.factory.wizards import insert_logical_repo, insert_repo, pr_models
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -578,6 +579,52 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
 
         assert (tg_11 := tg_10["children"][0])["team"]["id"] == 11
         assert tg_11["metric_params"] == {"f": 2}
+
+    async def test_repositories_multiple_goals(self, sdb: Database, mdb_rw: Database) -> None:
+        goal_kwargs = {
+            "metric": PullRequestMetricID.PR_ALL_COUNT,
+            "valid_from": dt(2014, 1, 1),
+            "expires_at": dt(2015, 1, 1),
+        }
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            GoalFactory(id=20, **goal_kwargs),
+            GoalFactory(id=21, **goal_kwargs),
+            GoalFactory(id=22, **goal_kwargs),
+            GoalFactory(id=23, **goal_kwargs),
+            TeamGoalFactory(goal_id=20, team_id=1, repositories=[[99, "l0"]]),
+            TeamGoalFactory(goal_id=21, team_id=1, repositories=[[99, ""]]),
+            TeamGoalFactory(goal_id=22, team_id=1, repositories=None),
+            TeamGoalFactory(goal_id=23, team_id=1, repositories=[[99, "l0"], [99, ""]]),
+        )
+        await insert_logical_repo(name="l0", repository_id=99, sdb=sdb, prs={"title": "^l0.*"})
+        await insert_logical_repo(name="l1", repository_id=99, sdb=sdb, prs={"title": "^l1.*"})
+
+        pr_kwargs = {"created_at": dt(2014, 3, 1), "user_login": "mcuadros"}
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=99, full_name="o0/r0")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            models = [
+                *pr_models(99, 10, 1, repository_full_name="o0/r0", title="l0", **pr_kwargs),
+                *pr_models(99, 11, 2, repository_full_name="o0/r0", title="l1", **pr_kwargs),
+                *pr_models(99, 12, 3, repository_full_name="o0/r0", **pr_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res = await self._request(json=self._body(1))
+        assert res[0]["id"] == 20
+        assert res[0]["team_goal"]["value"]["current"] == 1
+
+        assert res[1]["id"] == 21
+        assert res[1]["team_goal"]["value"]["current"] == 3
+
+        assert res[2]["id"] == 22
+        assert res[2]["team_goal"]["value"]["current"] == 3
+
+        assert res[3]["id"] == 23
+        assert res[3]["team_goal"]["value"]["current"] == 2
 
 
 class TestMeasureGoalsJIRAFiltering(BaseMeasureGoalsTest):
