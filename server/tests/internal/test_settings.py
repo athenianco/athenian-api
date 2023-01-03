@@ -4,6 +4,7 @@ import sqlalchemy as sa
 from athenian.api.db import Database
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import (
+    LogicalRepositorySettings,
     ReleaseMatch,
     ReleaseMatchSetting,
     ReleaseSettings,
@@ -138,3 +139,28 @@ class TestSettingsListReleaseMatches:
         prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb, None)
         settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
         return await settings.list_release_matches(repos)
+
+
+class TestLogicalRepositorySettings:
+    def test_augment_with_logical_repos(self) -> None:
+        settings = LogicalRepositorySettings(
+            {
+                "src-d/go-git/alpha": {"title": r"^alpha.*"},
+                "src-d/go-git/beta": {"title": r"^beta.*"},
+            },
+            {},
+        )
+        exploded = settings.augment_with_logical_repos(["src-d/go-git", "src-d/foobar"])
+        assert exploded[0] == "src-d/go-git"
+        assert sorted(exploded[1:3]) == ["src-d/go-git/alpha", "src-d/go-git/beta"]
+        assert exploded[3] == "src-d/foobar"
+
+        exploded = settings.augment_with_logical_repos(["src-d/go-git"])
+        assert exploded[0] == "src-d/go-git"
+        assert sorted(exploded[1:3]) == ["src-d/go-git/alpha", "src-d/go-git/beta"]
+
+        exploded = settings.augment_with_logical_repos(["src-d/go-git", "src-d/go-git/alpha"])
+        assert exploded == ["src-d/go-git", "src-d/go-git/alpha"]
+
+        exploded = settings.augment_with_logical_repos(["src-d/go-git/alpha"])
+        assert exploded == ["src-d/go-git/alpha"]
