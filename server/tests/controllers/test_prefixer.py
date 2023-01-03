@@ -77,6 +77,24 @@ class TestRepositoryName:
         name = RepositoryName(None, "org2", "repo2", "l2")
         assert name.unprefixed == "org2/repo2/l2"
 
+    def test_from_unprefixed(self) -> None:
+        name = RepositoryName.from_unprefixed("org/r0")
+        assert name.prefix == ""
+        assert name.owner == "org"
+        assert name.physical == "r0"
+        assert name.logical == ""
+        assert not name.is_logical
+        assert str(name) == "/org/r0"
+
+    def test_from_unprefixed_logical(self) -> None:
+        name = RepositoryName.from_unprefixed("org/r0/logic")
+        assert name.prefix == ""
+        assert name.owner == "org"
+        assert name.physical == "r0"
+        assert name.logical == "logic"
+        assert name.is_logical
+        assert str(name) == "/org/r0/logic"
+
 
 class TestRepoIdentitiesMapper:
     def test_prefixed_names_to_identities(self) -> None:

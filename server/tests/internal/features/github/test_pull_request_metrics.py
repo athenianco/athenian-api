@@ -449,6 +449,35 @@ class TestOpenTimeBelowThresholdRatio:
         assert calc.values[1][0].value == pytest.approx(1 / 1)
         assert calc.values[2][0].value == pytest.approx(1 / 2)
 
+    def test_other_groups(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 7, 1))
+        prs = [
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
+            self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 4)),
+        ]
+        groups_mask = np.array(
+            [[True, True], [False, False], [False, True], [True, False]],
+            dtype=bool,
+        )
+
+        facts = df_from_structs(prs)
+
+        open_time_calc = OpenTimeCalculator(quantiles=quantiles)
+        calc = OpenTimeBelowThresholdRatio(
+            open_time_calc, quantiles=quantiles, threshold=timedelta(hours=25),
+        )
+
+        open_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 4
+        assert calc.values[0][0].value == 1 / 2
+        assert calc.values[1][0].value == 0
+        assert calc.values[2][0].value == 1
+        assert calc.values[3][0].value == 0
+
     @classmethod
     def _mk_pr(cls, created: datetime, closed: Optional[datetime]) -> PullRequestFacts:
         return PullRequestFactsFactory(
