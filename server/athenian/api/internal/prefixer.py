@@ -46,14 +46,18 @@ class RepositoryName:
         if "." not in prefix:
             raise ValueError(f"Invalid prefixed repo name {prefixed_name}")
 
-        org, rest = rest.split("/", 1)
-
-        if "/" in rest:
-            physical, logical = rest.split("/", 1)
-        else:
-            physical = rest
-            logical = ""
+        org, physical, logical = cls._parse_unprefixed_name(rest)
         return RepositoryName(prefix, org, physical, logical)
+
+    @classmethod
+    def from_unprefixed(cls, unprefixed_name: str) -> RepositoryName:
+        """Build the name from the unprefixed format.
+
+        Prefix will be set to empty string.
+
+        """
+        org, physical, logical = cls._parse_unprefixed_name(unprefixed_name)
+        return RepositoryName("", org, physical, logical)
 
     @property
     def is_logical(self) -> bool:
@@ -88,6 +92,17 @@ class RepositoryName:
     def __sentry_repr__(self) -> str:
         """Format for Sentry the same way as regular str()."""
         return str(self)
+
+    @classmethod
+    def _parse_unprefixed_name(cls, unprefixed_name: str) -> tuple[str, str, str]:
+        org, rest = unprefixed_name.split("/", 1)
+
+        if "/" in rest:
+            physical, logical = rest.split("/", 1)
+        else:
+            physical = rest
+            logical = ""
+        return org, physical, logical
 
 
 def strip_proto(url: str) -> str:
