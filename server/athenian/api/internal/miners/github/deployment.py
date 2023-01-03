@@ -822,12 +822,21 @@ async def _fetch_precomputed_deployed_releases(
     reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
     batches = []
     queries = []
+    many_notifications = len(notifications) > 100
 
     def append_batch(i: int) -> None:
+        another_batch_size = len(queries)
         query = union_all(*queries)
         queries.clear()
-        for j in range(i - len(queries) + 2, i + 2):
-            query = query.with_statement_hint(f"HashJoin(ghrd{j} prel{j})")
+        for j in range(i - another_batch_size + 1, i + 1):
+            if many_notifications:
+                query = (
+                    query.with_statement_hint(f"Leading(((ghrd{j} *VALUES*) prel{j}))")
+                    .with_statement_hint(f"Rows(ghrd{j} *VALUES* *{len(notifications)})")
+                    .with_statement_hint(f"Rows(ghrd{j} *VALUES* prel{j} *{len(notifications)})")
+                )
+            else:
+                query = query.with_statement_hint(f"Rows(ghrd{j} prel{j} *{len(notifications)})")
         batches.append(
             read_sql_query(
                 query,
@@ -858,7 +867,9 @@ async def _fetch_precomputed_deployed_releases(
                 ghrd.acc_id == account,
                 ghrd.repository_full_name.in_(repos),
                 prel.release_match == compose_release_match(m, v),
-                ghrd.deployment_name.in_(notifications.index.values),
+                ghrd.deployment_name.in_any_values(notifications.index.values)
+                if many_notifications
+                else ghrd.deployment_name.in_(notifications.index.values),
             ),
         )
         if len(queries) == batch_size:
