@@ -743,7 +743,7 @@ async def _build_release_set_response(
             or None,
         ),
     )
-    return model_response(model)
+    return model_response(model, native=True)
 
 
 def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[FilteredRelease]:
