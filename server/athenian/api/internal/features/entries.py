@@ -475,7 +475,7 @@ class MetricEntriesCalculator:
             group_by = [
                 group_by_repo(
                     PullRequest.repository_full_name.name,
-                    [t.repositories for t in request.teams],
+                    [logical_settings.explode_user_repos(t.repositories) for t in request.teams],
                     df_facts,
                 ),
                 group_prs_by_participants([t.participants for t in request.teams], df_facts),
@@ -921,7 +921,7 @@ class MetricEntriesCalculator:
             group_by = [
                 group_by_repo(
                     Release.repository_full_name.name,
-                    [t.repositories for t in request.teams],
+                    [logical_settings.explode_user_repos(t.repositories) for t in request.teams],
                     df_facts,
                 ),
                 group_releases_by_participants(
