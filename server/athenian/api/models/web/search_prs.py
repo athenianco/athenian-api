@@ -21,6 +21,7 @@ class SearchPullRequestsOrderByStageTiming(Enum):
     PR_REVIEW_STAGE_TIMING = "pr-review-stage-timing"
     PR_MERGE_STAGE_TIMING = "pr-merge-stage-timing"
     PR_RELEASE_STAGE_TIMING = "pr-release-stage-timing"
+    PR_TOTAL_STAGE_TIMING = "pr-total-stage-timing"
 
 
 class SearchPullRequestsOrderByPRTrait(Enum):
