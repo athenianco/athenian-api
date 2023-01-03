@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 import dataclasses
 from datetime import datetime, timedelta
-from functools import reduce
 from graphlib import TopologicalSorter
 from itertools import chain
 from typing import (
@@ -23,6 +22,7 @@ from typing import (
 import warnings
 
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 
@@ -163,12 +163,12 @@ class MetricCalculator(Generic[T], ABC):
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
             ts_dim = quantiles_mounted_at or len(min_times)
-            self._grouped_notnull = self._grouped_sample_mask = SparseMask(
-                np.empty((len(groups_mask), ts_dim, 0), dtype=bool),
+            self._grouped_notnull = self._grouped_sample_mask = SparseMask.empty(
+                len(groups_mask), ts_dim, 0,
             )
             if not self.is_pure_dependency:
                 self._split_samples(
-                    np.array([], self.dtype), np.empty((len(groups_mask), ts_dim, 0), bool),
+                    np.array([], self.dtype), SparseMask.empty(len(groups_mask), ts_dim, 0),
                 )
             return
         assert groups_mask.shape[1] == len(facts)
@@ -181,26 +181,30 @@ class MetricCalculator(Generic[T], ABC):
             discard_mask = self._calculate_discard_mask(peek, quantiles_mounted_at, groups_mask)
         if quantiles_mounted_at is not None:
             peek = peek[:quantiles_mounted_at]
-        notnull = self._find_notnull(peek)
-        notnull = np.broadcast_to(notnull[None, :], (len(groups_mask), *notnull.shape))
-        group_sample_mask = notnull & groups_mask[:, None, :]
+        notnull = SparseMask.from_dense(self._find_notnull(peek))[None, :].repeat(
+            len(groups_mask), 0,
+        )
+        group_sample_mask = SparseMask.from_dense(groups_mask)[:, None, :].repeat(
+            notnull.shape[1], 1,
+        )
+        self._grouped_notnull = group_sample_mask = group_sample_mask & notnull
         del notnull
-        self._grouped_notnull = SparseMask(group_sample_mask)
         if has_quantiles:
             group_sample_mask = group_sample_mask.copy()
-            discard_mask = np.broadcast_to(discard_mask[:, None, :], group_sample_mask.shape)
-            group_sample_mask[discard_mask] = False
+            discard_mask = SparseMask.from_dense(discard_mask)[:, None, :].repeat(
+                group_sample_mask.shape[1], axis=1,
+            )
+            self._grouped_sample_mask = group_sample_mask = group_sample_mask - discard_mask
             del discard_mask
-        self._grouped_sample_mask = SparseMask(group_sample_mask)
-        flat_samples = (
-            np.broadcast_to(peek[None, :], group_sample_mask.shape)[group_sample_mask]
-            .astype(self.dtype, copy=False)
-            .ravel()
-        )
+        else:
+            self._grouped_sample_mask = self._grouped_notnull
+        sample_group_levels = np.unravel_index(group_sample_mask.indexes, group_sample_mask.shape)
+        flat_samples = peek.astype(self.dtype, copy=False)[sample_group_levels[1:]]
+        del sample_group_levels
         self._split_samples(flat_samples, group_sample_mask)
 
-    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: np.ndarray) -> None:
-        group_sample_lengths = np.sum(group_sample_mask, axis=-1)
+    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: SparseMask) -> None:
+        group_sample_lengths = group_sample_mask.sum_last_axis()
         self._samples = np.full(np.prod(group_sample_mask.shape[:2]), None, object)
         self._samples[:] = np.split(flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
         self._samples = self._samples.reshape(group_sample_mask.shape[:2])
@@ -252,9 +256,7 @@ class MetricCalculator(Generic[T], ABC):
         """Clear the current state of the calculator."""
         self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
-        self._grouped_notnull = self._grouped_sample_mask = SparseMask(
-            np.empty((0, 0, 0), dtype=bool),
-        )
+        self._grouped_notnull = self._grouped_sample_mask = SparseMask.empty(0, 0, 0)
         self._last_values = None
 
     def split(self) -> list["MetricCalculator"]:
@@ -292,7 +294,7 @@ class MetricCalculator(Generic[T], ABC):
         return [[self._value(s) for s in gs] for gs in self._samples]
 
     @classmethod
-    def _find_notnull(cls, peek: np.ndarray) -> np.ndarray:
+    def _find_notnull(cls, peek: np.ndarray) -> npt.NDArray[bool]:
         if peek.dtype is np.dtype(object):
             # this is the slowest, avoid as much as possible
             return peek != np.array(None)
@@ -321,14 +323,14 @@ class MetricCalculator(Generic[T], ABC):
             .astype(dtype, copy=False)
             .ravel()
         )
-        group_sample_lengths = np.sum(group_sample_mask, axis=-1)
+        group_sample_lengths = np.sum(group_sample_mask, axis=-1, dtype=np.uint32)
         if self.has_nan:
             max_len = group_sample_lengths.max()
             if max_len == 0:
                 cut_values = np.full((*group_sample_lengths.shape, 2), None, dtype)
             else:
                 surrogate_samples = np.full((*group_sample_lengths.shape, max_len), None, dtype)
-                flat_lengths = group_sample_lengths.ravel()
+                flat_lengths = group_sample_lengths.ravel().astype(int, copy=False)
                 flat_mask = flat_lengths > 0
                 flat_lengths = flat_lengths[flat_mask]
                 flat_offsets = (np.arange(group_sample_lengths.size) * max_len)[
@@ -430,8 +432,8 @@ class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], AB
     def _value(self, samples: np.ndarray) -> Metric[T]:
         return self.metric.from_fields(True, samples, None, None)
 
-    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: np.ndarray) -> None:
-        group_sample_lengths = np.trim_zeros(np.sum(group_sample_mask, axis=-1).ravel(), "b")
+    def _split_samples(self, flat_samples: np.ndarray, group_sample_mask: SparseMask) -> None:
+        group_sample_lengths = np.trim_zeros(group_sample_mask.sum_last_axis().ravel(), "b")
         self._samples = np.zeros(group_sample_mask.shape[:2], dtype=self.dtype)
         if len(group_sample_lengths) == 0:
             return
@@ -989,12 +991,20 @@ def group_to_indexes(
     if not groupers:
         return np.arange(len(items))[None, :]
     groups = [grouper(items) for grouper in groupers]
+    boilerplate = np.empty(
+        len(items),
+        dtype=np.uint8
+        if len(groups) < (2 << 8)
+        else np.uint16
+        if len(groups) < (1 << 16)
+        else np.uint32,
+    )
 
     def intersect(*coordinates: int) -> np.ndarray:
-        return reduce(
-            lambda x, y: np.intersect1d(x, y, assume_unique=True),
-            [group[i] for group, i in zip(groups, coordinates)],
-        )
+        boilerplate[:] = 0
+        for group, i in zip(groups, coordinates):
+            boilerplate[group[i]] += 1
+        return np.flatnonzero(boilerplate == len(groups))
 
     indexes = np.fromfunction(
         np.vectorize(intersect, otypes=[object]), [len(g) for g in groups], dtype=object,
