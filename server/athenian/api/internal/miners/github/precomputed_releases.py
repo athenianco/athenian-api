@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import timezone
 from itertools import chain
 import logging
-from typing import Dict, Iterable, List, Tuple
+from typing import Iterable
 
 import morcilla
 import pandas as pd
@@ -25,9 +25,9 @@ from athenian.api.tracing import sentry_span
 
 def reverse_release_settings(
     repos: Iterable[str],
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     settings: ReleaseSettings,
-) -> Dict[Tuple[ReleaseMatch, str], List[str]]:
+) -> dict[tuple[ReleaseMatch, str], list[str]]:
     """Map distinct pairs (release match, tag/branch name) to the aggregated repositories."""
     reverse_settings = defaultdict(list)
     for repo in repos:
@@ -47,11 +47,11 @@ def reverse_release_settings(
 @sentry_span
 async def load_precomputed_release_facts(
     releases: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     settings: ReleaseSettings,
     account: int,
     pdb: morcilla.Database,
-) -> Dict[Tuple[int, str], ReleaseFacts]:
+) -> dict[tuple[int, str], ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
 
@@ -143,7 +143,7 @@ def compose_release_match(match: ReleaseMatch, value: str) -> str:
 @sentry_span
 async def store_precomputed_release_facts(
     releases: list[ReleaseFacts],
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     settings: ReleaseSettings,
     account: int,
     pdb: morcilla.Database,
@@ -203,7 +203,7 @@ async def store_precomputed_release_facts(
 
 @sentry_span
 async def fetch_precomputed_releases_by_name(
-    names: Dict[str, Iterable[str]],
+    names: dict[str, Iterable[str]],
     account: int,
     pdb: morcilla.Database,
 ) -> pd.DataFrame:

@@ -1971,6 +1971,12 @@ async def _load_release_deployments(
     )
     cols = [ghrd.deployment_name, ghrd.release_id]
     reverse_items = list(reverse_settings.items())
+
+    def release_id_in(ids):
+        if len(ids) < 100:
+            return ghrd.release_id.in_(ids)
+        return ghrd.release_id.in_any_values(ids)
+
     batch_size = 10
     depmaps = await gather(
         *(
@@ -1981,7 +1987,7 @@ async def _load_release_deployments(
                             ghrd.acc_id == account,
                             ghrd.release_match == compose_release_match(m, v),
                             ghrd.repository_full_name.in_(repos_group),
-                            ghrd.release_id.in_(
+                            release_id_in(
                                 release_ids[
                                     in1d_str(
                                         repo_names, np.array(repos_group, dtype=repo_names.dtype),
