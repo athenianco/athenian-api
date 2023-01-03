@@ -638,6 +638,27 @@ class LogicalRepositorySettings:
             return False
         return logical_repo.unprefixed in physical_repo_settings.logical_repositories
 
+    def explode_user_repos(self, repos: Iterable[str]) -> list[str]:
+        """Explode the list of repositories requested by user.
+
+        Each physical repo is exploded with its logical components if none of them is in the list.
+        Exploded physical repos are left in the result.
+        """
+        names = [RepositoryName.from_unprefixed(r) for r in repos]
+        referred_physical = {n.unprefixed_physical for n in names if n.is_logical}
+
+        exploded = []
+        for name in names:
+            exploded.append(unprefixed := name.unprefixed)
+            if (not name.is_logical) and name.unprefixed not in referred_physical:
+                try:
+                    logical_repos = self.prs(name.unprefixed).logical_repositories
+                except KeyError:
+                    continue
+
+                exploded.extend(r for r in logical_repos if r != unprefixed)
+        return exploded
+
 
 class Settings:
     """
