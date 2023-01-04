@@ -51,7 +51,7 @@ class MergedPRFactsLoader:
     @sentry_span
     async def load_merged_unreleased_pull_request_facts(
         cls,
-        prs: Union[pd.DataFrame, pd.Index],
+        prs: pd.DataFrame | pd.Index,
         time_to: datetime,
         labels: LabelFilter,
         matched_bys: Dict[str, ReleaseMatch],

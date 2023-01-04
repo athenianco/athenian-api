@@ -837,15 +837,17 @@ async def test_pr_mine_by_ids(
             df = pd.DataFrame.from_records(records)
         if field not in ("pr", "release", "check_run"):
             df1.index = df1.index.droplevel(0)
-        elif field != "check_run":
-            df.set_index(PullRequest.node_id.name, inplace=True)
         else:
-            df.index = pr_ids
+            df.set_index(PullRequest.node_id.name, inplace=True)
         df.sort_index(inplace=True)
         df1.sort_index(inplace=True)
         df1 = df1[df.columns]
         if field == "check_run":
-            assert_index_equal(df.index, df1.index)
+            try:
+                assert_index_equal(df.index, df1.index)
+            except AssertionError as e:
+                print(set(df.index.values).symmetric_difference(set(df1.index.values)))
+                raise e from None
             for i, (name, name1) in enumerate(
                 zip(df[PullRequestCheckRun.f.name].values, df1[PullRequestCheckRun.f.name].values),
             ):

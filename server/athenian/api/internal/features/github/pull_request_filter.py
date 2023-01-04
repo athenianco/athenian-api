@@ -834,7 +834,7 @@ async def _filter_pull_requests(
 
     deployment_names = pr_miner.dfs.deployments.index.get_level_values(2).unique()
     deps_task = asyncio.create_task(
-        _load_deployments(
+        _merge_and_fetch_deployments(
             deployment_names,
             facts,
             logical_settings,
@@ -846,7 +846,7 @@ async def _filter_pull_requests(
             rdb,
             cache,
         ),
-        name=f"filter_pull_requests/_load_deployments({len(deployment_names)})",
+        name=f"filter_pull_requests/_merge_and_fetch_deployments({len(deployment_names)})",
     )
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
@@ -980,7 +980,7 @@ async def _filter_pull_requests(
 
 
 @sentry_span
-async def _load_deployments(
+async def _merge_and_fetch_deployments(
     new_names: Sequence[str],
     precomputed_facts: PullRequestFactsMap,
     logical_settings: LogicalRepositorySettings,
@@ -992,10 +992,12 @@ async def _load_deployments(
     rdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> asyncio.Task:
+    log = logging.getLogger(
+        f"{metadata.__package__}.filter_pull_requests/_merge_and_fetch_deployments",
+    )
     deps = await PullRequestMiner.fetch_pr_deployments(
         {node_id for node_id, _ in precomputed_facts}, account, pdb, rdb,
     )
-    log = logging.getLogger(f"{metadata.__package__}.filter_pull_requests.load_deployments")
     UnfreshPullRequestFactsFetcher.append_deployments(precomputed_facts, deps, log)
     names = np.unique(np.concatenate([new_names, deps.index.get_level_values(1).values]))
     return asyncio.create_task(
@@ -1004,6 +1006,31 @@ async def _load_deployments(
         ),
         name="filter_pull_requests/load_included_deployments",
     )
+
+
+@sentry_span
+async def fetch_pr_deployments(
+    pr_node_ids: Collection[int],
+    logical_settings: LogicalRepositorySettings,
+    prefixer: Prefixer,
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> tuple[pd.DataFrame, asyncio.Task]:
+    """Load PR deployments by PR node IDs and schedule the task to load details about each \
+    deployment."""
+    deps = await PullRequestMiner.fetch_pr_deployments(pr_node_ids, account, pdb, rdb)
+    dep_names = deps.index.get_level_values(2).unique()
+    included_task = asyncio.create_task(
+        load_included_deployments(
+            dep_names, logical_settings, prefixer, account, meta_ids, mdb, rdb, cache,
+        ),
+        name=f"fetch_pull_requests/load_included_deployments({len(dep_names)})",
+    )
+    return deps, included_task
 
 
 @sentry_span
@@ -1128,11 +1155,14 @@ async def _fetch_pull_requests(
 
     *prs_dfs, (facts, ambiguous) = await gather(*tasks)
     prs_df = pd.concat(prs_dfs) if len(prs_dfs) > 1 else prs_dfs[0]
+    PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
 
     return await unwrap_pull_requests(
         prs_df,
         facts,
         ambiguous,
+        None,
+        None,
         JIRAEntityToFetch.ISSUES,
         branches,
         default_branches,
@@ -1154,6 +1184,8 @@ async def unwrap_pull_requests(
     prs_df: pd.DataFrame,
     precomputed_done_facts: PullRequestFactsMap,
     precomputed_ambiguous_done_facts: dict[str, list[int]],
+    check_runs_task: Optional[asyncio.Task],
+    deployments_task: Optional[asyncio.Task],
     with_jira: JIRAEntityToFetch | int,
     branches: pd.DataFrame,
     default_branches: dict[str, str],
@@ -1174,7 +1206,7 @@ async def unwrap_pull_requests(
     PRDataFrames,
     PullRequestFactsMap,
     dict[str, ReleaseMatch],
-    Optional[asyncio.Task],
+    asyncio.Task,
 ]:
     """
     Fetch all the missing information about PRs in a dataframe.
@@ -1205,6 +1237,38 @@ async def unwrap_pull_requests(
             {},
             asyncio.create_task(noop(), name="noop"),
         )
+
+    if check_runs_task is None:
+        closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
+        check_runs_task = asyncio.create_task(
+            PullRequestMiner.fetch_pr_check_runs(
+                prs_df.index.values[closed_pr_mask],
+                prs_df.index.values[~closed_pr_mask],
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                cache,
+            ),
+            name=f"unwrap_pull_requests/fetch_pr_check_runs({len(prs_df)})",
+        )
+    if deployments_task is None:
+        merged_pr_ids = prs_df.index.values[prs_df[PullRequest.merged_at.name].notnull().values]
+        deployments_task = asyncio.create_task(
+            fetch_pr_deployments(
+                merged_pr_ids,
+                logical_settings,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+            ),
+            name=f"unwrap_pull_requests/fetch_pr_deployments({len(merged_pr_ids)})",
+        )
+
     if repositories is None:
         repositories = logical_settings.with_logical_prs(
             prs_df[PullRequest.repository_full_name.name].values,
@@ -1220,7 +1284,6 @@ async def unwrap_pull_requests(
             prs_df, branches, dags, account, meta_ids, mdb, pdb, PullRequest,
         )
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
-    PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
     now = datetime.now(timezone.utc)
     if rel_time_from := prs_df[PullRequest.merged_at.name].nonemin():
         milestone_prs = prs_df[
@@ -1291,32 +1354,18 @@ async def unwrap_pull_requests(
     for v in facts.values():
         if v.jira is None:
             v.jira = empty_jira
-    dfs, _, _ = await PullRequestMiner.mine_by_ids(
-        prs_df,
-        unreleased,
-        repositories,
-        now,
-        releases,
-        matched_bys,
-        branches,
-        default_branches,
-        dags,
-        release_settings,
-        logical_settings,
-        prefixer,
-        account,
-        meta_ids,
-        mdb,
-        pdb,
-        rdb,
-        cache,
-        with_jira=with_jira,
-    )
-    deployment_names = dfs.deployments.index.get_level_values(2).unique()
-    deployments_task = asyncio.create_task(
-        _load_deployments(
-            deployment_names,
-            facts,
+    (dfs, _, _), pr_check_runs, (pr_deployments, deployments_task) = await gather(
+        PullRequestMiner.mine_by_ids(
+            prs_df,
+            unreleased,
+            repositories,
+            now,
+            releases,
+            matched_bys,
+            branches,
+            default_branches,
+            dags,
+            release_settings,
             logical_settings,
             prefixer,
             account,
@@ -1325,11 +1374,20 @@ async def unwrap_pull_requests(
             pdb,
             rdb,
             cache,
+            with_jira=with_jira,
+            skip_check_runs=True,
+            skip_deployments=True,
         ),
-        name=f"load_included_deployments({len(deployment_names)})",
+        check_runs_task,
+        deployments_task,
     )
 
     dfs.prs = split_logical_prs(dfs.prs, dfs.labels, repositories, logical_settings)
+    dfs.check_runs = pr_check_runs
+    dfs.deployments = pr_deployments
+    log = logging.getLogger(f"{metadata.__package__}.unwrap_pull_requests/append_deployments")
+    UnfreshPullRequestFactsFetcher.append_deployments(facts, dfs.deployments, log)
+
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
 
     filtered_prs = []
@@ -1352,9 +1410,6 @@ async def unwrap_pull_requests(
 
     set_pdb_hits(pdb, "fetch_pull_requests/facts", len(filtered_prs) - pdb_misses)
     set_pdb_misses(pdb, "fetch_pull_requests/facts", pdb_misses)
-    if deployments_task is not None:
-        await deployments_task
-        deployments_task = deployments_task.result()
     if with_jira == JIRAEntityToFetch.NOTHING:
         # we need it inside df_from_structs()
         PullRequestJiraMapper.apply_empty_to_pr_facts(facts)

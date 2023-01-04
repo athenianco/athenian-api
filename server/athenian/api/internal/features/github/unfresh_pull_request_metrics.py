@@ -390,7 +390,7 @@ class UnfreshPullRequestFactsFetcher:
             raise e from None
         pr_node_ids = deps.index.get_level_values(0).values
         repos = deps.index.get_level_values(1).values
-        names = deps.index.get_level_values(2).values.astype("U", copy=False)
+        names = deps.index.get_level_values(2).values
         finisheds = deps[DeploymentNotification.finished_at.name].values.astype("datetime64[s]")
         envs = deps[DeploymentNotification.environment.name].values.astype("U", copy=False)
         conclusions = deps[DeploymentNotification.conclusion.name].values
