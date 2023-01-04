@@ -1,5 +1,5 @@
 aiohttp[speedups]==3.8.3
-especifico[aiohttp,swagger-ui]==3.0.27
+especifico[aiohttp,swagger-ui]==3.0.28
 jsonschema==4.17.3
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
