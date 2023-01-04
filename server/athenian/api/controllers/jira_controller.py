@@ -25,6 +25,7 @@ from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
 from athenian.api.internal.features.github.pull_request_filter import (
     PullRequestListMiner,
+    fetch_pr_deployments,
     unwrap_pull_requests,
 )
 from athenian.api.internal.features.histogram import HistogramParameters, Scale
@@ -43,6 +44,7 @@ from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
 from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.jira.epic import filter_epics
 from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
@@ -805,8 +807,9 @@ async def _issue_flow(
     ]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_ or len(pr_ids) == 0:
             return {}, {}
-        prs_df, (facts, ambiguous), account_bots = await gather(
-            read_sql_query(
+
+        async def fetch_prs_and_dependent_tasks():
+            prs_df = await read_sql_query(
                 select(PullRequest)
                 .where(
                     PullRequest.acc_id.in_(meta_ids),
@@ -816,7 +819,46 @@ async def _issue_flow(
                 mdb,
                 PullRequest,
                 index=PullRequest.node_id.name,
-            ),
+            )
+            PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
+            closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
+            check_runs_task = asyncio.create_task(
+                PullRequestMiner.fetch_pr_check_runs(
+                    prs_df.index.values[closed_pr_mask],
+                    prs_df.index.values[~closed_pr_mask],
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    cache,
+                ),
+                name=f"_issue_flow/_fetch_prs/fetch_pr_check_runs({len(prs_df)})",
+            )
+            merged_pr_ids = prs_df.index.values[
+                prs_df[PullRequest.merged_at.name].notnull().values
+            ]
+            deployments_task = asyncio.create_task(
+                fetch_pr_deployments(
+                    merged_pr_ids,
+                    logical_settings,
+                    prefixer,
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    rdb,
+                    cache,
+                ),
+                name=f"_issue_flow/_fetch_prs/fetch_pr_deployments({len(merged_pr_ids)})",
+            )
+            return prs_df, check_runs_task, deployments_task
+
+        (
+            (prs_df, check_runs_task, deployments_task),
+            (facts, ambiguous),
+            account_bots,
+        ) = await gather(
+            fetch_prs_and_dependent_tasks(),
             DonePRFactsLoader.load_precomputed_done_facts_ids(
                 pr_ids,
                 default_branches,
@@ -851,6 +893,8 @@ async def _issue_flow(
                 prs_df,
                 facts,
                 ambiguous,
+                check_runs_task,
+                deployments_task,
                 JIRAEntityToFetch.NOTHING,
                 related_branches,
                 default_branches,
@@ -899,11 +943,8 @@ async def _issue_flow(
             )
             for i in reversed(missing_repo_indexes):
                 pr_list_items.pop(i)
-        if deployments_task is not None:
-            await deployments_task
-            deployments = deployments_task.result()
-        else:
-            deployments = None
+        await deployments_task
+        deployments = deployments_task.result()
         prs = dict(web_pr_from_struct(pr_list_items, prefixer, log, lambda w, pr: (pr.node_id, w)))
         return prs, deployments
 
