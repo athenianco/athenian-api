@@ -8,6 +8,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_WIP_PENDING_COUNT = "pr-wip-pending-count"
     PR_WIP_COUNT = "pr-wip-count"
     PR_WIP_COUNT_Q = "pr-wip-count-q"
+    PR_WIP_TIME_BELOW_THRESHOLD_RATIO = "pr-wip-time-below-threshold-ratio"
     PR_REVIEW_TIME = "pr-review-time"
     PR_REVIEW_PENDING_COUNT = "pr-review-pending-count"
     PR_REVIEW_COUNT = "pr-review-count"
