@@ -48,7 +48,11 @@ async def update_dashboard(
     dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
     update_request = model_from_body(DashboardUpdateRequest, body)
     chart_ids = [c.id for c in update_request.charts]
-    await reorder_dashboard_charts(dashboard.row[TeamDashboard.id.name], chart_ids, request.sdb)
+    async with request.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            await reorder_dashboard_charts(
+                dashboard.row[TeamDashboard.id.name], chart_ids, sdb_conn,
+            )
     return _dashboard_response(request, dashboard)
 
 
