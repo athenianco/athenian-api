@@ -86,7 +86,7 @@ async def mine_contributors(
         PullRequest.repository_full_name.in_(repos),
         PullRequest.acc_id.in_(meta_ids),
     ]
-    tasks = [
+    (branches, default_branches), repo_id_df = await gather(
         BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
         read_sql_query(
             select(NodeRepository.node_id).where(
@@ -95,8 +95,7 @@ async def mine_contributors(
             mdb,
             [NodeRepository.node_id],
         ),
-    ]
-    (branches, default_branches), repo_id_df = await gather(*tasks)
+    )
     repo_nodes = repo_id_df[NodeRepository.node_id.name].values
 
     @sentry_span

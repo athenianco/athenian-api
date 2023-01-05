@@ -1,12 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
-from typing import Iterable, Iterator, Optional
+from typing import Collection, Iterable, Iterator, Optional
 
 import aiomcache
 import numpy as np
 import pandas as pd
-import sqlalchemy as sa
 from sqlalchemy import func, select
 
 from athenian.api import metadata
@@ -81,7 +80,7 @@ class BranchMiner:
             repo_ids = [prefixer.repo_name_to_node.get(r) for r in repos]
         else:
             repo_ids = None
-        branches = await cls._extract_branches(repo_ids, meta_ids, mdb)
+        branches = await cls._extract_branches(repo_ids, prefixer, meta_ids, mdb)
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
@@ -198,24 +197,30 @@ class BranchMiner:
     @sentry_span
     async def _extract_branches(
         cls,
-        repos: Optional[Iterable[int]],
+        repos: Optional[Collection[int]],
+        prefixer: Prefixer,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> pd.DataFrame:
         query = (
             select(Branch)
             .where(
-                Branch.repository_node_id.in_(repos) if repos is not None else sa.true(),
+                *((Branch.repository_node_id.in_(repos),) if repos is not None else ()),
                 Branch.acc_id.in_(meta_ids),
             )
             .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
-            .with_statement_hint(
-                f"{'IndexScan' if len(repos or []) < 40 else 'BitmapScan'}"
-                "(ref node_ref_heads_repository_id)",
-            )
             .with_statement_hint("Rows(ref c repo *100)")
             .with_statement_hint("Rows(ref c repo rr *100)")
+            .with_statement_hint(
+                "Rows(ref c repo rr n1 n2 "
+                f"*{len(repos) if repos is not None else len(prefixer.repo_node_to_name)})",
+            )
         )
+        if repos is not None:
+            scan = (
+                "IndexScan" if len(repos) < len(prefixer.repo_node_to_name) * 0.8 else "BitmapScan"
+            )
+            query = query.with_statement_hint(f"{scan}(ref node_ref_heads_repository_id)")
         df = await read_sql_query_with_join_collapse(query, mdb, Branch)
         for left_join_col in (Branch.repository_full_name.name,):
             if (not_null := is_not_null(df[left_join_col].values)).sum() < len(df):
