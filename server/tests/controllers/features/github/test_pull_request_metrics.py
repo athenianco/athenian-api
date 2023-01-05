@@ -855,15 +855,17 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
         default_branches,
         False,
     ]
-    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
-        0
-    ][0]
+    # fmt: off
+    metrics = (
+        await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=0)
     args[-6] = release_match_setting_tag_or_branch
-    metrics = (await pr_facts_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
-        0
-    ][0]
+    metrics = (
+        await pr_facts_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    # fmt: on
     assert metrics.value == timedelta(days=40, seconds=72739)
 
 
