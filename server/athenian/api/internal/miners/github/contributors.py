@@ -5,7 +5,7 @@ from itertools import chain
 import logging
 import operator
 import pickle
-from typing import Any, Collection, Dict, List, Optional, Tuple
+from typing import Any, Collection, Optional
 
 import aiomcache
 import morcilla
@@ -61,18 +61,18 @@ async def mine_contributors(
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     with_stats: bool,
-    user_roles: List[str],
+    user_roles: list[str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
     force_fresh_releases: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     assert (time_from is None) == (time_to is None)
@@ -371,12 +371,12 @@ async def mine_contributors(
 
 async def load_organization_members(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     sdb: morcilla.Database,
     log: logging.Logger,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[str, set], Dict[str, set], Dict[str, str]]:
+) -> tuple[dict[str, set], dict[str, set], dict[str, str]]:
     """
     Fetch the mapping from account's GitHub organization member IDs to their signatures.
 

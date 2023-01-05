@@ -2451,7 +2451,7 @@ async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, 
         response_text = (await response.read()).decode("utf-8")
         assert response.status == 200, response_text
         releases = ReleaseSet.from_dict(json.loads(response_text))
-        assert len(releases.data) == 188
+        assert len(releases.data) == 190
     finally:
         await mdb_rw.execute(insert(Release).values(backup))
 

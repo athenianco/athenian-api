@@ -421,6 +421,7 @@ class PullRequestListMiner:
         return self.calc_stage_timings(df_facts, self._calcs, self._counter_deps)
 
     @classmethod
+    @sentry_span
     def calc_stage_timings(
         cls,
         df_facts: pd.DataFrame,
@@ -775,7 +776,31 @@ async def _filter_pull_requests(
     branches, default_branches = await BranchMiner.extract_branches(
         repos, prefixer, meta_ids, mdb, cache,
     )
-    tasks = (
+
+    async def done_flow():
+        released_facts, ambiguous = await DonePRFactsLoader.load_precomputed_done_facts_filters(
+            time_from,
+            time_to,
+            repos,
+            participants,
+            labels,
+            default_branches,
+            exclude_inactive,
+            release_settings,
+            prefixer,
+            account,
+            pdb,
+        )
+        deps = await PullRequestMiner.fetch_pr_deployments(
+            {node_id for node_id, _ in released_facts}, account, pdb, rdb,
+        )
+        UnfreshPullRequestFactsFetcher.append_deployments(released_facts, deps, log)
+        return released_facts, ambiguous, deps
+
+    (
+        (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event),
+        (released_facts, ambiguous, done_deps),
+    ) = await gather(
         PullRequestMiner.mine(
             date_from,
             date_to,
@@ -802,52 +827,37 @@ async def _filter_pull_requests(
             updated_min=updated_min,
             updated_max=updated_max,
         ),
-        DonePRFactsLoader.load_precomputed_done_facts_filters(
-            time_from,
-            time_to,
-            repos,
-            participants,
-            labels,
-            default_branches,
-            exclude_inactive,
-            release_settings,
-            prefixer,
-            account,
-            pdb,
-        ),
+        done_flow(),
     )
-    (
-        (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event),
-        (released_facts, ambiguous),
-    ) = await gather(*tasks)
     add_pdb_misses(
         pdb,
         "load_precomputed_done_facts_filters/ambiguous",
         remove_ambiguous_prs(released_facts, ambiguous, matched_bys),
     )
+    UnfreshPullRequestFactsFetcher.append_deployments(
+        unreleased_facts, pr_miner.dfs.deployments, log,
+    )
     # we want the released PR facts to overwrite the others
     facts = {**unreleased_facts, **released_facts}
     # precomputed facts miss `jira` property; we need it inside df_from_structs()
     PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
-
     del unreleased_facts, released_facts
-
-    deployment_names = pr_miner.dfs.deployments.index.get_level_values(2).unique()
-    deps_task = asyncio.create_task(
-        _merge_and_fetch_deployments(
-            deployment_names,
-            facts,
-            logical_settings,
-            prefixer,
-            account,
-            meta_ids,
-            mdb,
-            pdb,
-            rdb,
-            cache,
+    deployment_names = np.unique(
+        np.concatenate(
+            [
+                pr_miner.dfs.deployments.index.get_level_values(2).values,
+                done_deps.index.get_level_values(1).values,
+            ],
         ),
-        name=f"filter_pull_requests/_merge_and_fetch_deployments({len(deployment_names)})",
     )
+    del done_deps
+    deps_task = asyncio.create_task(
+        load_included_deployments(
+            deployment_names, logical_settings, prefixer, account, meta_ids, mdb, rdb, cache,
+        ),
+        name="filter_pull_requests/load_included_deployments",
+    )
+
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
@@ -959,53 +969,25 @@ async def _filter_pull_requests(
         )
         log.info("total fact evals: %d", fact_evals)
 
-    _, include_deps_task = await gather(environments_task, deps_task)
-    prs = await list_with_yield(
-        PullRequestListMiner(
-            prs,
-            pr_miner.dfs,
-            facts,
-            events,
-            stages,
-            time_from,
-            time_to,
-            True,
-            environments_task.result(),
+    prs, included_deps = await gather(
+        list_with_yield(
+            PullRequestListMiner(
+                prs,
+                pr_miner.dfs,
+                facts,
+                events,
+                stages,
+                time_from,
+                time_to,
+                True,
+                await environments_task,
+            ),
+            "PullRequestListMiner.__iter__",
         ),
-        "PullRequestListMiner.__iter__",
+        deps_task,
     )
-    await include_deps_task
     log.debug("return %d PRs", len(prs))
-    return prs, include_deps_task.result(), labels, jira
-
-
-@sentry_span
-async def _merge_and_fetch_deployments(
-    new_names: Sequence[str],
-    precomputed_facts: PullRequestFactsMap,
-    logical_settings: LogicalRepositorySettings,
-    prefixer: Prefixer,
-    account: int,
-    meta_ids: tuple[int, ...],
-    mdb: Database,
-    pdb: Database,
-    rdb: Database,
-    cache: Optional[aiomcache.Client],
-) -> asyncio.Task:
-    log = logging.getLogger(
-        f"{metadata.__package__}.filter_pull_requests/_merge_and_fetch_deployments",
-    )
-    deps = await PullRequestMiner.fetch_pr_deployments(
-        {node_id for node_id, _ in precomputed_facts}, account, pdb, rdb,
-    )
-    UnfreshPullRequestFactsFetcher.append_deployments(precomputed_facts, deps, log)
-    names = np.unique(np.concatenate([new_names, deps.index.get_level_values(1).values]))
-    return asyncio.create_task(
-        load_included_deployments(
-            names, logical_settings, prefixer, account, meta_ids, mdb, rdb, cache,
-        ),
-        name="filter_pull_requests/load_included_deployments",
-    )
+    return prs, included_deps, labels, jira
 
 
 @sentry_span

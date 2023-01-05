@@ -943,8 +943,7 @@ async def _issue_flow(
             )
             for i in reversed(missing_repo_indexes):
                 pr_list_items.pop(i)
-        await deployments_task
-        deployments = deployments_task.result()
+        deployments = await deployments_task
         prs = dict(web_pr_from_struct(pr_list_items, prefixer, log, lambda w, pr: (pr.node_id, w)))
         return prs, deployments
 
