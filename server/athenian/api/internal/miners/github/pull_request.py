@@ -735,7 +735,7 @@ class PullRequestMiner:
                 ],
                 dtype=object,
             ).T
-        tasks = [
+        (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
                 prs,
@@ -762,9 +762,7 @@ class PullRequestMiner:
                 physical_repositories=physical_repos,
             ),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, repositories, account, pdb),
-        ]
-        (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
-            *tasks, op="PullRequestMiner.mine/external_data",
+            op="PullRequestMiner.mine/external_data",
         )
 
         to_drop = cls._find_drop_by_participants(dfs, participants, None if truncate else time_to)
