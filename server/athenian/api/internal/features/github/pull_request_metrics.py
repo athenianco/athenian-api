@@ -390,6 +390,15 @@ class MergingCounterWithQuantiles(Counter):
     deps = (MergingTimeCalculator,)
 
 
+@register_metric(PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO)
+class MergingTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_MERGING_TIME below a given threshold."""
+
+    deps = (MergingTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(hours=4)
+
+
 @register_metric(PullRequestMetricID.PR_RELEASE_TIME)
 class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""

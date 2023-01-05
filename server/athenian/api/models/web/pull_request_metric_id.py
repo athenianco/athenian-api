@@ -18,6 +18,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_MERGING_PENDING_COUNT = "pr-merging-pending-count"
     PR_MERGING_COUNT = "pr-merging-count"
     PR_MERGING_COUNT_Q = "pr-merging-count-q"
+    PR_MERGING_TIME_BELOW_THRESHOLD_RATIO = "pr-merging-time-below-threshold-ratio"
     PR_RELEASE_TIME = "pr-release-time"
     PR_RELEASE_PENDING_COUNT = "pr-release-pending-count"
     PR_RELEASE_COUNT = "pr-release-count"
