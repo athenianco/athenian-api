@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import pickle
-from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Collection, Mapping, Optional
 
 import aiomcache
 import numpy as np
@@ -44,11 +44,11 @@ async def load_included_deployments(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, Deployment]:
+) -> dict[str, Deployment]:
     """
     Fetch brief details about the deployments.
 
@@ -168,7 +168,7 @@ async def fetch_repository_environments(
     cache: Optional[aiomcache.Client],
     time_from: Optional[datetime] = None,
     time_to: Optional[datetime] = None,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """Map environments to physical repositories that deployed there."""
     repo_name_to_node_get = prefixer.repo_name_to_node.get
     repo_ids = {repo_name_to_node_get(drop_logical_repo(r)) for r in repos} - {None}
@@ -491,7 +491,7 @@ async def _fetch_deployment_candidates(
     ),
 )
 async def mine_environments(
-    repos: Optional[List[str]],
+    repos: Optional[list[str]],
     time_from: datetime,
     time_to: datetime,
     prefixer: Prefixer,
@@ -499,7 +499,7 @@ async def mine_environments(
     account: int,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> List[Environment]:
+) -> list[Environment]:
     """
     Fetch unique deployment environments according to the filters.
 

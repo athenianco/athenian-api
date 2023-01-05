@@ -1045,8 +1045,7 @@ class PullRequestMiner:
             merged_prs = prs.take(np.flatnonzero(merged_mask))
             nonlocal releases
             if extra_releases_task is not None:
-                await extra_releases_task
-                extra_releases, _ = extra_releases_task.result()
+                extra_releases, _ = await extra_releases_task
                 releases = releases.append(extra_releases, ignore_index=True)
             labels = None
             if logical_settings.has_logical_prs():
@@ -1054,8 +1053,7 @@ class PullRequestMiner:
                 if physical_repositories is None:
                     physical_repositories = coerce_logical_repos(logical_repositories).keys()
                 if logical_settings.has_prs_by_label(physical_repositories):
-                    await fetch_labels_task
-                    labels = fetch_labels_task.result()
+                    labels = await fetch_labels_task
                 merged_prs = split_logical_prs(
                     merged_prs, labels, logical_repositories, logical_settings,
                 )
@@ -1096,10 +1094,6 @@ class PullRequestMiner:
             df, facts, unreleased_prs_event = df_facts
             facts.update(other_facts)
             return df
-
-        async def _fetch_labels():
-            await fetch_labels_task
-            return fetch_labels_task.result()
 
         @sentry_span
         async def fetch_jira():
@@ -1256,7 +1250,7 @@ class PullRequestMiner:
             fetch_review_comments(),
             fetch_review_requests(),
             fetch_comments(),
-            _fetch_labels(),
+            fetch_labels_task,
             fetch_deployments(),
             fetch_check_runs(),
         )

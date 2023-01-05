@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -56,7 +57,14 @@ from athenian.api.internal.settings import (
     ReleaseSettings,
     default_branch_alias,
 )
-from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
+from athenian.api.models.metadata.github import (
+    Branch,
+    NodeCommit,
+    PullRequest,
+    PushCommit,
+    Release,
+    User,
+)
 from athenian.api.models.persistentdata.models import HealthMetric, ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
@@ -369,7 +377,7 @@ class ReleaseLoader:
                     ignore_index=True,
                 )
             releases.sort_values(
-                Release.published_at.name,
+                [Release.published_at.name, Release.node_id.name],
                 inplace=True,
                 ascending=False,
                 ignore_index=index is None,
@@ -450,7 +458,7 @@ class ReleaseLoader:
             # append the pushed releases
             releases = pd.concat([releases, event_releases], copy=False)
             releases.sort_values(
-                Release.published_at.name,
+                [Release.published_at.name, Release.node_id.name],
                 inplace=True,
                 ascending=False,
                 ignore_index=index is None,
@@ -599,7 +607,7 @@ class ReleaseLoader:
                     prel.published_at.between(time_from, time_to),
                     prel.acc_id == account,
                 )
-                .order_by(desc(prel.published_at))
+                .order_by(desc(prel.published_at), desc(prel.node_id))
             )
         else:
             query = union_all(
@@ -610,7 +618,7 @@ class ReleaseLoader:
                         prel.published_at.between(time_from, time_to),
                         prel.acc_id == account,
                     )
-                    .order_by(desc(prel.published_at))
+                    .order_by(desc(prel.published_at), desc(prel.node_id))
                     for item in or_items
                 ),
             )
@@ -1403,7 +1411,13 @@ class ReleaseMatcher:
         if not branches_matched:
             return dummy_releases_df(), []
         branches = pd.concat(branches_matched.values(), ignore_index=True)
-        tasks = [
+        fetch_merge_points_task = asyncio.create_task(
+            self._fetch_pr_merge_points(
+                repos, branches[Branch.branch_name.name].unique(), time_from, time_to,
+            ),
+            name="match_releases_by_branch/fetch_merge_points",
+        )
+        _, dags, *url_prefixes = await gather(
             load_branch_commit_dates(branches, self._meta_ids, self._mdb),
             fetch_precomputed_commit_history_dags(
                 branches_matched, self._account, self._pdb, self._cache,
@@ -1412,8 +1426,7 @@ class ReleaseMatcher:
                 get_installation_url_prefix(meta_id, self._mdb, self._cache)
                 for meta_id in self._meta_ids
             ),
-        ]
-        _, dags, *url_prefixes = await gather(*tasks)
+        )
         url_prefixes = dict(zip(self._meta_ids, url_prefixes))
         dags = await fetch_repository_commits(
             dags,
@@ -1436,59 +1449,106 @@ class ReleaseMatcher:
                 first_shas.append(
                     extract_first_parents(*dag, branches[Branch.commit_sha.name].values),
                 )
-        if not first_shas:
+        if first_shas:
+            first_shas = np.sort(np.concatenate(first_shas))
+        first_commits, merge_points = await gather(
+            self._fetch_commits(first_shas, time_from, time_to) if len(first_shas) else None,
+            fetch_merge_points_task,
+        )
+        if len(first_shas) == 0 and merge_points.empty:
             return dummy_releases_df(), inconsistent
-        first_shas = np.sort(np.concatenate(first_shas))
-        first_commits = await self._fetch_commits(first_shas, time_from, time_to)
-        pseudo_releases = []
-        gh_merge = (first_commits[PushCommit.committer_name.name] == "GitHub") & (
-            first_commits[PushCommit.committer_email.name] == "noreply@github.com"
-        )
-        first_commits[PushCommit.author_login.name].where(
-            gh_merge, first_commits.loc[~gh_merge, PushCommit.committer_login.name], inplace=True,
-        )
-        first_commits[PushCommit.author_user_id.name].where(
-            gh_merge,
-            first_commits.loc[~gh_merge, PushCommit.committer_user_id.name],
-            inplace=True,
-        )
-        for repo in branches_matched:
-            commits = first_commits.take(
-                np.flatnonzero(first_commits[PushCommit.repository_full_name.name].values == repo),
+        if len(first_shas):
+            gh_merge = (first_commits[PushCommit.committer_name.name] == "GitHub") & (
+                first_commits[PushCommit.committer_email.name] == "noreply@github.com"
             )
-            if commits.empty:
-                continue
-            shas_str = commits[PushCommit.sha.name].values.astype("U40")
+            first_commits[PushCommit.author_login.name].where(
+                gh_merge,
+                first_commits.loc[~gh_merge, PushCommit.committer_login.name],
+                inplace=True,
+            )
+            first_commits[PushCommit.author_user_id.name].where(
+                gh_merge,
+                first_commits.loc[~gh_merge, PushCommit.committer_user_id.name],
+                inplace=True,
+            )
+            for col in [
+                PushCommit.committer_user_id,
+                PushCommit.committer_login,
+                PushCommit.committer_name,
+                PushCommit.committer_email,
+            ]:
+                del first_commits[col.name]
+            if not merge_points.empty:
+                first_commits = pd.concat([first_commits, merge_points], ignore_index=True)
+                first_commits.drop_duplicates(
+                    PushCommit.node_id.name, inplace=True, ignore_index=True,
+                )
+                first_commits.sort_values(
+                    PushCommit.committed_date.name,
+                    ascending=False,
+                    inplace=True,
+                    ignore_index=True,
+                )
+        else:
+            first_commits = merge_points
+
+        pseudo_releases = []
+        repo_order = np.argsort(
+            first_commits[PushCommit.repository_node_id.name].values, kind="stable",
+        )
+        _, commit_counts = np.unique(
+            first_commits[PushCommit.repository_node_id.name].values[repo_order],
+            return_counts=True,
+        )
+        col_values = {c: first_commits[c].values for c in first_commits.columns}
+        pos = 0
+        for repo_commit_count in commit_counts:
+            repo_col_values = {
+                c: v[repo_order[pos : pos + repo_commit_count]] for c, v in col_values.items()
+            }
+            pos += repo_commit_count
+            shas_str = np.array(
+                [s.decode() for s in repo_col_values[PushCommit.sha.name]], dtype=object,
+            )
             pseudo_releases.append(
                 pd.DataFrame(
                     {
-                        Release.author.name: commits[PushCommit.author_login.name],
-                        Release.author_node_id.name: commits[PushCommit.author_user_id.name],
-                        Release.commit_id.name: commits[PushCommit.node_id.name],
-                        Release.node_id.name: commits[PushCommit.node_id.name],
-                        Release.name.name: shas_str.astype("O"),
-                        Release.published_at.name: commits[PushCommit.committed_date.name],
-                        Release.repository_full_name.name: repo,
-                        Release.repository_node_id.name: commits[
+                        Release.author.name: repo_col_values[PushCommit.author_login.name],
+                        Release.author_node_id.name: repo_col_values[
+                            PushCommit.author_user_id.name
+                        ],
+                        Release.commit_id.name: repo_col_values[PushCommit.node_id.name],
+                        Release.node_id.name: repo_col_values[PushCommit.node_id.name],
+                        Release.name.name: shas_str,
+                        Release.published_at.name: pd.Series(
+                            repo_col_values[PushCommit.committed_date.name],
+                            dtype=pd.DatetimeTZDtype(tz=timezone.utc),
+                        ),
+                        Release.repository_full_name.name: repo_col_values[
+                            PushCommit.repository_full_name.name
+                        ],
+                        Release.repository_node_id.name: repo_col_values[
                             PushCommit.repository_node_id.name
                         ],
-                        Release.sha.name: commits[PushCommit.sha.name],
+                        Release.sha.name: repo_col_values[PushCommit.sha.name],
                         Release.tag.name: None,
                         Release.url.name: [
                             compose_commit_url(url_prefixes[acc_id], repo, sha)
                             for acc_id, repo, sha in zip(
-                                commits[PushCommit.acc_id.name].values,
-                                commits[PushCommit.repository_full_name.name].values,
+                                repo_col_values[PushCommit.acc_id.name],
+                                repo_col_values[PushCommit.repository_full_name.name],
                                 shas_str,
                             )
                         ],
-                        Release.acc_id.name: commits[PushCommit.acc_id.name],
-                        matched_by_column: [ReleaseMatch.branch.value] * len(commits),
+                        Release.acc_id.name: repo_col_values[PushCommit.acc_id.name],
+                        matched_by_column: np.repeat(ReleaseMatch.branch.value, repo_commit_count),
                     },
                 ),
             )
         if not pseudo_releases:
             return dummy_releases_df(), inconsistent
+        if len(pseudo_releases) == 1:
+            return pseudo_releases[0], inconsistent
         return pd.concat(pseudo_releases, ignore_index=True, copy=False), inconsistent
 
     def _match_branches_by_release_settings(
@@ -1549,7 +1609,21 @@ class ReleaseMatcher:
             filters.append(PushCommit.sha.in_(commit_shas))
         else:
             filters.append(PushCommit.sha.in_any_values(commit_shas))
-        query = select(PushCommit).where(*filters).order_by(desc(PushCommit.committed_date))
+        selected = [
+            PushCommit.acc_id,
+            PushCommit.node_id,
+            PushCommit.sha,
+            PushCommit.committed_date,
+            PushCommit.author_user_id,
+            PushCommit.author_login,
+            PushCommit.committer_user_id,
+            PushCommit.committer_login,
+            PushCommit.committer_name,
+            PushCommit.committer_email,
+            PushCommit.repository_full_name,
+            PushCommit.repository_node_id,
+        ]
+        query = select(selected).where(*filters).order_by(desc(PushCommit.committed_date))
         if small_scale:
             query = query.with_statement_hint(
                 "IndexScan(cmm github_node_commit_sha)",
@@ -1565,4 +1639,40 @@ class ReleaseMatcher:
                 .with_statement_hint("IndexScan(cmm github_node_commit_committed_date)")
             )
 
-        return await read_sql_query(query, self._mdb, PushCommit)
+        return await read_sql_query(query, self._mdb, selected)
+
+    @sentry_span
+    async def _fetch_pr_merge_points(
+        self,
+        repos: Iterable[str],
+        base_branch_names: Iterable[str],
+        time_from: datetime,
+        time_to: datetime,
+    ) -> pd.DataFrame:
+        return await read_sql_query(
+            select(
+                *(
+                    pr_columns := [
+                        PullRequest.acc_id,
+                        PullRequest.merge_commit_id.label(PushCommit.node_id.name),
+                        PullRequest.merge_commit_sha.label(PushCommit.sha.name),
+                        PullRequest.merged_at.label(PushCommit.committed_date.name),
+                        PullRequest.merged_by_id.label(PushCommit.author_user_id.name),
+                        PullRequest.merged_by_login.label(PushCommit.author_login.name),
+                        PullRequest.repository_full_name,
+                        PullRequest.repository_node_id,
+                    ]
+                ),
+            )
+            .where(
+                PullRequest.merged,
+                PullRequest.acc_id.in_(self._meta_ids),
+                PullRequest.repository_full_name.in_(repos),
+                PullRequest.base_ref.in_(base_branch_names),
+                PullRequest.merged_at.between(time_from, time_to),
+                PullRequest.merge_commit_id.isnot(None),
+            )
+            .order_by(desc(PullRequest.merged_at)),
+            self._mdb,
+            pr_columns,
+        )

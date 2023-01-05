@@ -421,6 +421,7 @@ class PullRequestListMiner:
         return self.calc_stage_timings(df_facts, self._calcs, self._counter_deps)
 
     @classmethod
+    @sentry_span
     def calc_stage_timings(
         cls,
         df_facts: pd.DataFrame,
@@ -846,7 +847,7 @@ async def _filter_pull_requests(
             [
                 pr_miner.dfs.deployments.index.get_level_values(2).values,
                 done_deps.index.get_level_values(1).values,
-            ]
+            ],
         ),
     )
     del done_deps
@@ -968,24 +969,25 @@ async def _filter_pull_requests(
         )
         log.info("total fact evals: %d", fact_evals)
 
-    _, include_deps_task = await gather(environments_task, deps_task)
-    prs = await list_with_yield(
-        PullRequestListMiner(
-            prs,
-            pr_miner.dfs,
-            facts,
-            events,
-            stages,
-            time_from,
-            time_to,
-            True,
-            environments_task.result(),
+    prs, included_deps = await gather(
+        list_with_yield(
+            PullRequestListMiner(
+                prs,
+                pr_miner.dfs,
+                facts,
+                events,
+                stages,
+                time_from,
+                time_to,
+                True,
+                await environments_task,
+            ),
+            "PullRequestListMiner.__iter__",
         ),
-        "PullRequestListMiner.__iter__",
+        deps_task,
     )
-    await include_deps_task
     log.debug("return %d PRs", len(prs))
-    return prs, include_deps_task.result(), labels, jira
+    return prs, included_deps, labels, jira
 
 
 @sentry_span

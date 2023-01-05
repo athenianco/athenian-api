@@ -98,7 +98,7 @@ async def test_load_releases_branches(
         cache,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    check_branch_releases(releases, 240, time_from, time_to)
+    check_branch_releases(releases, 242, time_from, time_to)
 
 
 @with_defer
@@ -1610,13 +1610,13 @@ class TestMineReleases:
             with_deployments=False,
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
-        assert len(releases) == 772
-        assert len(avatars) == 132
+        assert len(releases) == 899
+        assert len(avatars) == 133
         await wait_deferred()
 
         releases, avatars, _, _ = await mine_releases(**kwargs)
-        assert len(releases) == 772
-        assert len(avatars) == 132
+        assert len(releases) == 899
+        assert len(avatars) == 133
 
     @with_defer
     async def test_precomputed_time_range(
@@ -2685,7 +2685,7 @@ async def test_precomputed_releases_tags_after_branches(
         None,
     )
     await wait_deferred()
-    assert len(releases_branch) == 768
+    assert len(releases_branch) == 895
 
     releases_tag, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -2871,7 +2871,7 @@ async def test_change_release_settings_event_branch_hole(
         None,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    check_branch_releases(releases, 649, time_from, time_to)
+    check_branch_releases(releases, 774, time_from, time_to)
     await wait_deferred()
 
     time_from = datetime(2019, 6, 19, 12, 0, 0, tzinfo=timezone.utc)
@@ -2925,5 +2925,5 @@ async def test_change_release_settings_event_branch_hole(
         None,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    assert len(releases) > 649 + 15
-    check_branch_releases(releases, 768, time_from, time_to)
+    assert len(releases) > 774 + 15
+    check_branch_releases(releases, 895, time_from, time_to)

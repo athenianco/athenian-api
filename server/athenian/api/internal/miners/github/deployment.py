@@ -563,8 +563,7 @@ async def _mine_deployments(
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
 
-    _, extended_prs, jira_df = await gather(releases, extended_prs_task, jira_task)
-    releases = releases.result()
+    releases, extended_prs, jira_df = await gather(releases, extended_prs_task, jira_task)
     # releases = releases.iloc[:0]  # uncomment to disable pdb
     # invalidate release facts with previously computed  invalid deploy names
     if invalidated.size and not releases.empty:

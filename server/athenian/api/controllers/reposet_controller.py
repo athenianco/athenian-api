@@ -242,8 +242,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
                         ),
                     )
         finally:
-            await prefix_loader
-        prefixer = prefix_loader.result()
+            prefixer = await prefix_loader
         items = prefixer.dereference_repositories(reposet_items_to_refs(rs.items))
         return model_response(
             RepositorySetWithName(

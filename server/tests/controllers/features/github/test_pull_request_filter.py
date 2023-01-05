@@ -265,7 +265,7 @@ async def test_pr_list_miner_release_settings(
         rdb,
         cache,
     )
-    assert prs1
+    assert len(prs1) == 96
     await wait_deferred()
     prs2, _ = await filter_pull_requests(
         set(),
@@ -291,7 +291,9 @@ async def test_pr_list_miner_release_settings(
         rdb,
         cache,
     )
-    assert len(prs2) == 96  # force-push-dropped PRs still accessible from the artificial branches
+    # there are 96 force-push-dropped PRs still accessible from the artificial branches
+    # but since we are not adding their merge points as releases, the length must be 0
+    assert len(prs2) == 0
 
 
 @with_defer
