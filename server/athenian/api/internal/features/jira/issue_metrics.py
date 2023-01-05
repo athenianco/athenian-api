@@ -278,6 +278,15 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
         return result
 
 
+@register_metric(JIRAMetricID.JIRA_LIFE_TIME_BELOW_THRESHOLD_RATIO)
+class LifeTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of issues with a JIRA_LIFE_TIME below a given threshold."""
+
+    deps = (LifeTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(days=5)
+
+
 @register_metric(JIRAMetricID.JIRA_LEAD_TIME)
 class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """

@@ -11,6 +11,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     ClosedCalculator,
     CycleTimeBelowThresholdRatio,
     CycleTimeCalculator,
+    MergingTimeBelowThresholdRatio,
+    MergingTimeCalculator,
     NotReviewedCalculator,
     OpenTimeBelowThresholdRatio,
     OpenTimeCalculator,
@@ -23,6 +25,8 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     SizeCalculator,
     WaitFirstReviewTimeBelowThresholdRatio,
     WaitFirstReviewTimeCalculator,
+    WorkInProgressTimeBelowThresholdRatio,
+    WorkInProgressTimeCalculator,
     _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
@@ -76,6 +80,44 @@ class TestGroupPRsByParticipants:
         assert len(res) == 2
         assert np.array_equal(res[0], [])
         assert np.array_equal(res[1], [])
+
+
+class TestWorkInProgressTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 1, 1))
+        max_times = dt64arr_ns(dt(2022, 2, 1))
+
+        wip_time_calc = WorkInProgressTimeCalculator(quantiles=quantiles)
+        calc = WorkInProgressTimeBelowThresholdRatio(
+            wip_time_calc, quantiles=quantiles, threshold=timedelta(hours=3),
+        )
+        prs = [
+            self._mk_pr(dt(2022, 1, 1, 5), dt(2022, 1, 1, 6)),
+            self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 3)),
+            self._mk_pr(dt(2022, 1, 1, 3), dt(2022, 1, 1, 7)),
+            self._mk_pr(dt(2022, 1, 1, 4), None),
+        ]
+        facts = df_from_structs(prs)
+
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        wip_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(2 / 3)
+
+    @classmethod
+    def _mk_pr(
+        cls,
+        work_began: datetime,
+        first_review_request: Optional[datetime],
+    ) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            work_began=pd.Timestamp(work_began), first_review_request=first_review_request,
+        )
 
 
 class TestReviewedCalculator:
@@ -391,6 +433,44 @@ class TestReviewCommentsAboveThresholdRatio:
         return PullRequestFactsFactory(review_comments=review_comments, created=created)
 
 
+class TestMergingTimeBelowThresholdRatio:
+    def test_with_groups(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_ns(dt(2022, 4, 1))
+        max_times = dt64arr_ns(dt(2022, 5, 1))
+        prs = [
+            self._mk_pr(dt(2022, 4, 1, 1), dt(2022, 4, 1, 5)),
+            self._mk_pr(dt(2022, 4, 1, 2), dt(2022, 4, 1, 3)),
+            self._mk_pr(dt(2022, 4, 1, 4), dt(2022, 4, 1, 10)),
+            self._mk_pr(dt(2022, 4, 1, 12), dt(2022, 4, 1, 18)),
+        ]
+
+        groups_mask = np.array(
+            [[True, True, True, True], [False, False, False, False], [True, False, True, True]],
+            dtype=bool,
+        )
+        facts = df_from_structs(prs)
+
+        time_calc = MergingTimeCalculator(quantiles=quantiles)
+        calc = MergingTimeBelowThresholdRatio(
+            time_calc, quantiles=quantiles, threshold=timedelta(hours=4),
+        )
+
+        time_calc(facts, min_times, max_times, None, groups_mask)
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 3
+        assert calc.values[0][0].value == pytest.approx(2 / 4)
+        assert calc.values[1][0].value == 0
+        assert calc.values[2][0].value == pytest.approx(1 / 3)
+
+    @classmethod
+    def _mk_pr(cls, approved: datetime, merged: datetime) -> PullRequestFacts:
+        return PullRequestFactsFactory(
+            approved=pd.Timestamp(approved), merged=pd.Timestamp(merged),
+        )
+
+
 class TestOpenTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
@@ -485,7 +565,7 @@ class TestOpenTimeBelowThresholdRatio:
         )
 
 
-class TestLeadTimeBelowThresholdRatio:
+class TestCycleTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
         min_times = dt64arr_ns(dt(2022, 1, 1))

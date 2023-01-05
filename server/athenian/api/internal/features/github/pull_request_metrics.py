@@ -215,6 +215,15 @@ class WorkInProgressCounterWithQuantiles(Counter):
     deps = (WorkInProgressTimeCalculator,)
 
 
+@register_metric(PullRequestMetricID.PR_WIP_TIME_BELOW_THRESHOLD_RATIO)
+class WorkInProgressTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_WIP_TIME below a given threshold."""
+
+    deps = (WorkInProgressTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(days=1)
+
+
 @register_metric(PullRequestMetricID.PR_REVIEW_TIME)
 class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time of the review process metric."""
@@ -379,6 +388,15 @@ class MergingCounterWithQuantiles(Counter):
     the quantiles."""
 
     deps = (MergingTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO)
+class MergingTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of PRs with a PR_MERGING_TIME below a given threshold."""
+
+    deps = (MergingTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(hours=4)
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_TIME)
