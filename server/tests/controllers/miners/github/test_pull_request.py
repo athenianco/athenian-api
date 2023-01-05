@@ -21,6 +21,7 @@ from athenian.api.internal.miners.github.precomputed_prs import (
     store_open_pull_request_facts,
 )
 from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
+from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.internal.miners.types import (
     DAG,
@@ -35,9 +36,9 @@ from athenian.api.internal.settings import (
     ReleaseMatchSetting,
     ReleaseSettings,
 )
-from athenian.api.models.metadata.github import Branch, PullRequest
+from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.metadata.jira import Issue
-from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.api.models.persistentdata.models import DeploymentNotification, ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubCommitHistory,
     GitHubDonePullRequestFacts,
@@ -2017,3 +2018,95 @@ async def test_mine_pull_requests_event_releases(
     facts2 = await calc(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     assert_frame_equal(facts1.iloc[1:], facts2.iloc[1:])
+
+
+def test_pull_request_review_request_without_review_open():
+    miner = PullRequestFactsMiner(set())
+    pr = MinedPullRequest(
+        pr={
+            PullRequest.created_at.name: pd.Timestamp("2023-01-01 00:00:00", tzinfo=timezone.utc),
+            PullRequest.repository_full_name.name: "athenianco/athenian-api",
+            PullRequest.user_login.name: "vmarkovtsev",
+            PullRequest.user_node_id.name: 40020,
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.merged_at.name: None,
+            PullRequest.closed_at.name: None,
+            PullRequest.number.name: 7777,
+            PullRequest.node_id.name: 100500,
+            PullRequest.additions.name: 10,
+            PullRequest.deletions.name: 0,
+        },
+        release={
+            Release.published_at.name: None,
+            matched_by_column: None,
+            Release.author.name: None,
+        },
+        comments=pd.DataFrame.from_records(
+            [
+                [
+                    "vmarkovtsev",
+                    40020,
+                    pd.Timestamp("2023-01-01 00:05:00", tzinfo=timezone.utc),
+                    pd.Timestamp("2023-01-01 00:05:00", tzinfo=timezone.utc),
+                ],
+            ],
+            columns=["user_login", "user_node_id", "created_at", "submitted_at"],
+        ),
+        commits=pd.DataFrame.from_records(
+            [
+                [
+                    "vmarkovtsev",
+                    "vmarkovtsev",
+                    40020,
+                    40020,
+                    pd.Timestamp("2022-12-31 23:59:59", tzinfo=timezone.utc),
+                    pd.Timestamp("2022-12-31 23:59:59", tzinfo=timezone.utc),
+                ],
+                [
+                    "vmarkovtsev",
+                    "vmarkovtsev",
+                    40020,
+                    40020,
+                    pd.Timestamp("2023-01-01 00:10:00", tzinfo=timezone.utc),
+                    pd.Timestamp("2023-01-01 00:10:00", tzinfo=timezone.utc),
+                ],
+            ],
+            columns=[
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
+                PullRequestCommit.authored_date.name,
+            ],
+        ),
+        reviews=pd.DataFrame(columns=["user_login", "user_node_id", "created_at", "submitted_at"]),
+        review_comments=pd.DataFrame(
+            columns=["user_login", "user_node_id", "created_at", "submitted_at"],
+        ),
+        review_requests=pd.DataFrame.from_records(
+            [
+                [
+                    "vmarkovtsev",
+                    40020,
+                    pd.Timestamp("2023-01-01 00:00:01", tzinfo=timezone.utc),
+                    pd.Timestamp("2023-01-01 00:05:00", tzinfo=timezone.utc),
+                ],
+            ],
+            columns=["user_login", "user_node_id", "created_at", "submitted_at"],
+        ),
+        labels=pd.DataFrame(columns=["name"]),
+        jiras=pd.DataFrame(),
+        deployments=pd.DataFrame(
+            columns=[
+                DeploymentNotification.environment.name,
+                DeploymentNotification.conclusion.name,
+                DeploymentNotification.finished_at.name,
+            ],
+            index=pd.MultiIndex.from_arrays([[], []], names=("node_id", "name")),
+        ),
+        check_run={PullRequestCheckRun.f.name: None},
+    )
+    facts = miner(pr)
+    assert facts.first_review_request == facts.last_commit

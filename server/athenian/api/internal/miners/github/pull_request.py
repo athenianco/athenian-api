@@ -2818,12 +2818,12 @@ class PullRequestFactsMiner:
             first_review_comment = None
             external_review_comments_mask = self.empty_bool_array
 
-        first_comment = nonemin(
+        first_review_exact = nonemin(
             first_review_comment, review_submitted_ats.nonemin(), comment_created_ats.nonemin(),
         )
-        if closed and first_comment and first_comment > closed:
-            first_comment = None
-        first_comment_on_first_review = first_comment or merged
+        if closed and first_review_exact and first_review_exact > closed:
+            first_review_exact = None
+        first_comment_on_first_review = first_review_exact or merged
         if first_comment_on_first_review:
             committed_dates = pr.commits[PullRequestCommit.committed_date.name]
             last_commit_before_first_review = committed_dates.take(
@@ -2864,6 +2864,9 @@ class PullRequestFactsMiner:
             and last_commit_before_first_review > first_review_request
         ):
             first_review_request = last_commit_before_first_review or first_review_request
+        # DEV-5684: first review request must match the last commit in case there was no review
+        if first_review_request and not first_review_exact:
+            first_review_request = nonemax(first_review_request, last_commit)
 
         if closed:
             if first_review_request and first_review_request > closed:
