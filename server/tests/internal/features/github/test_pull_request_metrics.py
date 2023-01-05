@@ -96,7 +96,7 @@ class TestWorkInProgressTimeBelowThresholdRatio:
             self._mk_pr(dt(2022, 1, 1, 5), dt(2022, 1, 1, 6)),
             self._mk_pr(dt(2022, 1, 1, 2), dt(2022, 1, 1, 3)),
             self._mk_pr(dt(2022, 1, 1, 3), dt(2022, 1, 1, 7)),
-            self._mk_pr(dt(2022, 1, 1, 4), None),
+            self._mk_pr(dt(2022, 1, 1, 4), None, closed=None, last_commit=None),
         ]
         facts = df_from_structs(prs)
 
@@ -114,9 +114,12 @@ class TestWorkInProgressTimeBelowThresholdRatio:
         cls,
         work_began: datetime,
         first_review_request: Optional[datetime],
+        **kwargs,
     ) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            work_began=pd.Timestamp(work_began), first_review_request=first_review_request,
+            work_began=pd.Timestamp(work_began),
+            first_review_request=first_review_request,
+            **kwargs,
         )
 
 
