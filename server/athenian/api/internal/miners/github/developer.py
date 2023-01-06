@@ -158,7 +158,7 @@ async def _mine_commits(
                 PushCommit.acc_id.in_(meta_ids),
             ),
         )
-        .with_statement_hint("IndexOnlyScan(cmm github_node_commit_contributors)")
+        .with_statement_hint("IndexOnlyScan(cmm github_node_commit_check_runs)")
         .with_statement_hint("Leading(((((cmm *VALUES*) repo) ath) cath))")
         .with_statement_hint("Rows(cmm *VALUES* *1000)")
         .with_statement_hint("Rows(cmm *VALUES* repo *10000)")
