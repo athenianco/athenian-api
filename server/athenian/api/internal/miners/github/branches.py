@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import logging
 from typing import Collection, Iterable, Iterator, Optional
 
@@ -9,10 +8,11 @@ import pandas as pd
 from sqlalchemy import func, select
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query_with_join_collapse
+from athenian.api.async_utils import read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.cache import cached, cached_methods, middle_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
+from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
@@ -240,21 +240,30 @@ async def load_branch_commit_dates(
         branches[Branch.commit_date] = []
         return
     branch_commit_ids = branches[Branch.commit_id.name].values
-    branch_commit_dates = dict(
-        await mdb.fetch_all(
-            select(NodeCommit.id, NodeCommit.committed_date).where(
-                NodeCommit.id.in_(branch_commit_ids), NodeCommit.acc_id.in_(meta_ids),
-            ),
+    commit_dates_df = await read_sql_query(
+        select(NodeCommit.id, NodeCommit.committed_date)
+        .where(
+            NodeCommit.acc_id.in_(meta_ids),
+            NodeCommit.id.in_(branch_commit_ids)
+            if len(branch_commit_ids) < 100
+            else NodeCommit.id.in_any_values(branch_commit_ids),
+        )
+        .order_by(NodeCommit.id)
+        .with_statement_hint(
+            f"Rows({NodeCommit.__tablename__} *VALUES* #{len(branch_commit_ids)})",
         ),
+        mdb,
+        [NodeCommit.id, NodeCommit.committed_date],
     )
-    if mdb.url.dialect == "sqlite":
-        branch_commit_dates = {
-            k: v.replace(tzinfo=timezone.utc) for k, v in branch_commit_dates.items()
-        }
-    now = datetime.now(timezone.utc)
-    branches[Branch.commit_date] = [
-        branch_commit_dates.get(commit_id, now) for commit_id in branch_commit_ids
+    if commit_dates_df.empty:
+        branches[Branch.commit_date] = np.datetime64("NaT")
+        return
+    branches[Branch.commit_date] = commit_dates_df[NodeCommit.committed_date.name].values[
+        searchsorted_inrange(commit_dates_df[NodeCommit.id.name].values, branch_commit_ids)
     ]
+    branches[Branch.commit_date].values[
+        branches[Branch.commit_date].values != branch_commit_ids
+    ] = None
 
 
 def dummy_branches_df() -> pd.DataFrame:

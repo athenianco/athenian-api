@@ -667,7 +667,7 @@ class PullRequestMiner:
             # load_precomputed_done_candidates();
             # now fetch only these `missed_prs`, respecting the filters.
             pr_whitelist = PullRequest.node_id.in_(list(chain.from_iterable(missed_prs.values())))
-            tasks = [
+            missed_released_prs, (missed_prs, *_) = await gather(
                 cls.mappers.map_releases_to_prs(
                     missed_prs,
                     branches,
@@ -715,8 +715,7 @@ class PullRequestMiner:
                     updated_max=updated_max,
                     fetch_branch_dags_task=fetch_branch_dags_task,
                 ),
-            ]
-            missed_released_prs, (missed_prs, *_) = await gather(*tasks)
+            )
             concatenated.extend([missed_released_prs, missed_prs])
         fetch_branch_dags_task.cancel()  # 99.999% that it was awaited, but still
         prs = pd.concat(concatenated, copy=False)
@@ -980,6 +979,8 @@ class PullRequestMiner:
 
         @sentry_span
         async def fetch_commits():
+            # 4 commits per PR on average
+            projected_row_count = len(node_ids) * 4
             return await cls._read_filtered_models(
                 PullRequestCommit,
                 node_ids,
@@ -995,6 +996,12 @@ class PullRequestMiner:
                     PullRequestCommit.committer_user_id,
                 ],
                 created_at=truncate,
+                hints=(
+                    f"Rows(pcmm pr #{projected_row_count})",
+                    f"Rows(pcmm pr cmm #{projected_row_count})",
+                    f"Rows(pr cmm #{projected_row_count})",
+                    f"Rows(pcmm cmm #{projected_row_count})",
+                ),
             )
 
         @sentry_span
@@ -1795,7 +1802,15 @@ class PullRequestMiner:
         if dags is None:
             dags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
         return await fetch_repository_commits_no_branch_dates(
-            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
+            dags,
+            branches,
+            BRANCH_FETCH_COMMITS_COLUMNS,
+            True,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            cache,
         )
 
     @classmethod
@@ -2538,14 +2553,18 @@ class PullRequestMiner:
         mdb: DatabaseLike,
         columns: Optional[list[InstrumentedAttribute]] = None,
         created_at=True,
+        hints: tuple[str, ...] = (),
     ) -> pd.DataFrame:
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
         filters = [model_cls.pull_request_node_id.in_(node_ids), model_cls.acc_id.in_(meta_ids)]
         if created_at:
             filters.append(model_cls.created_at < time_to)
+        query = sql.select(*(columns or [model_cls])).where(*filters)
+        for hint in hints:
+            query = query.with_statement_hint(hint)
         df = await read_sql_query(
-            sql.select(columns or [model_cls]).where(sql.and_(*filters)),
+            query,
             con=mdb,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.name, model_cls.node_id.name],
