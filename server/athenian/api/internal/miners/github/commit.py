@@ -25,7 +25,7 @@ from athenian.api.db import (
 )
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import drop_logical_repo
-from athenian.api.internal.miners.github.branches import BranchMiner, load_branch_commit_dates
+from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.dag_accelerated import (
     append_missing_heads,
     extract_first_parents,
@@ -381,10 +381,10 @@ async def fetch_repository_commits(
     repos: dict[str, tuple[bool, DAG]],
     branches: pd.DataFrame,
     columns: tuple[
-        Union[str, InstrumentedAttribute],
-        Union[str, InstrumentedAttribute],
-        Union[str, InstrumentedAttribute],
-        Union[str, InstrumentedAttribute],
+        str | InstrumentedAttribute,
+        str | InstrumentedAttribute,
+        str | InstrumentedAttribute,
+        str | InstrumentedAttribute,
     ],
     prune: bool,
     account: int,
@@ -548,30 +548,6 @@ COMMIT_FETCH_COMMITS_COLUMNS = (
 
 
 @sentry_span
-async def fetch_repository_commits_no_branch_dates(
-    repos: dict[str, tuple[bool, DAG]],
-    branches: pd.DataFrame,
-    columns: tuple[str, str, str, str],
-    prune: bool,
-    account: int,
-    meta_ids: tuple[int, ...],
-    mdb: Database,
-    pdb: Database,
-    cache: Optional[aiomcache.Client],
-) -> dict[str, tuple[bool, DAG]]:
-    """
-    Load full commit DAGs for the given repositories.
-
-    The difference with fetch_repository_commits is that `branches` may possibly miss the commit \
-    dates. If that is the case, we fetch the commit dates.
-    """
-    await load_branch_commit_dates(branches, meta_ids, mdb)
-    return await fetch_repository_commits(
-        repos, branches, columns, prune, account, meta_ids, mdb, pdb, cache,
-    )
-
-
-@sentry_span
 async def fetch_repository_commits_from_scratch(
     repos: Iterable[str],
     branch_miner: BranchMiner,
@@ -591,7 +567,7 @@ async def fetch_repository_commits_from_scratch(
     in-place.
     """
     (branches, defaults), pdags = await gather(
-        branch_miner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
+        branch_miner.load_branches(repos, prefixer, meta_ids, mdb, cache),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     )
     if only_default_branch:
@@ -606,7 +582,7 @@ async def fetch_repository_commits_from_scratch(
             np.array([defaults.get(r) for r in repos], dtype="U"),
         )
         branches = branches.take(np.flatnonzero(in1d_str(branch_index, default_set)))
-    dags = await fetch_repository_commits_no_branch_dates(
+    dags = await fetch_repository_commits(
         pdags, branches, BRANCH_FETCH_COMMITS_COLUMNS, prune, account, meta_ids, mdb, pdb, cache,
     )
     return dags, branches, defaults

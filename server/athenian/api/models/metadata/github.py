@@ -434,7 +434,7 @@ class Branch(
     is_default = Column(Boolean, nullable=False)
     commit_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     commit_sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
-    commit_date = "commit_date"
+    commit_date = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class PullRequestLabel(

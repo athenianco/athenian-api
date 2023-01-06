@@ -52,7 +52,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, (branches, default_branches), account_bots = await gather(
         settings.list_release_matches(repos),
-        BranchMiner.extract_branches(
+        BranchMiner.load_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True,
         ),
         bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),

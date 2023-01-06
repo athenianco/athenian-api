@@ -1801,7 +1801,7 @@ class PRFactsCalculator:
     ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
-            branches, default_branches = await self._branch_miner.extract_branches(
+            branches, default_branches = await self._branch_miner.load_branches(
                 repositories, prefixer, self._meta_ids, self._mdb, self._cache,
             )
         precomputed_tasks = [

@@ -29,7 +29,6 @@ from athenian.api.internal.logical_repos import (
     drop_logical_repo,
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.github.branches import load_branch_commit_dates
 from athenian.api.internal.miners.github.commit import (
     DAG,
     RELEASE_FETCH_COMMITS_COLUMNS,
@@ -145,8 +144,7 @@ class PullRequestToReleaseMapper:
         if prs.empty:
             unreleased_prs_event.set()
             return pr_releases, {}, unreleased_prs_event
-        _, unreleased_prs, precomputed_pr_releases = await gather(
-            load_branch_commit_dates(branches, meta_ids, mdb),
+        unreleased_prs, precomputed_pr_releases = await gather(
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs,
                 nonemax(releases[Release.published_at.name].nonemax(), time_to),

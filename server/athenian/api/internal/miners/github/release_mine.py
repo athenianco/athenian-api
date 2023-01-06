@@ -1677,7 +1677,7 @@ async def _load_releases_by_name(
 ) -> tuple[pd.DataFrame, dict[str, dict[str, str]], pd.DataFrame, dict[str, str]]:
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
-        BranchMiner.extract_branches(names, prefixer, meta_ids, mdb, cache),
+        BranchMiner.load_branches(names, prefixer, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, account, pdb),
     ]
     (branches, default_branches), releases = await gather(*tasks)

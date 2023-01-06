@@ -45,7 +45,7 @@ from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
     DAG,
     fetch_precomputed_commit_history_dags,
-    fetch_repository_commits_no_branch_dates,
+    fetch_repository_commits,
 )
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.internal.miners.github.label import (
@@ -1801,7 +1801,7 @@ class PullRequestMiner:
     ) -> dict[str, tuple[bool, DAG]]:
         if dags is None:
             dags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
-        return await fetch_repository_commits_no_branch_dates(
+        return await fetch_repository_commits(
             dags,
             branches,
             BRANCH_FETCH_COMMITS_COLUMNS,

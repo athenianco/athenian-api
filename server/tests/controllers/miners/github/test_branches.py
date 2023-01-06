@@ -8,13 +8,13 @@ from athenian.api.models.metadata.github import Branch
 
 async def test_extract_branches_zero(mdb, branch_miner, prefixer):
     metrics = BranchMinerMetrics.empty()
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/gitbase"], prefixer, (6366825,), mdb, None, metrics=metrics,
     )
     assert branches.empty
     assert metrics.empty_count == 1
     assert defaults == {"src-d/gitbase": "master"}
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/gitbase"], prefixer, (6366825,), mdb, None,
     )
     assert branches.empty
@@ -22,7 +22,7 @@ async def test_extract_branches_zero(mdb, branch_miner, prefixer):
 
 
 async def test_extract_branches_trash(mdb, branch_miner, prefixer):
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/whatever"], prefixer, (6366825,), mdb, None,
     )
     assert branches.empty
@@ -31,20 +31,20 @@ async def test_extract_branches_trash(mdb, branch_miner, prefixer):
 
 @with_defer
 async def test_extract_branches_cache(mdb, cache, branch_miner, prefixer):
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/go-git"], prefixer, (6366825,), mdb, cache,
     )
     await wait_deferred()
     assert not branches.empty
     assert defaults == {"src-d/go-git": "master", "src-d/юникод": "вадим"}
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/go-git"], prefixer, (6366825,), None, cache,
     )
     await wait_deferred()
     assert not branches.empty
     assert defaults == {"src-d/go-git": "master", "src-d/юникод": "вадим"}
     with pytest.raises(AttributeError):
-        await branch_miner.extract_branches(
+        await branch_miner.load_branches(
             ["src-d/go-git", "src-d/gitbase"], prefixer, (6366825,), None, cache,
         )
 
@@ -63,7 +63,7 @@ async def test_extract_branches_main(mdb_rw, branch_miner, prefixer):
         ),
     )
     try:
-        _, defaults = await branch_miner.extract_branches(
+        _, defaults = await branch_miner.load_branches(
             ["src-d/go-git"], prefixer, (6366825,), mdb, None, metrics=metrics,
         )
         assert defaults == {"src-d/go-git": "main", "src-d/юникод": "вадим"}
@@ -95,7 +95,7 @@ async def test_extract_branches_max_date(mdb_rw, branch_miner, prefixer):
         ),
     )
     try:
-        _, defaults = await branch_miner.extract_branches(
+        _, defaults = await branch_miner.load_branches(
             ["src-d/go-git"], prefixer, (6366825,), mdb, None,
         )
         assert defaults == {"src-d/go-git": "whatever_it_takes", "src-d/юникод": "вадим"}
@@ -128,7 +128,7 @@ async def test_extract_branches_only_one(mdb_rw, branch_miner, prefixer):
     try:
         await mdb.execute(delete(Branch).where(Branch.branch_name != "whatever_it_takes"))
         try:
-            _, defaults = await branch_miner.extract_branches(
+            _, defaults = await branch_miner.load_branches(
                 ["src-d/go-git"], prefixer, (6366825,), mdb, None,
             )
             assert defaults == {"src-d/go-git": "whatever_it_takes"}
@@ -150,18 +150,16 @@ async def test_extract_branches_only_one(mdb_rw, branch_miner, prefixer):
 
 @with_defer
 async def test_extract_branches_none_repos(mdb, cache, branch_miner, prefixer):
-    branches, defaults = await branch_miner.extract_branches([], prefixer, (6366825,), mdb, cache)
+    branches, defaults = await branch_miner.load_branches([], prefixer, (6366825,), mdb, cache)
     assert len(branches) == 0
     await wait_deferred()
-    branches, defaults = await branch_miner.extract_branches(
-        None, prefixer, (6366825,), mdb, cache,
-    )
+    branches, defaults = await branch_miner.load_branches(None, prefixer, (6366825,), mdb, cache)
     assert len(branches) == 5
 
 
 @with_defer
 async def test_extract_branches_logical(mdb, cache, branch_miner, prefixer):
-    branches, defaults = await branch_miner.extract_branches(
+    branches, defaults = await branch_miner.load_branches(
         ["src-d/go-git/alpha", "src-d/go-git/beta"], prefixer, (6366825,), mdb, cache,
     )
     assert len(branches) == 5

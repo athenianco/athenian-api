@@ -441,7 +441,7 @@ async def mine_everything(
     """Mine all the specified data topics."""
     repos = release_settings.native.keys()
     (branches, default_branches), jira_ids = await gather(
-        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
+        BranchMiner.load_branches(repos, prefixer, meta_ids, mdb, cache),
         get_jira_installation_or_none(account, sdb, mdb, cache),
     )
     tasks = [

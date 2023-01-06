@@ -269,7 +269,7 @@ async def _reset_releases(
             ),
         ),
         # cached method is unbounded, add one more param for cls
-        BranchMiner.extract_branches.reset_cache(None, None, None, meta_ids, mdb, cache),
+        BranchMiner.load_branches.reset_cache(None, None, None, meta_ids, mdb, cache),
     )
 
 

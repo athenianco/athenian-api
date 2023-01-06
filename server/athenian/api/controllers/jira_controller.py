@@ -1246,7 +1246,7 @@ async def _collect_ids(
     if with_branches_and_settings:
         settings = Settings.from_request(request, account, prefixer)
         (branches, default_branches), logical_settings = await gather(
-            BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
+            BranchMiner.load_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
             settings.list_logical_repositories(repos),
             op="sdb/branches and releases",
         )

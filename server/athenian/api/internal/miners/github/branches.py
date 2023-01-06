@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 import logging
 from typing import Collection, Iterable, Iterator, Optional
 
@@ -8,16 +9,14 @@ import pandas as pd
 from sqlalchemy import func, select
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query, read_sql_query_with_join_collapse
+from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached, cached_methods, middle_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
-from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
@@ -57,7 +56,7 @@ class BranchMiner:
             strip,
         ),
     )
-    async def extract_branches(
+    async def load_branches(
         cls,
         repos: Optional[Iterable[str]],
         prefixer: Prefixer,
@@ -71,6 +70,7 @@ class BranchMiner:
         Fetch branches in the given repositories and extract the default branch names.
 
         :param strip: Value indicating whether the repository names are prefixed.
+        :param since: Discard branches last updated before this date.
         :param metrics: Report error statistics by mutating this object.
         """
         if strip and repos is not None:
@@ -80,7 +80,7 @@ class BranchMiner:
             repo_ids = [prefixer.repo_name_to_node.get(r) for r in repos]
         else:
             repo_ids = None
-        branches = await cls._extract_branches(repo_ids, prefixer, meta_ids, mdb)
+        branches = await cls._fetch_branches(repo_ids, None, prefixer, meta_ids, mdb)
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
@@ -164,10 +164,8 @@ class BranchMiner:
             if existing_zero_branch_repos:
                 rows = await mdb.fetch_all(
                     select(
-                        [
-                            NodeRepositoryRef.parent_id,
-                            func.count(NodeRepositoryRef.child_id).label("numrefs"),
-                        ],
+                        NodeRepositoryRef.parent_id,
+                        func.count(NodeRepositoryRef.child_id).label("numrefs"),
                     )
                     .where(
                         NodeRepositoryRef.acc_id.in_(meta_ids),
@@ -195,9 +193,10 @@ class BranchMiner:
 
     @classmethod
     @sentry_span
-    async def _extract_branches(
+    async def _fetch_branches(
         cls,
         repos: Optional[Collection[int]],
+        since: Optional[datetime],
         prefixer: Prefixer,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
@@ -207,8 +206,13 @@ class BranchMiner:
             .where(
                 *((Branch.repository_node_id.in_(repos),) if repos is not None else ()),
                 Branch.acc_id.in_(meta_ids),
+                *((Branch.commit_date >= since,) if since is not None else ()),
             )
-            .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+            .with_statement_hint(
+                "IndexOnlyScan(c node_commit_repository_target)"
+                if since is None
+                else "IndexOnlyScan(c github_node_commit_check_runs)",
+            )
             .with_statement_hint("Rows(ref c repo *100)")
             .with_statement_hint("Rows(ref c repo rr *100)")
             .with_statement_hint(
@@ -221,49 +225,9 @@ class BranchMiner:
                 "IndexScan" if len(repos) < len(prefixer.repo_node_to_name) * 0.8 else "BitmapScan"
             )
             query = query.with_statement_hint(f"{scan}(ref node_ref_heads_repository_id)")
-        df = await read_sql_query_with_join_collapse(query, mdb, Branch)
-        for left_join_col in (Branch.repository_full_name.name,):
-            if (not_null := is_not_null(df[left_join_col].values)).sum() < len(df):
-                df = df.take(np.flatnonzero(not_null))
-        return df
-
-
-async def load_branch_commit_dates(
-    branches: pd.DataFrame,
-    meta_ids: tuple[int, ...],
-    mdb: DatabaseLike,
-) -> None:
-    """Fetch the branch head commit dates if needed. The operation executes in-place."""
-    if Branch.commit_date in branches:
-        return
-    if branches.empty:
-        branches[Branch.commit_date] = []
-        return
-    branch_commit_ids = branches[Branch.commit_id.name].values
-    commit_dates_df = await read_sql_query(
-        select(NodeCommit.id, NodeCommit.committed_date)
-        .where(
-            NodeCommit.acc_id.in_(meta_ids),
-            NodeCommit.id.in_(branch_commit_ids)
-            if len(branch_commit_ids) < 100
-            else NodeCommit.id.in_any_values(branch_commit_ids),
-        )
-        .order_by(NodeCommit.id)
-        .with_statement_hint(
-            f"Rows({NodeCommit.__tablename__} *VALUES* #{len(branch_commit_ids)})",
-        ),
-        mdb,
-        [NodeCommit.id, NodeCommit.committed_date],
-    )
-    if commit_dates_df.empty:
-        branches[Branch.commit_date] = np.datetime64("NaT")
-        return
-    branches[Branch.commit_date] = commit_dates_df[NodeCommit.committed_date.name].values[
-        searchsorted_inrange(commit_dates_df[NodeCommit.id.name].values, branch_commit_ids)
-    ]
-    branches[Branch.commit_date].values[
-        branches[Branch.commit_id.name].values != branch_commit_ids
-    ] = None
+        if since is None:
+            query = query.with_statement_hint("set(join_collapse_limit 1)")
+        return await read_sql_query(query, mdb, Branch)
 
 
 def dummy_branches_df() -> pd.DataFrame:
