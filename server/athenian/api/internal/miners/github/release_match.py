@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Collection, Iterable, Optional, Union
 
 import aiomcache
 import numpy as np
@@ -92,11 +92,11 @@ from athenian.api.unordered_unique import in1d_str, unordered_unique
 async def load_commit_dags(
     releases: pd.DataFrame,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[bool, DAG]]:
+) -> dict[str, tuple[bool, DAG]]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
         releases[Release.repository_full_name.name].unique(), account, pdb, cache,
@@ -115,20 +115,20 @@ class PullRequestToReleaseMapper:
         cls,
         prs: pd.DataFrame,
         releases: pd.DataFrame,
-        matched_bys: Dict[str, ReleaseMatch],
+        matched_bys: dict[str, ReleaseMatch],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_to: datetime,
-        dags: Dict[str, Tuple[bool, DAG]],
+        dags: dict[str, tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
         labels: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, PullRequestFactsMap, asyncio.Event]:
+    ) -> tuple[pd.DataFrame, PullRequestFactsMap, asyncio.Event]:
         """
         Match the merged pull requests to the nearest releases that include them.
 
@@ -220,7 +220,7 @@ class PullRequestToReleaseMapper:
     async def _map_prs_to_releases(
         cls,
         prs: pd.DataFrame,
-        dags: Dict[str, Tuple[bool, DAG]],
+        dags: dict[str, tuple[bool, DAG]],
         releases: pd.DataFrame,
     ) -> pd.DataFrame:
         if prs.empty:
@@ -326,9 +326,9 @@ class PullRequestToReleaseMapper:
         cls,
         node_ids: Iterable[int],
         df: Optional[pd.DataFrame],
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
-    ) -> Dict[int, List[str]]:
+    ) -> dict[int, list[str]]:
         if df is not None:
             labels = {}
             for node_id, name in zip(
@@ -364,7 +364,7 @@ class ReleaseToPullRequestMapper:
         cls,
         repos: Collection[str],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         authors: Collection[str],
@@ -374,10 +374,10 @@ class ReleaseToPullRequestMapper:
         logical_settings: LogicalRepositorySettings,
         updated_min: Optional[datetime],
         updated_max: Optional[datetime],
-        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
+        pdags: Optional[dict[str, tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
@@ -385,15 +385,15 @@ class ReleaseToPullRequestMapper:
         pr_blacklist: Optional[BinaryExpression] = None,
         pr_whitelist: Optional[BinaryExpression] = None,
         truncate: bool = True,
-        precomputed_observed: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        precomputed_observed: Optional[tuple[np.ndarray, np.ndarray]] = None,
     ) -> Union[
-        Tuple[
+        tuple[
             pd.DataFrame,
             pd.DataFrame,
             ReleaseSettings,
-            Dict[str, ReleaseMatch],
-            Dict[str, Tuple[bool, DAG]],
-            Tuple[np.ndarray, np.ndarray],
+            dict[str, ReleaseMatch],
+            dict[str, tuple[bool, DAG]],
+            tuple[np.ndarray, np.ndarray],
         ],
         pd.DataFrame,
     ]:
@@ -506,27 +506,27 @@ class ReleaseToPullRequestMapper:
         cls,
         repos: Collection[str],  # logical
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
+        pdags: Optional[dict[str, tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
         truncate: bool,
-    ) -> Tuple[
+    ) -> tuple[
         np.ndarray,
         np.ndarray,
         pd.DataFrame,
         ReleaseSettings,
-        Dict[str, ReleaseMatch],
-        Dict[str, Tuple[bool, DAG]],
+        dict[str, ReleaseMatch],
+        dict[str, tuple[bool, DAG]],
     ]:
         (
             releases,
@@ -604,28 +604,28 @@ class ReleaseToPullRequestMapper:
         cls,
         repos: Iterable[str],  # logical
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         until_today: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
+        pdags: Optional[dict[str, tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
         releases_in_time_range: Optional[pd.DataFrame] = None,
         metrics: Optional[CommitDAGMetrics] = None,
-    ) -> Tuple[
+    ) -> tuple[
         pd.DataFrame,
         pd.DataFrame,
-        Dict[str, ReleaseMatch],
+        dict[str, ReleaseMatch],
         ReleaseSettings,
-        Dict[str, Tuple[bool, DAG]],
+        dict[str, tuple[bool, DAG]],
     ]:
         """
         Load releases with sufficient history depth.
@@ -679,7 +679,7 @@ class ReleaseToPullRequestMapper:
         lookbehind_depth_limit = time_from - timedelta(days=365)
         most_recent_time = time_from - timedelta(seconds=1)
 
-        async def fetch_dags() -> Dict[str, Tuple[bool, DAG]]:
+        async def fetch_dags() -> dict[str, tuple[bool, DAG]]:
             nonlocal pdags
             if pdags is None:
                 pdags = await fetch_precomputed_commit_history_dags(
@@ -707,7 +707,7 @@ class ReleaseToPullRequestMapper:
             for i, repo in enumerate(release_repos):
                 release_repos[i] = drop_logical_repo(repo)
 
-        async def dummy_load_releases_until_today() -> Tuple[pd.DataFrame, Any]:
+        async def dummy_load_releases_until_today() -> tuple[pd.DataFrame, Any]:
             return dummy_releases_df(), None
 
         until_today_task = None
@@ -926,7 +926,7 @@ class ReleaseToPullRequestMapper:
         pr_whitelist: Optional[BinaryExpression],
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         cache: Optional[aiomcache.Client],
     ) -> pd.DataFrame:
@@ -1137,13 +1137,13 @@ class ReleaseToPullRequestMapper:
         repos: Iterable[str],
         prefixer: Prefixer,
         release_settings: ReleaseSettings,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> Dict[str, datetime]:
+    ) -> dict[str, datetime]:
         match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
         spans, earliest_releases, repo_biths = await gather(
             cls.release_loader.fetch_precomputed_release_match_spans(match_groups, account, pdb),
@@ -1164,11 +1164,11 @@ class ReleaseToPullRequestMapper:
     @sentry_span
     async def _fetch_earliest_precomputed_releases(
         cls,
-        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        match_groups: dict[ReleaseMatch, dict[str, list[str]]],
         prefixer: Prefixer,
         account: int,
         pdb: Database,
-    ) -> Dict[str, datetime]:
+    ) -> dict[str, datetime]:
         prel = PrecomputedRelease
         or_items, _ = match_groups_to_sql(match_groups, prel, True, prefixer)
         if not or_items:
@@ -1200,23 +1200,19 @@ class ReleaseToPullRequestMapper:
         cls,
         repos: Iterable[str],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> Dict[str, datetime]:
+    ) -> dict[str, datetime]:
         log = logging.getLogger(f"{metadata.__package__}._fetch_repository_first_commit_dates")
         rows = await pdb.fetch_all(
             select(
-                [
-                    GitHubRepository.repository_full_name,
-                    GitHubRepository.first_commit.label("min"),
-                ],
+                GitHubRepository.repository_full_name,
+                GitHubRepository.first_commit.label("min"),
             ).where(
-                and_(
-                    GitHubRepository.repository_full_name.in_(repos),
-                    GitHubRepository.acc_id == account,
-                ),
+                GitHubRepository.repository_full_name.in_(repos),
+                GitHubRepository.acc_id == account,
             ),
         )
         add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(rows))
@@ -1225,13 +1221,11 @@ class ReleaseToPullRequestMapper:
         if missing:
             computed = await mdb.fetch_all(
                 select(
-                    [
-                        func.min(NodeRepository.name_with_owner).label(
-                            PushCommit.repository_full_name.name,
-                        ),
-                        func.min(NodeCommit.committed_date).label("min"),
-                        NodeRepository.id,
-                    ],
+                    func.min(NodeRepository.name_with_owner).label(
+                        PushCommit.repository_full_name.name,
+                    ),
+                    func.min(NodeCommit.committed_date).label("min"),
+                    NodeRepository.id,
                 )
                 .select_from(
                     join(
@@ -1244,10 +1238,8 @@ class ReleaseToPullRequestMapper:
                     ),
                 )
                 .where(
-                    and_(
-                        NodeRepository.name_with_owner.in_(missing),
-                        NodeRepository.acc_id.in_(meta_ids),
-                    ),
+                    NodeRepository.name_with_owner.in_(missing),
+                    NodeRepository.acc_id.in_(meta_ids),
                 )
                 .group_by(NodeRepository.id),
             )

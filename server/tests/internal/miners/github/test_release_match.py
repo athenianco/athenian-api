@@ -73,7 +73,7 @@ async def test_map_prs_to_releases_cache(
     )
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
-        released_prs, facts, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+        released_prs, facts, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs,
             releases,
             matched_bys,
@@ -99,7 +99,7 @@ async def test_map_prs_to_releases_cache(
             "2019-06-18 22:57:34+0000", tzinfo=timezone.utc,
         )
         assert released_prs.iloc[0][Release.author.name] == "mcuadros"
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -157,7 +157,7 @@ async def test_map_prs_to_releases_pdb(
         rdb,
         None,
     )
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -185,7 +185,7 @@ async def test_map_prs_to_releases_pdb(
                 table.schema = None
         for table in (PullRequestLabel, NodeCommit):
             await dummy_mdb.execute(CreateTable(table.__table__))
-        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+        released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs,
             releases,
             matched_bys,
@@ -249,7 +249,7 @@ async def test_map_prs_to_releases_empty(
         None,
     )
     for i in range(2):
-        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+        released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs,
             releases,
             matched_bys,
@@ -268,7 +268,7 @@ async def test_map_prs_to_releases_empty(
         assert len(cache.mem) == 1, i
         assert released_prs.empty
     prs = prs.iloc[:0]
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -372,7 +372,7 @@ async def test_map_prs_to_releases_precomputed_released(
             pdb,
         )
 
-        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+        released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs,
             releases,
             matched_bys,
@@ -450,7 +450,7 @@ async def test_map_prs_to_releases_smoke_metrics(
         rdb,
         None,
     )
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -575,7 +575,7 @@ async def test_map_prs_to_releases_miguel(
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, time_from, time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
-    released_prs, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
         release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, cache)
     assert len(released_prs) == 1

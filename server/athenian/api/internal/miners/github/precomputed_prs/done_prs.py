@@ -1052,7 +1052,7 @@ async def delete_force_push_dropped_prs(
     We don't try to resolve rebased PRs here due to the intended use case.
     """
     ghdprf = GitHubDonePullRequestFacts
-    tasks = [
+    rows, _, dags = await gather(
         pdb.fetch_all(
             select([ghdprf.pr_node_id]).where(
                 and_(
@@ -1066,8 +1066,8 @@ async def delete_force_push_dropped_prs(
         ),
         load_branch_commit_dates(branches, meta_ids, mdb),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
-    ]
-    rows, _, dags = await gather(*tasks, op="fetch prs + branches + dags")
+        op="fetch prs + branches + dags",
+    )
     pr_node_ids = [r[0] for r in rows]
     del rows
     node_commit = aliased(NodeCommit, name="c")

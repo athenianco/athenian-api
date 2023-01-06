@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import math
 from typing import Sequence
 
+from freezegun import freeze_time
 import pandas as pd
 import pytest
 from sqlalchemy import and_, select, update
@@ -1403,7 +1404,7 @@ async def test_discover_update_unreleased_prs_released(
         rdb,
         None,
     )
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -1511,7 +1512,7 @@ async def precomputed_merged_unreleased(
         rdb,
         None,
     )
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs,
         releases,
         matched_bys,
@@ -1766,7 +1767,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     )
     await wait_deferred()
     unreleased_prs["dead"] = False
-    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
+    released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         unreleased_prs,
         releases,
         matched_bys,
@@ -2139,6 +2140,7 @@ async def test_store_open_pull_request_facts_smoke(
     assert len(loaded_facts) == 0
 
 
+@freeze_time("2016-01-01")
 @with_only_master_branch
 @with_defer
 async def test_rescan_prs_mark_force_push_dropped(
