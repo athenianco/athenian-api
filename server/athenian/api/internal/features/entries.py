@@ -136,6 +136,7 @@ from athenian.api.typing_utils import df_from_structs
 
 unfresh_prs_threshold = 1000
 unfresh_participants_threshold = 50
+unfresh_branches_threshold = 1000
 
 
 def _postprocess_cached_facts(
@@ -1846,6 +1847,7 @@ class PRFactsCalculator:
             (
                 len(precomputed_facts) > unfresh_prs_threshold
                 or len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold
+                or len(branches) > unfresh_branches_threshold
             )
             and not fresh
             and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER})

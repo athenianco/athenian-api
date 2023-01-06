@@ -262,7 +262,7 @@ async def load_branch_commit_dates(
         searchsorted_inrange(commit_dates_df[NodeCommit.id.name].values, branch_commit_ids)
     ]
     branches[Branch.commit_date].values[
-        branches[Branch.commit_date].values != branch_commit_ids
+        branches[Branch.commit_id.name].values != branch_commit_ids
     ] = None
 
 
