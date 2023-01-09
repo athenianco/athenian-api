@@ -55,7 +55,36 @@ async def filter_epics(
     jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
         labels=labels, issue_types=candidate_types, priorities=priorities,
     )
-    epics = await fetch_jira_issues(
+
+    async def fetch_epic_children(issues: pd.DataFrame) -> pd.DataFrame:
+        # discover the issues belonging to those epics
+        if issues.empty:
+            return pd.DataFrame()
+        nonlocal extra_columns
+        extra_columns = list(extra_columns)
+        if Issue.parent_id not in extra_columns:
+            extra_columns.append(Issue.parent_id)
+        return await fetch_jira_issues(
+            None,
+            None,
+            JIRAFilter.from_jira_config(jira_ids).replace(epics=issues[Issue.key.name].values),
+            False,
+            [],
+            [],
+            [],
+            False,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            cache,
+            extra_columns=extra_columns,
+        )
+
+    epics, children = await fetch_jira_issues(
         time_from,
         time_to,
         jira_filter,
@@ -73,6 +102,7 @@ async def filter_epics(
         pdb,
         cache,
         extra_columns=extra_columns,
+        on_raw_fetch_complete=fetch_epic_children,
     )
     if epics.empty:
         return (
@@ -95,29 +125,7 @@ async def filter_epics(
         if len(indexes) < len(epics):
             epics.disable_consolidate()
             epics = epics.take(indexes)
-    # discover the issues belonging to those epics
-    extra_columns = list(extra_columns)
-    if Issue.parent_id not in extra_columns:
-        extra_columns.append(Issue.parent_id)
-    children = await fetch_jira_issues(
-        None,
-        None,
-        JIRAFilter.from_jira_config(jira_ids).replace(epics=epics[Issue.key.name].values),
-        False,
-        [],
-        [],
-        [],
-        False,
-        default_branches,
-        release_settings,
-        logical_settings,
-        account,
-        meta_ids,
-        mdb,
-        pdb,
-        cache,
-        extra_columns=extra_columns,
-    )
+
     children_parent_ids = children[Issue.parent_id.name].values
     nnz_parent_mask = children_parent_ids != b""
     subtask_mask = (children[Issue.epic_id.name].values != children_parent_ids) & nnz_parent_mask
@@ -125,7 +133,6 @@ async def filter_epics(
         children_parent_ids[subtask_mask], return_counts=True,
     )
     subtask_counts = zip(unique_parent_ids, subtask_counts)
-
     children.disable_consolidate()
     children = children.take(np.flatnonzero(~subtask_mask))
     children_epic_ids = children[Issue.epic_id.name].values

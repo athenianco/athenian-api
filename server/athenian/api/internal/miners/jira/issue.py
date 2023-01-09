@@ -1,9 +1,10 @@
+import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Iterable, Optional
+from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Type
 
 import aiomcache
 import numpy as np
@@ -265,6 +266,12 @@ ISSUE_PRS_COUNT = "prs_count"
 ISSUE_PR_IDS = "pr_ids"
 
 
+class _NoResult:
+    @classmethod
+    async def stub(cls) -> Type["_NoResult"]:
+        return cls
+
+
 async def fetch_jira_issues(
     time_from: Optional[datetime],
     time_to: Optional[datetime],
@@ -284,7 +291,8 @@ async def fetch_jira_issues(
     cache: Optional[aiomcache.Client],
     extra_columns: Iterable[InstrumentedAttribute] = (),
     adjust_timestamps_using_prs=True,
-) -> pd.DataFrame:
+    on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]] = None,
+) -> pd.DataFrame | tuple[pd.DataFrame, Any]:
     """
     Load JIRA issues following the specified filters.
 
@@ -300,37 +308,40 @@ async def fetch_jira_issues(
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     :param adjust_timestamps_using_prs: Value indicating whether we must populate the columns \
                                         which depend on the mapped pull requests.
+    :param on_raw_fetch_complete: Execute arbitrary code upon fetching the raw list of issues.
     """
-    return (
-        await _fetch_jira_issues(
-            time_from,
-            time_to,
-            jira_filter,
-            exclude_inactive,
-            reporters,
-            assignees,
-            commenters,
-            nested_assignees,
-            default_branches,
-            release_settings,
-            logical_settings,
-            account,
-            meta_ids,
-            mdb,
-            pdb,
-            cache,
-            extra_columns,
-            adjust_timestamps_using_prs,
-        )
-    )[0]
+    result = await _fetch_jira_issues(
+        time_from,
+        time_to,
+        jira_filter,
+        exclude_inactive,
+        reporters,
+        assignees,
+        commenters,
+        nested_assignees,
+        default_branches,
+        release_settings,
+        logical_settings,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        cache,
+        extra_columns,
+        adjust_timestamps_using_prs,
+        on_raw_fetch_complete,
+    )
+    if result[1] is _NoResult:
+        return result[0]
+    return result[:-1]
 
 
 def _postprocess_fetch_jira_issues(
-    result: tuple[pd.DataFrame, bool],
+    result: tuple[pd.DataFrame, Any, bool],
     adjust_timestamps_using_prs=True,
     **_,
-) -> tuple[pd.DataFrame, bool]:
-    if adjust_timestamps_using_prs and not result[1]:
+) -> tuple[pd.DataFrame, Any, bool]:
+    if adjust_timestamps_using_prs and not result[-1]:
         raise CancelCache()
     return result
 
@@ -372,11 +383,14 @@ async def _fetch_jira_issues(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-    extra_columns: Iterable[InstrumentedAttribute] = (),
-    adjust_timestamps_using_prs=True,
-) -> tuple[pd.DataFrame, bool]:
+    extra_columns: Iterable[InstrumentedAttribute],
+    adjust_timestamps_using_prs: bool,
+    on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]],
+) -> tuple[pd.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
+    resolved_colname = AthenianIssue.resolved.name
+    created_colname = Issue.created.name
     issues = await _fetch_raw_issues(
         time_from,
         time_to,
@@ -398,8 +412,22 @@ async def _fetch_jira_issues(
                 ", ".join(issues[Issue.key.name].values[missing_updated]),
             )
             issues = issues.take(np.flatnonzero(~missing_updated))
-    if not adjust_timestamps_using_prs:
-        return issues, adjust_timestamps_using_prs
+    if on_raw_fetch_complete is not None:
+        on_raw_fetch_complete_task = asyncio.create_task(
+            on_raw_fetch_complete(issues), name="fetch_jira_issues/on_raw_fetch_complete",
+        )
+    else:
+        on_raw_fetch_complete_task = _NoResult.stub()
+    if issues.empty or not adjust_timestamps_using_prs:
+        for col in (
+            ISSUE_PRS_BEGAN,
+            ISSUE_PRS_RELEASED,
+            ISSUE_PRS_COUNT,
+            ISSUE_PR_IDS,
+            resolved_colname,
+        ):
+            issues[col] = [None] * len(issues)
+        return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
     if len(issues) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
     else:
@@ -466,7 +494,9 @@ async def _fetch_jira_issues(
     unique_pr_node_ids = prs.index.unique()
     released_prs, labels = await gather(
         _fetch_released_prs(unique_pr_node_ids, default_branches, release_settings, account, pdb),
-        fetch_labels_to_filter(unique_pr_node_ids, meta_ids, mdb),
+        fetch_labels_to_filter(unique_pr_node_ids, meta_ids, mdb)
+        if logical_settings.has_prs_by_label()
+        else None,
     )
     prs = split_logical_prs(
         prs,
@@ -525,8 +555,6 @@ async def _fetch_jira_issues(
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
     issues[ISSUE_PR_IDS] = issue_prs
-    resolved_colname = AthenianIssue.resolved.name
-    created_colname = Issue.created.name
     issues[resolved_colname] = issues[resolved_colname].astype(issues[created_colname].dtype)
     if (negative := issues[resolved_colname].values < issues[created_colname].values).any():
         log.error(
@@ -534,7 +562,7 @@ async def _fetch_jira_issues(
             issues.index.values[negative].tolist(),
         )
         issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
-    return issues, adjust_timestamps_using_prs
+    return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
 
 
 @sentry_span
