@@ -1402,6 +1402,8 @@ class ReleaseMatcher:
     ) -> tuple[pd.DataFrame, list[str]]:
         """Return the releases matched by branch and the list of inconsistent repositories."""
         assert not contains_logical_repos(repos)
+        # we don't need all the branches belonging to all the repos
+        # only those that release by branch are relevant
         branches = branches.take(
             np.flatnonzero(branches[Branch.repository_full_name.name].isin(repos).values),
         )
@@ -1413,7 +1415,11 @@ class ReleaseMatcher:
         branches = pd.concat(branches_matched.values(), ignore_index=True)
         fetch_merge_points_task = asyncio.create_task(
             self._fetch_pr_merge_points(
-                repos, branches[Branch.branch_name.name].unique(), time_from, time_to,
+                # DEV-5719 avoid fetching merge points for repos with 0 branches
+                branches[Branch.repository_full_name.name].unique(),
+                branches[Branch.branch_name.name].unique(),
+                time_from,
+                time_to,
             ),
             name="match_releases_by_branch/fetch_merge_points",
         )

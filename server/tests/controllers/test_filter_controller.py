@@ -7,6 +7,7 @@ from typing import Any, Collection, Dict, Optional, Set
 
 from aiohttp import ClientResponse
 import dateutil
+from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import delete, insert, select
@@ -2696,7 +2697,7 @@ async def test_filter_labels_nasty_input(client, headers, account, repos, status
     assert response.status == status, response_body
 
 
-@pytest.mark.flaky(reruns=3)
+@freeze_time("2020-01-01")
 async def test_get_releases_smoke(client, headers):
     body = {
         "account": 1,
@@ -3460,7 +3461,7 @@ async def test_get_releases_nasty_input(client, headers, account, repo, names, c
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.flaky(reruns=3)
+@freeze_time("2020-01-01")
 async def test_diff_releases_smoke(client, headers):
     body = {
         "account": 1,
