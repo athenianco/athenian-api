@@ -6,6 +6,7 @@
 # distutils: runtime_library_dirs = /usr/local/lib
 
 from cpython cimport PyDict_GetItem, PyDict_New, PyObject
+from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cython.operator cimport dereference, postincrement
 from libc.stdint cimport int64_t
 
@@ -221,7 +222,7 @@ def find_truncated_datetime(facts, offsets, time_from) -> list:
     cdef:
         list result = []
         int64_t time_from_i64 = (<PyDatetimeScalarObject *> time_from).obval
-        PyMemberDef * slots = Py_TYPE(<PyObject *> facts).tp_members
+        PyMemberDef *slots = Py_TYPE(<PyObject *> facts).tp_members
         PyObject *data_obj = dereference(
             <PyObject **> ((<char *> <PyObject *> facts) + slots[1].offset)
         )
@@ -231,6 +232,8 @@ def find_truncated_datetime(facts, offsets, time_from) -> list:
 
     if PyBytes_Check(data_obj):
         data = PyBytes_AS_STRING(data_obj)
+    elif PyMemoryView_Check(<object> data_obj):
+        struct_data = <char *>PyMemoryView_GET_BUFFER(<object> data_obj).buf
     elif PyByteArray_CheckExact(data_obj):
         data = PyByteArray_AS_STRING(data_obj)
     else:

@@ -1,7 +1,9 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
-# distutils: extra_compile_args = -mavx2 -ftree-vectorize
+# distutils: libraries = mimalloc
+# distutils: runtime_library_dirs = /usr/local/lib
+# distutils: extra_compile_args = -std=c++17 -mavx2 -ftree-vectorize
 
 from typing import Any, Sequence
 
@@ -11,6 +13,9 @@ from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_Check
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check
 from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cpython.unicode cimport PyUnicode_Check
+from cython.operator cimport dereference
+from libc.stdint cimport int32_t, int64_t
+from libc.string cimport memcpy
 from numpy cimport (
     NPY_ARRAY_C_CONTIGUOUS,
     NPY_OBJECT,
@@ -30,6 +35,7 @@ from numpy cimport (
     npy_intp,
 )
 
+from athenian.api.native.chunked_stream cimport chunked_stream
 from athenian.api.native.cpython cimport (
     Py_None,
     Py_True,
@@ -38,9 +44,12 @@ from athenian.api.native.cpython cimport (
     PyList_GET_ITEM,
     PyList_GET_SIZE,
     PyTuple_GET_ITEM,
+    PyTypeObject,
     PyUnicode_GET_LENGTH,
 )
+from athenian.api.native.mi_heap_destroy_stl_allocator cimport mi_heap_destroy_stl_allocator
 from athenian.api.native.numpy cimport PyArray_DescrNew, PyArray_NewFromDescr, PyArray_Type
+from athenian.api.native.optional cimport optional
 
 import asyncpg
 import numpy as np
@@ -333,3 +342,118 @@ def array_of_objects(int length, fill_value) -> ndarray:
         data[i] = obj
     obj.ob_refcnt += nplength
     return arr
+
+
+def vectorize_numpy_struct_scalar_field(cls, structs, npdtype dtype, long offset) -> np.ndarray:
+    cdef:
+        ndarray arr
+        npy_intp length = len(structs), i = 0
+        npy_intp itemsize = dtype.itemsize
+        char *arr_data
+        Py_ssize_t struct_data_offset = (<PyTypeObject *> cls).tp_members[1].offset
+        PyObject *struct_data_obj
+        char *struct_data
+    arr = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> dtype,
+        1,
+        &length,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(dtype)
+    arr_data = <char *> PyArray_DATA(arr)
+
+    for struct in structs:
+        struct_data_obj = dereference(
+            <PyObject **> ((<char *> <PyObject *> struct) + struct_data_offset)
+        )
+        if PyBytes_Check(<object> struct_data_obj):
+            struct_data = PyBytes_AS_STRING(<object> struct_data_obj)
+        elif PyMemoryView_Check(<object> struct_data_obj):
+            struct_data = <char *>PyMemoryView_GET_BUFFER(<object> struct_data_obj).buf
+        elif PyByteArray_Check(<object> struct_data_obj):
+            struct_data = PyByteArray_AS_STRING(<object> struct_data_obj)
+        else:
+            raise AssertionError(f"unsupported buffer type: {type(struct.data)}")
+        memcpy(arr_data + i * itemsize, struct_data + offset, itemsize)
+        i += 1
+    return arr
+
+
+def vectorize_numpy_struct_array_field(
+    cls,
+    structs,
+    npdtype dtype,
+    long offset,
+) -> tuple[np.ndarray, np.ndarray]:
+    cdef:
+        ndarray arr, arr_offsets
+        npy_intp length = len(structs) + 1, i = 0
+        npy_intp itemsize = dtype.itemsize
+        char *arr_data
+        Py_ssize_t struct_data_offset = (<PyTypeObject *> cls).tp_members[1].offset
+        PyObject *struct_data_obj
+        char *struct_data
+        int32_t field_offset, field_count
+        int32_t *field
+        npdtype int_dtype = np.dtype(int)
+        int64_t pos = 0, delta
+        optional[chunked_stream] dump
+        optional[mi_heap_destroy_stl_allocator[char]] alloc
+
+    alloc.emplace()
+    dump.emplace(dereference(alloc))
+    arr_offsets = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> int_dtype,
+        1,
+        &length,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(int_dtype)
+    offsets_data = <int64_t *> PyArray_DATA(arr_offsets)
+
+    length = 0
+    for struct in structs:
+        struct_data_obj = dereference(
+            <PyObject **> ((<char *> <PyObject *> struct) + struct_data_offset)
+        )
+        if PyBytes_Check(<object> struct_data_obj):
+            struct_data = PyBytes_AS_STRING(<object> struct_data_obj)
+        elif PyMemoryView_Check(<object> struct_data_obj):
+            struct_data = <char *>PyMemoryView_GET_BUFFER(<object> struct_data_obj).buf
+        elif PyByteArray_Check(<object> struct_data_obj):
+            struct_data = PyByteArray_AS_STRING(<object> struct_data_obj)
+        else:
+            raise AssertionError(f"unsupported buffer type: {type(struct.data)}")
+        field = <int32_t *>(struct_data + offset)
+        field_offset = field[0]
+        field_count = field[1]
+        offsets_data[i] = length
+        length += field_count
+        delta = itemsize * field_count
+        dereference(dump).write(struct_data + field_offset, delta)
+        pos += delta
+        i += 1
+    offsets_data[i] = length
+
+    arr = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> dtype,
+        1,
+        &length,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(dtype)
+    dereference(dump).dump(<char *>PyArray_DATA(arr), pos)
+
+    return arr, arr_offsets

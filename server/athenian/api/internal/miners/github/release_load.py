@@ -69,7 +69,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseMatchTimespan,
 )
-from athenian.api.to_object_arrays import is_null, nested_lengths
+from athenian.api.object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 

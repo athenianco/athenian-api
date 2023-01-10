@@ -21,7 +21,7 @@ from athenian.api.internal.miners.github.check_run import (
     pull_request_title_column,
 )
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
-from athenian.api.to_object_arrays import as_bool, is_null
+from athenian.api.object_arrays import as_bool, is_null
 
 
 def _disambiguate_pull_requests(

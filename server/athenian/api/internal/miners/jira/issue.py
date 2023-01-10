@@ -39,7 +39,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
-from athenian.api.to_object_arrays import is_not_null
+from athenian.api.object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 

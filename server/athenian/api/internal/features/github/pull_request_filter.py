@@ -104,7 +104,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
-from athenian.api.to_object_arrays import is_not_null
+from athenian.api.object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 

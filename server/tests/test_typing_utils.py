@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import numpy as np
+from numpy.testing import assert_array_equal
 import pytest
 
 from athenian.api.typing_utils import (
@@ -89,6 +90,12 @@ class _WithNestedDC:
 
 
 @numpy_struct
+class _ArrayStruct:
+    class Immutable:
+        i: [np.uint32]
+
+
+@numpy_struct
 class _NestedStruct:
     class Immutable:
         f: np.uint32
@@ -139,3 +146,25 @@ class TestDFFromStructs:
         assert sorted(df.columns) == ["i", "n_f"]
         assert list(df.i.values) == [1, 10]
         assert list(df.n_f.values) == [2, 20]
+
+
+def test_numpy_struct_vectorize_scalar_field():
+    structs = [_WithNestedDC.from_fields(i=i) for i in range(100)]
+    assert_array_equal(
+        _WithNestedDC.vectorize_field(structs, "i"),
+        np.arange(100, dtype=_WithNestedDC.dtype["i"]),
+    )
+
+
+def test_numpy_struct_vectorize_array_field():
+    structs = [_ArrayStruct.from_fields(i=np.full(i, i, np.uint32)) for i in range(100)]
+    arr, offsets = _ArrayStruct.vectorize_field(structs, "i")
+    assert offsets[0] == 0
+    assert_array_equal(
+        offsets[1:],
+        np.cumsum(np.arange(100, dtype=int)),
+    )
+    assert_array_equal(
+        arr,
+        np.repeat(np.arange(100), np.arange(100)).astype(np.uint32),
+    )
