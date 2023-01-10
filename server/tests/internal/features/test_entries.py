@@ -902,7 +902,7 @@ async def _calc_shared_kwargs(
     settings = Settings.from_account(1, prefixer, sdb, mdb, None, None)
     release_settings = await settings.list_release_matches()
     repos = release_settings.native.keys()
-    branches, default_branches = await BranchMiner.extract_branches(
+    branches, default_branches = await BranchMiner.load_branches(
         repos, prefixer, meta_ids, mdb, None,
     )
     return {

@@ -22,7 +22,6 @@ from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.internal.logical_accelerated import mark_logical_repos_in_list
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
-from athenian.api.internal.miners.github.branches import load_branch_commit_dates
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
     fetch_precomputed_commit_history_dags,
@@ -1052,7 +1051,7 @@ async def delete_force_push_dropped_prs(
     We don't try to resolve rebased PRs here due to the intended use case.
     """
     ghdprf = GitHubDonePullRequestFacts
-    rows, _, dags = await gather(
+    rows, dags = await gather(
         pdb.fetch_all(
             select([ghdprf.pr_node_id]).where(
                 and_(
@@ -1064,7 +1063,6 @@ async def delete_force_push_dropped_prs(
                 ),
             ),
         ),
-        load_branch_commit_dates(branches, meta_ids, mdb),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
         op="fetch prs + branches + dags",
     )

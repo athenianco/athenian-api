@@ -265,7 +265,7 @@ async def precompute_reposet(
         logical_settings, release_settings, (branches, default_branches) = await gather(
             settings.list_logical_repositories(prefixed_repos),
             settings.list_release_matches(prefixed_repos),
-            BranchMiner.extract_branches(
+            BranchMiner.load_branches(
                 repos, prefixer, meta_ids, mdb, None, metrics=health_metrics.branches,
             ),
         )

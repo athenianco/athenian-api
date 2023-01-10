@@ -90,7 +90,7 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     model = {
         k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.prefixed.items()
     }
-    _, default_branches = await BranchMiner.extract_branches(
+    _, default_branches = await BranchMiner.load_branches(
         settings.native, prefixer, meta_ids, request.mdb, request.cache,
     )
     unresolved = []

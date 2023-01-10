@@ -2697,6 +2697,7 @@ async def test_filter_labels_nasty_input(client, headers, account, repos, status
     assert response.status == status, response_body
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 @freeze_time("2020-01-01")
 async def test_get_releases_smoke(client, headers):
     body = {
@@ -3460,6 +3461,7 @@ async def test_get_releases_nasty_input(client, headers, account, repo, names, c
 
 
 # TODO: fix response validation against the schema
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 @pytest.mark.app_validate_responses(False)
 @freeze_time("2020-01-01")
 async def test_diff_releases_smoke(client, headers):

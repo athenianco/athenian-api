@@ -104,7 +104,7 @@ def main():
             settings.list_release_matches(prefixed_repos),
             settings.list_logical_repositories(prefixed_repos),
         )
-        branches, default_branches = await BranchMiner.extract_branches(
+        branches, default_branches = await BranchMiner.load_branches(
             args.repos, prefixer, meta_ids, mdb, None,
         )
         now = datetime.now(timezone.utc)

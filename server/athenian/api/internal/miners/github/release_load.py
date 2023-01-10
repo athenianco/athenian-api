@@ -38,7 +38,6 @@ from athenian.api.internal.logical_repos import (
     contains_logical_repos,
     drop_logical_repo,
 )
-from athenian.api.internal.miners.github.branches import load_branch_commit_dates
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
     CommitDAGMetrics,
@@ -1428,8 +1427,7 @@ class ReleaseMatcher:
             ),
             name="match_releases_by_branch/fetch_merge_points",
         )
-        _, dags, *url_prefixes = await gather(
-            load_branch_commit_dates(branches, self._meta_ids, self._mdb),
+        dags, *url_prefixes = await gather(
             fetch_precomputed_commit_history_dags(
                 branches_matched, self._account, self._pdb, self._cache,
             ),

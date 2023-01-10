@@ -175,7 +175,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, (branches, default_branches), account_bots = await gather(
         settings.list_release_matches(repos),
-        BranchMiner.extract_branches(
+        BranchMiner.load_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True,
         ),
         bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
@@ -747,7 +747,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     settings = Settings.from_request(request, filt.account, prefixer)
     release_settings, (branches, default_branches), jira_ids = await gather(
         settings.list_release_matches(repos),
-        BranchMiner.extract_branches(
+        BranchMiner.load_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True,
         ),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -953,7 +953,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
             filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
         ),
         settings.list_release_matches(),  # no "repos"!
-        BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
+        BranchMiner.load_branches(None, prefixer, meta_ids, request.mdb, request.cache),
     )
 
     @sentry_span

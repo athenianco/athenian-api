@@ -53,7 +53,7 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
     fetch_precomputed_commit_history_dags,
-    fetch_repository_commits_no_branch_dates,
+    fetch_repository_commits,
 )
 from athenian.api.internal.miners.github.deployment_light import (
     fetch_repository_environments,
@@ -773,7 +773,7 @@ async def _filter_pull_requests(
             time_to=time_to,
         ),
     )
-    branches, default_branches = await BranchMiner.extract_branches(
+    branches, default_branches = await BranchMiner.load_branches(
         repos, prefixer, meta_ids, mdb, cache,
     )
 
@@ -1110,7 +1110,7 @@ async def _fetch_pull_requests(
     Optional[asyncio.Task],
 ]:
     assert prs
-    branches, default_branches = await BranchMiner.extract_branches(
+    branches, default_branches = await BranchMiner.load_branches(
         prs, prefixer, meta_ids, mdb, cache,
     )
     filters = [
@@ -1259,7 +1259,7 @@ async def unwrap_pull_requests(
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache,
         )
-        dags = await fetch_repository_commits_no_branch_dates(
+        dags = await fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
         )
         prs_df = await PullRequestMiner.mark_dead_prs(

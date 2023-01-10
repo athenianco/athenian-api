@@ -15,6 +15,7 @@ from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.commit import (
+    BRANCH_FETCH_COMMITS_COLUMNS,
     CommitDAGMetrics,
     _empty_dag,
     _fetch_commit_history_dag,
@@ -44,7 +45,7 @@ from athenian.api.internal.settings import (
     ReleaseMatchSetting,
     ReleaseSettings,
 )
-from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, Release
+from athenian.api.models.metadata.github import Branch, PullRequest, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, GitHubReleaseFacts
 from tests.testutils.db import models_insert
@@ -1117,37 +1118,22 @@ async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
 
 @with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner, prefixer):
-    branches, _ = await branch_miner.extract_branches(dag, prefixer, (6366825,), mdb, None)
-    commit_ids = branches[Branch.commit_id.name].values
-    commit_dates = await mdb.fetch_all(
-        select([NodeCommit.id, NodeCommit.committed_date]).where(NodeCommit.id.in_(commit_ids)),
-    )
-    commit_dates = {r[0]: r[1] for r in commit_dates}
-    if mdb.url.dialect == "sqlite":
-        commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
-    now = datetime.now(timezone.utc)
-    branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
-    cols = (
-        Branch.commit_sha.name,
-        Branch.commit_id.name,
-        Branch.commit_date,
-        Branch.repository_full_name.name,
-    )
+    branches, _ = await branch_miner.load_branches(dag, prefixer, (6366825,), mdb, None)
     commits = await fetch_repository_commits(
-        dag, branches, cols, False, 1, (6366825,), mdb, pdb, cache,
+        dag, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, 1, (6366825,), mdb, pdb, cache,
     )
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][1][0]) == 1919
     branches = branches[branches[Branch.branch_name.name] == "master"]
     commits = await fetch_repository_commits(
-        commits, branches, cols, False, 1, (6366825,), mdb, pdb, cache,
+        commits, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, 1, (6366825,), mdb, pdb, cache,
     )
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][1][0]) == 1919  # with force-pushed commits
     commits = await fetch_repository_commits(
-        commits, branches, cols, True, 1, (6366825,), mdb, pdb, cache,
+        commits, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, 1, (6366825,), mdb, pdb, cache,
     )
     await wait_deferred()
     assert len(commits) == 1
@@ -2851,7 +2837,7 @@ async def test_change_release_settings_event_branch_hole(
             Branch.commit_sha.name: np.array(
                 [b"7b6c1266556f59ac436fada3fa6106d4a84f9b56"], dtype="S40",
             ),
-            Branch.commit_date: [datetime(2018, 8, 17, 11, 17, 46, tzinfo=timezone.utc)],
+            Branch.commit_date.name: [datetime(2018, 8, 17, 11, 17, 46, tzinfo=timezone.utc)],
         },
     )
     releases, matched_bys = await release_loader.load_releases(
@@ -2884,7 +2870,7 @@ async def test_change_release_settings_event_branch_hole(
             Branch.commit_sha.name: np.array(
                 [b"8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"], dtype="S40",
             ),
-            Branch.commit_date: [datetime(2019, 8, 31, 11, 57, 37, tzinfo=timezone.utc)],
+            Branch.commit_date.name: [datetime(2019, 8, 31, 11, 57, 37, tzinfo=timezone.utc)],
         },
     )
     releases, matched_bys = await release_loader.load_releases(
