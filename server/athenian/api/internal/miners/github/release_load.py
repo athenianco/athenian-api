@@ -580,8 +580,10 @@ class ReleaseLoader:
         result = await gather(*result)
         dfs = [r[0] for r in result]
         inconsistent = list(chain.from_iterable(r[1] for r in result))
-        result = pd.concat(dfs, ignore_index=True) if dfs else dummy_releases_df()
-        if index is not None:
+        result = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        if result.empty:
+            result = dummy_releases_df(index)
+        elif index is not None:
             result.set_index(index, inplace=True)
         return result, inconsistent
 
@@ -980,20 +982,25 @@ _tsdt = pd.Timestamp(2000, 1, 1).to_numpy().dtype
 
 
 def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    int_cols = (Release.node_id.name, Release.commit_id.name, matched_by_column)
+    int_cols = (
+        Release.acc_id.name,
+        Release.node_id.name,
+        Release.commit_id.name,
+        matched_by_column,
+    )
     if df.empty:
         for col in (*int_cols, Release.author_node_id.name):
             try:
                 df[col] = df[col].astype(int)
             except KeyError:
-                assert col == Release.node_id.name
+                assert col == Release.node_id.name or col == Release.acc_id.name
         df[Release.published_at.name] = df[Release.published_at.name].astype("datetime64[ns, UTC]")
         return df
     for col in int_cols:
         try:
             assert df[col].dtype == int
         except KeyError:
-            assert col == Release.node_id.name
+            assert col == Release.node_id.name or col == Release.acc_id.name
     assert df[Release.published_at.name].dtype == "datetime64[ns, UTC]"
     if df[Release.author_node_id.name].dtype != int:
         df[Release.author_node_id.name].fillna(0, inplace=True)
@@ -1226,11 +1233,9 @@ class ReleaseMatcher:
             query = (
                 select(Release)
                 .where(
-                    and_(
-                        Release.acc_id.in_(self._meta_ids),
-                        Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(coerce_logical_repos(repos)),
-                    ),
+                    Release.acc_id.in_(self._meta_ids),
+                    Release.published_at.between(time_from, time_to),
+                    Release.repository_full_name.in_(coerce_logical_repos(repos)),
                 )
                 .order_by(desc(Release.published_at))
             )
@@ -1458,7 +1463,9 @@ class ReleaseMatcher:
         if first_shas:
             first_shas = np.sort(np.concatenate(first_shas))
         first_commits, merge_points = await gather(
-            self._fetch_commits(first_shas, time_from, time_to) if len(first_shas) else None,
+            self._fetch_commits(first_shas, time_from, time_to, repos)
+            if len(first_shas)
+            else None,
             fetch_merge_points_task,
         )
         if len(first_shas) == 0 and merge_points.empty:
@@ -1606,6 +1613,7 @@ class ReleaseMatcher:
         commit_shas: Sequence[str] | np.ndarray,
         time_from: datetime,
         time_to: datetime,
+        repos: Iterable[str],
     ) -> pd.DataFrame:
         filters = [
             PushCommit.acc_id.in_(self._meta_ids),
@@ -1645,7 +1653,14 @@ class ReleaseMatcher:
                 .with_statement_hint("IndexScan(cmm github_node_commit_committed_date)")
             )
 
-        return await read_sql_query(query, self._mdb, selected)
+        df = await read_sql_query(query, self._mdb, selected)
+        # DEV-5719 there can be same commits in irrelevant repositories
+        matching_repos_indexes = np.flatnonzero(
+            np.in1d(df[PushCommit.repository_full_name.name].values, repos),
+        )
+        if len(matching_repos_indexes) < len(df):
+            df = df.take(matching_repos_indexes)
+        return df
 
     @sentry_span
     async def _fetch_pr_merge_points(
