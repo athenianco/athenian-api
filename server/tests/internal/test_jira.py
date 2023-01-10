@@ -11,6 +11,7 @@ from athenian.api.internal.jira import (
     JIRAEntitiesMapper,
     disable_empty_projects,
     get_jira_id,
+    get_jira_id_or_none,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
     match_jira_identities,
@@ -49,6 +50,20 @@ class TestGetJIRAID:
         )
 
         assert (await get_jira_id(99999, sdb, cache)) == 1000
+
+
+class TestGetJIRAIDOrNone:
+    async def test_jira_installed(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            AccountFactory(id=33),
+            AccountJiraInstallationFactory(account_id=33, id=44),
+        )
+
+        assert (await get_jira_id_or_none(33, sdb)) == 44
+
+    async def test_jira_not_installed(self, sdb: Database) -> None:
+        assert (await get_jira_id_or_none(33, sdb)) is None
 
 
 class TestJIRAConfig:
