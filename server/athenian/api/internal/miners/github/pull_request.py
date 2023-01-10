@@ -2557,10 +2557,16 @@ class PullRequestMiner:
     ) -> pd.DataFrame:
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
-        filters = [model_cls.pull_request_node_id.in_(node_ids), model_cls.acc_id.in_(meta_ids)]
-        if created_at:
-            filters.append(model_cls.created_at < time_to)
-        query = sql.select(*(columns or [model_cls])).where(*filters)
+        queries = []
+        for acc_id in meta_ids:
+            filters = [model_cls.pull_request_node_id.in_(node_ids), model_cls.acc_id == acc_id]
+            if created_at:
+                filters.append(model_cls.created_at < time_to)
+            queries.append(sql.select(*(columns or [model_cls])).where(*filters))
+        if len(queries) == 1:
+            query = queries[0]
+        else:
+            query = sql.union_all(*queries)
         for hint in hints:
             query = query.with_statement_hint(hint)
         df = await read_sql_query(
