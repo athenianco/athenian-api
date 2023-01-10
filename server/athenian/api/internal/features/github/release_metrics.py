@@ -23,7 +23,7 @@ from athenian.api.internal.miners.types import ReleaseFacts
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
-from athenian.api.to_object_arrays import nested_lengths
+from athenian.api.object_arrays import nested_lengths
 
 metric_calculators: dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)

@@ -32,12 +32,12 @@ from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
-from athenian.api.request import AthenianWebRequest
-from athenian.api.response import ResponseError
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
-from athenian.api.to_object_arrays import nested_lengths
+from athenian.api.object_arrays import nested_lengths
+from athenian.api.request import AthenianWebRequest
+from athenian.api.response import ResponseError
 
 ReleaseMatch = IntEnum(
     "ReleaseMatch",

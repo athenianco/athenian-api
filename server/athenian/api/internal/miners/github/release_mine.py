@@ -95,8 +95,8 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
+from athenian.api.object_arrays import is_null, nested_lengths
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.to_object_arrays import is_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
@@ -866,26 +866,36 @@ async def _mine_releases(
     if labels:
         result = _filter_by_labels(result, labels_result, labels)
     if with_extended_pr_details:
-        pr_extended_node_ids = pr_extended_details_result[NodePullRequest.id.name].values
-        pr_extended_titles = pr_extended_details_result[NodePullRequest.title.name].values
-        pr_extended_createds = pr_extended_details_result[NodePullRequest.created_at.name].values
+        with sentry_sdk.start_span(op="mine_releases/install extended PRs to facts"):
+            pr_extended_node_ids = pr_extended_details_result[NodePullRequest.id.name].values
+            pr_extended_titles = pr_extended_details_result[NodePullRequest.title.name].values
+            pr_extended_createds = pr_extended_details_result[
+                NodePullRequest.created_at.name
+            ].values
+            pr_node_id_name = PullRequest.node_id.name
+            pr_title_name = PullRequest.title.name
+            pr_created_at_name = PullRequest.created_at.name
+            for facts in result:
+                node_ids = facts["prs_" + pr_node_id_name]
+                indexes = searchsorted_inrange(pr_extended_node_ids, node_ids)
+                none_mask = pr_extended_node_ids[indexes] != node_ids
+                facts["prs_" + pr_title_name] = titles = pr_extended_titles[indexes]
+                facts["prs_" + pr_created_at_name] = createds = pr_extended_createds[indexes]
+                titles[none_mask] = None
+                createds[none_mask] = None
+    with sentry_sdk.start_span(op="mine_releases/install jira to facts"):
+        empty_jira = LoadedJIRAReleaseDetails.empty()
         for facts in result:
-            node_ids = facts["prs_" + PullRequest.node_id.name]
-            indexes = searchsorted_inrange(pr_extended_node_ids, node_ids)
-            none_mask = pr_extended_node_ids[indexes] != node_ids
-            facts["prs_" + PullRequest.title.name] = titles = pr_extended_titles[indexes]
-            facts["prs_" + PullRequest.created_at.name] = createds = pr_extended_createds[indexes]
-            titles[none_mask] = None
-            createds[none_mask] = None
-    empty_jira = LoadedJIRAReleaseDetails.empty()
-    for facts in result:
-        facts.jira = release_jira_map.get((facts.node_id, facts.repository_full_name), empty_jira)
-    if with_deployments:
-        depmap, deployments = deployments_task.result()
-        for facts in result:
-            facts.deployments = depmap.get(facts.node_id)
-    else:
-        deployments = {}
+            facts.jira = release_jira_map.get(
+                (facts.node_id, facts.repository_full_name), empty_jira,
+            )
+    with sentry_sdk.start_span(op="mine_releases/install deployments to facts"):
+        if with_deployments:
+            depmap, deployments = deployments_task.result()
+            for facts in result:
+                facts.deployments = depmap.get(facts.node_id)
+        else:
+            deployments = {}
     return (
         df_from_structs(result),
         avatars,
@@ -1025,6 +1035,7 @@ def _build_mined_releases(
     return result, mentioned_authors, has_precomputed_facts
 
 
+@sentry_span
 def _filter_by_participants(
     releases: list[ReleaseFacts],
     participants: ReleaseParticipants,
@@ -1035,7 +1046,7 @@ def _filter_by_participants(
     if ReleaseParticipationKind.RELEASER in participants:
         missing_indexes = np.flatnonzero(
             np.in1d(
-                np.fromiter((r.publisher for r in releases), int, len(releases)),
+                ReleaseFacts.vectorize_field(releases, ReleaseFacts.f.publisher),
                 participants[ReleaseParticipationKind.RELEASER],
                 invert=True,
             ),
@@ -1063,6 +1074,7 @@ def _filter_by_participants(
     return [releases[i] for i in np.flatnonzero(mask)]
 
 
+@sentry_span
 def _filter_by_labels(
     releases: list[ReleaseFacts],
     labels_df: pd.DataFrame,
@@ -1070,9 +1082,9 @@ def _filter_by_labels(
 ) -> list[ReleaseFacts]:
     if not releases:
         return releases
-    key = "prs_" + PullRequest.node_id.name
-    pr_node_ids = [r[key] for r in releases]
-    all_pr_node_ids = np.concatenate(pr_node_ids)
+    all_pr_node_ids, borders = ReleaseFacts.vectorize_field(
+        releases, "prs_" + PullRequest.node_id.name,
+    )
     left = find_left_prs_by_labels(
         pd.Index(all_pr_node_ids),
         labels_df.index,
@@ -1081,26 +1093,23 @@ def _filter_by_labels(
     ).values.astype(int, copy=False)
     if len(left) == 0 and labels_filter.include:
         return []
+    passed_mask = np.in1d(all_pr_node_ids, left, assume_unique=True)
+
     if labels_filter.include:
-        passed_prs = np.flatnonzero(np.in1d(all_pr_node_ids, left, assume_unique=True))
-        indexes = np.unique(np.digitize(passed_prs, np.cumsum([len(x) for x in pr_node_ids])))
-        return [releases[i] for i in indexes]
+        passed_release_indexes = np.flatnonzero(np.logical_or.reduceat(passed_mask, borders[:-1]))
+        return [releases[i] for i in passed_release_indexes]
     # DEV-2962
     # all the releases pass, but we must hide unmatched PRs
-    pr_node_id_key = "prs_" + PullRequest.node_id.name
-    prs_hidden_releases = []
+    changed_release_indexes = np.flatnonzero(~np.logical_and.reduceat(passed_mask, borders[:-1]))
     pr_released_prs_columns = released_prs_columns(PullRequest)
-    for release in releases:
-        pr_node_ids = release[pr_node_id_key]
-        passed = np.flatnonzero(np.in1d(pr_node_ids, left))
-        if len(passed) < len(pr_node_ids):
-            prs_hidden_release = dict(release)
-            for col in pr_released_prs_columns:
-                key = "prs_" + col.name
-                prs_hidden_release[key] = prs_hidden_release[key][passed]
-            release = ReleaseFacts.from_fields(**prs_hidden_release)
-        prs_hidden_releases.append(release)
-    return prs_hidden_releases
+    for i in changed_release_indexes:
+        mask = passed_mask[borders[i + 1] : borders[i]]
+        prs_hidden_release = dict(releases[i])
+        for col in pr_released_prs_columns:
+            key = "prs_" + col.name
+            prs_hidden_release[key] = prs_hidden_release[key][mask]
+        releases[i] = ReleaseFacts.from_fields(**prs_hidden_release)
+    return releases
 
 
 @sentry_span
@@ -1158,6 +1167,7 @@ async def _load_jira_from_precomputed_release_facts(
     )
 
 
+@sentry_span
 def _convert_pr_jira_map_to_release_jira_map(
     keys: Optional[Iterable[tuple[int, str]]],
     pr_ids: Optional[npt.NDArray[int]],
@@ -1210,6 +1220,7 @@ def _convert_pr_jira_map_to_release_jira_map(
     return result
 
 
+@sentry_span
 def _take_pr_ids_from_precomputed_release_facts(
     precomputed_facts: Collection[ReleaseFacts],
 ) -> tuple[Optional[npt.NDArray[int]], Optional[npt.NDArray[int]]]:

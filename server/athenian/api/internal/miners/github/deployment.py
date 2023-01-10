@@ -137,8 +137,8 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseDeployment,
 )
+from athenian.api.object_arrays import array_of_objects, is_not_null, nested_lengths
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.to_object_arrays import array_of_objects, is_not_null, nested_lengths
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, map_array_values, unordered_unique

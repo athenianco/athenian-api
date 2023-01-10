@@ -40,7 +40,7 @@ from athenian.api.internal.miners.participation import PRParticipants, PRPartici
 from athenian.api.internal.miners.types import DeploymentConclusion, PullRequestFacts
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.web import PullRequestMetricID
-from athenian.api.to_object_arrays import nested_lengths
+from athenian.api.object_arrays import nested_lengths
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}

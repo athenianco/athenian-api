@@ -21,7 +21,7 @@ from athenian.api.internal.miners.participation import (
 from athenian.api.internal.miners.types import DeploymentFacts, PullRequestJIRAIssueItem
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
-from athenian.api.to_object_arrays import nested_lengths
+from athenian.api.object_arrays import nested_lengths
 from athenian.api.unordered_unique import unordered_unique
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}

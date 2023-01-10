@@ -37,8 +37,8 @@ from athenian.api.models.metadata.github import (
     NodeRepository,
     PullRequestLabel,
 )
+from athenian.api.object_arrays import as_bool
 from athenian.api.pandas_io import deserialize_df, serialize_df
-from athenian.api.to_object_arrays import as_bool
 from athenian.api.tracing import sentry_span
 
 maximum_processed_check_runs = 300_000

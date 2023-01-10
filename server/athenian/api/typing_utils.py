@@ -7,6 +7,7 @@ import types
 from typing import (
     Any,
     Callable,
+    Collection,
     Iterable,
     Iterator,
     KeysView,
@@ -33,7 +34,12 @@ from pandas.core.internals.blocks import (
 from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 
-from athenian.api.to_object_arrays import array_from_buffer, is_not_null
+from athenian.api.object_arrays import (
+    array_from_buffer,
+    is_not_null,
+    vectorize_numpy_struct_array_field,
+    vectorize_numpy_struct_scalar_field,
+)
 from athenian.api.tracing import sentry_span
 
 OriginalSpecialForm = type(Union)
@@ -321,6 +327,28 @@ class NumpyStruct(Mapping[str, Any]):
         get_field.__name__ = name
         return get_field
 
+    @classmethod
+    def vectorize_field(
+        cls,
+        structs: Collection[NumpyStruct],
+        name: str,
+    ) -> np.ndarray | tuple[np.ndarray, npt.NDArray[int]]:
+        """Compile an array of the specified field's values taken from structs.
+
+        :param structs: Collection of NumpyStruct-s containing field `name`.
+        :param name: Extract field by this name from each struct.
+        :return: Depending on whether the field is scalar or an array, array of scalars or \
+                 array of concatenated values and array of offsets to split the former.
+        """
+        dtype, offset = cls.dtype.fields[name]
+        if (nested_dtype := cls.nested_dtypes.get(name)) is None:
+            return vectorize_numpy_struct_scalar_field(cls, structs, dtype, offset)
+        if _dtype_is_ascii(nested_dtype) or (
+            (((char := nested_dtype.char) == "S") or (char == "U")) and nested_dtype.itemsize == 0
+        ):
+            raise NotImplementedError("Must write code to support variadic string arrays")
+        return vectorize_numpy_struct_array_field(cls, structs, nested_dtype, offset)
+
 
 def _dtype_is_ascii(dtype: Union[str, np.dtype]) -> bool:
     return (dtype is ascii) or (isinstance(dtype, str) and dtype.startswith("ascii"))
@@ -330,7 +358,7 @@ def numpy_struct(cls: type) -> Type[NumpyStruct]:
     """
     Decorate a class to transform it to a NumpyStruct.
 
-    The decorated class must define two sub-classes: `dtype` and `optional`.
+    The decorated class must define two subclasses: `dtype` and `optional`.
     The former annotates numpy-friendly immutable fields. The latter annotates mutable fields.
     """
     dtype = cls.Immutable.__annotations__

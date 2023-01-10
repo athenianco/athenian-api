@@ -22,7 +22,7 @@ from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
-from athenian.api.to_object_arrays import is_null, to_object_arrays_split
+from athenian.api.object_arrays import is_null, to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import create_data_frame_from_arrays, make_block
 
