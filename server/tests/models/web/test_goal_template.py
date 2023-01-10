@@ -4,7 +4,9 @@ from athenian.api.models.web.jira_metric_id import JIRAMetricID
 
 class TestGoalTemplate:
     def test_to_dict(self) -> None:
-        template = GoalTemplate(id=1, name="foo", metric=JIRAMetricID.JIRA_ACKNOWLEDGED_Q)
+        template = GoalTemplate(
+            id=1, name="foo", metric=JIRAMetricID.JIRA_ACKNOWLEDGED_Q, available=False,
+        )
         serialization = template.to_dict()
         assert serialization["id"] == 1
         assert serialization["name"] == "foo"

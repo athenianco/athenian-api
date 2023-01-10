@@ -38,4 +38,5 @@ class GoalTemplateCommon(Model, sealed=False):
 class GoalTemplate(GoalTemplateCommon):
     """A template to generate a goal."""
 
+    available: bool
     id: int
