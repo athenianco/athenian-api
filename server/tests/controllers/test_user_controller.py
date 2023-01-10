@@ -10,6 +10,7 @@ from sqlalchemy import delete, insert, select, update
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.db import Database
+from athenian.api.internal.datasources import AccountDatasources
 from athenian.api.models.state.models import (
     Account as DBAccount,
     AccountFeature,
@@ -133,41 +134,49 @@ async def test_get_user_sso_join(client, headers, app, sdb):
     assert datetime.utcnow() >= parse_datetime(updated[:-1])
 
 
-@pytest.mark.flaky(reruns=10, reruns_delay=1)
-async def test_get_account_details_smoke(client, headers):
-    response = await client.request(
-        method="GET", path="/v1/account/1/details", headers=headers, json={},
-    )
-    body = Account.from_dict(await response.json())
-    assert len(body.admins) == 1
-    assert body.admins[0].name == "Vadim Markovtsev"
-    assert body.admins[0].email == vadim_email
-    assert len(body.regulars) == 1
-    assert body.regulars[0].name == "Eiso Kant"
-    assert body.regulars[0].email == eiso_email
-    assert len(body.organizations) == 1
-    assert body.organizations[0].login == "src-d"
-    assert body.organizations[0].name == "source{d}"
-    assert (
-        body.organizations[0].avatar_url
-        == "https://avatars3.githubusercontent.com/u/15128793?s=200&v=4"
-    )
-    assert body.jira is not None
-    assert body.jira.url == "https://athenianco.atlassian.net"
-    assert body.jira.projects == ["CON", "CS", "DEV", "ENG", "GRW", "OPS", "PRO"]
+class TestGetAccountDetails(Requester):
+    path = "/v1/account/{account}/details"
 
+    @pytest.mark.flaky(reruns=10, reruns_delay=1)
+    async def test_smoke(self):
+        res = await self.get_json(200, path_kwargs={"account": 1})
+        body = Account.from_dict(res)
+        assert len(body.admins) == 1
+        assert body.admins[0].name == "Vadim Markovtsev"
+        assert body.admins[0].email == vadim_email
+        assert len(body.regulars) == 1
+        assert body.regulars[0].name == "Eiso Kant"
+        assert body.regulars[0].email == eiso_email
+        assert len(body.organizations) == 1
+        assert body.organizations[0].login == "src-d"
+        assert body.organizations[0].name == "source{d}"
+        assert (
+            body.organizations[0].avatar_url
+            == "https://avatars3.githubusercontent.com/u/15128793?s=200&v=4"
+        )
+        assert body.jira is not None
+        assert body.jira.url == "https://athenianco.atlassian.net"
+        assert body.jira.projects == ["CON", "CS", "DEV", "ENG", "GRW", "OPS", "PRO"]
+        assert sorted(body.datasources) == sorted(
+            [AccountDatasources.GITHUB, AccountDatasources.JIRA],
+        )
 
-# TODO(vmarkovtsev): remove app_validate_responses(False) after we don't test the pentest
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("account, code", [[2, 200], [3, 403], [4, 404]])
-async def test_get_account_details_nasty_input(client, headers, account, code):
-    response = await client.request(
-        method="GET", path="/v1/account/%d/details" % account, headers=headers, json={},
-    )
-    body = await response.json()
-    assert response.status == code, body
-    if code == 200:
-        assert "jira" not in body
+    # TODO(vmarkovtsev): remove app_validate_responses(False) after we don't test the pentest
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.parametrize("account, code", [[2, 200], [3, 403], [4, 404]])
+    async def test_nasty_input(self, account, code):
+        res = await self.get_json(code, path_kwargs={"account": account})
+        if code == 200:
+            assert "jira" not in res
+
+    async def test_account_datasources(self, sdb: Database) -> None:
+        res = await self.get_json(path_kwargs={"account": 1})
+        assert sorted(res["datasources"]) == sorted(
+            [AccountDatasources.GITHUB, AccountDatasources.JIRA],
+        )
+
+        res = await self.get_json(path_kwargs={"account": 2})
+        assert res["datasources"] == [AccountDatasources.GITHUB]
 
 
 @pytest.mark.app_validate_responses(False)

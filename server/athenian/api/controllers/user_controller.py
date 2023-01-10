@@ -18,6 +18,7 @@ from athenian.api.internal.account import (
     only_admin,
 )
 from athenian.api.internal.account_feature import get_account_features as _get_account_features
+from athenian.api.internal.datasources import AccountDatasources
 from athenian.api.internal.jira import get_jira_id
 from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.jira import (
@@ -102,6 +103,10 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
         jira = None
     elif isinstance(jira, Exception):
         raise jira from None
+
+    datasources = [AccountDatasources.GITHUB]
+    if jira is not None:
+        datasources.append(AccountDatasources.JIRA)
     account = Account(
         regulars=[users[k] for k in regulars if k in users],
         admins=[users[k] for k in admins if k in users],
@@ -109,6 +114,7 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
             Organization(name=org.name, avatar_url=org.avatar_url, login=org.login) for org in orgs
         ],
         jira=jira,
+        datasources=sorted(AccountDatasources(datasources)),
     )
     return model_response(account)
 
