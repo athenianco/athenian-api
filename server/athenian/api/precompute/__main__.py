@@ -78,11 +78,6 @@ def _parse_args() -> argparse.Namespace:
         help="Prometheus pushgateway endpoint; if missing no metric will be reported",
     )
     parser.add_argument(
-        "--refetch-topic",
-        required=False,
-        help="PubSub topic name where we submit metadata heal requests",
-    )
-    parser.add_argument(
         "--uvloop", action="store_true", help="Use the uvloop asyncio loop implementation",
     )
 
@@ -140,6 +135,11 @@ def _parse_args() -> argparse.Namespace:
     )
     accounts_parser.add_argument(
         "--timeout", type=int, default=20 * 60, help="Maximum processing time for one account",
+    )
+    accounts_parser.add_argument(
+        "--refetch-topic",
+        required=False,
+        help="PubSub topic name where we submit metadata heal requests",
     )
 
     store_external_health_parser = subparsers.add_parser(
