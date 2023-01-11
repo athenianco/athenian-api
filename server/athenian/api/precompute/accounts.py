@@ -60,6 +60,7 @@ from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
+from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import sentry_span
 
@@ -258,6 +259,7 @@ async def precompute_reposet(
         len(deref_items),
     )
     health_metrics.reposet.length = len(deref_items)
+    refetcher = Refetcher(args.refetch_topic, meta_ids)
     try:
         settings = Settings.from_account(reposet.owner_id, prefixer, sdb, mdb, cache, None)
         repos = {r.unprefixed for r in deref_items}
@@ -293,6 +295,7 @@ async def precompute_reposet(
                 with_extended_pr_details=False,
                 with_deployments=False,
                 metrics=health_metrics.releases,
+                refetcher=refetcher,
             )
             if (releases_count := len(releases)) > 0:
                 ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
@@ -451,7 +454,7 @@ async def precompute_reposet(
                 ),
             )
     finally:
-        await wait_deferred()
+        await gather(refetcher.close(), wait_deferred())
     return health_metrics
 
 

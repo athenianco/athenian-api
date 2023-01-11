@@ -84,6 +84,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRepository,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
+from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
@@ -618,6 +619,7 @@ class ReleaseToPullRequestMapper:
         cache: Optional[aiomcache.Client],
         releases_in_time_range: Optional[pd.DataFrame] = None,
         metrics: Optional[CommitDAGMetrics] = None,
+        refetcher: Optional[Refetcher] = None,
     ) -> tuple[
         pd.DataFrame,
         pd.DataFrame,
@@ -694,6 +696,7 @@ class ReleaseToPullRequestMapper:
                 pdb,
                 cache,
                 metrics=metrics,
+                refetcher=refetcher,
             )
 
         if has_logical := contains_logical_repos(existing_repos):

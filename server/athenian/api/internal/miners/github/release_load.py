@@ -70,6 +70,7 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseMatchTimespan,
 )
 from athenian.api.object_arrays import is_null, nested_lengths
+from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 
@@ -130,6 +131,7 @@ class ReleaseLoader:
         force_fresh: bool = False,
         only_applied_matches: bool = False,
         metrics: Optional[MineReleaseMetrics] = None,
+        refetcher: Optional[Refetcher] = None,
     ) -> tuple[pd.DataFrame, dict[str, ReleaseMatch]]:
         """
         Fetch releases from the metadata DB according to the match settings.
@@ -140,6 +142,8 @@ class ReleaseLoader:
         :param default_branches: Mapping from repository name to default branch name.
         :param force_fresh: Disable the "unfresh" mode on big accounts.
         :param only_applied_matches: The caller doesn't care about the actual releases.
+        :param metrics: Optional health metrics collector.
+        :param refetcher: Metadata auto-healer for branch releases.
         :return: 1. Pandas DataFrame with the loaded releases (columns match the Release model + \
                     `matched_by_column`.)
                  2. map from repository names (without the service prefix) to the effective
@@ -318,7 +322,9 @@ class ReleaseLoader:
                     mdb,
                     pdb,
                     cache,
-                    index=index,
+                    index,
+                    metrics,
+                    refetcher,
                 ),
             )
             add_pdb_misses(pdb, "releases/high", len(missing_high))
@@ -337,7 +343,9 @@ class ReleaseLoader:
                     mdb,
                     pdb,
                     cache,
-                    index=index,
+                    index,
+                    metrics,
+                    refetcher,
                 ),
             )
             add_pdb_misses(pdb, "releases/low", len(missing_low))
@@ -355,7 +363,9 @@ class ReleaseLoader:
                     mdb,
                     pdb,
                     cache,
-                    index=index,
+                    index,
+                    metrics,
+                    refetcher,
                 ),
             )
             add_pdb_misses(pdb, "releases/all", len(missing_all))
@@ -546,7 +556,9 @@ class ReleaseLoader:
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-        index: Optional[str | Sequence[str]] = None,
+        index: Optional[str | Sequence[str]],
+        metrics: Optional[MineReleaseMetrics],
+        refetcher: Optional[Refetcher],
     ) -> tuple[pd.DataFrame, list[str]]:
         rel_matcher = ReleaseMatcher(account, meta_ids, mdb, pdb, cache)
         repos_by_tag = []
@@ -574,6 +586,8 @@ class ReleaseLoader:
                     time_from,
                     time_to,
                     release_settings,
+                    metrics,
+                    refetcher,
                 ),
             )
         result = await gather(*result)
@@ -1403,6 +1417,8 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
+        metrics: Optional[MineReleaseMetrics],
+        refetcher: Optional[Refetcher],
     ) -> tuple[pd.DataFrame, list[str]]:
         """Return the releases matched by branch and the list of inconsistent repositories."""
         assert not contains_logical_repos(repos)
@@ -1447,6 +1463,8 @@ class ReleaseMatcher:
             self._mdb,
             self._pdb,
             self._cache,
+            metrics=metrics.commits if metrics is not None else None,
+            refetcher=refetcher,
         )
         first_shas = []
         inconsistent = []
