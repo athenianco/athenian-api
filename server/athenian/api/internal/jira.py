@@ -62,10 +62,18 @@ async def get_jira_id(
 
     :return: JIRA installation ID
     """
-    jira_id = await sdb.fetch_val(
+    jira_id = await get_jira_id_or_none(account, sdb)
+    return check_jira_installation(jira_id)
+
+
+async def get_jira_id_or_none(account: int, sdb: DatabaseLike) -> Optional[int]:
+    """Retrieve the JIRA installation ID belonging to the account.
+
+    Return `None` if no installation exists.
+    """
+    return await sdb.fetch_val(
         select(AccountJiraInstallation.id).where(AccountJiraInstallation.account_id == account),
     )
-    return check_jira_installation(jira_id)
 
 
 class JIRAConfig(NamedTuple):

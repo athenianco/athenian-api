@@ -32,6 +32,7 @@ from athenian.api.internal.account import (
     get_user_account_status_from_request,
     request_user_belongs_to_account,
 )
+from athenian.api.internal.datasources import AccountDatasources
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import (
     get_jira_installation_or_none,
@@ -57,6 +58,7 @@ from athenian.api.models.web import (
     GoalTemplateUpdateRequest,
     GoalUpdateRequest,
     InvalidRequestError,
+    JIRAMetricID,
     PullRequestMetricID,
 )
 from athenian.api.request import AthenianWebRequest
@@ -64,11 +66,14 @@ from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 
 
-def _goal_template_from_row(row: Row, **kwargs) -> GoalTemplate:
+def _goal_template_from_row(row: Row, datasources: AccountDatasources, **kwargs) -> GoalTemplate:
+    metric = row[DBGoalTemplate.metric.name]
+    available = (metric not in JIRAMetricID) or AccountDatasources.JIRA in datasources
     return GoalTemplate(
+        available=available,
         id=row[DBGoalTemplate.id.name],
         name=row[DBGoalTemplate.name.name],
-        metric=row[DBGoalTemplate.metric.name],
+        metric=metric,
         metric_params=row[DBGoalTemplate.metric_params.name],
         **kwargs,
     )
@@ -90,7 +95,8 @@ async def get_goal_template(request: AthenianWebRequest, id: int) -> web.Respons
         repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
     else:
         repositories = None
-    model = _goal_template_from_row(row, repositories=repositories)
+    datasources = await AccountDatasources.build_for_account(account, request.sdb)
+    model = _goal_template_from_row(row, datasources, repositories=repositories)
     return model_response(model)
 
 
@@ -105,9 +111,12 @@ async def list_goal_templates(
     :type id: int
     """
     await get_user_account_status_from_request(request, id)
-    rows = await get_goal_templates_from_db(id, not include_tlo, request.sdb)
+    rows, prefixer, datasources = await gather(
+        get_goal_templates_from_db(id, not include_tlo, request.sdb),
+        Prefixer.from_request(request, id),
+        AccountDatasources.build_for_account(id, request.sdb),
+    )
 
-    prefixer = await Prefixer.from_request(request, id)
     models = []
     for row in rows:
         raw_db_repos = row[DBGoalTemplate.repositories.name]
@@ -115,7 +124,7 @@ async def list_goal_templates(
             repositories = [str(r) for r in prefixer.dereference_repositories(db_repos)]
         else:
             repositories = None
-        models.append(_goal_template_from_row(row, repositories=repositories))
+        models.append(_goal_template_from_row(row, datasources, repositories=repositories))
     return model_response(models)
 
 

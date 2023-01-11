@@ -2,12 +2,15 @@
 
 from typing import Any, Optional
 
+import sqlalchemy as sa
+
 from athenian.api.db import Database
-from athenian.api.models.state.models import GoalTemplate
+from athenian.api.models.state.models import AccountJiraInstallation, GoalTemplate
 from athenian.api.models.web import (
     DeveloperMetricID,
     GoalTemplateCreateRequest,
     GoalTemplateUpdateRequest,
+    JIRAMetricID,
     PullRequestMetricID,
 )
 from tests.testutils.db import (
@@ -32,6 +35,7 @@ class TestGetGoalTemplate(Requester):
         res = await self._request(200)
         assert res["id"] == 200
         assert res["name"] == "T 1"
+        assert res["available"]
         for field in ("metric_params", "repositories"):
             assert field not in res
 
@@ -126,6 +130,23 @@ class TestListGoalTemplates(Requester):
 
     async def test_wrong_account(self) -> None:
         await self._request(3, 404)
+
+    async def test_jira_availability(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalTemplateFactory(id=1, metric=PullRequestMetricID.PR_DONE),
+            GoalTemplateFactory(id=2, metric=JIRAMetricID.JIRA_RESOLVED),
+        )
+        res = await self._request(1)
+        assert [r["id"] for r in res] == [1, 2]
+        assert [r["available"] for r in res] == [True, True]
+
+        await sdb.execute(
+            sa.delete(AccountJiraInstallation).where(AccountJiraInstallation.account_id == 1),
+        )
+        res = await self._request(1)
+        assert [r["id"] for r in res] == [1, 2]
+        assert [r["available"] for r in res] == [True, False]
 
     async def _request(
         self,
