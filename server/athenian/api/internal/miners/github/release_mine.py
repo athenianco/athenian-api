@@ -97,6 +97,7 @@ from athenian.api.models.precomputed.models import (
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.object_arrays import is_null, nested_lengths
 from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
@@ -128,6 +129,7 @@ async def mine_releases(
     with_jira: JIRAEntityToFetch = JIRAEntityToFetch.NOTHING,
     releases_in_time_range: Optional[pd.DataFrame] = None,
     metrics: Optional[MineReleaseMetrics] = None,
+    refetcher: Optional[Refetcher] = None,
 ) -> tuple[
     pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
@@ -151,6 +153,7 @@ async def mine_releases(
     :param releases_in_time_range: Shortcut to skip the initial loading of releases in \
                                    [time_from, time_to).
     :param metrics: Report any mining error statistics there.
+    :param refetcher: Metadata self-healer to fix broken commit DAGs, etc.
     :return: 1. list of releases (general info, computed facts). \
              2. User avatars if `with_avatars` else *only newly mined* mentioned people nodes. \
              3. Release matched_by-s.
@@ -180,7 +183,8 @@ async def mine_releases(
         with_deployments,
         with_jira,
         releases_in_time_range,
-        metrics=metrics,
+        metrics,
+        refetcher,
     )
     if metrics is not None:
         _set_count_metrics(result[0], metrics)
@@ -290,6 +294,7 @@ async def _mine_releases(
     with_jira: JIRAEntityToFetch,
     releases_in_time_range: Optional[pd.DataFrame],
     metrics: Optional[MineReleaseMetrics],
+    refetcher: Optional[Refetcher],
 ) -> tuple[
     pd.DataFrame,
     Union[list[tuple[int, str]], list[int]],
@@ -321,6 +326,7 @@ async def _mine_releases(
             cache,
             force_fresh=force_fresh,
             metrics=metrics,
+            refetcher=refetcher,
         )
         release_settings = ReleaseLoader.disambiguate_release_settings(
             release_settings, matched_bys,
@@ -435,6 +441,7 @@ async def _mine_releases(
                 # guarantee
                 releases_in_time_range=releases_in_time_range if internal_releases else None,
                 metrics=metrics.commits if metrics is not None else None,
+                refetcher=refetcher,
             ),
             ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
                 coerce_logical_repos(missing_repos).keys(), account, meta_ids, mdb, pdb, cache,

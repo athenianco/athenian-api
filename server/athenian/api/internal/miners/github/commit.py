@@ -52,6 +52,7 @@ from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 from athenian.precomputer.db.models import GitHubCommitDeployment
@@ -199,7 +200,7 @@ async def extract_commits(
             commits_task = read_sql_query(select(cols_query).where(*sql_filters), mdb, cols_df)
         case _:
             raise AssertionError('Unsupported primary commit filter "%s"' % prop)
-    tasks = [
+    commits, (dags, branches, default_branches) = await gather(
         commits_task,
         fetch_repository_commits_from_scratch(
             repos,
@@ -213,8 +214,8 @@ async def extract_commits(
             pdb,
             cache,
         ),
-    ]
-    commits, (dags, branches, default_branches) = await gather(*tasks, op="extract_commits/fetch")
+        op="extract_commits/fetch",
+    )
     candidates_count = len(commits)
     if only_default_branch:
         commits = _take_commits_in_default_branches(commits, dags, branches, default_branches)
@@ -393,6 +394,7 @@ async def fetch_repository_commits(
     pdb: Database,
     cache: Optional[aiomcache.Client],
     metrics: Optional[CommitDAGMetrics] = None,
+    refetcher: Optional[Refetcher] = None,
 ) -> dict[str, tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
@@ -406,6 +408,7 @@ async def fetch_repository_commits(
                     4. Commit repository name.
     :param prune: Remove any commits that are not accessible from `branches`.
     :param metrics: Mutable error statistics, will be written on new fetches.
+    :param refetcher: Metadata self-healer to request DAG repairs.
     :return: Map from repository names to their DAG consistency indicators and bodies.
     """
     if branches.empty:
@@ -462,7 +465,9 @@ async def fetch_repository_commits(
                     repo,
                     meta_ids,
                     mdb,
-                    alloc,
+                    alloc=alloc,
+                    metrics=metrics,
+                    refetcher=refetcher,
                 ),
             )
         else:
@@ -642,6 +647,7 @@ async def _fetch_commit_history_dag(
     mdb: Database,
     alloc=None,
     metrics: Optional[CommitDAGMetrics] = None,
+    refetcher: Optional[Refetcher] = None,
 ) -> tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
     # these are some approximately sensible defaults, found by experiment
     max_stop_heads = 25
@@ -688,6 +694,7 @@ async def _fetch_commit_history_dag(
     else:
         stop_hashes = []
     batch_size = 20
+    must_refetch = []
     while len(head_hashes) > 0:
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb,
@@ -703,6 +710,8 @@ async def _fetch_commit_history_dag(
                 len(hashes),
                 [new_edges[i] for i in bad_seeds[:10]],
             )
+            for i in bad_seeds:
+                must_refetch.append(new_edges[i][0])
             if metrics is not None:
                 metrics.corrupted.add(repo)
             consistent = False
@@ -747,6 +756,7 @@ async def _fetch_commit_history_dag(
                     metrics.orphaned.add(repo)
                 consistent = False
                 for i in sorted(removed_orphans_indexes, reverse=True):
+                    must_refetch.append(new_edges[i][0])
                     new_edges.pop(i)
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges, alloc)
         head_hashes = head_hashes[batch_size:]
@@ -758,6 +768,17 @@ async def _fetch_commit_history_dag(
             if len(collateral) > 0:
                 head_hashes = np.delete(head_hashes, collateral)
                 head_ids = np.delete(head_ids, collateral)
+    if must_refetch and refetcher is not None:
+        refetch_nodes = (
+            await read_sql_query(
+                select(NodeCommit.node_id).where(
+                    NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_(must_refetch),
+                ),
+                mdb,
+                [NodeCommit.node_id],
+            )
+        )[NodeCommit.node_id.name].values
+        await refetcher.submit_commits(refetch_nodes, True)
     return consistent, repo, hashes, vertexes, edges
 
 

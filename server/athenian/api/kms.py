@@ -22,16 +22,21 @@ class AthenianKMS:
     def __init__(self):
         """Initialize a new instance of AthenianKMS class."""
         evars = {}
-        for var, env_name in (
-            ("keyproject", "GOOGLE_KMS_PROJECT"),
-            ("keyring", "GOOGLE_KMS_KEYRING"),
-            ("keyname", "GOOGLE_KMS_KEYNAME"),
+        for var, env_names in (
+            ("keyproject", ("GOOGLE_KMS_PROJECT", "GOOGLE_CLOUD_PROJECT")),
+            ("keyring", ("GOOGLE_KMS_KEYRING",)),
+            ("keyname", ("GOOGLE_KMS_KEYNAME",)),
         ):
-            evars[var] = x = os.getenv(env_name)
-            if x is None:
+            for env_name in env_names:
+                try:
+                    evars[var] = os.environ[env_name]
+                    break
+                except KeyError:
+                    continue
+            else:
                 raise EnvironmentError(
                     "%s must be defined, see https://cloud.google.com/kms/docs/reference/rest"
-                    % env_name,
+                    % env_names[0],
                 )
         service_file_inline = os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON_INLINE")
         if service_file_inline is not None:

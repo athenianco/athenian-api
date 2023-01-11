@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
-set -eu
+set -u
+err=0
+trap '(( err |= $? ))' ERR
 
 echo "Running isort..."
 isort --check .
@@ -25,5 +27,7 @@ find . -path './athenian/api/sentry_native' -prune -o \( -name '*.py' -print \) 
 if ! [ -z "$(git diff HEAD)" ]; then
     echo "Some files modified after code formatting check."
     git status --porcelain
-    exit 1
+    err=1
 fi
+
+exit $err
