@@ -125,9 +125,10 @@ async def _record_inconsistency_metrics(
 ) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_inconsistency_metrics")
     inserted = []
+    now = datetime.now(timezone.utc)
+    known_metrics = set()
     for attempt in range(3):
         async with aiohttp.ClientSession() as session:
-            now = datetime.now(timezone.utc)
             async with session.get(
                 f"{prometheus_endpoint}/api/v1/query",
                 params={
@@ -150,10 +151,14 @@ async def _record_inconsistency_metrics(
                         account = acc_id_map[int(obj["metric"]["acc_id"])]
                     except KeyError:
                         continue
+                    name = f'inconsistency/{obj["metric"]["node_type"]}'
+                    if (account, name) in known_metrics:
+                        continue
+                    known_metrics.add((account, name))
                     inserted.append(
                         HealthMetric(
                             account_id=account,
-                            name=f'inconsistency/{obj["metric"]["node_type"]}',
+                            name=name,
                             created_at=now,
                             value=int(obj["value"][1]),
                         ).explode(with_primary_keys=True),
