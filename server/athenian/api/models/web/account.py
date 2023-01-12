@@ -13,6 +13,7 @@ class Account(Model):
     regulars: list[User]
     organizations: list[Organization]
     jira: Optional[JIRAInstallation]
+    datasources: list[str]
 
 
 class _Account(Model, sealed=False):
