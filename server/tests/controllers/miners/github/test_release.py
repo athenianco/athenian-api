@@ -1118,7 +1118,9 @@ async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
 
 @with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner, prefixer):
-    branches, _ = await branch_miner.load_branches(dag, prefixer, (6366825,), mdb, None)
+    branches, _ = await branch_miner.load_branches(
+        dag, prefixer, 1, (6366825,), mdb, None, None, fresh=True,
+    )
     commits = await fetch_repository_commits(
         dag, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, 1, (6366825,), mdb, pdb, cache,
     )

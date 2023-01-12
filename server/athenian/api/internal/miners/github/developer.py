@@ -292,7 +292,7 @@ async def _mine_releases(
             ],
         )
     branches, default_branches = await BranchMiner.load_branches(
-        repo_names, prefixer, meta_ids, mdb, cache,
+        repo_names, prefixer, account, meta_ids, mdb, pdb, cache,
     )
     releases, _ = await ReleaseLoader.load_releases(
         repo_names,

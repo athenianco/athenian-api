@@ -468,7 +468,9 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     )
     repos = [r.unprefixed for r in prefixed_repos]
     (branches, default_branches), release_settings = await gather(
-        BranchMiner.load_branches(repos, prefixer, meta_ids, request.mdb, request.cache),
+        BranchMiner.load_branches(
+            repos, prefixer, model.account, meta_ids, request.mdb, request.pdb, request.cache,
+        ),
         settings.list_release_matches([str(r) for r in prefixed_repos]),
     )
     tasks = [

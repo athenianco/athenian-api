@@ -572,7 +572,7 @@ async def fetch_repository_commits_from_scratch(
     in-place.
     """
     (branches, defaults), pdags = await gather(
-        branch_miner.load_branches(repos, prefixer, meta_ids, mdb, cache),
+        branch_miner.load_branches(repos, prefixer, account, meta_ids, mdb, pdb, cache),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     )
     if only_default_branch:

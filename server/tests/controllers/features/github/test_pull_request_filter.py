@@ -1363,6 +1363,7 @@ class TestFetchPullRequests:
         )
         check_pr_deployments(prs, deps, 1)
 
+    @with_defer
     async def test_many_repositories_batching(
         self,
         mdb_rw,

@@ -1802,7 +1802,13 @@ class PRFactsCalculator:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self._branch_miner.load_branches(
-                repositories, prefixer, self._meta_ids, self._mdb, self._cache,
+                repositories,
+                prefixer,
+                self._account,
+                self._meta_ids,
+                self._mdb,
+                self._pdb,
+                self._cache,
             )
         precomputed_tasks = [
             self._done_prs_facts_loader.load_precomputed_done_facts_filters(

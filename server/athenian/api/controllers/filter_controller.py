@@ -672,7 +672,15 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     release_settings, jira_ids, (branches, default_branches) = await gather(
         settings.list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-        BranchMiner.load_branches(stripped_repos, prefixer, meta_ids, request.mdb, request.cache),
+        BranchMiner.load_branches(
+            stripped_repos,
+            prefixer,
+            filt.account,
+            meta_ids,
+            request.mdb,
+            request.pdb,
+            request.cache,
+        ),
     )
     releases, avatars, _, deployments = await mine_releases(
         repos=stripped_repos,
@@ -1170,7 +1178,9 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
     # all the repos, because we don't know what else is released in the matched deployments
     release_settings, (branches, default_branches) = await gather(
         settings.list_release_matches(),
-        BranchMiner.load_branches(None, prefixer, meta_ids, request.mdb, request.cache),
+        BranchMiner.load_branches(
+            None, prefixer, filt.account, meta_ids, request.mdb, request.pdb, request.cache,
+        ),
     )
     deployments = await mine_deployments(
         repositories=repos,

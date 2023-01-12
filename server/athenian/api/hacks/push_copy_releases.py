@@ -105,7 +105,7 @@ def main():
             settings.list_logical_repositories(prefixed_repos),
         )
         branches, default_branches = await BranchMiner.load_branches(
-            args.repos, prefixer, meta_ids, mdb, None,
+            args.repos, prefixer, args.account, meta_ids, mdb, pdb, None,
         )
         now = datetime.now(timezone.utc)
         log.info("Loading releases in %s", args.repos)
