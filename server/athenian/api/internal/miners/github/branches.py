@@ -1,23 +1,52 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Collection, Iterable, Iterator, Optional
 
 import aiomcache
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import func, select
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query
-from athenian.api.cache import cached, cached_methods, middle_term_exptime
-from athenian.api.db import DatabaseLike
+from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.cache import CancelCache, cached, cached_methods, short_term_exptime
+from athenian.api.db import DatabaseLike, dialect_specific_insert
+from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import numpy_struct
+from athenian.precomputer.db.models import GitHubBranches
+
+
+@numpy_struct
+class PrecomputedBranches:
+    """Branch metadata aggregated by repo."""
+
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        branch_ids: [int]
+        branch_names: [str]
+        is_defaults: [bool]
+        commit_ids: [int]
+        commit_shas: ["S40"]  # noqa: F821
+        commit_dates: ["datetime64[s]"]  # noqa: F821
+
+    class Optional:
+        """Mutable fields that are None by default. We do not serialize them."""
+
+        repository_full_name: str
+        repository_node_id: int
 
 
 @dataclass(slots=True)
@@ -45,34 +74,71 @@ class BranchMiner:
     """Load information related to branches."""
 
     @classmethod
-    @sentry_span
-    @cached(
-        exptime=middle_term_exptime,
-        serialize=serialize_args,
-        deserialize=deserialize_args,
-        key=lambda meta_ids, repos, strip=False, **_: (
-            ",".join(map(str, meta_ids)),
-            ",".join(sorted(repos if repos is not None else ["None"])),
-            strip,
-        ),
-    )
     async def load_branches(
         cls,
         repos: Optional[Iterable[str]],
         prefixer: Prefixer,
+        account: int,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
+        pdb: Optional[DatabaseLike],
         cache: Optional[aiomcache.Client],
         strip: bool = False,
+        fresh: bool = True,  # wip
         metrics: Optional[BranchMinerMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
         :param strip: Value indicating whether the repository names are prefixed.
-        :param since: Discard branches last updated before this date.
+        :param fresh: Value indicating whether we must bypass pdb and load branches from scratch.
         :param metrics: Report error statistics by mutating this object.
         """
+        return (
+            await cls._load_branches(
+                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip, fresh, metrics,
+            )
+        )[:-1]
+
+    def _postprocess_branches(
+        result: tuple[pd.DataFrame, dict[str, str], bool],
+        repos: Optional[Iterable[str]],
+        **_,
+    ) -> tuple[pd.DataFrame, dict[str, str], bool]:
+        branches, default_branches, with_repos = result
+        if repos is None:
+            if with_repos:
+                raise CancelCache()
+            return branches, default_branches, False
+        try:
+            default_branches = {k: default_branches[k] for k in repos}
+        except KeyError as e:
+            raise CancelCache() from e
+        # it should be okay to potentially return some extra branches in the dataframe
+        return branches, default_branches, True
+
+    @classmethod
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=serialize_args,
+        deserialize=deserialize_args,
+        key=lambda account, strip=False, **_: (account, strip),
+        postprocess=_postprocess_branches,
+    )
+    async def _load_branches(
+        cls,
+        repos: Optional[Iterable[str]],
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: tuple[int, ...],
+        mdb: DatabaseLike,
+        pdb: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+        strip: bool,
+        fresh: bool,
+        metrics: Optional[BranchMinerMetrics],
+    ) -> tuple[pd.DataFrame, dict[str, str], bool]:
         if strip and repos is not None:
             repos = [r.split("/", 1)[1] for r in repos]
         if repos is not None:
@@ -80,7 +146,25 @@ class BranchMiner:
             repo_ids = [prefixer.repo_name_to_node.get(r) for r in repos]
         else:
             repo_ids = None
-        branches = await cls._fetch_branches(repo_ids, None, prefixer, meta_ids, mdb)
+        if fresh:
+            branches = await cls._fetch_branches(repo_ids, None, prefixer, meta_ids, mdb)
+            if pdb is not None:
+                await defer(
+                    cls._store_precomputed_branches(branches, pdb),
+                    f"store_branches({len(branches)})",
+                )
+        else:
+            old_branches, new_branches = await gather(
+                cls._fetch_branches(
+                    repo_ids,
+                    datetime.now(timezone.utc) - timedelta(hours=2),
+                    prefixer,
+                    meta_ids,
+                    mdb,
+                ),
+                cls._fetch_precomputed_branches(account, repo_ids, prefixer, pdb),
+            )
+            branches = pd.join([old_branches, new_branches])
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
@@ -189,7 +273,32 @@ class BranchMiner:
                             metrics.empty_count += len(items)
         if metrics is not None:
             metrics.count = len(branches)
-        return branches, default_branches
+        return branches, default_branches, repo_ids is not None
+
+    _postprocess_branches = staticmethod(_postprocess_branches)
+
+    @classmethod
+    async def reset_cache(cls, account: int, cache: Optional[aiomcache.Client]) -> None:
+        """Drop the cache of load_branches()."""
+        await gather(
+            *(
+                cls._load_branches.reset_cache(
+                    # cached method is unbound, add one more param for cls
+                    cls,
+                    None,
+                    None,
+                    account,
+                    (),
+                    None,
+                    None,
+                    cache,
+                    strip,
+                    False,
+                    None,
+                )
+                for strip in (False, True)
+            ),
+        )
 
     @classmethod
     @sentry_span
@@ -228,6 +337,97 @@ class BranchMiner:
         if since is None:
             query = query.with_statement_hint("set(join_collapse_limit 1)")
         return await read_sql_query(query, mdb, Branch)
+
+    @classmethod
+    @sentry_span
+    async def _fetch_precomputed_branches(
+        cls,
+        account: int,
+        repos: Optional[Collection[int]],
+        prefixer: Prefixer,
+        pdb: DatabaseLike,
+    ) -> pd.DataFrame:
+        rows = await pdb.fetch_all(
+            select(GitHubBranches.repository_node_id, GitHubBranches.data).where(
+                GitHubBranches.acc_id == account,
+                GitHubBranches.format_version
+                == GitHubBranches.__table__.columns[GitHubBranches.format_version.key].default.arg,
+                *((GitHubBranches.repository_node_id.in_(repos),) if repos is not None else ()),
+            ),
+        )
+        repo_node_to_name = prefixer.repo_node_to_name.__getitem__
+        branches = [
+            PrecomputedBranches(
+                r[1], repository_node_id=r[0], repository_full_name=repo_node_to_name(r[0]),
+            )
+            for r in rows
+        ]
+        columns = {}
+        for col in PrecomputedBranches.f:
+            try:
+                columns[col], borders = PrecomputedBranches.vectorize_field(branches, col)
+            except NotImplementedError:
+                columns[col] = np.concatenate([rb[col] for rb in branches])
+        lengths = np.diff(borders)
+        columns[Branch.repository_node_id.name] = np.repeat(
+            [b.repository_node_id for b in branches], lengths,
+        )
+        columns[Branch.repository_full_name.name] = np.repeat(
+            [b.repository_full_name for b in branches], lengths,
+        )
+        return pd.DataFrame(columns)
+
+    @classmethod
+    @sentry_span
+    async def _store_precomputed_branches(
+        cls,
+        account: int,
+        branches: pd.DataFrame,
+        pdb: DatabaseLike,
+    ) -> None:
+        order = np.argsort(branches[Branch.repository_node_id.name].values)
+        repo_ids, counts = np.unique(
+            branches[Branch.repository_node_id.name].values[order], return_counts=True,
+        )
+        pos = 0
+        inserted = []
+        format_version = GitHubBranches.__table__.columns[
+            GitHubBranches.format_version.key
+        ].default.arg
+        now = datetime.now(timezone.utc)
+        for repo_id, count in zip(repo_ids, counts):
+            indexes = order[pos : pos + count]
+            pos += count
+            pb = PrecomputedBranches.from_fields(
+                **{col: branches[col].values[indexes] for col in PrecomputedBranches.f},
+            )
+            inserted.append(
+                GitHubBranches(
+                    acc_id=account,
+                    format_version=format_version,
+                    repository_node_id=repo_id,
+                    data=pb.data,
+                    updated_at=now,
+                ),
+            )
+        sql = (await dialect_specific_insert(pdb))(GitHubBranches)
+        sql = sql.on_conflict_do_update(
+            index_elements=GitHubBranches.__table__.primary_key.columns,
+            set_={
+                col.name: getattr(sql.excluded, col.name)
+                for col in (GitHubBranches.updated_at, GitHubBranches.data)
+            },
+        )
+        with sentry_sdk.start_span(
+            op=f"_store_precomputed_branches/execute_many({len(inserted)})",
+        ):
+            if pdb.url.dialect == "sqlite":
+                async with pdb.connection() as pdb_conn:
+                    async with pdb_conn.transaction():
+                        await pdb_conn.execute_many(sql, inserted)
+            else:
+                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+                await pdb.execute_many(sql, inserted)
 
 
 def dummy_branches_df() -> pd.DataFrame:

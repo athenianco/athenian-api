@@ -947,7 +947,7 @@ async def branches(mdb, branch_miner, prefixer, meta_ids):
     global _branches
     if _branches is None:
         _branches, _ = await branch_miner.load_branches(
-            ["src-d/go-git"], prefixer, meta_ids, mdb, None,
+            ["src-d/go-git"], prefixer, 1, meta_ids, mdb, None, None, fresh=True,
         )
     return _branches
 

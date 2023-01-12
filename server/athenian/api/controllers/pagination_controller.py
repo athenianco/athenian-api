@@ -63,7 +63,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         ),
     )
     branches, default_branches = await BranchMiner.load_branches(
-        repos, prefixer, meta_ids, request.mdb, request.cache,
+        repos, prefixer, filt.request.account, meta_ids, request.mdb, request.pdb, request.cache,
     )
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     (done_ats, _), _ = await gather(

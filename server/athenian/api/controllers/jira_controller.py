@@ -127,6 +127,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         JIRAFilterReturn.ISSUE_BODIES in return_ or JIRAFilterReturn.EPICS in return_,
         request.sdb,
         request.mdb,
+        request.pdb,
         request.cache,
     )
     if filt.projects is not None:
@@ -1225,6 +1226,7 @@ async def _collect_ids(
     with_branches_and_settings: bool,
     sdb: Database,
     mdb: Database,
+    pdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> tuple[
     tuple[int, ...],
@@ -1246,7 +1248,9 @@ async def _collect_ids(
     if with_branches_and_settings:
         settings = Settings.from_request(request, account, prefixer)
         (branches, default_branches), logical_settings = await gather(
-            BranchMiner.load_branches(repos, prefixer, meta_ids, mdb, cache, strip=True),
+            BranchMiner.load_branches(
+                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip=True,
+            ),
             settings.list_logical_repositories(repos),
             op="sdb/branches and releases",
         )
@@ -1297,7 +1301,9 @@ async def _calc_jira_entry(
         release_settings,
         logical_settings,
         _,
-    ) = await _collect_ids(filt.account, request, True, request.sdb, request.mdb, request.cache)
+    ) = await _collect_ids(
+        filt.account, request, True, request.sdb, request.mdb, request.pdb, request.cache,
+    )
     if filt.projects is not None:
         projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
         projects = {k: projects[k] for k in jira_ids.projects if k in projects}

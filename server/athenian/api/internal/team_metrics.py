@@ -103,7 +103,7 @@ async def calculate_team_metrics(
     )
     all_repos = tuple(release_settings.native.keys())
     (branches, default_branches), logical_settings, _ = await gather(
-        BranchMiner.load_branches(all_repos, prefixer, meta_ids, mdb, cache),
+        BranchMiner.load_branches(all_repos, prefixer, account, meta_ids, mdb, pdb, cache),
         settings.list_logical_repositories(),
         jira_map_task,
     )

@@ -268,8 +268,7 @@ async def _reset_releases(
                 GitHubReleaseFacts.repository_full_name.in_(repos),
             ),
         ),
-        # cached method is unbounded, add one more param for cls
-        BranchMiner.load_branches.reset_cache(None, None, None, meta_ids, mdb, cache),
+        BranchMiner.reset_cache(account, cache),
     )
 
 

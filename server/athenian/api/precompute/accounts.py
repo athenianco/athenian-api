@@ -268,7 +268,15 @@ async def precompute_reposet(
             settings.list_logical_repositories(prefixed_repos),
             settings.list_release_matches(prefixed_repos),
             BranchMiner.load_branches(
-                repos, prefixer, meta_ids, mdb, None, metrics=health_metrics.branches,
+                repos,
+                prefixer,
+                reposet.owner_id,
+                meta_ids,
+                mdb,
+                pdb,
+                None,
+                fresh=True,
+                metrics=health_metrics.branches,
             ),
         )
         if not args.skip_releases:

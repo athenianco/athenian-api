@@ -87,7 +87,7 @@ async def mine_contributors(
         PullRequest.acc_id.in_(meta_ids),
     ]
     (branches, default_branches), repo_id_df = await gather(
-        BranchMiner.load_branches(repos, prefixer, meta_ids, mdb, cache),
+        BranchMiner.load_branches(repos, prefixer, account, meta_ids, mdb, pdb, cache),
         read_sql_query(
             select(NodeRepository.node_id).where(
                 NodeRepository.name_with_owner.in_(repos), NodeRepository.acc_id.in_(meta_ids),

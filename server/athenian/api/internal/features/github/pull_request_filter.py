@@ -774,7 +774,7 @@ async def _filter_pull_requests(
         ),
     )
     branches, default_branches = await BranchMiner.load_branches(
-        repos, prefixer, meta_ids, mdb, cache,
+        repos, prefixer, account, meta_ids, mdb, pdb, cache,
     )
 
     async def done_flow():
@@ -1111,7 +1111,7 @@ async def _fetch_pull_requests(
 ]:
     assert prs
     branches, default_branches = await BranchMiner.load_branches(
-        prs, prefixer, meta_ids, mdb, cache,
+        prs, prefixer, account, meta_ids, mdb, pdb, cache,
     )
     filters = [
         and_(
