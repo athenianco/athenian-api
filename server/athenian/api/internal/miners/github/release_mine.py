@@ -1101,13 +1101,18 @@ def _filter_by_labels(
     if len(left) == 0 and labels_filter.include:
         return []
     passed_mask = np.in1d(all_pr_node_ids, left, assume_unique=True)
+    # DEV5752: np.argmax(borders) is always the first index of len(all_pr_node_ids)
 
     if labels_filter.include:
-        passed_release_indexes = np.flatnonzero(np.logical_or.reduceat(passed_mask, borders[:-1]))
+        passed_release_indexes = np.flatnonzero(
+            np.logical_or.reduceat(passed_mask, borders[: np.argmax(borders)]),
+        )
         return [releases[i] for i in passed_release_indexes]
     # DEV-2962
     # all the releases pass, but we must hide unmatched PRs
-    changed_release_indexes = np.flatnonzero(~np.logical_and.reduceat(passed_mask, borders[:-1]))
+    changed_release_indexes = np.flatnonzero(
+        ~np.logical_and.reduceat(passed_mask, borders[: np.argmax(borders)]),
+    )
     pr_released_prs_columns = released_prs_columns(PullRequest)
     for i in changed_release_indexes:
         mask = passed_mask[borders[i + 1] : borders[i]]

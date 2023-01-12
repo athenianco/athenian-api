@@ -65,5 +65,8 @@ class Refetcher:
         ]
         if not messages:
             return
-        self.log.info("requesting to heal: %s", messages)
+        for acc_id in self._meta_ids:
+            self.log.info(
+                "requesting to heal %s_acc_%s_heal_%s : %s", ts, acc_id, node_type, nodes,
+            )
         self.log.info("pubsub response: %s", await self._client.publish(self._topic, messages))
