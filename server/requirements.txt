@@ -35,7 +35,7 @@ pympler==1.0.1
 objgraph==3.5.0
 lz4==4.3.2
 jinja2==3.1.2
-git+ssh://git@github.com:/athenianco/precomputer@v0.3.47#egg=athenian-precomputer==0.3.47
+git+ssh://git@github.com:/athenianco/precomputer@v0.3.48#egg=athenian-precomputer==0.3.48
 rsa>=4.7 # not directly required, pinned by Snyk to avoid a vulnerability
 names_matcher==2.0.13
 psutil==5.9.4

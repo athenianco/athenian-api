@@ -21,7 +21,7 @@ from athenian.api.async_utils import (
     read_sql_query_with_join_collapse,
 )
 from athenian.api.cache import cached, max_exptime, middle_term_exptime
-from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, insert_or_ignore
+from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, dialect_specific_insert
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
@@ -1214,6 +1214,7 @@ class ReleaseToPullRequestMapper:
             ).where(
                 GitHubRepository.repository_full_name.in_(repos),
                 GitHubRepository.acc_id == account,
+                GitHubRepository.first_commit.isnot(None),
             ),
         )
         add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(rows))
@@ -1282,10 +1283,8 @@ class ReleaseToPullRequestMapper:
                         GitHubRepository.first_commit.name
                     ].replace(tzinfo=timezone.utc)
             await defer(
-                insert_or_ignore(
-                    GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
-                ),
-                "insert_repository_first_commit_dates",
+                cls._store_repository_first_commit_dates(values, pdb),
+                "_store_repository_first_commit_dates",
             )
             rows.extend((r[:2] for r in computed))
         result = dict(rows)
@@ -1293,6 +1292,29 @@ class ReleaseToPullRequestMapper:
             for k, v in result.items():
                 result[k] = v.replace(tzinfo=timezone.utc)
         return result
+
+    @classmethod
+    @sentry_span
+    async def _store_repository_first_commit_dates(
+        cls,
+        values: list[dict[str, Any]],
+        pdb: Database,
+    ) -> None:
+        sql = (await dialect_specific_insert(pdb))(GitHubRepository)
+        sql = sql.on_conflict_do_update(
+            index_elements=GitHubRepository.__table__.primary_key.columns,
+            set_={
+                col.name: getattr(sql.excluded, col.name)
+                for col in (GitHubRepository.updated_at, GitHubRepository.first_commit)
+            },
+        )
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, values)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, values)
 
     @classmethod
     def _extract_released_commits(

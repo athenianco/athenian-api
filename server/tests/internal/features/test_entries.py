@@ -903,7 +903,7 @@ async def _calc_shared_kwargs(
     release_settings = await settings.list_release_matches()
     repos = release_settings.native.keys()
     branches, default_branches = await BranchMiner.load_branches(
-        repos, prefixer, 1, meta_ids, mdb, None, None, fresh=True,
+        repos, prefixer, 1, meta_ids, mdb, None, None,
     )
     return {
         "release_settings": release_settings,

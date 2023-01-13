@@ -275,7 +275,6 @@ async def precompute_reposet(
                 mdb,
                 pdb,
                 None,
-                fresh=True,
                 metrics=health_metrics.branches,
             ),
         )
