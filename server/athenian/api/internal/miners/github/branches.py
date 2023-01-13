@@ -16,7 +16,7 @@ from athenian.api.db import DatabaseLike, dialect_specific_insert
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
+from athenian.api.models.metadata.github import Branch, NodeRepositoryRef
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
@@ -30,17 +30,19 @@ class PrecomputedBranches:
 
     class Immutable:
         """
-        Immutable fields, we store them in `_data` and mirror in `_arr`.
+        Immutable fields repeat Branch columns.
 
         We generate `dtype` from this spec.
+
+        The format is all branches per repo, hence arrays.
         """
 
-        branch_ids: [int]
-        branch_names: [str]
-        is_defaults: [bool]
-        commit_ids: [int]
-        commit_shas: ["S40"]  # noqa: F821
-        commit_dates: ["datetime64[s]"]  # noqa: F821
+        branch_id: [int]
+        branch_name: [str]
+        is_default: [bool]
+        commit_id: [int]
+        commit_sha: ["S40"]  # noqa: F821
+        commit_date: ["datetime64[s]"]  # noqa: F821
 
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
@@ -84,7 +86,7 @@ class BranchMiner:
         pdb: Optional[DatabaseLike],
         cache: Optional[aiomcache.Client],
         strip: bool = False,
-        fresh: bool = True,  # wip
+        fresh: bool = True,  # wip, let pdb fill up
         metrics: Optional[BranchMinerMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
@@ -103,6 +105,7 @@ class BranchMiner:
     def _postprocess_branches(
         result: tuple[pd.DataFrame, dict[str, str], bool],
         repos: Optional[Iterable[str]],
+        strip: bool,
         **_,
     ) -> tuple[pd.DataFrame, dict[str, str], bool]:
         branches, default_branches, with_repos = result
@@ -110,6 +113,8 @@ class BranchMiner:
             if with_repos:
                 raise CancelCache()
             return branches, default_branches, False
+        if strip:
+            repos = [r.split("/", 1)[1] for r in repos]
         try:
             default_branches = {k: default_branches[k] for k in repos}
         except KeyError as e:
@@ -123,7 +128,7 @@ class BranchMiner:
         exptime=short_term_exptime,
         serialize=serialize_args,
         deserialize=deserialize_args,
-        key=lambda account, strip=False, **_: (account, strip),
+        key=lambda account, **_: (account,),
         postprocess=_postprocess_branches,
     )
     async def _load_branches(
@@ -150,11 +155,11 @@ class BranchMiner:
             branches = await cls._fetch_branches(repo_ids, None, prefixer, meta_ids, mdb)
             if pdb is not None:
                 await defer(
-                    cls._store_precomputed_branches(branches, pdb),
+                    cls._store_precomputed_branches(account, branches, repo_ids, pdb),
                     f"store_branches({len(branches)})",
                 )
         else:
-            old_branches, new_branches = await gather(
+            new_branches, old_branches = await gather(
                 cls._fetch_branches(
                     repo_ids,
                     datetime.now(timezone.utc) - timedelta(hours=2),
@@ -164,7 +169,34 @@ class BranchMiner:
                 ),
                 cls._fetch_precomputed_branches(account, repo_ids, prefixer, pdb),
             )
-            branches = pd.join([old_branches, new_branches])
+            if old_branches.empty:
+                branches = new_branches
+            elif new_branches.empty:
+                branches = old_branches
+            else:
+                old_indexes = np.flatnonzero(
+                    np.in1d(
+                        old_branches[Branch.branch_id.name].values,
+                        new_branches[Branch.branch_id.name].values,
+                        invert=True,
+                    ),
+                )
+                if len(old_indexes):
+                    if len(old_indexes) < len(old_branches):
+                        old_branches = old_branches.take(old_indexes)
+                    branches = pd.concat([new_branches, old_branches], ignore_index=True)
+                else:
+                    branches = new_branches
+            if not new_branches.empty:
+                await defer(
+                    cls._store_precomputed_branches(
+                        account,
+                        branches,
+                        new_branches[Branch.repository_node_id.name].unique(),
+                        pdb,
+                    ),
+                    f"store_branches({len(branches)})",
+                )
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
@@ -208,12 +240,16 @@ class BranchMiner:
             default_branches[repo] = default_branch
             pos = next_pos
         if ambiguous_defaults:
-            commit_ids = np.concatenate([rb[0] for rb in ambiguous_defaults.values()])
+            map_indexes = np.flatnonzero(
+                np.in1d(
+                    branches[Branch.commit_id.name].values,
+                    np.concatenate([rb[0] for rb in ambiguous_defaults.values()]),
+                ),
+            )
             committed_dates = dict(
-                await mdb.fetch_all(
-                    select(NodeCommit.id, NodeCommit.committed_date).where(
-                        NodeCommit.id.in_(commit_ids), NodeCommit.acc_id.in_(meta_ids),
-                    ),
+                zip(
+                    branches[Branch.commit_id.name].values[map_indexes],
+                    branches[Branch.commit_date.name].values[map_indexes],
                 ),
             )
             for repo, (repo_commit_ids, repo_branch_names) in ambiguous_defaults.items():
@@ -227,25 +263,20 @@ class BranchMiner:
                 if default_branch is None:
                     default_branch = "master"
                 log.warning(
-                    "resolved <ambiguous> default branch in %s to %s", repo, default_branch,
+                    "resolved <ambiguous> default branch in %s to %s @ %s",
+                    repo,
+                    default_branch,
+                    max_date,
                 )
                 default_branches[repo] = default_branch
-        zero_branch_repos = [repo for repo in repos if repo not in default_branches]
-        if zero_branch_repos:
-            existing_zero_branch_repos = dict(
-                await mdb.fetch_all(
-                    select(Repository.node_id, Repository.full_name).where(
-                        Repository.full_name.in_(zero_branch_repos),
-                        Repository.acc_id.in_(meta_ids),
-                    ),
-                ),
-            )
-            deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos.values())
+        if zero_branch_repos := {repo for repo in repos if repo not in default_branches}:
+            deleted_repos = zero_branch_repos - prefixer.repo_name_to_node.keys()
             if deleted_repos:
                 for repo in deleted_repos:
                     default_branches[repo] = "master"
                 log.error("some repositories do not exist: %s", deleted_repos)
-            if existing_zero_branch_repos:
+            if zero_names := (zero_branch_repos & prefixer.repo_name_to_node.keys()):
+                zero_nodes = [prefixer.repo_name_to_node[k] for k in zero_names]
                 rows = await mdb.fetch_all(
                     select(
                         NodeRepositoryRef.parent_id,
@@ -253,7 +284,7 @@ class BranchMiner:
                     )
                     .where(
                         NodeRepositoryRef.acc_id.in_(meta_ids),
-                        NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos),
+                        NodeRepositoryRef.parent_id.in_(zero_nodes),
                     )
                     .group_by(NodeRepositoryRef.parent_id),
                 )
@@ -261,7 +292,7 @@ class BranchMiner:
                 reported_repos = set()
                 warnings = []
                 errors = []
-                for node_id, full_name in existing_zero_branch_repos.items():
+                for node_id, full_name in zip(zero_nodes, zero_names):
                     if full_name not in reported_repos:
                         (warnings if refs.get(node_id, 0) == 0 else errors).append(full_name)
                         default_branches[full_name] = "master"
@@ -310,33 +341,46 @@ class BranchMiner:
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
     ) -> pd.DataFrame:
-        query = (
-            select(Branch)
-            .where(
-                *((Branch.repository_node_id.in_(repos),) if repos is not None else ()),
-                Branch.acc_id.in_(meta_ids),
-                *((Branch.commit_date >= since,) if since is not None else ()),
-            )
-            .with_statement_hint(
-                "IndexOnlyScan(c node_commit_repository_target)"
-                if since is None
-                else "IndexOnlyScan(c github_node_commit_check_runs)",
-            )
-            .with_statement_hint("Rows(ref c repo *100)")
-            .with_statement_hint("Rows(ref c repo rr *100)")
-            .with_statement_hint(
-                "Rows(ref c repo rr n1 n2 "
-                f"*{len(repos) if repos is not None else len(prefixer.repo_node_to_name)})",
-            )
+        columns = [
+            Branch.branch_id,
+            Branch.branch_name,
+            Branch.repository_node_id,
+            Branch.repository_full_name,
+            Branch.is_default,
+            Branch.commit_id,
+            Branch.commit_sha,
+            Branch.commit_date,
+        ]
+        query_repo_col = (
+            Branch.repository_node_id if since is None else Branch.commit_repository_node_id
         )
-        if repos is not None:
-            scan = (
-                "IndexScan" if len(repos) < len(prefixer.repo_node_to_name) * 0.8 else "BitmapScan"
-            )
-            query = query.with_statement_hint(f"{scan}(ref node_ref_heads_repository_id)")
+        query = select(*columns).where(
+            *((query_repo_col.in_(repos),) if repos is not None else ()),
+            Branch.acc_id.in_(meta_ids),
+            *((Branch.commit_date >= since,) if since is not None else ()),
+        )
         if since is None:
-            query = query.with_statement_hint("set(join_collapse_limit 1)")
-        return await read_sql_query(query, mdb, Branch)
+            if repos is not None:
+                scan = (
+                    "IndexScan"
+                    if len(repos) < len(prefixer.repo_node_to_name) * 0.8
+                    else "BitmapScan"
+                )
+                query = query.with_statement_hint(f"{scan}(ref node_ref_heads_repository_id)")
+            query = (
+                query.with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+                .with_statement_hint(
+                    "Rows(ref c repo rr n1 n2 "
+                    f"*{len(repos) if repos is not None else len(prefixer.repo_node_to_name)})",
+                )
+                .with_statement_hint("Rows(ref c repo *100)")
+                .with_statement_hint("Rows(ref c repo rr *100)")
+                .with_statement_hint("set(join_collapse_limit 1)")
+            )
+        else:
+            # Postgres still thinks we will fetch 0 rows, but that's OK on a narrow time window
+            query = query.with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
+        return await read_sql_query(query, mdb, columns)
 
     @classmethod
     @sentry_span
@@ -355,6 +399,8 @@ class BranchMiner:
                 *((GitHubBranches.repository_node_id.in_(repos),) if repos is not None else ()),
             ),
         )
+        if not rows:
+            return pd.DataFrame()
         repo_node_to_name = prefixer.repo_node_to_name.__getitem__
         branches = [
             PrecomputedBranches(
@@ -363,11 +409,14 @@ class BranchMiner:
             for r in rows
         ]
         columns = {}
-        for col in PrecomputedBranches.f:
+        for col in PrecomputedBranches.dtype.names:
             try:
-                columns[col], borders = PrecomputedBranches.vectorize_field(branches, col)
+                values, borders = PrecomputedBranches.vectorize_field(branches, col)
             except NotImplementedError:
-                columns[col] = np.concatenate([rb[col] for rb in branches])
+                values = np.concatenate([rb[col] for rb in branches])
+            if col == Branch.commit_date.name:
+                values = pd.Series(values, dtype=pd.DatetimeTZDtype(tz=timezone.utc))
+            columns[col] = values
         lengths = np.diff(borders)
         columns[Branch.repository_node_id.name] = np.repeat(
             [b.repository_node_id for b in branches], lengths,
@@ -383,32 +432,39 @@ class BranchMiner:
         cls,
         account: int,
         branches: pd.DataFrame,
+        repo_ids_to_update: Optional[Iterable[int]],
         pdb: DatabaseLike,
     ) -> None:
         order = np.argsort(branches[Branch.repository_node_id.name].values)
         repo_ids, counts = np.unique(
             branches[Branch.repository_node_id.name].values[order], return_counts=True,
         )
-        pos = 0
+        if repo_ids_to_update is None:
+            repo_indexes = np.arange(len(repo_ids), dtype=int)
+        else:
+            if not isinstance(repo_ids_to_update, (tuple, list, np.ndarray)):
+                repo_ids_to_update = list(repo_ids_to_update)
+            repo_indexes = np.flatnonzero(np.in1d(repo_ids, repo_ids_to_update))
+        borders = np.zeros(len(counts) + 1, dtype=int)
+        np.cumsum(counts, out=borders[1:])
         inserted = []
         format_version = GitHubBranches.__table__.columns[
             GitHubBranches.format_version.key
         ].default.arg
         now = datetime.now(timezone.utc)
-        for repo_id, count in zip(repo_ids, counts):
-            indexes = order[pos : pos + count]
-            pos += count
+        for repo_index in repo_indexes:
+            indexes = order[borders[repo_index] : borders[repo_index + 1]]
             pb = PrecomputedBranches.from_fields(
-                **{col: branches[col].values[indexes] for col in PrecomputedBranches.f},
+                **{col: branches[col].values[indexes] for col in PrecomputedBranches.dtype.names},
             )
             inserted.append(
                 GitHubBranches(
                     acc_id=account,
                     format_version=format_version,
-                    repository_node_id=repo_id,
+                    repository_node_id=repo_ids[repo_index],
                     data=pb.data,
                     updated_at=now,
-                ),
+                ).explode(with_primary_keys=True),
             )
         sql = (await dialect_specific_insert(pdb))(GitHubBranches)
         sql = sql.on_conflict_do_update(
