@@ -47,24 +47,32 @@ class TestGroupPRsByParticipants:
             {PRParticipationKind.AUTHOR: {20}},
         ]
 
-        res = group_prs_by_participants(participants, items)
+        res = group_prs_by_participants(participants, items, False)
         # group {10, 30} has row 1, group {20} has row 0
         assert len(res) == 2
         assert np.array_equal(res[0], [1])
         assert np.array_equal(res[1], [0])
 
-    def test_single_participant_groups(self) -> None:
+    def test_single_participants_group_items_only_specified_participants(self) -> None:
         items = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
         participants = [{PRParticipationKind.AUTHOR: {2}}]
 
-        res = group_prs_by_participants(participants, items)
+        res = group_prs_by_participants(participants, items, True)
         # all rows are selected with a single group
         assert len(res) == 1
         assert np.array_equal(res[0], [0, 1])
 
+    def test_single_participants_group(self) -> None:
+        items = pd.DataFrame({"author": [1, 2, 2], "b": [3, 3, 3]})
+        participants = [{PRParticipationKind.AUTHOR: {2}}]
+
+        res = group_prs_by_participants(participants, items, False)
+        assert len(res) == 1
+        assert np.array_equal(res[0], [1, 2])
+
     def test_no_participant_groups(self) -> None:
         items = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
-        res = group_prs_by_participants([], items)
+        res = group_prs_by_participants([], items, False)
         # all rows are selected with no groups
         assert len(res) == 1
         assert np.array_equal(res[0], [0, 1])
@@ -76,7 +84,7 @@ class TestGroupPRsByParticipants:
             {PRParticipationKind.AUTHOR: {2}},
         ]
 
-        res = group_prs_by_participants(participants, items)
+        res = group_prs_by_participants(participants, items, False)
         assert len(res) == 2
         assert np.array_equal(res[0], [])
         assert np.array_equal(res[1], [])

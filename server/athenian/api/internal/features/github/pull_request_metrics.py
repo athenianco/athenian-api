@@ -87,6 +87,7 @@ def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.nda
 def group_prs_by_participants(
     participants: Sequence[PRParticipants],
     items: pd.DataFrame,
+    items_only_contain_specified_participants: bool,
 ) -> List[np.ndarray]:
     """
     Group PRs by participants.
@@ -94,12 +95,16 @@ def group_prs_by_participants(
     The aggregation is OR. We don't support all kinds, see `PullRequestFacts`'s mutable fields.
     An array with selected indexes in `items` if returned for every group in `participants`.
     If `participants` is empty a single array selecting everything is returned.
+    If `items_only_contain_specified_participants` is True the function will assume that
+    `items` only contains participants expressed in `participants` so it will select all items
+    if `participants` contains a single group.
     """
     # FIXME: participants here can also be List[Dict[PRParticipationKind, Set[str]]]
 
-    # if len(participants) == 1, we've already filtered in SQL so don't have to re-check
     # if there are no participant groups also we select everything and don't re-check
-    if len(participants) < 2:
+    # if len(participants) == 1 and items only contains specified participants we also select
+    # everything
+    if not participants or (items_only_contain_specified_participants and len(participants) == 1):
         return [np.arange(len(items))]
     # if items is empty we return the right number of indexes to allow subsequent correct grouping
     if items.empty:
