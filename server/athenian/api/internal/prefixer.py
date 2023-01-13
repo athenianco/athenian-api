@@ -7,6 +7,7 @@ import pickle
 from typing import Iterable, Optional
 
 import aiomcache
+from async_lru import alru_cache
 from sqlalchemy import select
 
 from athenian.api import metadata
@@ -298,3 +299,20 @@ class Prefixer:
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
         return repr(self)
+
+
+class LazyPrefixerProxy:
+    """When called return an instance of Prefixer, building it only when needed."""
+
+    def __init__(self, request, account):
+        """Init the `LazyPrefixerProxy`."""
+
+        @alru_cache
+        async def get_prefixer():
+            return await Prefixer.from_request(request, account)
+
+        self._get_cached = get_prefixer
+
+    async def __call__(self) -> Prefixer:
+        """Return an instance of the Prefixer."""
+        return await self._get_cached()

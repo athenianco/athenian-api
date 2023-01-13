@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 from typing import Any
 
@@ -5,10 +6,16 @@ import pytest
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
+from athenian.api.internal.prefixer import (
+    LazyPrefixerProxy,
+    Prefixer,
+    RepositoryName,
+    RepositoryReference,
+)
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.request import request_mock
 
 
 @with_defer
@@ -175,3 +182,24 @@ def mk_prefixer(**kwargs: Any) -> Prefixer:
             kwargs.setdefault(field.name, {})
     kwargs["do_not_construct_me_directly"] = None
     return Prefixer(**kwargs)
+
+
+class TestLazyPrefixerProxy:
+    async def test_base(self, sdb: Database, mdb: Database) -> None:
+        request = request_mock(sdb=sdb, mdb=mdb)
+        proxy = LazyPrefixerProxy(request, 1)
+
+        prefixer0 = await proxy()
+        assert isinstance(prefixer0, Prefixer)
+
+        prefixer1 = await proxy()
+        assert prefixer1 is prefixer0
+
+    async def test_parallel(self, sdb: Database, mdb: Database) -> None:
+        request = request_mock(sdb=sdb, mdb=mdb)
+        proxy = LazyPrefixerProxy(request, 1)
+
+        prefixers = await asyncio.gather(*[proxy() for _ in range(6)])
+
+        for p in prefixers[1:]:
+            assert p is prefixers[0]
