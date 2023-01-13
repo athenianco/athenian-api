@@ -4,8 +4,15 @@ import logging
 from typing import Optional, Sequence
 
 from athenian.api import metadata
-from athenian.api.internal.prefixer import Prefixer, RepositoryName, RepositoryReference
+from athenian.api.internal.prefixer import (
+    LazyPrefixerProxy,
+    Prefixer,
+    RepositoryName,
+    RepositoryReference,
+)
 from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.models.web import InvalidRequestError
+from athenian.api.response import ResponseError
 
 
 def dereference_db_repositories(
@@ -49,3 +56,18 @@ def dump_db_repositories(
     if repo_idents is None:
         return None
     return [(ident.node_id, ident.logical_name) for ident in repo_idents]
+
+
+async def parse_request_repositories(
+    repo_names: Optional[list[str]],
+    prefixer_proxy: LazyPrefixerProxy,
+    pointer: str = ".repositories",
+) -> Optional[list[tuple[int, str]]]:
+    """Resolve repository node IDs from the prefixed names."""
+    if repo_names is None:
+        return None
+    prefixer = await prefixer_proxy()
+    try:
+        return dump_db_repositories(prefixer.reference_repositories(repo_names))
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(".repositories", str(e)))

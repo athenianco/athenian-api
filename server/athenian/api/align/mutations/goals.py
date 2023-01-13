@@ -31,9 +31,10 @@ from athenian.api.align.models import (
 from athenian.api.align.serialization import parse_metric_params, parse_union_value
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
-from athenian.api.controllers.goal_controller import parse_request_repositories
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import normalize_issue_type, normalize_priority
+from athenian.api.internal.prefixer import LazyPrefixerProxy
+from athenian.api.internal.repos import parse_request_repositories
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from athenian.api.request import AthenianWebRequest
@@ -152,7 +153,7 @@ async def _parse_create_goal_input(
         raise GoalMutationError("Goal expiresAt cannot precede validFrom")
 
     repositories = await parse_request_repositories(
-        input.get(CreateGoalInputFields.repositories), request, account_id,
+        input.get(CreateGoalInputFields.repositories), LazyPrefixerProxy(request, account_id),
     )
     jira_projects = _parse_request_jira_projects(input)
     jira_priorities = _parse_request_jira_priorities(input)
@@ -292,7 +293,8 @@ async def _parse_update_goal_input(
             repositories = RepositoriesUpdateInfo([], True)
         else:
             repositories = RepositoriesUpdateInfo(
-                await parse_request_repositories(value, request, account_id), False,
+                await parse_request_repositories(value, LazyPrefixerProxy(request, account_id)),
+                False,
             )
 
     strings_field_parser = _StringsListUpdateInfoParser(input)

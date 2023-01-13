@@ -39,8 +39,8 @@ from athenian.api.internal.jira import (
     parse_request_issue_types,
     parse_request_priorities,
 )
-from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.repos import dump_db_repositories, parse_db_repositories
+from athenian.api.internal.prefixer import LazyPrefixerProxy, Prefixer
+from athenian.api.internal.repos import parse_db_repositories, parse_request_repositories
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.team_metrics import calculate_team_metrics
@@ -137,7 +137,7 @@ async def create_goal_template(request: AthenianWebRequest, body: dict) -> web.R
     await get_user_account_status_from_request(request, create_request.account)
 
     repositories = await parse_request_repositories(
-        create_request.repositories, request, create_request.account,
+        create_request.repositories, LazyPrefixerProxy(request, create_request.account),
     )
     values = {
         DBGoalTemplate.account_id.name: create_request.account,
@@ -182,7 +182,7 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     if not await request_user_belongs_to_account(request, account_id):
         raise GoalTemplateNotFoundError(id) from None
     repositories = await parse_request_repositories(
-        update_request.repositories, request, account_id,
+        update_request.repositories, LazyPrefixerProxy(request, account_id),
     )
     values = {
         DBGoalTemplate.name.name: update_request.name,
@@ -192,21 +192,6 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     }
     await update_goal_template_in_db(id, request.sdb, **values)
     return web.json_response({})
-
-
-async def parse_request_repositories(
-    repo_names: Optional[list[str]],
-    request: AthenianWebRequest,
-    account_id: int,
-) -> Optional[list[tuple[int, str]]]:
-    """Resolve repository node IDs from the prefixed names."""
-    if repo_names is None:
-        return None
-    prefixer = await Prefixer.from_request(request, account_id)
-    try:
-        return dump_db_repositories(prefixer.reference_repositories(repo_names))
-    except ValueError as e:
-        raise ResponseError(InvalidRequestError(".repositories", str(e)))
 
 
 @weight(10)
@@ -343,7 +328,7 @@ async def _parse_create_request(
         raise ResponseError(BadRequestError(detail="Goal expires_at cannot precede valid_from"))
 
     repositories = await parse_request_repositories(
-        creat_req.repositories, request, creat_req.account,
+        creat_req.repositories, LazyPrefixerProxy(request, creat_req.account),
     )
     jira_projects = creat_req.jira_projects
     jira_priorities = parse_request_priorities(creat_req.jira_priorities)
@@ -418,7 +403,7 @@ async def _parse_update_request(
         )
 
     repositories = await parse_request_repositories(
-        update_req.repositories, request, goal[Goal.account_id.name],
+        update_req.repositories, LazyPrefixerProxy(request, goal[Goal.account_id.name]),
     )
     jira_priorities = parse_request_priorities(update_req.jira_priorities)
     jira_issue_types = parse_request_issue_types(update_req.jira_issue_types)

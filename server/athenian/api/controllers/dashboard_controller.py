@@ -14,18 +14,17 @@ from athenian.api.internal.dashboard import (
     reorder_dashboard_charts,
 )
 from athenian.api.internal.jira import parse_request_issue_types, parse_request_priorities
-from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.repos import dump_db_repositories
+from athenian.api.internal.prefixer import LazyPrefixerProxy, Prefixer
+from athenian.api.internal.repos import parse_request_repositories
 from athenian.api.internal.team import get_team_from_db
 from athenian.api.models.state.models import DashboardChart, Team, TeamDashboard
 from athenian.api.models.web import (
     CreatedIdentifier,
     DashboardChartCreateRequest,
     DashboardUpdateRequest,
-    InvalidRequestError,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
-from athenian.api.response import ResponseError, model_response
+from athenian.api.response import model_response
 
 
 async def get_dashboard(
@@ -66,7 +65,8 @@ async def create_dashboard_chart(
     dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
     create_request = model_from_body(DashboardChartCreateRequest, body)
 
-    extra_values = await _parse_request_chart_filters(create_request, dashboard.account, request)
+    prefixer_proxy = LazyPrefixerProxy(request, dashboard.account)
+    extra_values = await _parse_request_chart_filters(create_request, prefixer_proxy)
 
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -113,21 +113,16 @@ async def _get_request_dashboard(
 
 async def _parse_request_chart_filters(
     create_req: DashboardChartCreateRequest,
-    account: int,
-    request: AthenianWebRequest,
+    prefixer_proxy: LazyPrefixerProxy,
 ) -> dict:
     values: dict = {}
     if not (filters := create_req.filters):
         return values
 
     if filters.repositories is not None:
-        prefixer = await Prefixer.from_request(request, account)
-        try:
-            values[DashboardChart.repositories] = dump_db_repositories(
-                prefixer.reference_repositories(filters.repositories),
-            )
-        except ValueError as e:
-            raise ResponseError(InvalidRequestError.from_validation_error(e))
+        values[DashboardChart.repositories] = await parse_request_repositories(
+            filters.repositories, prefixer_proxy, ".filters.repositories",
+        )
 
     if filters.environments is not None:
         values[DashboardChart.environments] = filters.environments
