@@ -84,10 +84,15 @@ def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.nda
     return group_by_lines(lines, items["size"].values)
 
 
+def group_prs_all(items: pd.DataFrame) -> list[np.ndarray]:
+    """Generate a group including every PR in the dataframe."""
+    return [np.arange(len(items))]
+
+
 def group_prs_by_participants(
     participants: Sequence[PRParticipants],
     items: pd.DataFrame,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """
     Group PRs by participants.
 
@@ -97,9 +102,8 @@ def group_prs_by_participants(
     """
     # FIXME: participants here can also be List[Dict[PRParticipationKind, Set[str]]]
 
-    # if len(participants) == 1, we've already filtered in SQL so don't have to re-check
-    # if there are no participant groups also we select everything and don't re-check
-    if len(participants) < 2:
+    # if there are no participant groups we select everything and don't re-check
+    if not participants:
         return [np.arange(len(items))]
     # if items is empty we return the right number of indexes to allow subsequent correct grouping
     if items.empty:

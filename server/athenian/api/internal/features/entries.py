@@ -46,6 +46,7 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     PullRequestBinnedHistogramCalculator,
     PullRequestBinnedMetricCalculator,
     calculate_logical_prs_duplication_mask,
+    group_prs_all,
     group_prs_by_lines,
     group_prs_by_participants,
     need_jira_mapping as pr_metrics_need_jira_mapping,
@@ -376,7 +377,12 @@ class MetricEntriesCalculator:
         )
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
-        with_grouper = partial(group_prs_by_participants, participants)
+        # as optimization, if len(participants) == 1, we've already filtered in SQL
+        # so don't have to re-check
+        if len(participants) == 1:
+            with_grouper = group_prs_all
+        else:
+            with_grouper = partial(group_prs_by_participants, participants)
         dedupe_mask = calculate_logical_prs_duplication_mask(
             df_facts, release_settings, logical_settings,
         )
@@ -581,7 +587,11 @@ class MetricEntriesCalculator:
         )
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
-        with_grouper = partial(group_prs_by_participants, participants)
+        # see description of the same optimization in calc_release_metrics_line_github()
+        if len(participants) == 1:
+            with_grouper = group_prs_all
+        else:
+            with_grouper = partial(group_prs_by_participants, participants)
         dedupe_mask = calculate_logical_prs_duplication_mask(
             df_facts, release_settings, logical_settings,
         )
