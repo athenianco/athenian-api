@@ -4,6 +4,7 @@ from typing import Any
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 from dateutil.parser import parse as parse_datetime
+from freezegun import freeze_time
 import pytest
 from sqlalchemy import delete, insert, select, update
 
@@ -235,6 +236,7 @@ async def test_get_account_features_disabled(client, headers, sdb):
     assert body[0]["name"] == DBAccount.expires_at.name
 
 
+@freeze_time("2021-01-01")
 async def test_set_account_features_smoke(client, headers, god, sdb):
     body = [
         {"name": "expires_at", "parameters": "2020-01-01"},

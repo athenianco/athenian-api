@@ -1886,11 +1886,11 @@ async def test_pr_miner_jira_cache(
 @with_defer
 async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner, prefixer):
     branches, _ = await branch_miner.load_branches(
-        ["src-d/go-git"], prefixer, 1, (6366825,), mdb, None, None, fresh=True,
+        ["src-d/go-git"], prefixer, 1, (6366825,), mdb, None, None,
     )
-    branches = branches[branches[Branch.branch_name.name] == "master"]
+    branches = branches[branches[Branch.branch_name.name] == "master"].copy()
     branches[Branch.repository_full_name.name] = "xxx"
-    branches[Branch.commit_date.name] = [datetime.now(timezone.utc)]
+    branches[Branch.commit_date.name] = datetime.now(timezone.utc)
     dags = dag.copy()
     dags["xxx"] = True, _empty_dag()
     args = [
@@ -1923,9 +1923,9 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner, pref
 @with_defer
 async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer, meta_ids):
     branches, _ = await branch_miner.load_branches(
-        ["src-d/go-git"], prefixer, 1, meta_ids, mdb, None, None, fresh=True,
+        ["src-d/go-git"], prefixer, 1, meta_ids, mdb, None, None,
     )
-    branches = branches[branches[Branch.branch_name.name] == "master"]
+    branches = branches[branches[Branch.branch_name.name] == "master"].copy()
     branches[Branch.commit_date.name] = datetime.now(timezone.utc)
     args = [
         datetime(2015, 1, 1, tzinfo=timezone.utc),
