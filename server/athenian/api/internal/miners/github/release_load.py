@@ -1707,7 +1707,7 @@ class ReleaseMatcher:
                 PullRequest.repository_full_name.in_(repos),
                 PullRequest.base_ref.in_(base_branch_names),
                 PullRequest.merged_at.between(time_from, time_to),
-                PullRequest.merge_commit_id.isnot(None),
+                PullRequest.merge_commit_sha.isnot(None),
             )
             .order_by(desc(PullRequest.merged_at)),
             self._mdb,
