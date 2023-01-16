@@ -376,7 +376,7 @@ class MetricEntriesCalculator:
         )
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
-        with_grouper = partial(group_prs_by_participants, participants)
+        with_grouper = partial(group_prs_by_participants, participants, True)
         dedupe_mask = calculate_logical_prs_duplication_mask(
             df_facts, release_settings, logical_settings,
         )
@@ -482,7 +482,9 @@ class MetricEntriesCalculator:
                     ],
                     df_facts,
                 ),
-                group_prs_by_participants([t.participants for t in request.teams], df_facts),
+                group_prs_by_participants(
+                    [t.participants for t in request.teams], False, df_facts,
+                ),
                 group_pr_facts_by_jira(jira_grouping, df_facts),
             ]
 
@@ -581,7 +583,7 @@ class MetricEntriesCalculator:
         )
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
-        with_grouper = partial(group_prs_by_participants, participants)
+        with_grouper = partial(group_prs_by_participants, participants, True)
         dedupe_mask = calculate_logical_prs_duplication_mask(
             df_facts, release_settings, logical_settings,
         )

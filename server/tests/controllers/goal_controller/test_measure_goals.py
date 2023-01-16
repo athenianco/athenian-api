@@ -626,6 +626,34 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
         assert res[3]["id"] == 23
         assert res[3]["team_goal"]["value"]["current"] == 2
 
+    async def test_single_participants_group(self, sdb: Database) -> None:
+        goal_kwargs = {"valid_from": dt(2016, 6, 1), "expires_at": dt(2016, 12, 1)}
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789]),
+            TeamFactory(id=3, parent_id=1, members=[40020]),
+            GoalFactory(
+                id=20, **goal_kwargs, metric=PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
+            ),
+            GoalFactory(id=21, **goal_kwargs, metric=PullRequestMetricID.PR_OPENED),
+            TeamGoalFactory(goal_id=20, team_id=3, metric_params={"threshold": 200}),
+            TeamGoalFactory(goal_id=21, team_id=3),
+        )
+
+        res = await self._request(json=self._body(1, only_with_targets=False))
+        assert (goal_21 := res[1])["id"] == 21
+        assert goal_21["team_goal"]["children"][0]["team"]["id"] == 3
+        opened = goal_21["team_goal"]["children"][0]["value"]["current"]
+
+        # check the same team goal value, but requested for team 3
+        res = await self._request(json=self._body(3, only_with_targets=False))
+        assert (goal_21 := res[1])["id"] == 21
+        assert goal_21["team_goal"]["team"]["id"] == 3
+        opened_2 = goal_21["team_goal"]["value"]["current"]
+
+        assert opened == opened_2
+        assert opened == 5
+
 
 class TestMeasureGoalsJIRAFiltering(BaseMeasureGoalsTest):
     async def test_pr_metric_priority(self, sdb: Database, mdb_rw: Database) -> None:
