@@ -1,6 +1,3 @@
-from typing import Any
-from unittest import mock
-
 import sqlalchemy as sa
 
 from athenian.api.db import Database
@@ -11,7 +8,6 @@ from athenian.api.internal.account import (
 )
 from athenian.api.models.metadata.github import Team as MetaTeam
 from athenian.api.models.state.models import Team
-from athenian.api.request import AthenianWebRequest
 from tests.testutils.db import DBCleaner, assert_existing_row, models_insert, models_insert_auto_pk
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import (
@@ -20,6 +16,7 @@ from tests.testutils.factory.state import (
     TeamFactory,
     UserAccountFactory,
 )
+from tests.testutils.request import request_mock
 
 
 class TestGetMultipleMetadataMetadataIds:
@@ -96,7 +93,7 @@ class TestRequestUserBelongsToAccount:
             AccountFactory(id=33),
             UserAccountFactory(account_id=33, user_id="github|123", is_admin=False),
         )
-        req = _request_mock(sdb=sdb, uid="github|123")
+        req = request_mock(sdb=sdb, uid="github|123")
         assert await request_user_belongs_to_account(req, 33)
 
     async def test_admin_user(self, sdb: Database) -> None:
@@ -105,7 +102,7 @@ class TestRequestUserBelongsToAccount:
             AccountFactory(id=33),
             UserAccountFactory(account_id=33, user_id="github|123", is_admin=True),
         )
-        req = _request_mock(sdb=sdb, uid="github|123")
+        req = request_mock(sdb=sdb, uid="github|123")
         assert await request_user_belongs_to_account(req, 33)
 
     async def test_doesnt_belong(self, sdb: Database) -> None:
@@ -114,26 +111,8 @@ class TestRequestUserBelongsToAccount:
             AccountFactory(id=33),
             UserAccountFactory(account_id=33, user_id="github|123", is_admin=True),
         )
-        req = _request_mock(sdb=sdb, uid="github|123")
+        req = request_mock(sdb=sdb, uid="github|123")
         assert not await request_user_belongs_to_account(req, 34)
 
-        req = _request_mock(sdb=sdb, uid="github|456")
+        req = request_mock(sdb=sdb, uid="github|456")
         assert not await request_user_belongs_to_account(req, 33)
-
-
-def _request_mock(**kwargs: Any) -> AthenianWebRequest:
-    req = mock.MagicMock(spec=AthenianWebRequest)
-
-    defaults = {
-        "uid": "XX",
-        "sdb": None,
-        "mdb": None,
-        "cache": None,
-        "user": None,
-        "is_god": False,
-        "app": {"slack": None},
-    }
-    for field, default in defaults.items():
-        val = kwargs.get(field, default)
-        setattr(req, field, val)
-    return req

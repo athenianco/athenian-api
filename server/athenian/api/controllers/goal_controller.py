@@ -40,7 +40,7 @@ from athenian.api.internal.jira import (
     parse_request_priorities,
 )
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.repos import dump_db_repositories, parse_db_repositories
+from athenian.api.internal.repos import parse_db_repositories, parse_request_repositories
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.team_metrics import calculate_team_metrics
@@ -192,21 +192,6 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     }
     await update_goal_template_in_db(id, request.sdb, **values)
     return web.json_response({})
-
-
-async def parse_request_repositories(
-    repo_names: Optional[list[str]],
-    request: AthenianWebRequest,
-    account_id: int,
-) -> Optional[list[tuple[int, str]]]:
-    """Resolve repository node IDs from the prefixed names."""
-    if repo_names is None:
-        return None
-    prefixer = await Prefixer.from_request(request, account_id)
-    try:
-        return dump_db_repositories(prefixer.reference_repositories(repo_names))
-    except ValueError as e:
-        raise ResponseError(InvalidRequestError(".repositories", str(e)))
 
 
 @weight(10)

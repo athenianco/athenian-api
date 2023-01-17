@@ -31,9 +31,9 @@ from athenian.api.align.models import (
 from athenian.api.align.serialization import parse_metric_params, parse_union_value
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.async_utils import gather
-from athenian.api.controllers.goal_controller import parse_request_repositories
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.jira import normalize_issue_type, normalize_priority
+from athenian.api.internal.repos import parse_request_repositories
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from athenian.api.request import AthenianWebRequest
