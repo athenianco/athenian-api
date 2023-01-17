@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Any
 
+import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz
@@ -10,20 +11,39 @@ from athenian.api.models.web import (
     DashboardChartFilters,
     PullRequestMetricID,
 )
+from tests.testutils.auth import force_request_auth
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
+from tests.testutils.factory.state import (
+    DashboardChartFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+    UserAccountFactory,
+)
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
+
+_USER_ID = "github|1"
 
 
 class BaseCreateDashboardChartTest(Requester):
     path = "/private/team/{team_id}/dashboard/{dashboard_id}/chart/create"
 
-    async def post(self, team_id: int, dashboard_id: int, *args: Any, **kwargs: Any):
+    @pytest.fixture(scope="function", autouse=True)
+    async def _create_user(self, sdb):
+        await models_insert(sdb, UserAccountFactory(user_id=_USER_ID))
+
+    async def post(
+        self,
+        team_id: int,
+        dashboard_id: int,
+        *args: Any,
+        user_id: str | None = _USER_ID,
+        **kwargs: Any,
+    ):
         path_kwargs = {"team_id": team_id, "dashboard_id": dashboard_id}
-        res = await super().post(*args, path_kwargs=path_kwargs, **kwargs)
-        return res
+        with force_request_auth(user_id, self.headers) as headers:
+            return await super().post(*args, headers=headers, path_kwargs=path_kwargs, **kwargs)
 
     @classmethod
     def _body(
@@ -103,6 +123,11 @@ class TestCreateDashboardChartErrors(BaseCreateDashboardChartTest):
         body = self._body(filters={"repositories": ["github.com/org/repo"]})
         res = await self.post_json(10, 1, 400, json=body)
         assert res["detail"] == "Unknown repository github.com/org/repo"
+
+    async def test_default_user_forbidden(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
+        res = await self.post_json(10, 1, 403, user_id=None, json=self._body())
+        assert "is the default user" in res["detail"]
 
 
 class TestCreateDashboardChart(BaseCreateDashboardChartTest):
