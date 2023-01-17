@@ -1,30 +1,44 @@
 from typing import Any, Sequence
 
 from aiohttp import ClientResponse
+import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import DashboardUpdateRequest
 from athenian.api.models.web.dashboard import _DashboardUpdateChart
+from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, models_insert
-from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
+from tests.testutils.factory.state import (
+    DashboardChartFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+    UserAccountFactory,
+)
 from tests.testutils.requester import Requester
+
+_USER_ID = "github|1"
 
 
 class BaseUpdateDashboardTest(Requester):
     path = "/private/team/{team_id}/dashboard/{dashboard_id}"
+
+    @pytest.fixture(scope="function", autouse=True)
+    async def _create_user(self, sdb):
+        await models_insert(sdb, UserAccountFactory(user_id=_USER_ID))
 
     async def put(
         self,
         team_id: int,
         dashboard_id: int,
         *args: Any,
+        user_id: str | None = _USER_ID,
         **kwargs: Any,
     ) -> ClientResponse:
         path_kwargs = {"team_id": team_id, "dashboard_id": dashboard_id}
-        res = await super().put(*args, path_kwargs=path_kwargs, **kwargs)
-        return res
+        with force_request_auth(user_id, self.headers) as headers:
+            return await super().put(*args, path_kwargs=path_kwargs, headers=headers, **kwargs)
 
     @classmethod
     def _body(cls, chart_ids: Sequence[int]) -> dict:
@@ -35,9 +49,7 @@ class BaseUpdateDashboardTest(Requester):
 class TestUpdateDashboardErrors(BaseUpdateDashboardTest):
     async def test_team_account_mismatch(self, sdb: Database) -> None:
         await models_insert(
-            sdb,
-            TeamFactory(id=10, owner_id=3),
-            TeamDashboardFactory(id=1, team_id=10),
+            sdb, TeamFactory(id=10, owner_id=3), TeamDashboardFactory(id=1, team_id=10),
         )
         await self.put(10, 1, 404, json=self._body([]))
 
@@ -67,6 +79,15 @@ class TestUpdateDashboardErrors(BaseUpdateDashboardTest):
 
         rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
         assert sorted(rows) == [(0, 3), (1, 7)]
+
+    async def test_default_user_forbidden(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=1, team_id=10),
+            DashboardChartFactory(id=1, dashboard_id=1),
+        )
+        await self.put(10, 1, 403, user_id=None, json=self._body([1]))
 
 
 class TestUpdateDashboard(BaseUpdateDashboardTest):
