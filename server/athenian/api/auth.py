@@ -687,23 +687,23 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
 
 
 def disable_default_user(func):
-    """Decorate an endpoint handler to raise 403 if the user is the default one."""
+    """Decorate an endpoint handler to raise 403 if the user is the default one and is not god."""
 
     async def wrapped_disable_default_user(
         request: AthenianWebRequest,
         *args,
         **kwargs,
     ) -> aiohttp.web.Response:
-        ensure_non_default_user(request)
+        forbid_unprivileged_default_user(request)
         return await func(request, *args, **kwargs)
 
     wraps(wrapped_disable_default_user, func)
     return wrapped_disable_default_user
 
 
-def ensure_non_default_user(request: AthenianWebRequest):
-    """Raise exception if the user on the request is the default user."""
-    if request.is_default_user:
+def forbid_unprivileged_default_user(request: AthenianWebRequest):
+    """Raise exception if the request user is the default user and has not god privileges."""
+    if request.is_default_user and getattr(request, "god_id", None) is None:
         raise ResponseError(ForbiddenError(f"{request.uid} is the default user"))
 
 

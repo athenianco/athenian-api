@@ -15,11 +15,13 @@ from athenian.api.models.web import (
     TeamGoalAssociation,
 )
 from athenian.api.models.web.goal import MetricValue
+from tests.conftest import DEFAULT_USER_ID
 from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory.state import (
     AccountFactory,
     GoalFactory,
+    GodFactory,
     TeamFactory,
     TeamGoalFactory,
     UserAccountFactory,
@@ -85,7 +87,7 @@ class TestDeleteGoal(BaseDeleteGoalTest):
         await self._request(100)
         await self._assert_no_goal_exists(sdb)
 
-    async def test_remove_with_team_goals(self, sdb: Database):
+    async def test_remove_with_team_goals(self, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(owner_id=1, id=10),
@@ -105,6 +107,14 @@ class TestDeleteGoal(BaseDeleteGoalTest):
         await assert_existing_row(sdb, Goal, id=200)
         await assert_existing_row(sdb, Goal, id=300)
         await assert_existing_row(sdb, TeamGoal, goal_id=200)
+
+    async def test_default_user_is_god(self, sdb: Database) -> None:
+        # default user is allowed to do the operation if he's got god privileges
+        await models_insert(
+            sdb, GoalFactory(id=1, account_id=2), GodFactory(user_id=DEFAULT_USER_ID),
+        )
+        await self._request(1, user_id=None)
+        await assert_missing_row(sdb, Goal, id=1)
 
 
 def _team_goals_assoc_from_tuples(

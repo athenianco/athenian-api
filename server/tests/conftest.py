@@ -289,18 +289,18 @@ def check_memcached():
 
 has_memcached = check_memcached()
 
+DEFAULT_USER_ID = "auth0|62a1ae88b6bba16c6dbc6870"
+
 
 class TestAuth0(Auth0):
     def __init__(self, whitelist, cache=None):
-        super().__init__(
-            whitelist=whitelist, default_user="auth0|62a1ae88b6bba16c6dbc6870", lazy=True,
-        )
+        super().__init__(whitelist=whitelist, default_user=DEFAULT_USER_ID, lazy=True)
         self._default_user = User(
-            id="auth0|62a1ae88b6bba16c6dbc6870",
+            id=DEFAULT_USER_ID,
             login="vadim",
             email="vadim@athenian.co",
             name="Vadim Markovtsev",
-            native_id="62a1ae88b6bba16c6dbc6870",
+            native_id=DEFAULT_USER_ID.split("|")[1],
             picture="https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             updated=datetime.now(timezone.utc),
         )

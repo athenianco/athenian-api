@@ -15,6 +15,7 @@ from athenian.api.models.state.models import (
     FeatureComponent,
     Goal,
     GoalTemplate,
+    God,
     LogicalRepository,
     MappedJIRAIdentity,
     ReleaseSetting,
@@ -67,6 +68,13 @@ class AccountJiraInstallationFactory(SQLAlchemyModelFactory):
 
     id = factory.Sequence(lambda n: n + 3)
     account_id = factory.Sequence(lambda n: n + 3)
+
+
+class GodFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = God
+
+    user_id = factory.Sequence(lambda n: f"user-{n + 1}")
 
 
 class ReleaseSettingFactory(SQLAlchemyModelFactory):

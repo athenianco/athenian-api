@@ -21,6 +21,7 @@ from tests.align.utils import (
     assert_extension_error,
     get_extension_error_obj,
 )
+from tests.conftest import DEFAULT_USER_ID
 from tests.testutils.auth import force_request_auth
 from tests.testutils.db import (
     assert_existing_row,
@@ -31,6 +32,7 @@ from tests.testutils.db import (
 from tests.testutils.factory.state import (
     AccountFactory,
     GoalFactory,
+    GodFactory,
     TeamFactory,
     TeamGoalFactory,
     UserAccountFactory,
@@ -527,6 +529,17 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         tg11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
         assert tg11_row[TeamGoal.metric_params.name] == {"threshold": 23}
+
+    async def test_default_user_is_god(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, TeamFactory(owner_id=1, id=10), GodFactory(user_id=DEFAULT_USER_ID),
+        )
+
+        team_goals = [{TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"int": 0}}]
+
+        variables = {"createGoalInput": self._mk_input(teamGoals=team_goals), "accountId": 1}
+        new_goal_id = await self._create(variables, None)
+        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
 
     async def _create(self, *args: Any, **kwargs: Any) -> int:
         res = await self._request(*args, **kwargs)
