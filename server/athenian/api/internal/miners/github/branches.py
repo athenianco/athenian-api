@@ -367,8 +367,8 @@ class BranchMiner:
             Branch.repository_node_id if since is None else Branch.commit_repository_node_id
         )
         query = select(*columns).where(
-            *((query_repo_col.in_(repos),) if repos is not None else ()),
             Branch.acc_id.in_(meta_ids),
+            *((query_repo_col.in_(repos),) if repos is not None else ()),
             *((Branch.commit_date >= since,) if since is not None else ()),
         )
         if since is None:

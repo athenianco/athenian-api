@@ -299,9 +299,9 @@ class DonePRFactsLoader:
                 or_(
                     *[
                         and_(
+                            ghprt.acc_id == account,
                             ghprt.repository_full_name == repo,
                             ghprt.number.in_(numbers),
-                            ghprt.acc_id == account,
                         )
                         for repo, numbers in repos.items()
                     ],
@@ -320,8 +320,8 @@ class DonePRFactsLoader:
                 *(
                     select(selected).where(
                         and_(
-                            item,
                             ghprt.acc_id == account,
+                            item,
                             format_version_filter,
                             ghprt.repository_full_name.in_(item_repos),
                             or_(
@@ -398,9 +398,9 @@ class DonePRFactsLoader:
             ghprt.releaser,
         ]
         filters = [
+            ghprt.acc_id == account,
             ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.pr_node_id.in_(node_ids),
-            ghprt.acc_id == account,
         ]
         query = select(selected).where(and_(*filters))
         with sentry_sdk.start_span(op="load_precomputed_done_facts_ids/fetch"):
@@ -469,23 +469,19 @@ class DonePRFactsLoader:
         assert prs.index.nlevels == 2
         ghprt = GitHubDonePullRequestFacts
         query = select(
-            [
-                ghprt.pr_node_id,
-                ghprt.pr_done_at,
-                ghprt.releaser,
-                ghprt.release_url,
-                ghprt.release_node_id,
-                ghprt.repository_full_name,
-                ghprt.release_match,
-            ],
+            ghprt.pr_node_id,
+            ghprt.pr_done_at,
+            ghprt.releaser,
+            ghprt.release_url,
+            ghprt.release_node_id,
+            ghprt.repository_full_name,
+            ghprt.release_match,
         ).where(
-            and_(
-                ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
-                ghprt.repository_full_name.in_(prs.index.get_level_values(1).unique()),
-                ghprt.acc_id == account,
-                ghprt.releaser.isnot(None),
-                ghprt.pr_done_at < time_to,
-            ),
+            ghprt.acc_id == account,
+            ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
+            ghprt.repository_full_name.in_(prs.index.get_level_values(1).unique()),
+            ghprt.releaser.isnot(None),
+            ghprt.pr_done_at < time_to,
         )
         with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
             rows = await pdb.fetch_all(query)
@@ -701,13 +697,10 @@ class DonePRFactsLoader:
         filters.append(
             not_(
                 exists().where(
-                    and_(
-                        ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
-                        ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
-                        ghprt.repository_full_name
-                        == GitHubPullRequestDeployment.repository_full_name,
-                        GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
-                    ),
+                    ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
+                    ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+                    ghprt.repository_full_name == GitHubPullRequestDeployment.repository_full_name,
+                    GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
                 ),
             ),
         )
@@ -743,12 +736,10 @@ class DonePRFactsLoader:
             build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
         filters.append(
             exists().where(
-                and_(
-                    ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
-                    ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
-                    ghprt.repository_full_name == GitHubPullRequestDeployment.repository_full_name,
-                    GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
-                ),
+                ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
+                ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+                ghprt.repository_full_name == GitHubPullRequestDeployment.repository_full_name,
+                GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
             ),
         )
         if exclude_inactive and not postgres:
@@ -771,8 +762,8 @@ class DonePRFactsLoader:
         assert isinstance(time_to, (datetime, type(None)))
         ghprt = GitHubDonePullRequestFacts
         items = [
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.acc_id == account,
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
         ]
         if time_to is not None:
             items.append(ghprt.pr_created_at < time_to)
@@ -1053,14 +1044,12 @@ async def delete_force_push_dropped_prs(
     ghdprf = GitHubDonePullRequestFacts
     rows, dags = await gather(
         pdb.fetch_all(
-            select([ghdprf.pr_node_id]).where(
-                and_(
-                    ghdprf.acc_id == account,
-                    ghdprf.format_version
-                    == ghdprf.__table__.columns[ghdprf.format_version.key].default.arg,
-                    ghdprf.release_match.like("%|%"),
-                    ghdprf.repository_full_name.in_(repos),
-                ),
+            select(ghdprf.pr_node_id).where(
+                ghdprf.acc_id == account,
+                ghdprf.format_version
+                == ghdprf.__table__.columns[ghdprf.format_version.key].default.arg,
+                ghdprf.release_match.like("%|%"),
+                ghdprf.repository_full_name.in_(repos),
             ),
         ),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
@@ -1072,7 +1061,7 @@ async def delete_force_push_dropped_prs(
     node_pr = aliased(NodePullRequest, name="pr")
     pr_merges, dags = await gather(
         mdb.fetch_all(
-            select([node_commit.sha, node_pr.node_id])
+            select(node_commit.sha, node_pr.node_id)
             .select_from(
                 join(
                     node_pr,
@@ -1083,7 +1072,7 @@ async def delete_force_push_dropped_prs(
                     ),
                 ),
             )
-            .where(and_(node_pr.acc_id.in_(meta_ids), node_pr.node_id.in_any_values(pr_node_ids)))
+            .where(node_pr.acc_id.in_(meta_ids), node_pr.node_id.in_any_values(pr_node_ids))
             .order_by(node_commit.sha)
             .with_statement_hint("Leading(((*VALUES* pr) c))")
             .with_statement_hint(f"Rows(*VALUES* pr #{len(pr_node_ids)})")

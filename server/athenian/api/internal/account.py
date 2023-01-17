@@ -18,7 +18,7 @@ import aiosqlite
 from asyncpg import UniqueViolationError
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
-from sqlalchemy import and_, func, insert, select
+from sqlalchemy import func, insert, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -452,7 +452,7 @@ async def get_account_organizations(
 ) -> list[Organization]:
     """Fetch the list of GitHub organizations installed for the account."""
     ghids = await get_metadata_account_ids(account, sdb, cache)
-    rows = await mdb.fetch_all(select([Organization]).where(Organization.acc_id.in_(ghids)))
+    rows = await mdb.fetch_all(select(Organization).where(Organization.acc_id.in_(ghids)))
     return [Organization(**r) for r in rows]
 
 
@@ -483,7 +483,7 @@ async def copy_teams_as_needed(
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(
         select(MetadataTeam).where(
-            and_(MetadataTeam.organization_id.in_(orgs), MetadataTeam.acc_id.in_(meta_ids)),
+            MetadataTeam.acc_id.in_(meta_ids), MetadataTeam.organization_id.in_(orgs),
         ),
     )
     if not team_rows:
@@ -683,8 +683,8 @@ async def _fetch_github_installation_progress_db(
     for metadata_account_id, event_id in event_ids:
         rows = await mdb_conn.fetch_all(
             select(FetchProgress).where(
-                FetchProgress.event_id == event_id,
                 FetchProgress.acc_id == metadata_account_id,
+                FetchProgress.event_id == event_id,
             ),
         )
         if not rows:

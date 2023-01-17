@@ -620,29 +620,25 @@ async def _resolve_references(
 
     queries = [
         select(
-            [text("'commit_f'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)],
+            text("'commit_f'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit),
         ).where(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits)),
         *(
             select(
-                [text("'commit_p'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)],
+                text("'commit_p'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit),
             ).where(
-                and_(
-                    PushCommit.acc_id.in_(meta_ids),
-                    filter_repo(PushCommit, repo),
-                    func.substr(PushCommit.sha, 1, 7).in_(prefixes),
-                ),
+                PushCommit.acc_id.in_(meta_ids),
+                filter_repo(PushCommit, repo),
+                func.substr(PushCommit.sha, 1, 7).in_(prefixes),
             )
             for repo, prefixes in prefix_commits.items()
         ),
         *(
             select(
-                [text("'release'"), Release.name, Release.commit_id, select_repo(Release)],
+                text("'release'"), Release.name, Release.commit_id, select_repo(Release),
             ).where(
-                and_(
-                    Release.acc_id.in_(meta_ids),
-                    filter_repo(Release, repo),
-                    Release.name.in_(names),
-                ),
+                Release.acc_id.in_(meta_ids),
+                filter_repo(Release, repo),
+                Release.name.in_(names),
             )
             for repo, names in releases.items()
         ),

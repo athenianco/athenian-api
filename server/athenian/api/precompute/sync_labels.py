@@ -154,8 +154,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                 PullRequestLabel.pull_request_node_id,
                 func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
             ).where(
-                PullRequestLabel.pull_request_node_id.in_(node_ids),
                 PullRequestLabel.acc_id == int(acc_id),
+                PullRequestLabel.pull_request_node_id.in_(node_ids),
             ),
             mdb,
             [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],

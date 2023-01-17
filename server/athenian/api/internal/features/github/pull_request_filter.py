@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, select, union_all
+from sqlalchemy import select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import (
@@ -1114,14 +1114,14 @@ async def _fetch_pull_requests(
         prs, prefixer, account, meta_ids, mdb, pdb, cache,
     )
     filters = [
-        and_(
+        (
+            PullRequest.acc_id.in_(meta_ids),
             PullRequest.repository_full_name == drop_logical_repo(repo),
             PullRequest.number.in_(numbers),
-            PullRequest.acc_id.in_(meta_ids),
         )
         for repo, numbers in prs.items()
     ]
-    selects = [select(PullRequest).where(f) for f in filters]
+    selects = [select(PullRequest).where(*f) for f in filters]
     # execute UNION ALL of at most 10 SELECTs to help PostgreSQL parallelization
     select_batches = [selects[i : i + 10] for i in range(0, len(selects), 10)]
     queries = [union_all(*b) if len(b) > 1 else b[0] for b in select_batches]  # sqlite sucks

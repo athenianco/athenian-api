@@ -116,8 +116,8 @@ async def _reset_commits(
     )
     queries = [
         select(NodeCommit.node_id).where(
-            NodeCommit.repository_id == prefixer.repo_name_to_node.get(repo),
             NodeCommit.acc_id.in_(meta_ids),
+            NodeCommit.repository_id == prefixer.repo_name_to_node.get(repo),
             NodeCommit.oid.in_any_values(dag[0]),
         )
         for repo, (_, dag) in dags.items()

@@ -1851,6 +1851,7 @@ class PullRequestMiner:
         queries = []
         for acc_id in meta_ids:
             filters = [
+                PullRequest.acc_id == acc_id,
                 (
                     sql.case(
                         [(PullRequest.closed, PullRequest.closed_at)],
@@ -1861,7 +1862,6 @@ class PullRequestMiner:
                 if time_from is not None
                 else sql.true(),
                 PullRequest.created_at < time_to,
-                PullRequest.acc_id == acc_id,
                 PullRequest.repository_full_name.in_(repositories),
             ]
             if exclude_inactive and updated_min is None:
@@ -2559,7 +2559,7 @@ class PullRequestMiner:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
         queries = []
         for acc_id in meta_ids:
-            filters = [model_cls.pull_request_node_id.in_(node_ids), model_cls.acc_id == acc_id]
+            filters = [model_cls.acc_id == acc_id, model_cls.pull_request_node_id.in_(node_ids)]
             if created_at:
                 filters.append(model_cls.created_at < time_to)
             queries.append(sql.select(*(columns or [model_cls])).where(*filters))
@@ -2674,12 +2674,10 @@ class PullRequestMiner:
         assert (updated_min is None) == (updated_max is None)
         ghprd = GitHubPullRequestDeployment
         precursor_prs = await pdb.fetch_all(
-            sql.select([sql.distinct(ghprd.pull_request_id)]).where(
-                sql.and_(
-                    ghprd.acc_id == account,
-                    ghprd.repository_full_name.in_(repositories),
-                    ghprd.finished_at.between(time_from, time_to),
-                ),
+            sql.select(sql.distinct(ghprd.pull_request_id)).where(
+                ghprd.acc_id == account,
+                ghprd.repository_full_name.in_(repositories),
+                ghprd.finished_at.between(time_from, time_to),
             ),
         )
         precursor_prs = {r[0] for r in precursor_prs}

@@ -122,9 +122,9 @@ class MergedPRFactsLoader:
             my_selected = selected.copy()
             my_selected.add([false(), true()][deployed].label("deployed"))
             filters = [
+                ghmprf.acc_id == account,
                 ghmprf.checked_until >= time_to,
                 ghmprf.format_version == default_version,
-                ghmprf.acc_id == account,
             ]
             if labels:
                 build_labels_filters(ghmprf, labels, filters, my_selected, postgres)
@@ -144,26 +144,22 @@ class MergedPRFactsLoader:
                 filters.append(
                     not_(
                         exists().where(
-                            and_(
-                                ghmprf.acc_id == ghprd.acc_id,
-                                ghmprf.pr_node_id == ghprd.pull_request_id,
-                                ghmprf.repository_full_name == ghprd.repository_full_name,
-                                ghprd.finished_at < time_to,
-                            ),
+                            ghmprf.acc_id == ghprd.acc_id,
+                            ghmprf.pr_node_id == ghprd.pull_request_id,
+                            ghmprf.repository_full_name == ghprd.repository_full_name,
+                            ghprd.finished_at < time_to,
                         ),
                     ),
                 )
             else:
                 filters.append(
                     exists().where(
-                        and_(
-                            ghmprf.acc_id == ghprd.acc_id,
-                            ghmprf.pr_node_id == ghprd.pull_request_id,
-                            ghmprf.repository_full_name == ghprd.repository_full_name,
-                            ghprd.finished_at.between(time_from, time_to)
-                            if exclude_inactive
-                            else ghprd.finished_at < time_to,
-                        ),
+                        ghmprf.acc_id == ghprd.acc_id,
+                        ghmprf.pr_node_id == ghprd.pull_request_id,
+                        ghmprf.repository_full_name == ghprd.repository_full_name,
+                        ghprd.finished_at.between(time_from, time_to)
+                        if exclude_inactive
+                        else ghprd.finished_at < time_to,
                     ),
                 )
             return my_selected, filters, date_range
@@ -262,10 +258,10 @@ class MergedPRFactsLoader:
         ]
         default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         filters = [
+            ghmprf.acc_id == account,
             ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghmprf.repository_full_name.in_(repos),
             ghmprf.format_version == default_version,
-            ghmprf.acc_id == account,
         ]
         query = select(selected).where(and_(*filters))
         with sentry_sdk.start_span(op="load_merged_pull_request_facts_all/fetch"):
@@ -534,10 +530,10 @@ async def discover_inactive_merged_unreleased_prs(
         ghmprf.release_match,
     }
     filters = [
+        ghmprf.acc_id == account,
         coalesce(ghdprf.pr_done_at, datetime(3000, 1, 1, tzinfo=timezone.utc)) >= time_to,
         ghmprf.repository_full_name.in_(repos),
         ghmprf.merged_at < time_from,
-        ghmprf.acc_id == account,
     ]
     user_login_to_node_get = None
     for role, col in (

@@ -350,8 +350,8 @@ async def get_jira_identities(
     tasks = [
         request.mdb.fetch_all(
             select(GitHubUser.node_id, GitHubUser.html_url, GitHubUser.name).where(
-                GitHubUser.node_id.in_(github_ids),
                 GitHubUser.acc_id.in_(meta_ids),
+                GitHubUser.node_id.in_(github_ids),
                 GitHubUser.login.isnot(None),
             ),
         ),
@@ -833,10 +833,8 @@ async def _clean_logical_deployments(
             )
             tasks.append(pdb.execute(delete_stmt))
         facts_delete_stmt = delete(GitHubDeploymentFacts).where(
-            and_(
-                GitHubDeploymentFacts.acc_id == account,
-                GitHubDeploymentFacts.deployment_name.in_(affected_deployment_names),
-            ),
+            GitHubDeploymentFacts.acc_id == account,
+            GitHubDeploymentFacts.deployment_name.in_(affected_deployment_names),
         )
         tasks.append(pdb.execute(facts_delete_stmt))
     await gather(*tasks, op="_clean_logical_deployments/sql")

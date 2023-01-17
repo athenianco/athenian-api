@@ -20,8 +20,8 @@ async def get_meta_teams_members(
     """
     member_rows = await mdb.fetch_all(
         sa.select(TeamMember.parent_id, TeamMember.child_id).where(
-            TeamMember.parent_id.in_(meta_team_ids),
             TeamMember.acc_id.in_(meta_ids),
+            TeamMember.parent_id.in_(meta_team_ids),
         ),
     )
     members = defaultdict(list)

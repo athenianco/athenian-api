@@ -337,12 +337,10 @@ class PullRequestToReleaseMapper:
             return labels
         rows = await mdb.fetch_all(
             select(
-                [PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)],
+                PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name),
             ).where(
-                and_(
-                    PullRequestLabel.pull_request_node_id.in_(node_ids),
-                    PullRequestLabel.acc_id.in_(meta_ids),
-                ),
+                PullRequestLabel.acc_id.in_(meta_ids),
+                PullRequestLabel.pull_request_node_id.in_(node_ids),
             ),
         )
         labels = {}
@@ -1177,7 +1175,7 @@ class ReleaseToPullRequestMapper:
         query = union_all(
             *(
                 select(prel.repository_full_name, func.min(prel.published_at))
-                .where(item, prel.acc_id == account)
+                .where(prel.acc_id == account, item)
                 .group_by(prel.repository_full_name)
                 for item in or_items
             ),
@@ -1212,8 +1210,8 @@ class ReleaseToPullRequestMapper:
                 GitHubRepository.repository_full_name,
                 GitHubRepository.first_commit.label("min"),
             ).where(
-                GitHubRepository.repository_full_name.in_(repos),
                 GitHubRepository.acc_id == account,
+                GitHubRepository.repository_full_name.in_(repos),
                 GitHubRepository.first_commit.isnot(None),
             ),
         )
@@ -1240,8 +1238,8 @@ class ReleaseToPullRequestMapper:
                     ),
                 )
                 .where(
-                    NodeRepository.name_with_owner.in_(missing),
                     NodeRepository.acc_id.in_(meta_ids),
+                    NodeRepository.name_with_owner.in_(missing),
                 )
                 .group_by(NodeRepository.id),
             )

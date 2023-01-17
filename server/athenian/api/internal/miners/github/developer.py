@@ -151,12 +151,10 @@ async def _mine_commits(
     query = (
         select(columns)
         .where(
-            and_(
-                PushCommit.committed_date.between(time_from, time_to),
-                PushCommit.author_user_id.in_any_values(dev_ids),
-                PushCommit.repository_node_id.in_(repo_ids),
-                PushCommit.acc_id.in_(meta_ids),
-            ),
+            PushCommit.acc_id.in_(meta_ids),
+            PushCommit.committed_date.between(time_from, time_to),
+            PushCommit.author_user_id.in_any_values(dev_ids),
+            PushCommit.repository_node_id.in_(repo_ids),
         )
         .with_statement_hint("IndexOnlyScan(cmm github_node_commit_check_runs)")
         .with_statement_hint("Leading(((((cmm *VALUES*) repo) ath) cath))")
@@ -196,10 +194,10 @@ async def _mine_prs(
         attr_filter,
     ]
     filters = [
+        NodePullRequest.acc_id.in_(meta_ids),
         attr_filter.between(time_from, time_to),
         attr_user.in_(dev_ids),
         NodePullRequest.repository_id.in_(repo_ids),
-        NodePullRequest.acc_id.in_(meta_ids),
     ]
     if labels:
         _filter_by_labels(NodePullRequest.acc_id, NodePullRequest.node_id, labels, filters)
@@ -638,13 +636,13 @@ async def _fetch_node_ids(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     tasks = [
         mdb.fetch_all(
-            select([Repository.node_id, Repository.full_name])
-            .where(and_(Repository.full_name.in_(repos), Repository.acc_id.in_(meta_ids)))
+            select(Repository.node_id, Repository.full_name)
+            .where(Repository.acc_id.in_(meta_ids), Repository.full_name.in_(repos))
             .order_by(Repository.node_id),
         ),
         mdb.fetch_all(
-            select([User.node_id, User.login])
-            .where(and_(User.login.in_(devs), User.acc_id.in_(meta_ids)))
+            select(User.node_id, User.login)
+            .where(User.acc_id.in_(meta_ids), User.login.in_(devs))
             .order_by(User.node_id),
         ),
     ]

@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, select, union_all
+from sqlalchemy import select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -1138,7 +1138,7 @@ async def _fetch_priorities(
         return []
     rows = await mdb.fetch_all(
         select(Priority.name, Priority.icon_url, Priority.rank, Priority.status_color)
-        .where(Priority.id.in_(priorities), Priority.acc_id == acc_id)
+        .where(Priority.acc_id == acc_id, Priority.id.in_(priorities))
         .order_by(Priority.rank),
     )
     return [
@@ -1164,7 +1164,7 @@ async def _fetch_statuses(
         return []
     rows = await mdb.fetch_all(
         select(Status.id, Status.name, Status.category_name)
-        .where(Status.id.in_(statuses), Status.acc_id == acc_id)
+        .where(Status.acc_id == acc_id, Status.id.in_(statuses))
         .order_by(Status.name),
     )
     # status IDs are account-wide unique
@@ -1204,12 +1204,10 @@ async def _fetch_types(
             IssueType.is_epic,
         ]
     queries = [
-        select(columns).where(
-            and_(
-                IssueType.id.in_(np.fromiter(ids, "S8", len(ids))),
-                IssueType.acc_id == acc_id,
-                IssueType.project_id == project_id.decode(),
-            ),
+        select(*columns).where(
+            IssueType.acc_id == acc_id,
+            IssueType.id.in_(np.fromiter(ids, "S8", len(ids))),
+            IssueType.project_id == project_id.decode(),
         )
         for project_id, ids in issue_type_projects.items()
     ]
