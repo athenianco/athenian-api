@@ -79,6 +79,7 @@ async def create_dashboard_chart(
     return model_response(CreatedIdentifier(id=chart_id))
 
 
+@disable_default_user
 async def delete_dashboard_chart(
     request: AthenianWebRequest,
     team_id: int,
