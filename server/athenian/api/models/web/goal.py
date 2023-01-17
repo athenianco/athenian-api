@@ -16,7 +16,9 @@ class AlignGoalsRequest(Model):
     include_series: bool = False
 
 
-MetricValue = float | int | str
+# the order is from more specific to less specific
+# since models deserialization tries the types in order
+MetricValue = int | float | str
 
 
 class GoalSeriesGranularity(Enum):
