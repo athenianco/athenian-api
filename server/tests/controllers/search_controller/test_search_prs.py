@@ -1,4 +1,5 @@
 from datetime import date
+from functools import partial
 from operator import itemgetter
 from typing import Any, Sequence
 
@@ -8,6 +9,7 @@ import sqlalchemy as sa
 from athenian.api.db import Database
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import (
+    FilterOperator,
     OrderByDirection,
     PullRequestMetricID,
     PullRequestStage,
@@ -619,3 +621,89 @@ class TestSearchPRsStagesFilter(BaseSearchPRsTest):
 
             body["stages"] = [PullRequestStage.DONE, PullRequestStage.RELEASING]
             assert sorted(await self._fetch_pr_numbers(json=body)) == [3, 4, 5]
+
+
+class TestSearchPRsFilters(BaseSearchPRsTest):
+    async def test_pr_size(self, sdb: Database, mdb_rw: Database) -> None:
+        times = {"created_at": dt(2022, 4, 2), "updated_at": dt(2022, 4, 15)}
+
+        pr_size = PullRequestMetricID.PR_SIZE
+        filter_ = {"field": pr_size, "operator": FilterOperator.GE.value, "value": 20}
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            filters=[filter_],
+            order_by=[{"field": pr_size}],
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {**times, "repository_full_name": "org0/repo0"}
+            models = [
+                *pr_models(99, 11, 1, additions=10, **pr_kwargs),
+                *pr_models(99, 12, 2, additions=30, **pr_kwargs),
+                *pr_models(99, 13, 3, additions=20, **pr_kwargs),
+                *pr_models(99, 14, 4, additions=10, deletions=15, **pr_kwargs),
+                *pr_models(99, 15, 5, additions=10, deletions=9, **pr_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            ns = await self._fetch_pr_numbers(json=body)
+            assert ns == (3, 4, 2)
+
+            body["filters"][0] = {
+                "field": pr_size,
+                "operator": FilterOperator.LT.value,
+                "value": 20,
+            }
+            body["order_by"][0]["direction"] = OrderByDirection.DESCENDING.value
+            assert await self._fetch_pr_numbers(json=body) == (5, 1)
+
+            body["filters"][0] = {
+                "field": pr_size,
+                "operator": FilterOperator.EQ.value,
+                "value": 19,
+            }
+            assert await self._fetch_pr_numbers(json=body) == (5,)
+
+            body.pop("order_by")
+            assert await self._fetch_pr_numbers(json=body) == (5,)
+
+    async def test_review_time(self, sdb: Database, mdb_rw: Database) -> None:
+        times = {"created_at": dt(2022, 4, 2), "updated_at": dt(2022, 4, 15)}
+        metric = PullRequestMetricID.PR_REVIEW_TIME
+        filter_ = {"field": metric, "operator": FilterOperator.GE.value, "value": f"{3600 * 48}s"}
+
+        body = self._body(
+            date_from=date(2022, 4, 1),
+            date_to=date(2022, 4, 30),
+            filters=[filter_],
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org0/repo0")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            mk_pr = partial(
+                pr_models,
+                99,
+                repository_full_name="org0/repo0",
+                closed=True,
+                closed_at=dt(2022, 4, 14),
+                **times,
+            )
+            models = [
+                *mk_pr(11, 1, review_request=dt(2022, 4, 3), review_submit=dt(2022, 4, 4)),
+                *mk_pr(12, 2, review_request=dt(2022, 4, 3), review_submit=dt(2022, 4, 3, 5)),
+                *mk_pr(13, 3, review_request=dt(2022, 4, 4), review_submit=dt(2022, 4, 6)),
+                *mk_pr(14, 4, review_request=dt(2022, 4, 4), review_submit=dt(2022, 4, 7)),
+                *mk_pr(15, 5, review_request=dt(2022, 4, 4)),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [3, 4]
+
+            body["filters"][0]["operator"] = FilterOperator.LT.value
+            assert sorted(await self._fetch_pr_numbers(json=body)) == [1, 2]
