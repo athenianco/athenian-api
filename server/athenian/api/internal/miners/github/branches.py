@@ -7,7 +7,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -366,11 +366,23 @@ class BranchMiner:
         query_repo_col = (
             Branch.repository_node_id if since is None else Branch.commit_repository_node_id
         )
-        query = select(*columns).where(
-            Branch.acc_id.in_(meta_ids),
-            *((query_repo_col.in_(repos),) if repos is not None else ()),
-            *((Branch.commit_date >= since,) if since is not None else ()),
-        )
+        if since is None or len(meta_ids) == 1:
+            query = select(*columns).where(
+                Branch.acc_id.in_(meta_ids),
+                *((Branch.commit_date >= since,) if since is not None else ()),
+                *((query_repo_col.in_(repos),) if repos is not None else ()),
+            )
+        else:
+            query = union_all(
+                *(
+                    select(*columns).where(
+                        Branch.acc_id == meta_id,
+                        Branch.commit_date >= since,
+                        *((query_repo_col.in_(repos),) if repos is not None else ()),
+                    )
+                    for meta_id in meta_ids
+                ),
+            )
         if since is None:
             if repos is not None:
                 scan = (
