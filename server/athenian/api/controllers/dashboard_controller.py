@@ -39,6 +39,7 @@ async def get_dashboard(
     return _dashboard_response(request, dashboard)
 
 
+@disable_default_user
 async def update_dashboard(
     request: AthenianWebRequest,
     team_id: int,
