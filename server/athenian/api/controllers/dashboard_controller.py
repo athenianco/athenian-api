@@ -3,6 +3,7 @@ import dataclasses
 from aiohttp import web
 
 from athenian.api.async_utils import gather
+from athenian.api.auth import disable_default_user
 from athenian.api.db import Row
 from athenian.api.internal.dashboard import (
     build_dashboard_web_model,
@@ -56,6 +57,7 @@ async def update_dashboard(
     return _dashboard_response(request, dashboard)
 
 
+@disable_default_user
 async def create_dashboard_chart(
     request: AthenianWebRequest,
     team_id: int,

@@ -51,5 +51,6 @@ class Requester:
         return await response.json()
 
     async def _request(self, *, path_kwargs=None, **kwargs) -> ClientResponse:
+        headers = kwargs.pop("headers", self.headers)
         path = self.build_path(**(path_kwargs or {}))
-        return await self.client.request(path=path, headers=self.headers, **kwargs)
+        return await self.client.request(path=path, headers=headers, **kwargs)
