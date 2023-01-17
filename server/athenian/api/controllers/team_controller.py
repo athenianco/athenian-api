@@ -5,7 +5,7 @@ from typing import Any, Mapping, Optional, Union
 
 from aiohttp import web
 from asyncpg import UniqueViolationError
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
@@ -236,7 +236,7 @@ async def _resolve_members(
 
     rows = await mdb.fetch_all(
         select(User.html_url, User.node_id)
-        .where(and_(User.acc_id.in_(meta_ids), User.login.in_(to_fetch)))
+        .where(User.acc_id.in_(meta_ids), User.login.in_(to_fetch))
         .order_by(User.node_id),
     )
     exist = {r[0].split("://", 1)[1] for r in rows}

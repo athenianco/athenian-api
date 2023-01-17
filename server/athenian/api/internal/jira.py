@@ -125,21 +125,19 @@ async def get_jira_installation(
     jira_id = await get_jira_id(account, sdb, cache)
     projects, disabled, epic_rows = await gather(
         mdb.fetch_all(
-            select([Project.id, Project.key]).where(
-                and_(Project.acc_id == jira_id, Project.is_deleted.is_(False)),
+            select(Project.id, Project.key).where(
+                Project.acc_id == jira_id, Project.is_deleted.is_(False),
             ),
         ),
         sdb.fetch_all(
-            select([JIRAProjectSetting.key]).where(
-                and_(
-                    JIRAProjectSetting.account_id == account,
-                    JIRAProjectSetting.enabled.is_(False),
-                ),
+            select(JIRAProjectSetting.key).where(
+                JIRAProjectSetting.account_id == account,
+                JIRAProjectSetting.enabled.is_(False),
             ),
         ),
         mdb.fetch_all(
-            select([IssueType.project_id, IssueType.normalized_name])
-            .where(and_(IssueType.acc_id == jira_id, IssueType.is_epic))
+            select(IssueType.project_id, IssueType.normalized_name)
+            .where(IssueType.acc_id == jira_id, IssueType.is_epic)
             .distinct(),
         ),
         op="load JIRA projects",
@@ -260,12 +258,7 @@ async def fetch_jira_installation_progress(
     """Load the JIRA installation progress for the specified account."""
     jira_id = (await get_jira_installation(account, sdb, mdb, cache)).acc_id
     rows = await mdb.fetch_all(
-        select([Progress]).where(
-            and_(
-                Progress.acc_id == jira_id,
-                Progress.is_initial,
-            ),
-        ),
+        select(Progress).where(Progress.acc_id == jira_id, Progress.is_initial),
     )
     tables = [
         TableFetchingProgress(
@@ -300,9 +293,7 @@ async def resolve_projects(
 ) -> dict[str, str]:
     """Lookup JIRA project IDs by their keys."""
     rows = await mdb.fetch_all(
-        select([Project.id, Project.key]).where(
-            and_(Project.acc_id == jira_acc, Project.key.in_(keys)),
-        ),
+        select(Project.id, Project.key).where(Project.acc_id == jira_acc, Project.key.in_(keys)),
     )
     return {r[0]: r[1] for r in rows}
 
@@ -365,8 +356,8 @@ async def _load_mapped_jira_users(
     map_rows, jira_id = await gather(*tasks)
     jira_user_ids = {r[1]: r[0] for r in map_rows}
     name_rows = await mdb.fetch_all(
-        select([JIRAUser.id, JIRAUser.display_name]).where(
-            and_(JIRAUser.acc_id == jira_id, JIRAUser.id.in_(jira_user_ids)),
+        select(JIRAUser.id, JIRAUser.display_name).where(
+            JIRAUser.acc_id == jira_id, JIRAUser.id.in_(jira_user_ids),
         ),
     )
     return {jira_user_ids[row[0]]: row[1] for row in name_rows}
@@ -432,12 +423,10 @@ async def _match_jira_identities(
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
         return None
     progress_row = await mdb.fetch_one(
-        select([func.sum(Progress.current), func.sum(Progress.total)]).where(
-            and_(
-                Progress.acc_id == jira_id[0],
-                Progress.is_initial,
-                Progress.event_type.in_(["user", "user-fallback"]),
-            ),
+        select(func.sum(Progress.current), func.sum(Progress.total)).where(
+            Progress.acc_id == jira_id[0],
+            Progress.is_initial,
+            Progress.event_type.in_(["user", "user-fallback"]),
         ),
     )
     if (current := progress_row[0] or 0) < (total := progress_row[1] or 0):
@@ -462,12 +451,10 @@ async def _match_jira_identities(
                 continue
         log.info("Effective GitHub set size: %d", len(github_users))
     jira_user_rows = await mdb.fetch_all(
-        select([JIRAUser.id, JIRAUser.display_name]).where(
-            and_(
-                JIRAUser.acc_id == jira_id[0],
-                JIRAUser.type.in_(ALLOWED_USER_TYPES),
-                JIRAUser.display_name.isnot(None),
-            ),
+        select(JIRAUser.id, JIRAUser.display_name).where(
+            JIRAUser.acc_id == jira_id[0],
+            JIRAUser.type.in_(ALLOWED_USER_TYPES),
+            JIRAUser.display_name.isnot(None),
         ),
     )
     jira_users = {
@@ -597,7 +584,7 @@ async def disable_empty_projects(
                     isouter=True,
                 ),
             )
-            .where(and_(Project.acc_id == jira_id[0], Project.is_deleted.is_(False)))
+            .where(Project.acc_id == jira_id[0], Project.is_deleted.is_(False))
             .group_by(Project.id, Project.key),
         ),
         sdb.fetch_all(

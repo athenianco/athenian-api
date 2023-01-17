@@ -192,7 +192,7 @@ async def extract_commits(
                         ),
                     ),
                 )
-                .where(NodePullRequestCommit.commit_id.is_(None), *sql_filters),
+                .where(*sql_filters, NodePullRequestCommit.commit_id.is_(None)),
                 mdb,
                 cols_df,
             )
@@ -612,9 +612,9 @@ async def fetch_precomputed_commit_history_dags(
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
             select(ghrc.repository_full_name, ghrc.dag).where(
+                ghrc.acc_id == account,
                 ghrc.format_version == format_version,
                 ghrc.repository_full_name.in_(repos),
-                ghrc.acc_id == account,
             ),
         )
     dags = {
@@ -669,9 +669,9 @@ async def _fetch_commit_history_dag(
             rows = await mdb.fetch_all(
                 select(NodeCommit.oid)
                 .where(
+                    NodeCommit.acc_id.in_(meta_ids),
                     NodeCommit.oid.in_(stop_heads),
                     NodeCommit.committed_date > min_commit_time,
-                    NodeCommit.acc_id.in_(meta_ids),
                 )
                 .order_by(desc(NodeCommit.committed_date))
                 .limit(max_stop_heads),
@@ -899,8 +899,8 @@ async def _fetch_commits_for_dags(
         return pd.DataFrame()
     queries = [
         select(COMMIT_FETCH_COMMITS_COLUMNS).where(
-            PushCommit.repository_full_name == repo,
             PushCommit.acc_id.in_(meta_ids),
+            PushCommit.repository_full_name == repo,
             PushCommit.node_id.in_any_values(nodes),
         )
         for repo, nodes in commits.items()

@@ -100,11 +100,9 @@ async def mine_check_runs(
     coerced_repositories = coerce_logical_repos(repositories)
     with_logical_repos = contains_logical_repos(repositories)
     rows = await mdb.fetch_all(
-        select([NodeRepository.acc_id, NodeRepository.id]).where(
-            and_(
-                NodeRepository.acc_id.in_(meta_ids),
-                NodeRepository.name_with_owner.in_(coerced_repositories),
-            ),
+        select(NodeRepository.acc_id, NodeRepository.id).where(
+            NodeRepository.acc_id.in_(meta_ids),
+            NodeRepository.name_with_owner.in_(coerced_repositories),
         ),
     )
     if len(meta_ids) == 1:
@@ -145,11 +143,9 @@ async def mine_check_runs(
                 all_in_labels = set(singles + list(chain.from_iterable(multiples)))
                 filters.append(
                     exists().where(
-                        and_(
-                            PullRequestLabel.acc_id == CheckRun.acc_id,
-                            PullRequestLabel.pull_request_node_id == CheckRun.pull_request_node_id,
-                            func.lower(PullRequestLabel.name).in_(all_in_labels),
-                        ),
+                        PullRequestLabel.acc_id == CheckRun.acc_id,
+                        PullRequestLabel.pull_request_node_id == CheckRun.pull_request_node_id,
+                        func.lower(PullRequestLabel.name).in_(all_in_labels),
                     ),
                 )
         else:
@@ -303,10 +299,8 @@ async def _disambiguate_pull_requests(
     pr_lifetimes, pr_commit_counts, *pr_labels = await gather(
         read_sql_query(
             select(pr_cols).where(
-                and_(
-                    NodePullRequest.acc_id.in_(meta_ids),
-                    NodePullRequest.id.in_any_values(unique_pr_ids),
-                ),
+                NodePullRequest.acc_id.in_(meta_ids),
+                NodePullRequest.id.in_any_values(unique_pr_ids),
             ),
             mdb,
             pr_cols,
@@ -320,12 +314,8 @@ async def _disambiguate_pull_requests(
                 ],
             )
             .where(
-                and_(
-                    NodePullRequestCommit.acc_id.in_(meta_ids),
-                    NodePullRequestCommit.pull_request_id.in_any_values(
-                        unique_ambiguous_pr_node_ids,
-                    ),
-                ),
+                NodePullRequestCommit.acc_id.in_(meta_ids),
+                NodePullRequestCommit.pull_request_id.in_any_values(unique_ambiguous_pr_node_ids),
             )
             .group_by(NodePullRequestCommit.pull_request_id),
             mdb,
@@ -575,22 +565,18 @@ async def _append_pull_request_check_runs_outside(
             | (df[CheckRun.pull_request_closed_at.name] > (time_to - timedelta(days=1)))
         ).values
     ].unique()
-    query_before = select([CheckRunByPR]).where(
-        and_(
-            CheckRunByPR.acc_id.in_(meta_ids),
-            CheckRunByPR.pull_request_node_id.in_(prs_from_the_past),
-            CheckRunByPR.started_at.between(
-                time_from - timedelta(days=90), time_from - timedelta(seconds=1),
-            ),
+    query_before = select(CheckRunByPR).where(
+        CheckRunByPR.acc_id.in_(meta_ids),
+        CheckRunByPR.pull_request_node_id.in_(prs_from_the_past),
+        CheckRunByPR.started_at.between(
+            time_from - timedelta(days=90), time_from - timedelta(seconds=1),
         ),
     )
-    query_after = select([CheckRunByPR]).where(
-        and_(
-            CheckRunByPR.acc_id.in_(meta_ids),
-            CheckRunByPR.pull_request_node_id.in_(prs_to_the_future),
-            CheckRunByPR.started_at.between(
-                time_to + timedelta(seconds=1), time_to + timedelta(days=90),
-            ),
+    query_after = select(CheckRunByPR).where(
+        CheckRunByPR.acc_id.in_(meta_ids),
+        CheckRunByPR.pull_request_node_id.in_(prs_to_the_future),
+        CheckRunByPR.started_at.between(
+            time_to + timedelta(seconds=1), time_to + timedelta(days=90),
         ),
     )
     pr_sql = union_all(query_before, query_after)
@@ -601,15 +587,11 @@ async def _append_pull_request_check_runs_outside(
         tasks.append(
             read_sql_query(
                 select(
-                    [
-                        PullRequestLabel.pull_request_node_id,
-                        func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-                    ],
+                    PullRequestLabel.pull_request_node_id,
+                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
                 ).where(
-                    and_(
-                        PullRequestLabel.pull_request_node_id.in_(pr_node_ids.unique()),
-                        PullRequestLabel.acc_id.in_(meta_ids),
-                    ),
+                    PullRequestLabel.acc_id.in_(meta_ids),
+                    PullRequestLabel.pull_request_node_id.in_(pr_node_ids.unique()),
                 ),
                 mdb,
                 [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
@@ -790,12 +772,10 @@ async def mine_commit_check_runs(
         *(
             read_sql_query(
                 # IndexScan(c node_commit_pkey) -> DEV-3667
-                select([CheckRun])
+                select(CheckRun)
                 .where(
-                    and_(
-                        CheckRun.acc_id == acc_id,
-                        CheckRun.commit_node_id.in_(commit_ids),
-                    ),
+                    CheckRun.acc_id == acc_id,
+                    CheckRun.commit_node_id.in_(commit_ids),
                 )
                 .with_statement_hint("IndexOnlyScan(p github_node_push_redux)")
                 .with_statement_hint("IndexOnlyScan(prc node_pull_request_commit_commit_pr)")

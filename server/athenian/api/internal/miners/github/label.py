@@ -5,7 +5,7 @@ from typing import Collection, List, Optional, Sequence, Set, Tuple
 import aiomcache
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached, middle_term_exptime
@@ -41,18 +41,14 @@ async def mine_labels(
     """Collect PR labels and count the number of PRs where they were used."""
     rows = await mdb.fetch_all(
         select(
-            [
-                PullRequestLabel.name,
-                func.min(PullRequestLabel.color).label("color"),
-                func.max(PullRequestLabel.description).label("description"),
-                func.count(PullRequestLabel.pull_request_node_id).label("used_prs"),
-            ],
+            PullRequestLabel.name,
+            func.min(PullRequestLabel.color).label("color"),
+            func.max(PullRequestLabel.description).label("description"),
+            func.count(PullRequestLabel.pull_request_node_id).label("used_prs"),
         )
         .where(
-            and_(
-                PullRequestLabel.repository_full_name.in_(repos),
-                PullRequestLabel.acc_id.in_(meta_ids),
-            ),
+            PullRequestLabel.acc_id.in_(meta_ids),
+            PullRequestLabel.repository_full_name.in_(repos),
         )
         .group_by(PullRequestLabel.name),
     )
@@ -85,12 +81,10 @@ async def fetch_labels_to_filter(
         func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
     ]
     return await read_sql_query(
-        select(lcols)
+        select(*lcols)
         .where(
-            and_(
-                PullRequestLabel.pull_request_node_id.in_(prs),
-                PullRequestLabel.acc_id.in_(meta_ids),
-            ),
+            PullRequestLabel.acc_id.in_(meta_ids),
+            PullRequestLabel.pull_request_node_id.in_(prs),
         )
         .with_statement_hint(f"Rows(prl label #{len(prs)})"),
         mdb,

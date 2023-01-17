@@ -91,8 +91,8 @@ async def load_included_deployments(
     if len(commit_ids) and commit_ids[0] is None:
         commit_ids = commit_ids[1:]
     hashes = await mdb.fetch_all(
-        select([NodeCommit.sha, NodeCommit.graph_id]).where(
-            and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.graph_id.in_any_values(commit_ids)),
+        select(NodeCommit.sha, NodeCommit.graph_id).where(
+            NodeCommit.acc_id.in_(meta_ids), NodeCommit.graph_id.in_any_values(commit_ids),
         ),
     )
     hashes = {r[NodeCommit.graph_id.name]: r[NodeCommit.sha.name] for r in hashes}

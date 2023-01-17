@@ -73,16 +73,16 @@ async def load_user_accounts(
 
         def build_query(meta_ids):
             return union_all(
-                select([NodeCheckRun.id]).where(NodeCheckRun.acc_id.in_(meta_ids)),
-                select([NodeStatusContext.id]).where(NodeStatusContext.acc_id.in_(meta_ids)),
+                select(NodeCheckRun.id).where(NodeCheckRun.acc_id.in_(meta_ids)),
+                select(NodeStatusContext.id).where(NodeStatusContext.acc_id.in_(meta_ids)),
             ).limit(1)
 
     else:
 
         def build_query(meta_ids):
             return union_all(
-                select([NodeCheckRun.id]).where(NodeCheckRun.acc_id.in_(meta_ids)).limit(1),
-                select([NodeStatusContext.id])
+                select(NodeCheckRun.id).where(NodeCheckRun.acc_id.in_(meta_ids)).limit(1),
+                select(NodeStatusContext.id)
                 .where(NodeStatusContext.acc_id.in_(meta_ids))
                 .limit(1),
             )

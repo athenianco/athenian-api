@@ -6,7 +6,7 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, case, select
+from sqlalchemy import case, select
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.db import dialect_specific_insert
@@ -55,13 +55,11 @@ class OpenPRFactsLoader:
             ghoprf.data,
         ]
         rows = await pdb.fetch_all(
-            select(selected).where(
-                and_(
-                    ghoprf.pr_node_id.in_(node_ids),
-                    ghoprf.repository_full_name.in_(repositories),
-                    ghoprf.format_version == default_version,
-                    ghoprf.acc_id == account,
-                ),
+            select(*selected).where(
+                ghoprf.acc_id == account,
+                ghoprf.pr_node_id.in_(node_ids),
+                ghoprf.repository_full_name.in_(repositories),
+                ghoprf.format_version == default_version,
             ),
         )
         if not rows:
@@ -114,17 +112,17 @@ class OpenPRFactsLoader:
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         prs_repos_bytes = prs.get_level_values(1).values.astype("S")
         filters = [
+            ghoprf.acc_id == account,
             ghoprf.pr_node_id.in_(prs.get_level_values(0).unique()),
             ghoprf.repository_full_name.in_(unordered_unique(prs_repos_bytes)),
             ghoprf.format_version == default_version,
-            ghoprf.acc_id == account,
         ]
         if exclude_inactive:
             date_range = append_activity_days_filter(
                 time_from, time_to, selected, filters, ghoprf.activity_days, postgres,
             )
         selected = sorted(selected, key=lambda i: i.key)
-        df = await read_sql_query(select(selected).where(*filters), pdb, selected)
+        df = await read_sql_query(select(*selected).where(*filters), pdb, selected)
         if df.empty:
             return {}
         haystack = np.char.add(
@@ -191,12 +189,12 @@ class OpenPRFactsLoader:
         ]
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         filters = [
+            ghoprf.acc_id == account,
             ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghoprf.repository_full_name.in_(repos),
             ghoprf.format_version == default_version,
-            ghoprf.acc_id == account,
         ]
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(*filters)
         with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
             rows = await pdb.fetch_all(query)
         facts = {

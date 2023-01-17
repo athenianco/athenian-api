@@ -216,8 +216,8 @@ async def fetch_precomputed_releases_by_name(
                 or_(
                     *(
                         and_(
-                            prel.repository_full_name == k,
                             prel.acc_id == account,
+                            prel.repository_full_name == k,
                             prel.name.in_(v),
                         )
                         for k, v in names.items()
@@ -229,10 +229,8 @@ async def fetch_precomputed_releases_by_name(
     else:
         query = union_all(
             *(
-                select([prel])
-                .where(
-                    and_(prel.repository_full_name == k, prel.name.in_(v), prel.acc_id == account),
-                )
+                select(prel)
+                .where(prel.acc_id == account, prel.repository_full_name == k, prel.name.in_(v))
                 .order_by(desc(prel.published_at))
                 for k, v in names.items()
             ),

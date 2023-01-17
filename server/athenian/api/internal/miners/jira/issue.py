@@ -174,8 +174,8 @@ async def _load_components(
         for part in label.split(","):
             all_labels.add(part.strip())
     rows = await mdb.fetch_all(
-        sql.select([Component.id, Component.name]).where(
-            sql.func.lower(Component.name).in_(all_labels), Component.acc_id == account,
+        sql.select(Component.id, Component.name).where(
+            Component.acc_id == account, sql.func.lower(Component.name).in_(all_labels),
         ),
     )
     return {r[1].lower(): r[0] for r in rows}
@@ -581,7 +581,7 @@ async def _fetch_released_prs(
         ghdprf.release_match,
     ]
     released_df = await read_sql_query(
-        sql.select(selected).where(
+        sql.select(*selected).where(
             ghdprf.acc_id == account,
             ghdprf.pr_node_id.in_(pr_node_ids),
         ),
@@ -1051,8 +1051,8 @@ async def fetch_jira_issues_by_keys(
             ),
         )
         .where(
-            regiss.key.in_any_values(keys) if in_any_values else regiss.key.in_(keys),
             regiss.acc_id == jira_ids[0],
+            regiss.key.in_any_values(keys) if in_any_values else regiss.key.in_(keys),
             regiss.project_id.in_(jira_ids[1]),
             regiss.is_deleted.is_(False),
         )
@@ -1100,11 +1100,11 @@ async def fetch_jira_issues_by_prs(
             ),
         )
         .where(
+            prmap.node_acc.in_(meta_ids),
+            prmap.jira_acc == jira_ids[0],
             prmap.node_id.in_any_values(pr_nodes)
             if in_any_values
             else prmap.node_id.in_(pr_nodes),
-            prmap.node_acc.in_(meta_ids),
-            prmap.jira_acc == jira_ids[0],
             regiss.project_id.in_(jira_ids[1]),
             regiss.is_deleted.is_(False),
         )

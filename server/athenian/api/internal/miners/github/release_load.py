@@ -513,7 +513,7 @@ class ReleaseLoader:
         if pdb.url.dialect == "sqlite":
             query = select(
                 [ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to],
-            ).where(and_(ghrts.acc_id == account, or_(*or_items) if or_items else true))
+            ).where(ghrts.acc_id == account, or_(*or_items) if or_items else true)
         else:
             query = union_all(
                 *(
@@ -524,7 +524,7 @@ class ReleaseLoader:
                             ghrts.time_from,
                             ghrts.time_to,
                         ],
-                    ).where(and_(item, ghrts.acc_id == account))
+                    ).where(ghrts.acc_id == account, item)
                     for item in or_items
                 ),
             )
@@ -618,9 +618,9 @@ class ReleaseLoader:
             query = (
                 select(prel)
                 .where(
+                    prel.acc_id == account,
                     or_(*or_items) if or_items else false(),
                     prel.published_at.between(time_from, time_to),
-                    prel.acc_id == account,
                 )
                 .order_by(desc(prel.published_at), desc(prel.node_id))
             )
@@ -629,9 +629,9 @@ class ReleaseLoader:
                 *(
                     select(prel)
                     .where(
+                        prel.acc_id == account,
                         item,
                         prel.published_at.between(time_from, time_to),
-                        prel.acc_id == account,
                     )
                     .order_by(desc(prel.published_at), desc(prel.node_id))
                     for item in or_items

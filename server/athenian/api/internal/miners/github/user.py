@@ -5,7 +5,7 @@ from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple, Un
 
 import aiomcache
 import morcilla
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
 from athenian.api.cache import cached, middle_term_exptime
 from athenian.api.models.metadata.github import User
@@ -31,8 +31,8 @@ async def mine_users(
     There can be duplicates when there are users of different types.
     """
     rows = await mdb.fetch_all(
-        select([User.node_id, User.email, User.login, User.name, User.html_url, User.avatar_url])
-        .where(and_(User.login.in_(logins), User.acc_id.in_(meta_ids)))
+        select(User.node_id, User.email, User.login, User.name, User.html_url, User.avatar_url)
+        .where(User.acc_id.in_(meta_ids), User.login.in_(logins))
         .order_by(User.type),
     )  # BOT -> MANNEQUIN -> ORGANIZATION -> USER
     return [dict(row) for row in rows]
@@ -91,7 +91,7 @@ async def _mine_user_avatars_logins(
 ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(
         select(User.node_id, User.html_url, User.avatar_url).where(
-            User.login.in_(logins), User.acc_id.in_(meta_ids),
+            User.acc_id.in_(meta_ids), User.login.in_(logins),
         ),
     )
     return [
@@ -115,7 +115,7 @@ async def _mine_user_avatars_nodes(
 ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(
         select(User.node_id, User.html_url, User.avatar_url).where(
-            User.node_id.in_(nodes), User.acc_id.in_(meta_ids), User.login.isnot(None),
+            User.acc_id.in_(meta_ids), User.node_id.in_(nodes), User.login.isnot(None),
         ),
     )
     return [

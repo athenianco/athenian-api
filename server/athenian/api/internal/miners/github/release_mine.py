@@ -1291,12 +1291,10 @@ async def _load_prs_by_ids(
     while len(ids):
         tasks.append(
             read_sql_query(
-                select(columns)
+                select(*columns)
                 .where(
-                    and_(
-                        filter_builder(model, ids[:batch_size]),
-                        model.acc_id.in_(meta_ids),
-                    ),
+                    model.acc_id.in_(meta_ids),
+                    filter_builder(model, ids[:batch_size]),
                 )
                 .order_by(model.merge_commit_id),
                 mdb,
@@ -1307,10 +1305,8 @@ async def _load_prs_by_ids(
             tasks.append(
                 read_sql_query(
                     select(
-                        [
-                            PullRequestLabel.pull_request_node_id,
-                            func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-                        ],
+                        PullRequestLabel.pull_request_node_id,
+                        func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
                     )
                     .select_from(
                         join(
@@ -1323,10 +1319,8 @@ async def _load_prs_by_ids(
                         ),
                     )
                     .where(
-                        and_(
-                            filter_builder(NodePullRequest, ids[:batch_size]),
-                            NodePullRequest.acc_id.in_(meta_ids),
-                        ),
+                        NodePullRequest.acc_id.in_(meta_ids),
+                        filter_builder(NodePullRequest, ids[:batch_size]),
                     )
                     .order_by(PullRequestLabel.pull_request_node_id),
                     mdb,
@@ -2251,8 +2245,8 @@ async def _fetch_commits(hashes: npt.NDArray[bytes], meta_ids: Sequence[int], md
     log.info("fetching %d commits", len(hashes))
 
     query = (
-        sa.select(columns)
-        .where(and_(NodeCommit.sha.in_any_values(hashes), NodeCommit.acc_id.in_(meta_ids)))
+        sa.select(*columns)
+        .where(NodeCommit.acc_id.in_(meta_ids), NodeCommit.sha.in_any_values(hashes))
         .order_by(order_column)
         .with_statement_hint(f"Rows({NodeCommit.__tablename__} *VALUES* #{len(hashes)})")
         .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})")

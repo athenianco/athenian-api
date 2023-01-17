@@ -60,11 +60,9 @@ def _benchmark(conn: PostgresConnection) -> None:
         PullRequest.node_id.notin_(pr_node_ids),
         PullRequest.user_login.in_(["vadim"] * 200),
         exists().where(
-            and_(
-                PullRequestLabel.acc_id == PullRequest.acc_id,
-                PullRequestLabel.pull_request_node_id == PullRequest.node_id,
-                func.lower(PullRequestLabel.name).in_(["one", "two", "three"]),
-            ),
+            PullRequestLabel.acc_id == PullRequest.acc_id,
+            PullRequestLabel.pull_request_node_id == PullRequest.node_id,
+            func.lower(PullRequestLabel.name).in_(["one", "two", "three"]),
         ),
     ]
     conn._compile(select([PullRequest]).where(and_(*filters)))

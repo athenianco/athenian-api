@@ -85,8 +85,8 @@ async def mine_repositories(
             union_all(
                 *(
                     select(distinct(GitHubDonePullRequestFacts.repository_full_name)).where(
-                        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
                         GitHubDonePullRequestFacts.acc_id == account,
+                        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
                         col.between(time_from, time_to),
                     )
                     for col in (
@@ -101,8 +101,8 @@ async def mine_repositories(
     async def fetch_active_merged_prs():
         return await pdb.fetch_all(
             select(distinct(GitHubMergedPullRequestFacts.repository_full_name)).where(
-                GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
                 GitHubMergedPullRequestFacts.acc_id == account,
+                GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
                 GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to),
             ),
         )
@@ -113,8 +113,8 @@ async def mine_repositories(
             union_all(
                 *(
                     select(distinct(GitHubOpenPullRequestFacts.repository_full_name)).where(
-                        GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
                         GitHubOpenPullRequestFacts.acc_id == account,
+                        GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
                         col.between(time_from, time_to),
                     )
                     for col in (
@@ -129,8 +129,8 @@ async def mine_repositories(
     async def fetch_inactive_open_prs():
         return await mdb.fetch_all(
             select(distinct(PullRequest.repository_full_name)).where(
-                PullRequest.repository_node_id.in_(repo_ids),
                 PullRequest.acc_id.in_(meta_ids),
+                PullRequest.repository_node_id.in_(repo_ids),
                 PullRequest.created_at < time_from,
                 coalesce(PullRequest.closed, False).is_(False),
             ),
@@ -206,9 +206,9 @@ async def mine_repositories(
             return []
         queries = [
             select(distinct(GitHubRelease.repository_full_name)).where(
+                GitHubRelease.acc_id == account,
                 GitHubRelease.release_match == "tag|" + m,
                 GitHubRelease.repository_full_name.in_(r),
-                GitHubRelease.acc_id == account,
                 GitHubRelease.published_at.between(time_from, time_to),
             )
             for m, r in match_groups.items()
@@ -259,8 +259,8 @@ async def mine_repositories(
         physical_repos = await mdb.fetch_all(
             select([Repository.full_name])
             .where(
-                Repository.full_name.in_(repos),
                 Repository.acc_id.in_(meta_ids),
+                Repository.full_name.in_(repos),
             )
             .order_by(Repository.full_name),
         )

@@ -53,7 +53,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     deployed_prs_task = asyncio.create_task(
         # pessimistic: we ignore the environments
         read_sql_query(
-            select([distinct(ghprd.pull_request_id)]).where(
+            select(distinct(ghprd.pull_request_id)).where(
                 ghprd.acc_id == filt.request.account,
                 ghprd.repository_full_name.in_(repos),
                 ghprd.finished_at.between(time_from, time_to),
