@@ -2492,6 +2492,9 @@ async def _resolve_commit_relationship(
         ),
         op="_compute_deployment_facts/dags_and_latest",
     )
+    assert (
+        not deployed_commits_df.empty
+    ), f"metadata lost all these commits: {commits_per_physical_repo}"
     del commits_per_physical_repo
     deployed_commits_df.sort_values(PushCommit.node_id.name, ignore_index=True, inplace=True)
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
