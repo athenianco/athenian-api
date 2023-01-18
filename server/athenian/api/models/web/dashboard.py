@@ -13,6 +13,16 @@ class DashboardChartFilters(Model):
     jira: Optional[JIRAFilter]
 
 
+class DashboardChartGroupBy(Model):
+    """The group by configured for the dashboard chart."""
+
+    repositories: Optional[list[str]]
+    teams: Optional[list[int]]
+    jira_issue_types: Optional[list[str]]
+    jira_labels: Optional[list[str]]
+    jira_priorities: Optional[list[str]]
+
+
 class _CommonChartInfo(Model):
     date_from: Optional[date]
     date_to: Optional[date]
@@ -21,6 +31,7 @@ class _CommonChartInfo(Model):
     name: str
     time_interval: Optional[str]
     filters: Optional[DashboardChartFilters]
+    group_by: Optional[DashboardChartGroupBy]
 
 
 class DashboardChart(_CommonChartInfo):
