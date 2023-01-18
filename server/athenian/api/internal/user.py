@@ -1,13 +1,12 @@
 from datetime import datetime, timezone
-from typing import Callable, Coroutine, Dict, Optional
+from typing import Callable, Coroutine, Optional
 
 import aiomcache
-import aiosqlite
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import func, join, select, union_all
 
 from athenian.api.async_utils import gather
-from athenian.api.db import DatabaseLike
+from athenian.api.db import DatabaseLike, is_postgresql
 from athenian.api.defer import defer
 from athenian.api.internal.account import (
     get_metadata_account_ids_or_empty,
@@ -36,19 +35,15 @@ async def load_user_accounts(
     slack: Optional[SlackWebClient],
     user_info: Callable[..., Coroutine],
     cache: Optional[aiomcache.Client],
-) -> Dict[int, AccountStatus]:
+) -> dict[int, AccountStatus]:
     """Fetch the user accounts membership and flags."""
     accounts = await sdb.fetch_all(
         select([UserAccount, Account.expires_at])
         .select_from(join(UserAccount, Account, UserAccount.account_id == Account.id))
         .where(UserAccount.user_id == uid),
     )
-    try:
-        is_sqlite = sdb.url.dialect == "sqlite"
-    except AttributeError:
-        async with sdb.raw_connection() as raw_connection:
-            is_sqlite = isinstance(raw_connection, aiosqlite.Connection)
-    now = datetime.now(None if is_sqlite else timezone.utc)
+    postgresql = await is_postgresql(sdb)
+    now = datetime.now(timezone.utc if postgresql else None)
     tasks = (
         [
             get_jira_installation_or_none(x[UserAccount.account_id.name], sdb, mdb, cache)
@@ -69,15 +64,7 @@ async def load_user_accounts(
     )
     results = await gather(*tasks, op="account_ids")
     jira_ids = results[: len(accounts)]
-    if is_sqlite:
-
-        def build_query(meta_ids):
-            return union_all(
-                select(NodeCheckRun.id).where(NodeCheckRun.acc_id.in_(meta_ids)),
-                select(NodeStatusContext.id).where(NodeStatusContext.acc_id.in_(meta_ids)),
-            ).limit(1)
-
-    else:
+    if postgresql:
 
         def build_query(meta_ids):
             return union_all(
@@ -86,6 +73,14 @@ async def load_user_accounts(
                 .where(NodeStatusContext.acc_id.in_(meta_ids))
                 .limit(1),
             )
+
+    else:
+
+        def build_query(meta_ids):
+            return union_all(
+                select(NodeCheckRun.id).where(NodeCheckRun.acc_id.in_(meta_ids)),
+                select(NodeStatusContext.id).where(NodeStatusContext.acc_id.in_(meta_ids)),
+            ).limit(1)
 
     tasks = [
         mdb.fetch_val(build_query(meta_ids)) if meta_ids else _return_none()
