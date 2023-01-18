@@ -582,3 +582,42 @@ class DashboardChart(create_time_mixin(created_at=True, updated_at=True), Base):
     environments = Column(
         JSONType, nullable=True, comment="Filter environments for chart metric data",
     )
+
+
+class DashboardChartGroupBy(create_time_mixin(created_at=True, updated_at=True), Base):
+    """The group by configured for a dashboard chart."""
+
+    __tablename__ = "dashboard_charts_group_by"
+
+    chart_id = Column(
+        Integer(),
+        ForeignKey("dashboard_charts.id", name="fk_chart_groupby_chart", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+        comment="The chart having this group by configured.",
+    )
+
+    teams = Column(
+        JSONType, nullable=True, comment="The teams by which chart data will be grouped.",
+    )
+    repositories = Column(
+        JSONType,
+        nullable=True,
+        comment=(
+            "The repositories by which chart data will be grouped. Each repository is"
+            " represented as a couple of repository id and optional logical name."
+        ),
+    )
+    jira_priorities = Column(
+        JSONType,
+        nullable=True,
+        comment="The Jira priorities by which chart data will be grouped.",
+    )
+    jira_issue_types = Column(
+        JSONType,
+        nullable=True,
+        comment="The Jira issue types by which chart data will be grouped.",
+    )
+    jira_labels = Column(
+        JSONType, nullable=True, comment="The Jira labels by which chart data will be grouped.",
+    )
