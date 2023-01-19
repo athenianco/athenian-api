@@ -12,6 +12,7 @@ from athenian.api.defer import with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.team_sync import TeamSyncMetrics
 from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
 from athenian.api.precompute.accounts import (
     _DurationTracker,
@@ -250,7 +251,16 @@ class TestEnsureTeams:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         n_imported, _ = await ensure_teams(
-            1, False, set(), prefixer, meta_ids, sdb, mdb, None, logging.getLogger(),
+            1,
+            False,
+            set(),
+            prefixer,
+            meta_ids,
+            sdb,
+            mdb,
+            None,
+            logging.getLogger(),
+            TeamSyncMetrics.empty(),
         )
 
         root_teams = await sdb.fetch_all(sa.select(Team).where(Team.parent_id.is_(None)))

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import abc
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import graphlib
 import logging
 import re
-from typing import Any, Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -21,9 +22,30 @@ from athenian.api.models.metadata.github import (
     Organization as MetadataOrganization,
     Team as MetadataTeam,
 )
+from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Team
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class TeamSyncMetrics:
+    """Team synchronization statistics."""
+
+    added: int
+    removed: int
+    updated: int
+
+    @classmethod
+    def empty(cls) -> TeamSyncMetrics:
+        """Initialize a new TeamSyncMetrics instance filled with zeros."""
+        return TeamSyncMetrics(0, 0, 0)
+
+    def as_db(self) -> Iterator[HealthMetric]:
+        """Generate HealthMetric-s from this instance."""
+        yield HealthMetric(name="added_teams", value=self.added)
+        yield HealthMetric(name="removed_teams", value=self.removed)
+        yield HealthMetric(name="updated_teams", value=self.updated)
 
 
 async def sync_teams(
@@ -35,6 +57,7 @@ async def sync_teams(
     dry_run: bool = False,
     force: bool = False,
     unmapped: bool = False,
+    metrics: Optional[TeamSyncMetrics] = None,
 ) -> None:
     """
     Sync the teams from metadata DB to state DB.
@@ -42,6 +65,7 @@ async def sync_teams(
     :param force: Value indicating whether to delete all the teams which are mismatched in mdb. \
                   If False, we abort the call in this situation.
     :param unmapped: Value indicating whether we shall delete any team without `origin_node_id`.
+    :param metrics: Optional health metrics to populate.
     """
     meta_teams = await _MetaTeams.from_db(meta_ids, mdb)
     all_members = await meta_teams.get_all_members()
@@ -57,9 +81,16 @@ async def sync_teams(
 
             db_ops = _DryRunStateDBOperator() if dry_run else _StateDBOperator(account, sdb_conn)
             await db_ops.insert_new(new_meta_teams, all_members, state_teams)
-            await db_ops.update_existing(existing_meta_teams, all_members, state_teams)
+            updates_count = await db_ops.update_existing(
+                existing_meta_teams, all_members, state_teams,
+            )
             await db_ops.delete(gone_state_teams)
             await db_ops.revert_temporary_names()
+
+            if metrics is not None:
+                metrics.added = len(new_meta_teams)
+                metrics.removed = len(gone_state_teams)
+                metrics.updated = updates_count
 
 
 class SyncTeamsError(Exception):
@@ -207,7 +238,7 @@ class _StateDBOperatorI(metaclass=abc.ABCMeta):
         meta_team_rows: Sequence[Row],
         all_members: dict[int, list[int]],
         state_teams: _StateTeams,
-    ) -> None:
+    ) -> int:
         ...
 
     @abc.abstractmethod
@@ -263,12 +294,14 @@ class _StateDBOperator(_StateDBOperatorI):
         meta_team_rows: Sequence[Row],
         all_members: dict[int, list[int]],
         state_teams: _StateTeams,
-    ) -> None:
+    ) -> int:
         stmts = []
+        updates_count = 0
         for meta_team_row in meta_team_rows:
             members = all_members[meta_team_row[MetadataTeam.id.name]]
             updates = _get_team_updates(meta_team_row, members, state_teams)
             if updates:
+                updates_count += 1
                 team_id = state_teams.get_id(meta_team_row[MetadataTeam.id.name])
                 updated_fields = [col.name for col in updates]
                 log.info("updating fields %s for team %s", ",".join(updated_fields), team_id)
@@ -277,6 +310,7 @@ class _StateDBOperator(_StateDBOperatorI):
 
         for stmt in stmts:
             await self._sdb_conn.execute(stmt)
+        return updates_count
 
     async def delete(self, state_team_rows: Sequence[Row]) -> None:
         if team_ids := [r[Team.id.name] for r in state_team_rows]:
@@ -312,13 +346,16 @@ class _DryRunStateDBOperator(_StateDBOperatorI):
         meta_team_rows: Sequence[Row],
         all_members: dict[int, list[int]],
         state_teams: _StateTeams,
-    ) -> None:
+    ) -> int:
+        updates_count = 0
         for meta_team_row in meta_team_rows:
             members = all_members[meta_team_row[MetadataTeam.id.name]]
             if updates := _get_team_updates(meta_team_row, members, state_teams):
+                updates_count += 1
                 team_id = state_teams.get_id(meta_team_row[MetadataTeam.id.name])
                 updated_fields = [col.name for col in updates]
                 log.info("updating fields %s for team %s", ",".join(updated_fields), team_id)
+        return updates_count
 
     async def delete(self, state_team_rows: Sequence[Row]) -> None:
         team_ids = [r[Team.id.name] for r in state_team_rows]
