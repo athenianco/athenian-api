@@ -54,7 +54,7 @@ from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
-from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
+from athenian.api.internal.team_sync import SyncTeamsError, TeamSyncMetrics, sync_teams
 from athenian.api.models.metadata.github import AccountRepository, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
@@ -236,7 +236,16 @@ async def precompute_reposet(
     log.info("loaded %d bots", len(bots))
     if not args.skip_teams:
         num_teams, num_bots = await ensure_teams(
-            reposet.owner_id, reposet.precomputed, bots, prefixer, meta_ids, sdb, mdb, cache, log,
+            reposet.owner_id,
+            reposet.precomputed,
+            bots,
+            prefixer,
+            meta_ids,
+            sdb,
+            mdb,
+            cache,
+            log,
+            health_metrics.teams,
         )
     if not args.skip_jira:
         try:
@@ -425,7 +434,9 @@ async def precompute_reposet(
                     report_precompute_success(), f"report precompute success {reposet.owner_id}",
                 )
 
-            await alert_bad_health(health_metrics, reposet.owner_id, rdb, slack, cache)
+            await alert_bad_health(
+                health_metrics, reposet.precomputed, reposet.owner_id, rdb, slack, cache,
+            )
 
         if not args.skip_health_metrics:
             await defer(
@@ -564,6 +575,7 @@ async def ensure_teams(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     log: logging.Logger,
+    metrics: TeamSyncMetrics,
 ) -> tuple[int, int]:
     """
     Take care of everything related to the teams.
@@ -597,10 +609,11 @@ async def ensure_teams(
             sentry_sdk.capture_exception(e)
             num_teams = 0
             # no return
+        metrics.added = num_teams
     else:
         if await is_feature_enabled(account, Feature.TEAM_SYNC_ENABLED, sdb):
             try:
-                await sync_teams(account, meta_ids, sdb, mdb)
+                await sync_teams(account, meta_ids, sdb, mdb, metrics=metrics)
             except SyncTeamsError as e:
                 log.error("error during team sync: %s", e)
         else:
@@ -775,6 +788,7 @@ async def submit_health_metrics_to_segment(
 )
 async def alert_bad_health(
     metrics: DataHealthMetrics,
+    precomputed: bool,
     account: int,
     rdb: Database,
     slack: SlackWebClient,
@@ -811,6 +825,12 @@ async def alert_bad_health(
             "number of done PRs decreased by more than 5%: "
             f"{previous_done_prs} -> {metrics.prs.done_count}",
         )
+
+    if metrics.teams.added >= 5 and not precomputed:
+        msgs.append(f"team sync added {metrics.teams.added} >= 5 new teams")
+    if metrics.teams.removed >= 5:
+        msgs.append(f"team sync removed {metrics.teams.removed} >= 5 teams")
+
     if msgs:
 
         async def report_msg():

@@ -11,6 +11,7 @@ from athenian.api.internal.miners.github.branches import BranchMinerMetrics
 from athenian.api.internal.miners.github.deployment import MineDeploymentsMetrics
 from athenian.api.internal.miners.github.release_load import MineReleaseMetrics
 from athenian.api.internal.reposet import RepositorySetMetrics
+from athenian.api.internal.team_sync import TeamSyncMetrics
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.web import AccountHealth
 
@@ -24,6 +25,7 @@ class DataHealthMetrics:
     prs: MinePullRequestMetrics | None
     releases: MineReleaseMetrics | None
     reposet: RepositorySetMetrics | None
+    teams: TeamSyncMetrics | None
 
     @classmethod
     def empty(cls) -> "DataHealthMetrics":
