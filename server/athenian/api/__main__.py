@@ -187,6 +187,10 @@ def parse_args() -> argparse.Namespace:
             " launches the server as usual."
         ),
     )
+    parser.add_argument(
+        "--refetch-topic",
+        help="PubSub topic name where we submit metadata heal requests",
+    )
     return parser.parse_args()
 
 
