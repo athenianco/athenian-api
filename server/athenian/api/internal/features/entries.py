@@ -128,9 +128,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import HealthMetric
-from athenian.api.models.web import NoSourceDataError
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -416,7 +414,6 @@ class MetricEntriesCalculator:
         branches: pd.DataFrame,
         default_branches: dict[str, str],
         fresh: bool,
-        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for pull request metrics.
 
@@ -441,7 +438,7 @@ class MetricEntriesCalculator:
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
         jira_filter = reduce(operator.or_, jira_filters)
 
@@ -873,7 +870,6 @@ class MetricEntriesCalculator:
         prefixer: Prefixer,
         branches: pd.DataFrame,
         default_branches: dict[str, str],
-        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for release metrics.
 
@@ -894,7 +890,7 @@ class MetricEntriesCalculator:
         )
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
         jira_filter = reduce(operator.or_, jira_filters)
 
@@ -1305,7 +1301,7 @@ class MetricEntriesCalculator:
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_ids.acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
         if any(jira_filters):
             # if any filter is True-ish group_jira_facts_by_jira will need the extra info to group
@@ -1516,16 +1512,15 @@ class _JIRAFilterToGroupingConverter:
         cls,
         all_filters: Iterable[JIRAFilter],
         account: int,
-        jira_acc_id: Optional[int],
         mdb: Database,
         cache: Optional[aiomcache.Client],
     ) -> _JIRAFilterToGroupingConverter:
-        if any((f.priorities or f.issue_types) for f in all_filters):
-            if jira_acc_id is None:
-                raise ResponseError(
-                    NoSourceDataError(detail="JIRA not installed for the account."),
-                )
-            entities_mapper = await JIRAEntitiesMapper.load(jira_acc_id, mdb)
+        actual_filters = [f for f in all_filters if f]
+        if any((f.priorities or f.issue_types) for f in actual_filters):
+            jira_acc_ids = [f.account for f in actual_filters]
+            if len(set(jira_acc_ids)) > 1:
+                raise ValueError("JIRAFilters about multiple Jira installations not supported")
+            entities_mapper = await JIRAEntitiesMapper.load(jira_acc_ids[0], mdb)
         else:
             entities_mapper = None
         return cls(entities_mapper)
