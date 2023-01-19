@@ -489,7 +489,7 @@ async def _check_user_org_membership(
             await defer(report_blocked_registration(), "report_blocked_registration_to_slack")
         raise ResponseError(
             ForbiddenError(
-                detail="User %s does not belong to the GitHub organization." % request.uid,
+                detail=f"User {request.uid} does not belong to the GitHub organization.",
             ),
         )
     return user
