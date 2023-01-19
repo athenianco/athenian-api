@@ -8,6 +8,7 @@ from asyncpg import UniqueViolationError
 import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api.auth import disable_default_user
 from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.models.state.models import UserToken
 from athenian.api.models.web import (
@@ -51,6 +52,7 @@ def info_from_apiKeyAuth(token: str, required_scopes) -> Optional[Dict[str, Any]
     return {"token": token, "method": "apikey"}
 
 
+@disable_default_user
 async def create_token(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a new Personal Access Token for the current user and the specified account."""
     kms = request.app["kms"]
