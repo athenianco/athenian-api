@@ -228,8 +228,10 @@ from athenian.api.models.web.repository_set_with_name import RepositorySetWithNa
 from athenian.api.models.web.reset_request import ResetRequest
 from athenian.api.models.web.reset_target import ResetTarget
 from athenian.api.models.web.search_prs import (
+    FilterOperator,
     OrderByDirection,
     PullRequestDigest,
+    SearchPullRequestsFilter,
     SearchPullRequestsOrderByExpression,
     SearchPullRequestsOrderByPRTrait,
     SearchPullRequestsOrderByStageTiming,

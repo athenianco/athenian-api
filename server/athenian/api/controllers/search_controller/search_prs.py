@@ -39,8 +39,10 @@ from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_withgroups
 from athenian.api.models.web import (
+    FilterOperator,
     OrderByDirection,
     PullRequestDigest,
+    SearchPullRequestsFilter,
     SearchPullRequestsOrderByExpression,
     SearchPullRequestsOrderByPRTrait,
     SearchPullRequestsOrderByStageTiming,
@@ -144,8 +146,11 @@ async def _build_filter(
         _resolve_repos(), _resolve_participants(), _resolve_jira(),
     )
 
+    if filters := search_req.filters:
+        filters = [filt.with_converted_value() for filt in filters]
+
     return _SearchPRsFilter(
-        time_from, time_to, repositories, participants, jira, search_req.stages,
+        time_from, time_to, repositories, participants, jira, search_req.stages, filters,
     )
 
 
@@ -157,6 +162,7 @@ class _SearchPRsFilter:
     participants: Optional[PRParticipants] = None
     jira: Optional[JIRAFilter] = None
     stages: Optional[list[str]] = None
+    extra_filters: Optional[list[SearchPullRequestsFilter]] = None
 
 
 @dataclasses.dataclass
@@ -218,8 +224,16 @@ async def _search_pr_digests(
     if search_filter.stages is not None:
         pr_facts = _apply_stages_filter(pr_facts, search_filter.stages)
 
+    unchecked_calc_ens = _build_metrics_calc_ensemble(pr_facts, search_filter, order_by)
+
+    keep_mask = _apply_extra_filters(
+        pr_facts, search_filter.extra_filters or (), unchecked_calc_ens,
+    )
+
     if order_by:
-        pr_facts = _apply_order_by(pr_facts, search_filter, order_by)
+        pr_facts = _apply_order_by(pr_facts, keep_mask, order_by, unchecked_calc_ens)
+    else:
+        pr_facts = pr_facts.take(np.flatnonzero(keep_mask))
 
     prs_numbers = await fetch_prs_numbers(
         pr_facts[PullRequestFacts.f.node_id].values, account_info.meta_ids, mdb,
@@ -248,23 +262,115 @@ async def _search_pr_digests(
     return pr_digests
 
 
+def _build_metrics_calc_ensemble(
+    pr_facts: pd.DataFrame,
+    search_filter: _SearchPRsFilter,
+    order_by: Sequence[SearchPullRequestsOrderByExpression],
+) -> PullRequestMetricCalculatorEnsemble | None:
+    # search the needed metrics in order by expressions and extra filters
+    metrics = {expr.field for expr in order_by if expr.field in pr_metric_calculators}
+    if filters := search_filter.extra_filters:
+        metrics |= {f.field for f in filters if f.field in pr_metric_calculators}
+
+    if not metrics:
+        return None
+    min_times, max_times = (
+        np.array([t.replace(tzinfo=None)], dtype="datetime64[ns]")
+        for t in (search_filter.time_from, search_filter.time_to)
+    )
+    calc_ensemble = PullRequestMetricCalculatorEnsemble(
+        *metrics, quantiles=(0, 1), quantile_stride=DEFAULT_QUANTILE_STRIDE,
+    )
+    groups = np.full((1, len(pr_facts)), True, bool)
+    calc_ensemble(pr_facts, min_times, max_times, groups)
+    return calc_ensemble
+
+
 def _apply_stages_filter(pr_facts: pd.DataFrame, stages: Collection[str]) -> pd.DataFrame:
     masks = pr_facts_stages_masks(pr_facts)
     filter_mask = pr_stages_mask(stages)
     return pr_facts.take(np.flatnonzero(masks & filter_mask))
 
 
+def _apply_extra_filters(
+    pr_facts: pd.DataFrame,
+    filters: Sequence[SearchPullRequestsFilter],
+    unchecked_metric_calc: Optional[PullRequestMetricCalculatorEnsemble],
+) -> npt.NDArray[bool]:
+    filter_by_metrics: _FilterByMetrics | None = None
+
+    keep_mask = np.full((len(pr_facts),), True, bool)
+    for filt in filters:
+        if filt.field in pr_metric_calculators:
+            if filter_by_metrics is None:
+                assert unchecked_metric_calc is not None
+                filter_by_metrics = _FilterByMetrics(unchecked_metric_calc)
+            filter_mask = filter_by_metrics.apply(filt, pr_facts, keep_mask)
+            keep_mask &= filter_mask
+        else:
+            raise ValueError(f"Invalid filter field {filt.field}")
+
+    return keep_mask
+
+
+class _Filter(metaclass=abc.ABCMeta):
+    """Handles the extra filters of the pull requests search."""
+
+    @abc.abstractmethod
+    def apply(
+        self,
+        filt: SearchPullRequestsFilter,
+        pr_facts: pd.DataFrame,
+        current_mask: npt.NDArray,
+    ) -> npt.NDArray[bool]:
+        """Return the mask to select pull requests satisfying the filter."""
+
+
+class _FilterByMetrics(_Filter):
+    """Handles the filters by metric values."""
+
+    _FUNCS = {
+        FilterOperator.LT.value: np.less,
+        FilterOperator.LE.value: np.less_equal,
+        FilterOperator.GT.value: np.greater,
+        FilterOperator.GE.value: np.greater_equal,
+        FilterOperator.EQ.value: np.equal,
+    }
+
+    def __init__(self, calc_ensemble: PullRequestMetricCalculatorEnsemble):
+        self._calc_ensemble = calc_ensemble
+
+    def apply(
+        self,
+        filt: SearchPullRequestsFilter,
+        pr_facts: pd.DataFrame,
+        current_mask: npt.NDArray[bool],
+    ) -> npt.NDArray[bool]:
+        calc = self._calc_ensemble[filt.field][0]
+        values = calc.peek[0]
+        func = self._FUNCS[filt.operator]
+
+        # avoid nat - timedelta comparison
+        if values.dtype.type == np.timedelta64:
+            current_mask &= ~np.isnat(values)
+
+        res_mask = current_mask.copy()
+
+        func(values, filt.value, where=current_mask, out=res_mask)
+        return res_mask
+
+
 @sentry_span
 def _apply_order_by(
     pr_facts: pd.DataFrame,
-    search_filter: _SearchPRsFilter,
+    keep_mask: npt.NDArray[bool],
     order_by: Sequence[SearchPullRequestsOrderByExpression],
+    unchecked_metric_calc: Optional[PullRequestMetricCalculatorEnsemble],
 ) -> pd.DataFrame:
     assert order_by
     if not len(pr_facts):
         return pr_facts
 
-    keep_mask = np.full((len(pr_facts),), True, bool)
     ordered_indexes = np.arange(len(pr_facts))
     order_by_metrics: Optional[_OrderByMetrics] = None
     order_by_stage_timings: Optional[_OrderByStageTimings] = None
@@ -274,7 +380,8 @@ def _apply_order_by(
         orderer: _OrderBy
         if expr.field in _OrderByMetrics.FIELDS:
             if order_by_metrics is None:
-                order_by_metrics = _OrderByMetrics.build(pr_facts, search_filter, order_by)
+                assert unchecked_metric_calc is not None
+                order_by_metrics = _OrderByMetrics(unchecked_metric_calc)
             orderer = order_by_metrics
         elif expr.field in _OrderByStageTimings.FIELDS:
             if order_by_stage_timings is None:
@@ -357,26 +464,6 @@ class _OrderByMetrics(_OrderBy):
 
     def __init__(self, calc_ensemble: PullRequestMetricCalculatorEnsemble):
         self._calc_ensemble = calc_ensemble
-
-    @classmethod
-    def build(
-        cls,
-        pr_facts: pd.DataFrame,
-        search_filter: _SearchPRsFilter,
-        order_by: Sequence[SearchPullRequestsOrderByExpression],
-    ) -> _OrderByMetrics:
-        metrics = [expr.field for expr in order_by if expr.field in cls.FIELDS]
-        assert metrics
-        min_times, max_times = (
-            np.array([t.replace(tzinfo=None)], dtype="datetime64[ns]")
-            for t in (search_filter.time_from, search_filter.time_to)
-        )
-        calc_ensemble = PullRequestMetricCalculatorEnsemble(
-            *metrics, quantiles=(0, 1), quantile_stride=DEFAULT_QUANTILE_STRIDE,
-        )
-        groups = np.full((1, len(pr_facts)), True, bool)
-        calc_ensemble(pr_facts, min_times, max_times, groups)
-        return cls(calc_ensemble)
 
     def apply_expression(
         self,
