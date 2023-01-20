@@ -243,10 +243,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
                             ],
                         )
                         for v in cm.values:
-                            if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                                v.confidence_mins = None
-                                v.confidence_maxs = None
-                                v.confidence_scores = None
+                            v.clean_up_confidence_fields()
                         met.calculated.append(cm)
 
     await gather(*(calculate_for_set_metrics(filter_prs) for filter_prs in filters))
@@ -817,10 +814,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
                         ],
                     )
                     for v in cm.values:
-                        if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                            v.confidence_mins = None
-                            v.confidence_maxs = None
-                            v.confidence_scores = None
+                        v.clean_up_confidence_fields()
                     met.append(cm)
 
     await gather(
@@ -931,10 +925,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
                                 ],
                             )
                             for v in cm.values:
-                                if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                                    v.confidence_mins = None
-                                    v.confidence_maxs = None
-                                    v.confidence_scores = None
+                                v.clean_up_confidence_fields()
                             met.calculated.append(cm)
 
     await gather(*(calculate_for_set_metrics(filter_checks) for filter_checks in filters))
