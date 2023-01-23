@@ -10,7 +10,18 @@ from itertools import chain
 import logging
 import operator
 import pickle
-from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, Type, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+)
 
 import aiomcache
 import numpy as np
@@ -299,7 +310,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jiras, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
             # result can be cached independently from metrics order, see _PRMetricsLineGHCache
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -308,7 +319,7 @@ class MetricEntriesCalculator:
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels,
-            jira,
+            ",".join(str(j) for j in jiras),
             ",".join(sorted(environments)),
             exclude_inactive,
             release_settings,
@@ -328,7 +339,7 @@ class MetricEntriesCalculator:
         repositories: Sequence[Collection[str]],
         participants: list[PRParticipants],
         labels: LabelFilter,
-        jira: JIRAFilter,
+        jiras: Sequence[JIRAFilter],
         exclude_inactive: bool,
         bots: set[str],
         release_settings: ReleaseSettings,
@@ -341,7 +352,8 @@ class MetricEntriesCalculator:
         """
         Calculate pull request metrics on GitHub.
 
-        :return: lines x repositories x participants x granularities x time intervals x metrics.
+        :return: jiras x lines x repositories x participants x
+                 granularities x time intervals x metrics.
         """
         assert isinstance(repositories, (tuple, list))
         all_repositories = set(chain.from_iterable(repositories))
@@ -354,6 +366,10 @@ class MetricEntriesCalculator:
             environments=environments,
         )
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+
+        jiras = jiras or [JIRAFilter.empty()]
+        global_jira_filter = JIRAFilter.combine(*jiras)
+
         pr_facts_calc = self._build_pr_facts_calculator()
         df_facts = await pr_facts_calc(
             time_from,
@@ -361,17 +377,19 @@ class MetricEntriesCalculator:
             all_repositories,
             all_participants,
             labels,
-            jira,
+            global_jira_filter,
             exclude_inactive,
             bots,
             release_settings,
             logical_settings,
             prefixer,
             fresh,
-            JIRAEntityToFetch(pr_metrics_need_jira_mapping(metrics)),
+            self._get_jira_entities_to_fetch(jiras, metrics),
             branches,
             default_branches,
         )
+
+        jira_grouper = await self._jira_filters_prs_grouper(jiras)
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants, True)
@@ -380,6 +398,7 @@ class MetricEntriesCalculator:
         )
         groups = group_to_indexes(
             df_facts,
+            jira_grouper,
             lines_grouper,
             repo_grouper,
             with_grouper,
@@ -826,6 +845,15 @@ class MetricEntriesCalculator:
         )
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
+
+    async def _jira_filters_prs_grouper(
+        self,
+        filters: Sequence[JIRAFilter],
+    ) -> Callable[[pd.DataFrame], list[np.ndarray]]:
+        filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            filters, self._account, self._mdb, self._cache,
+        )
+        return partial(group_pr_facts_by_jira, filters_to_grouping(filters))
 
     @classmethod
     def _get_jira_entities_to_fetch(
