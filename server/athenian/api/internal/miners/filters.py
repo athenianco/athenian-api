@@ -246,6 +246,16 @@ class JIRAFilter:
             custom_projects=True,
         )
 
+    @classmethod
+    def with_defaults(cls, *, account: int, **kwargs: Any) -> JIRAFilter:
+        """Build a JIRAFilter instance applying sensible defaults to the missing arguments."""
+        kwargs.setdefault("labels", LabelFilter.empty())
+        for f in ("projects", "epics", "issue_types", "priorities"):
+            kwargs.setdefault(f, frozenset())
+        kwargs.setdefault("custom_projects", bool(kwargs["projects"]))
+        kwargs.setdefault("unmapped", False)
+        return cls(account=account, **kwargs)
+
     def replace(self, **kwargs: Any) -> JIRAFilter:
         """Return a new  JIRAFilter with some fields replaced."""
         return dataclasses.replace(self, **kwargs)

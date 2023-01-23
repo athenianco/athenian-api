@@ -203,7 +203,7 @@ async def test_pr_list_miner_match_metrics_all_count(
             [{"src-d/go-git"}],
             [{}],
             LabelFilter.empty(),
-            JIRAFilter.empty(),
+            [JIRAFilter.empty()],
             False,
             bots,
             release_match_setting_tag,
@@ -213,7 +213,7 @@ async def test_pr_list_miner_match_metrics_all_count(
             default_branches,
             False,
         )
-    )[0][0][0][0][0][0]
+    )[0][0][0][0][0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
         # check labels to save some time
