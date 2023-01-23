@@ -95,13 +95,13 @@ class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
-    projects: frozenset[str]
-    labels: LabelFilter
-    epics: frozenset[str] | bool
-    issue_types: frozenset[str]
-    priorities: frozenset[str]
-    custom_projects: bool  # PRs must be mapped to any issue in `projects`
-    unmapped: bool  # select everything but the mapped PRs
+    projects: frozenset[str] = frozenset()
+    labels: LabelFilter = LabelFilter.empty()
+    epics: frozenset[str] | bool = frozenset()
+    issue_types: frozenset[str] = frozenset()
+    priorities: frozenset[str] = frozenset()
+    custom_projects: bool = True  # PRs must be mapped to any issue in `projects`
+    unmapped: bool = False  # select everything but the mapped PRs
 
     def __post_init__(self) -> None:
         """Apply post init validation."""
