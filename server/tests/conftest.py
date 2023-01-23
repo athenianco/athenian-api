@@ -459,12 +459,17 @@ async def app(
         validate_responses = True
     else:
         validate_responses = validate_responses_mark.args[0]
+    pgdb_opts = {"pgbouncer_transaction": True}
 
     app = AthenianApp(
         mdb_conn=metadata_db,
         sdb_conn=state_db,
         pdb_conn=precomputed_db,
         rdb_conn=persistentdata_db,
+        mdb_options=pgdb_opts if metadata_db.startswith("postgresql") else None,
+        sdb_options=pgdb_opts if state_db.startswith("postgresql") else None,
+        pdb_options=pgdb_opts if precomputed_db.startswith("postgresql") else None,
+        rdb_options=pgdb_opts if persistentdata_db.startswith("postgresql") else None,
         ui=False,
         auth0_cls=TestAuth0,
         kms_cls=FakeKMS,
@@ -633,7 +638,8 @@ def precomputed_db(worker_id) -> str:
 
 
 async def connect_to_db(addr, event_loop, request):
-    db = measure_db_overhead_and_retry(Database(addr), None, None)
+    opts = {"pgbouncer_transaction": True} if addr.startswith("postgresql") else {}
+    db = measure_db_overhead_and_retry(Database(addr, **opts), None, None)
     try:
         await db.connect()
     except Exception:

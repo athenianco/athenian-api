@@ -1,7 +1,6 @@
 import argparse
 from datetime import datetime, timezone
 from itertools import chain
-from typing import Dict, List, Tuple, Union
 
 import sqlalchemy as sa
 from tqdm import tqdm
@@ -15,7 +14,7 @@ from athenian.api.precompute.context import PrecomputeContext
 async def main(
     context: PrecomputeContext,
     args: argparse.Namespace,
-) -> Union[List[int], Dict[str, List[int]]]:
+) -> list[int] | dict[str, list[int]]:
     """Load all accounts, find which must be precomputed, and return their IDs.
 
     With partition argument accounts are returned in two groups:
@@ -27,7 +26,7 @@ async def main(
     accounts = await _get_accounts(sdb)
     log.info("Checking progress of %d accounts", len(accounts))
 
-    discovered: Dict[str, List[int]] = {"precomputed": [], "fresh": []}
+    discovered: dict[str, list[int]] = {"precomputed": [], "fresh": []}
     for account, precomputed in tqdm(accounts):
         state = await load_account_state(
             account, sdb, context.mdb, context.cache, context.slack, log=log,
@@ -47,7 +46,7 @@ async def main(
         return sorted(chain(*discovered.values()))
 
 
-async def _get_accounts(sdb: Database) -> List[Tuple[int, bool]]:
+async def _get_accounts(sdb: Database) -> list[tuple[int, bool]]:
     """Return the existing account IDs, each with a precomputed flag."""
     # already precomputed accounts have an ALL repository set that is precomputed
     # outer join will return one row per account, since (owner_id, name) is unique in RepositorySet
@@ -57,7 +56,7 @@ async def _get_accounts(sdb: Database) -> List[Tuple[int, bool]]:
     )
     stmt = (
         sa.select(
-            [Account.id, sa.func.coalesce(RepositorySet.precomputed, False).label("precomputed")],
+            Account.id, sa.func.coalesce(RepositorySet.precomputed, False).label("precomputed"),
         )
         .join(RepositorySet, join_cond, isouter=True)
         .where(Account.expires_at > datetime.now(timezone.utc))

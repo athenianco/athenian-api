@@ -566,7 +566,7 @@ async def get_installation_event_ids(
     """Load the GitHub account and delivery event IDs for the given sdb account."""
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(
-        select([AccountRepository.acc_id, AccountRepository.event_id])
+        select(AccountRepository.acc_id, AccountRepository.event_id)
         .where(AccountRepository.acc_id.in_(meta_ids))
         .distinct(),
     )

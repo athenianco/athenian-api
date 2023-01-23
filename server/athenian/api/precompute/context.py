@@ -43,15 +43,37 @@ class PrecomputeContext:
         cache = create_memcached(args.memcached, log)
         try:
             setup_cache_metrics({CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None})
-            for v in cache.metrics["context"].values():
-                v.set(defaultdict(int))
-            sdb = measure_db_overhead_and_retry(Database(args.state_db))
+            if cache is not None:
+                for v in cache.metrics["context"].values():
+                    v.set(defaultdict(int))
+            sdb = measure_db_overhead_and_retry(
+                Database(
+                    args.state_db, **_pgbouncer_kwarg(args.state_db, args.pgbouncer_transaction),
+                ),
+            )
             try:
-                mdb = measure_db_overhead_and_retry(Database(args.metadata_db))
+                mdb = measure_db_overhead_and_retry(
+                    Database(
+                        args.metadata_db,
+                        **_pgbouncer_kwarg(args.metadata_db, args.pgbouncer_transaction),
+                    ),
+                )
                 try:
-                    pdb = measure_db_overhead_and_retry(Database(args.precomputed_db))
+                    pdb = measure_db_overhead_and_retry(
+                        Database(
+                            args.precomputed_db,
+                            **_pgbouncer_kwarg(args.precomputed_db, args.pgbouncer_transaction),
+                        ),
+                    )
                     try:
-                        rdb = measure_db_overhead_and_retry(Database(args.persistentdata_db))
+                        rdb = measure_db_overhead_and_retry(
+                            Database(
+                                args.persistentdata_db,
+                                **_pgbouncer_kwarg(
+                                    args.persistentdata_db, args.pgbouncer_transaction,
+                                ),
+                            ),
+                        )
                         try:
                             await gather(
                                 sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect(),
@@ -80,7 +102,8 @@ class PrecomputeContext:
                 await sdb.disconnect()
                 raise e from None
         except Exception as e:
-            await cache.close()
+            if cache is not None:
+                await cache.close()
             raise e from None
         return cls(
             log=log,
@@ -95,7 +118,8 @@ class PrecomputeContext:
     async def close(self) -> None:
         """Close all the related connections."""
         try:
-            await self.cache.close()
+            if self.cache is not None:
+                await self.cache.close()
             await self.sdb.disconnect()
             await self.mdb.disconnect()
             await self.pdb.disconnect()
@@ -107,3 +131,9 @@ class PrecomputeContext:
         except Exception as e:
             self.log.warning("failed to dispose the context: %s: %s", type(e).__name__, e)
             sentry_sdk.capture_exception(e)
+
+
+def _pgbouncer_kwarg(conn_str: str, value: bool) -> dict:
+    if conn_str.startswith("postgresql"):
+        return {"pgbouncer_transaction": value}
+    return {}

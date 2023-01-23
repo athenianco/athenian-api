@@ -13,7 +13,7 @@ import signal
 import socket
 import time
 import traceback
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import (
@@ -275,10 +275,10 @@ class AthenianApp(especifico.AioHttpApp):
         ui: bool,
         client_max_size: int,
         max_load: float,
-        mdb_options: Optional[Dict[str, Any]] = None,
-        sdb_options: Optional[Dict[str, Any]] = None,
-        pdb_options: Optional[Dict[str, Any]] = None,
-        rdb_options: Optional[Dict[str, Any]] = None,
+        mdb_options: Optional[dict[str, Any]] = None,
+        sdb_options: Optional[dict[str, Any]] = None,
+        pdb_options: Optional[dict[str, Any]] = None,
+        rdb_options: Optional[dict[str, Any]] = None,
         auth0_cls: Callable[..., Auth0] = Auth0,
         kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
         cache: Optional[aiomcache.Client] = None,
@@ -313,7 +313,7 @@ class AthenianApp(especifico.AioHttpApp):
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
         :param google_analytics: Google Analytics tag to track Swagger UI.
-        :param validate_responses: validate responses bodies against spec schema
+        :param validate_responses: Validate responses bodies against spec schema.
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")

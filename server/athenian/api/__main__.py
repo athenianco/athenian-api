@@ -191,6 +191,14 @@ def parse_args() -> argparse.Namespace:
         "--refetch-topic",
         help="PubSub topic name where we submit metadata heal requests",
     )
+    parser.add_argument(
+        "--pgbouncer-transaction",
+        action="store_true",
+        help=(
+            "We are behind pgbouncer in transaction pooling mode, apply the required asyncpg"
+            " adjustments"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -590,11 +598,16 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         return None
     patch_pandas()
     set_endpoint_weights(args.weights, log)
+    pgdb_opts = {"pgbouncer_transaction": args.pgbouncer_transaction}
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
         pdb_conn=args.precomputed_db,
         rdb_conn=args.persistentdata_db,
+        mdb_options=pgdb_opts if args.metadata_db.startswith("postgresql") else None,
+        sdb_options=pgdb_opts if args.state_db.startswith("postgresql") else None,
+        pdb_options=pgdb_opts if args.precomputed_db.startswith("postgresql") else None,
+        rdb_options=pgdb_opts if args.persistentdata_db.startswith("postgresql") else None,
         ui=args.ui,
         auth0_cls=create_auth0_factory(args.force_user),
         kms_cls=None if args.no_google_kms else AthenianKMS,

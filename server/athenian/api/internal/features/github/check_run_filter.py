@@ -263,7 +263,7 @@ def _tighten_mask_by_quantiles(
     if len(samples) == 0:
         return mask
     mask = mask.copy()
-    qmin, qmax = np.nanquantile(samples, quantiles, interpolation="nearest")
+    qmin, qmax = np.nanquantile(samples, quantiles, method="nearest")
     if qmin != qmin:
         mask[:] = False
         return mask
