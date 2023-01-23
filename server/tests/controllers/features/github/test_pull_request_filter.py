@@ -651,7 +651,7 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
         cache,
     )
     await wait_deferred()
-    with pytest.raises(Exception):
+    with pytest.raises(AssertionError):
         await filter_pull_requests(
             set(),
             set(),
@@ -1245,7 +1245,7 @@ async def test_fetch_pull_requests_smoke(
         object.__setattr__(pr1, "stages_time_machine", None)
         object.__setattr__(pr1, "events_time_machine", None)
         assert pr1 == pr2, pr1.number
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         await fetch_pull_requests(
             {"src-d/go-git": set(list(range(1000, 1011)) + [922])},
             bots,

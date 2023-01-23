@@ -644,7 +644,7 @@ async def test_filter_check_runs_cache(mdb, cache, logical_settings):
         cache,
     )
     assert items1 != items2
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         await filter_check_runs(
             datetime(2015, 1, 1, tzinfo=timezone.utc),
             datetime(2020, 1, 2, tzinfo=timezone.utc),

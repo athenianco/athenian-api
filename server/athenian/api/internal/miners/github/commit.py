@@ -800,7 +800,7 @@ async def _fetch_commit_history_edges(
     We don't include the edges from the outside to the first parents (`commit_ids`). This means
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
-    assert isinstance(mdb, Database), "fetch_all() must be patched to avoid re-wrapping"
+    assert isinstance(mdb, Database)
     if mdb.url.dialect == "sqlite":
         rq = "`"
         tq = '"'

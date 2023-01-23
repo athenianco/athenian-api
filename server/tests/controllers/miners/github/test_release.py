@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import pickle
+from sqlite3 import OperationalError
 from typing import Optional
 
 from freezegun import freeze_time
@@ -951,7 +952,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
     heads_df = heads_df2.copy(deep=True)
     heads_df["1"].values[0] = b"1353ccd6944ab41082099b79979ded3223db98ec"
     heads_df["2"].values[0] = 2755667
-    with pytest.raises(Exception):
+    with pytest.raises(OperationalError):
         await fetch_repository_commits(
             dags,
             heads_df,
@@ -1086,7 +1087,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
             return defaultdict(int)
 
     fake_pdb.metrics = {"hits": FakeMetrics(), "misses": FakeMetrics()}
-    with pytest.raises(Exception):
+    with pytest.raises(AssertionError):
         await fetch_repository_commits(
             {"src-d/go-git": (True, _empty_dag())},
             heads_df2,

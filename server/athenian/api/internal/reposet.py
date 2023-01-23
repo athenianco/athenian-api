@@ -11,7 +11,7 @@ import aiomcache
 from asyncpg import UniqueViolationError
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, desc, insert, select
+from sqlalchemy import desc, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -492,8 +492,8 @@ async def load_account_state(
     except ResponseError:
         # Load the login
         auth0_id = await sdb.fetch_val(
-            select([UserAccount.user_id])
-            .where(and_(UserAccount.account_id == account))
+            select(UserAccount.user_id)
+            .where(UserAccount.account_id == account)
             .order_by(desc(UserAccount.is_admin)),
         )
         if auth0_id is None:
@@ -509,7 +509,7 @@ async def load_account_state(
                 account,
             )
             return None
-        login = await mdb.fetch_val(select([NodeUser.login]).where(NodeUser.database_id == db_id))
+        login = await mdb.fetch_val(select(NodeUser.login).where(NodeUser.database_id == db_id))
         if login is None:
             log.warning("Could not find the user login of %s", auth0_id)
             return None

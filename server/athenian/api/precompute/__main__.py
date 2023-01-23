@@ -80,6 +80,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--uvloop", action="store_true", help="Use the uvloop asyncio loop implementation",
     )
+    parser.add_argument(
+        "--pgbouncer-transaction",
+        action="store_true",
+        help=(
+            "We are behind pgbouncer in transaction pooling mode, apply the required asyncpg"
+            " adjustments"
+        ),
+    )
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
