@@ -26,6 +26,7 @@ class SegmentClient:
     """
 
     log = logging.getLogger(f"{metadata.__package__}.SegmentClient")
+    VAR_NAME = "segment"
     url = "https://api.segment.io/v1"
 
     def __init__(self, key: str):

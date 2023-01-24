@@ -48,6 +48,7 @@ from athenian.api.auth import Auth0
 from athenian.api.balancing import endpoint_weights
 from athenian.api.db import check_schema_versions
 from athenian.api.faster_pandas import patch_pandas
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
 from athenian.api.segment import SegmentClient
@@ -614,6 +615,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         cache=create_memcached(args.memcached, log, loop),
         slack=create_slack(log),
         mandrill=create_mandrill(),
+        refetcher=Refetcher(args.refetch_topic),
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)),
         segment=create_segment(),

@@ -3,7 +3,7 @@ import sys
 
 from flogging import flogging
 
-from athenian.api.precompute.refetcher import Refetcher
+from athenian.api.internal.refetcher import Refetcher
 
 
 async def main():

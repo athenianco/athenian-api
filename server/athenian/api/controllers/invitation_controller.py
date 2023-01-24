@@ -23,7 +23,7 @@ from athenian.api import metadata
 from athenian.api.align.goals.dbaccess import create_default_goal_templates
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.cache import cached, expires_header, middle_term_exptime
+from athenian.api.cache import cached, expires_header, middle_term_exptime, short_term_exptime
 from athenian.api.db import Connection, Database, DatabaseLike, is_postgresql
 from athenian.api.defer import defer
 from athenian.api.ffx import decrypt, encrypt
@@ -38,9 +38,10 @@ from athenian.api.internal.account import (
     jira_url_template,
 )
 from athenian.api.internal.jira import fetch_jira_installation_progress
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.reposet import load_account_reposets
 from athenian.api.internal.user import load_user_accounts
-from athenian.api.models.metadata.github import NodeUser, OrganizationMember
+from athenian.api.models.metadata.github import NodeUser, Organization, OrganizationMember
 from athenian.api.models.state.models import (
     Account,
     BanishedUserAccount,
@@ -67,6 +68,7 @@ from athenian.api.models.web import (
 )
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
+from athenian.api.segment import SegmentClient
 from athenian.api.tracing import sentry_span
 
 admin_backdoor = (1 << 24) - 1
@@ -193,7 +195,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                     instance=event_id,
                 ),
             )
-        if (segment := request.app["segment"]) is not None:
+        if (segment := request.app[SegmentClient.VAR_NAME]) is not None:
             await defer(
                 segment.update_user(request, invitation.name, invitation.email),
                 "segment.update_user",
@@ -285,10 +287,7 @@ async def _join_account(
     """
     Join the `request`-ing user to the account `acc_id`.
 
-    We need both `sdb_conn` and `sdb` because `sdb` is required in the deferred code outside of
-    the transaction.
-    You should work with `sdb_conn` in the code that blocks the request flow and with `sdb`
-    in the code that defer()-s.
+    :param sdb_transaction: DB connection with already taken transaction.
     """
     sdb, mdb, rdb, cache = request.sdb, request.mdb, request.rdb, request.cache
     log = logging.getLogger(f"{metadata.__package__}.join_account")
@@ -475,6 +474,12 @@ async def _check_user_org_membership(
         ),
     )
     if user_node_id not in user_node_ids:
+        if (refetcher := request.app[Refetcher.VAR_NAME]) is not None:
+            # DEV-5797: are we lagging? must ensure the org members are fresh
+            await defer(
+                refetch_org_members(meta_ids, refetcher, mdb, cache), "refetch_org_members",
+            )
+
         if slack is not None:
 
             async def report_blocked_registration():
@@ -495,7 +500,7 @@ async def _check_user_org_membership(
     return user
 
 
-async def get_organizations_members(meta_ids: Sequence[int], mdb: DatabaseLike) -> Sequence[int]:
+async def get_organizations_members(meta_ids: tuple[int], mdb: DatabaseLike) -> Sequence[int]:
     """Return all account organizations members as github user ID-s."""
     return [
         r[0]
@@ -503,6 +508,28 @@ async def get_organizations_members(meta_ids: Sequence[int], mdb: DatabaseLike) 
             select(OrganizationMember.child_id).where(OrganizationMember.acc_id.in_(meta_ids)),
         )
     ]
+
+
+@cached(
+    exptime=short_term_exptime,
+    serialize=lambda _: b"1",
+    deserialize=lambda _: None,
+    key=lambda meta_ids, **_: meta_ids,
+)
+async def refetch_org_members(
+    meta_ids: tuple[int, ...],
+    refetcher: Refetcher,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> None:
+    """Request a refetch of the metadata organization's members."""
+    orgs = [
+        r[0]
+        for r in await mdb.fetch_all(
+            select(Organization.node_id).where(Organization.acc_id.in_(meta_ids)),
+        )
+    ]
+    await refetcher.specialize(meta_ids).submit_org_members(orgs)
 
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:

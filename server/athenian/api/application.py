@@ -63,6 +63,7 @@ from athenian.api.defer import (
     wait_all_deferred,
     wait_deferred,
 )
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
@@ -284,6 +285,7 @@ class AthenianApp(especifico.AioHttpApp):
         cache: Optional[aiomcache.Client] = None,
         slack: Optional[SlackWebClient] = None,
         mandrill: Optional[MandrillClient] = None,
+        refetcher: Optional[Refetcher] = None,
         with_pdb_schema_checks: bool = True,
         segment: Optional[SegmentClient] = None,
         google_analytics: Optional[str] = "",
@@ -310,6 +312,7 @@ class AthenianApp(especifico.AioHttpApp):
         :param cache: memcached client for caching auxiliary data.
         :param slack: Slack API client to post messages.
         :param mandrill: Mailchimp Transactional API client to send emails.
+        :param refetcher: Metadata autohealer, e.g. to schedule team refetches.
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
         :param google_analytics: Google Analytics tag to track Swagger UI.
@@ -404,7 +407,8 @@ class AthenianApp(especifico.AioHttpApp):
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
-        self.app["segment"] = self._segment = segment
+        self.app[SegmentClient.VAR_NAME] = self._segment = segment
+        self.app[Refetcher.VAR_NAME] = self._refetcher = refetcher
 
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
@@ -545,6 +549,8 @@ class AthenianApp(especifico.AioHttpApp):
         await self._auth0.close()
         if self._segment is not None:
             await self._segment.close()
+        if self._refetcher is not None:
+            await self._refetcher.close()
         if self._kms is not None:
             await self._kms.close()
         if self._slack is not None:

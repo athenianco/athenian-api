@@ -80,6 +80,7 @@ from athenian.api.internal.miners.types import (
     released_prs_columns,
 )
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodeCommit,
@@ -97,7 +98,6 @@ from athenian.api.models.precomputed.models import (
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.object_arrays import is_null, nested_lengths
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import in1d_str, unordered_unique
