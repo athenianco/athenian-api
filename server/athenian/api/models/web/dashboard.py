@@ -23,15 +23,18 @@ class DashboardChartGroupBy(Model):
     jira_priorities: Optional[list[str]]
 
 
-class _CommonChartInfo(Model):
+class _UpdatableChartInfo(Model):
     date_from: Optional[date]
     date_to: Optional[date]
-    description: str
-    metric: str
     name: str
     time_interval: Optional[str]
     filters: Optional[DashboardChartFilters]
     group_by: Optional[DashboardChartGroupBy]
+
+
+class _CommonChartInfo(_UpdatableChartInfo):
+    description: str
+    metric: str
 
 
 class DashboardChart(_CommonChartInfo):
@@ -52,6 +55,10 @@ class DashboardChartCreateRequest(_CommonChartInfo):
     """Dashboard chart creation request."""
 
     position: Optional[int]
+
+
+class DashboardChartUpdateRequest(_UpdatableChartInfo):
+    """The information to update an existing dashboard chart."""
 
 
 class _DashboardUpdateChart(Model):

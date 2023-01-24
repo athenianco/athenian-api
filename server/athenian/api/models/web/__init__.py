@@ -61,6 +61,7 @@ from athenian.api.models.web.dashboard import (
     DashboardChartCreateRequest,
     DashboardChartFilters,
     DashboardChartGroupBy,
+    DashboardChartUpdateRequest,
     DashboardUpdateRequest,
     TeamDashboard,
 )
