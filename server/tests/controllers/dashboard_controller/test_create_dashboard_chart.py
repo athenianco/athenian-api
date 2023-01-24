@@ -5,10 +5,11 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import DashboardChart, TeamDashboard
+from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
 from athenian.api.models.web import (
     DashboardChartCreateRequest,
     DashboardChartFilters,
+    DashboardChartGroupBy as WebDashboardChartGroupBy,
     PullRequestMetricID,
 )
 from tests.testutils.auth import force_request_auth
@@ -53,18 +54,19 @@ class BaseCreateDashboardChartTest(Requester):
         metric: str = PullRequestMetricID.PR_SIZE,
         name: str = "chart name",
         filters: dict | None = None,
+        group_by: dict | None = None,
         **kwargs: Any,
     ) -> dict:
         if not {"time_interval", "date_from", "date_to"}.intersection(kwargs):
             kwargs["time_interval"] = "P3M"
 
-        if filters:
-            filters = DashboardChartFilters(**filters)
-        else:
-            filters = None
-
         req = DashboardChartCreateRequest(
-            description=description, metric=metric, name=name, filters=filters, **kwargs,
+            description=description,
+            metric=metric,
+            name=name,
+            filters=DashboardChartFilters(**filters) if filters else None,
+            group_by=WebDashboardChartGroupBy(**group_by) if group_by else None,
+            **kwargs,
         )
         body = req.to_dict()
         if body.get("date_from"):
@@ -128,6 +130,22 @@ class TestCreateDashboardChartErrors(BaseCreateDashboardChartTest):
         await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
         res = await self.post_json(10, 1, 403, user_id=None, json=self._body())
         assert "is the default user" in res["detail"]
+
+
+class TestGroupByErrors(BaseCreateDashboardChartTest):
+    async def test_invalid_repositories(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
+        body = self._body(group_by={"repositories": ["github.com/org/repo"]})
+
+        res = await self.post_json(10, 1, 400, json=body)
+        assert res["detail"] == "Unknown repository github.com/org/repo"
+
+    async def test_multiple_fields_forbidden(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamDashboardFactory(id=1, team_id=10))
+        body = self._body(group_by={"jira_labels": ["l0", "l1"], "jira_issue_types": ["bug"]})
+
+        res = await self.post_json(10, 1, 400, json=body)
+        assert "too many properties" in res["detail"]
 
 
 class TestCreateDashboardChart(BaseCreateDashboardChartTest):
@@ -300,3 +318,36 @@ class TestCreateWithFilters(BaseCreateDashboardChartTest):
         assert chart[DashboardChart.jira_priorities.name] == ["high"]
         assert chart[DashboardChart.jira_issue_types.name] == ["bug", "task"]
         assert chart[DashboardChart.jira_labels.name] == ["l1", "l0"]
+
+
+class TestGroupBy(BaseCreateDashboardChartTest):
+    async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=9))
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=2, full_name="org/r"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body = self._body(
+                group_by={"repositories": ["github.com/org/r", "github.com/org/r/logical"]},
+            )
+            res = await self.post_json(9, 0, json=body)
+
+        await assert_existing_row(sdb, DashboardChart, id=res["id"])
+        group_by = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=res["id"])
+        assert group_by[DashboardChartGroupBy.repositories.name] == [[2, ""], [2, "logical"]]
+        assert group_by[DashboardChartGroupBy.jira_priorities.name] is None
+
+    async def test_jira_labels(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=4), TeamDashboardFactory(team_id=4, id=1))
+
+        body = self._body(group_by={"jira_labels": ["l0", "l1"]})
+        res = await self.post_json(4, 1, json=body)
+
+        await assert_existing_row(sdb, DashboardChart, id=res["id"])
+
+        group_by = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=res["id"])
+        assert group_by[DashboardChartGroupBy.jira_labels.name] == ["l0", "l1"]
+        assert group_by[DashboardChartGroupBy.repositories.name] is None

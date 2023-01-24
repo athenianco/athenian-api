@@ -11,6 +11,7 @@ from athenian.api.models.state.models import (
     AccountGitHubAccount,
     AccountJiraInstallation,
     DashboardChart,
+    DashboardChartGroupBy,
     Feature,
     FeatureComponent,
     Goal,
@@ -221,3 +222,10 @@ class DashboardChartFactory(SQLAlchemyModelFactory):
     time_interval = factory.LazyAttribute(lambda chart: "P1M" if chart.time_from is None else None)
     name = factory.LazyAttribute(lambda chart: f"Chart {chart.id}")
     description = factory.LazyAttribute(lambda chart: f"This is chart {chart.id}")
+
+
+class DashboardChartGroupByFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = DashboardChartGroupBy
+
+    chart_id = factory.Sequence(lambda n: n + 1)

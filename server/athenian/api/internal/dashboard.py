@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from enum import Enum
 from http import HTTPStatus
 from typing import Sequence
 
@@ -11,11 +12,12 @@ from athenian.api.internal.datetime_utils import (
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import parse_db_repositories
-from athenian.api.models.state.models import DashboardChart, TeamDashboard
+from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
 from athenian.api.models.web import (
     DashboardChart as WebDashboardChart,
     DashboardChartCreateRequest,
     DashboardChartFilters,
+    DashboardChartGroupBy as WebDashboardChartGroupBy,
     GenericError,
     JIRAFilter,
     TeamDashboard as WebTeamDashboard,
@@ -58,13 +60,30 @@ async def get_team_default_dashboard(team_id, sdb_conn: Connection) -> Row:
     return await get_team_default_dashboard(team_id, sdb_conn)
 
 
+class _ChartGroupByColAlias(Enum):
+    TEAMS = f"group_by_{DashboardChartGroupBy.teams.name}"
+    REPOSITORIES = f"group_by_{DashboardChartGroupBy.repositories.name}"
+    JIRA_ISSUE_TYPES = f"group_by_{DashboardChartGroupBy.jira_issue_types.name}"
+    JIRA_LABELS = f"group_by_{DashboardChartGroupBy.jira_labels.name}"
+    JIRA_PRIORITIES = f"group_by_{DashboardChartGroupBy.jira_priorities.name}"
+
+
 async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Sequence[Row]:
     """Fetch the rows for the charts of a dashboard from DB.
 
     Charts are returned with the proper order they have in the dashboard.
+    Each row will include the columns from the joined _ChartGroupByColAlias table.
     """
+    chart_group_by_cols = (
+        DashboardChartGroupBy.teams.label(_ChartGroupByColAlias.TEAMS.value),
+        DashboardChartGroupBy.repositories.label(_ChartGroupByColAlias.REPOSITORIES.value),
+        DashboardChartGroupBy.jira_issue_types.label(_ChartGroupByColAlias.JIRA_ISSUE_TYPES.value),
+        DashboardChartGroupBy.jira_labels.label(_ChartGroupByColAlias.JIRA_LABELS.value),
+        DashboardChartGroupBy.jira_priorities.label(_ChartGroupByColAlias.JIRA_PRIORITIES.value),
+    )
     stmt = (
-        sa.select(DashboardChart)
+        sa.select(DashboardChart, *chart_group_by_cols)
+        .select_from(sa.outerjoin(DashboardChart, DashboardChartGroupBy))
         .where(DashboardChart.dashboard_id == dashboard_id)
         .order_by(DashboardChart.position)
     )
@@ -75,6 +94,7 @@ async def create_dashboard_chart(
     dashboard_id: int,
     req: DashboardChartCreateRequest,
     extra_values: dict,
+    group_by_values: dict,
     sdb_conn: Connection,
 ) -> int:
     """Create a new dashboard chart and return its ID."""
@@ -108,7 +128,19 @@ async def create_dashboard_chart(
     values.update(extra_values)
     values.update({DashboardChart.dashboard_id: dashboard_id, DashboardChart.position: position})
     insert_stmt = sa.insert(DashboardChart).values(values)
-    return await sdb_conn.execute(insert_stmt)
+    new_chart_id = await sdb_conn.execute(insert_stmt)
+    if group_by_values:
+        all_group_by_values = {
+            **group_by_values,
+            DashboardChartGroupBy.chart_id: new_chart_id,
+            DashboardChartGroupBy.created_at: now,
+            DashboardChartGroupBy.updated_at: now,
+        }
+
+        insert_group_by_stmt = sa.insert(DashboardChartGroupBy).values(all_group_by_values)
+        await sdb_conn.execute(insert_group_by_stmt)
+
+    return new_chart_id
 
 
 async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: DatabaseLike) -> None:
@@ -194,6 +226,22 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
     if jira_filter_kw:
         filters_kw["jira"] = JIRAFilter(**jira_filter_kw)
 
+    group_by_kw = {
+        arg: chart[col_name]
+        for col_name, arg in (
+            (_ChartGroupByColAlias.TEAMS.value, "teams"),
+            (_ChartGroupByColAlias.JIRA_ISSUE_TYPES.value, "jira_issue_types"),
+            (_ChartGroupByColAlias.JIRA_LABELS.value, "jira_labels"),
+            (_ChartGroupByColAlias.JIRA_PRIORITIES.value, "jira_priorities"),
+        )
+        if chart[col_name] is not None
+    }
+    group_by_repos = parse_db_repositories(chart[_ChartGroupByColAlias.REPOSITORIES.value])
+    if group_by_repos is not None:
+        group_by_kw["repositories"] = [
+            str(r) for r in prefixer.dereference_repositories(group_by_repos)
+        ]
+
     return WebDashboardChart(
         description=chart[DashboardChart.description.name],
         id=chart[DashboardChart.id.name],
@@ -203,6 +251,7 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
         date_to=date_to,
         time_interval=chart[DashboardChart.time_interval.name],
         filters=DashboardChartFilters(**filters_kw) if filters_kw else None,
+        group_by=WebDashboardChartGroupBy(**group_by_kw) if group_by_kw else None,
     )
 
 

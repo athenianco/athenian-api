@@ -5,7 +5,12 @@ from athenian.api.models.state.models import DashboardChart, TeamDashboard
 from athenian.api.models.web import PullRequestMetricID
 from tests.testutils.db import DBCleaner, assert_existing_row, assert_missing_row, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
+from tests.testutils.factory.state import (
+    DashboardChartFactory,
+    DashboardChartGroupByFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+)
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -214,3 +219,61 @@ class TestGetDashboardFilters(BaseGetDashboardTest):
             "environments": ["production", "qa"],
             "jira": {"issue_types": ["bug"]},
         }
+
+
+class TestGroupBy(BaseGetDashboardTest):
+    async def test_various(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(id=1, position=1, dashboard_id=5),
+            DashboardChartGroupByFactory(chart_id=1, teams=[1, 2]),
+            DashboardChartFactory(id=2, position=2, dashboard_id=5),
+            DashboardChartGroupByFactory(chart_id=2, jira_labels=["l0"]),
+        )
+
+        res = await self.get_json(10, 5)
+
+        assert len(res["charts"]) == 2
+        assert res["charts"][0]["id"] == 1
+        assert res["charts"][0]["group_by"] == {"teams": [1, 2]}
+
+        assert res["charts"][1]["id"] == 2
+        assert res["charts"][1]["group_by"] == {"jira_labels": ["l0"]}
+
+    async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(id=1, position=1, dashboard_id=5),
+            DashboardChartGroupByFactory(chart_id=1, repositories=[[3, None], [4, "l"]]),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_models = [
+                md_factory.RepositoryFactory(node_id=3, full_name="org/rA"),
+                md_factory.RepositoryFactory(node_id=4, full_name="org/rB"),
+            ]
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self.get_json(10, 5)
+
+            assert len(res["charts"]) == 1
+            assert res["charts"][0]["id"] == 1
+            assert res["charts"][0]["group_by"] == {
+                "repositories": ["github.com/org/rA", "github.com/org/rB/l"],
+            }
+
+    async def test_chart_with_multiple_group_by_fields(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            TeamDashboardFactory(id=5, team_id=10),
+            DashboardChartFactory(id=1, position=1, dashboard_id=5),
+            DashboardChartGroupByFactory(chart_id=1, teams=[1, 2], jira_priorities=["high"]),
+        )
+
+        await self.get_json(10, 5, assert_status=500)

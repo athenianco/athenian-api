@@ -12,9 +12,15 @@ from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, models_insert
 from tests.testutils.factory.state import (
     DashboardChartFactory,
+<<<<<<< Updated upstream
     TeamDashboardFactory,
     TeamFactory,
     UserAccountFactory,
+=======
+    DashboardChartGroupByFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+>>>>>>> Stashed changes
 )
 from tests.testutils.requester import Requester
 
@@ -100,6 +106,7 @@ class TestUpdateDashboard(BaseUpdateDashboardTest):
             DashboardChartFactory(id=2, name="B", dashboard_id=1, position=1),
             DashboardChartFactory(id=3, name="C", dashboard_id=1, position=2),
             DashboardChartFactory(id=4, name="D", dashboard_id=1, position=3),
+            DashboardChartGroupByFactory(chart_id=2, jira_issue_types=["bug", "problem"]),
         )
         res = await self.put_json(10, 1, json=self._body([1, 2, 3, 4]))
         await assert_existing_row(sdb, TeamDashboard, id=1)
@@ -107,11 +114,13 @@ class TestUpdateDashboard(BaseUpdateDashboardTest):
         assert res["team"] == 10
         assert [chart["id"] for chart in res["charts"]] == [1, 2, 3, 4]
         assert [chart["name"] for chart in res["charts"]] == ["A", "B", "C", "D"]
+        assert res["charts"][1]["group_by"] == {"jira_issue_types": ["bug", "problem"]}
         rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
         assert sorted(rows) == [(0, 1), (1, 2), (2, 3), (3, 4)]
 
         res = await self.put_json(10, 1, json=self._body([3, 4, 2, 1]))
         assert [chart["id"] for chart in res["charts"]] == [3, 4, 2, 1]
         assert [chart["name"] for chart in res["charts"]] == ["C", "D", "B", "A"]
+        assert res["charts"][2]["group_by"] == {"jira_issue_types": ["bug", "problem"]}
         rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
         assert sorted(rows) == [(0, 3), (1, 4), (2, 2), (3, 1)]
