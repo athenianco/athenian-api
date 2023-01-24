@@ -5,10 +5,9 @@ from collections.abc import Iterator
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import partial, reduce
+from functools import partial
 from itertools import chain
 import logging
-import operator
 import pickle
 from typing import (
     Any,
@@ -369,7 +368,7 @@ class MetricEntriesCalculator:
 
         if not jiragroups:
             jiragroups = [JIRAFilter.empty()]
-        global_jira_filter = reduce(operator.or_, jiragroups)
+        global_jira_filter = JIRAFilter.combine(*jiragroups)
 
         pr_facts_calc = self._build_pr_facts_calculator()
         df_facts = await pr_facts_calc(
@@ -460,7 +459,7 @@ class MetricEntriesCalculator:
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
             jira_filters, self._account, self._mdb, self._cache,
         )
-        jira_filter = reduce(operator.or_, jira_filters)
+        jira_filter = JIRAFilter.combine(*jira_filters)
 
         jira_entities_to_fetch = self._get_jira_entities_to_fetch(jira_filters, all_metrics)
 
@@ -921,7 +920,7 @@ class MetricEntriesCalculator:
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
             jira_filters, self._account, self._mdb, self._cache,
         )
-        jira_filter = reduce(operator.or_, jira_filters)
+        jira_filter = JIRAFilter.combine(*jira_filters)
 
         df_facts, _, _, _ = await mine_releases(
             all_repositories,
@@ -1336,7 +1335,7 @@ class MetricEntriesCalculator:
             # if any filter is True-ish group_jira_facts_by_jira will need the extra info to group
             extra_columns.extend([Issue.type_id, Issue.priority_id, Issue.project_id])
 
-        jira_filter = reduce(operator.or_, jira_filters) or JIRAFilter.from_jira_config(jira_ids)
+        jira_filter = JIRAFilter.combine(*jira_filters) or JIRAFilter.from_jira_config(jira_ids)
 
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
