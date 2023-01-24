@@ -18,7 +18,12 @@ from athenian.api.internal.jira import parse_request_issue_types, parse_request_
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import parse_request_repositories
 from athenian.api.internal.team import get_team_from_db
-from athenian.api.models.state.models import DashboardChart, Team, TeamDashboard
+from athenian.api.models.state.models import (
+    DashboardChart,
+    DashboardChartGroupBy,
+    Team,
+    TeamDashboard,
+)
 from athenian.api.models.web import (
     CreatedIdentifier,
     DashboardChartCreateRequest,
@@ -69,11 +74,18 @@ async def create_dashboard_chart(
     create_request = model_from_body(DashboardChartCreateRequest, body)
 
     extra_values = await _parse_request_chart_filters(create_request, request, dashboard.account)
+    group_by_values = await _parse_request_chart_group_by(
+        create_request, request, dashboard.account,
+    )
 
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             chart_id = await create_dashboard_chart_in_db(
-                dashboard.row[TeamDashboard.id.name], create_request, extra_values, sdb_conn,
+                dashboard.row[TeamDashboard.id.name],
+                create_request,
+                extra_values,
+                group_by_values,
+                sdb_conn,
             )
     return model_response(CreatedIdentifier(id=chart_id))
 
@@ -141,6 +153,31 @@ async def _parse_request_chart_filters(
         if jira.projects is not None:
             values[DashboardChart.jira_projects] = jira.projects
 
+    return values
+
+
+async def _parse_request_chart_group_by(
+    create_req: DashboardChartCreateRequest,
+    request: AthenianWebRequest,
+    account: int,
+) -> dict:
+    values: dict = {}
+    if not (group_by := create_req.group_by):
+        return values
+
+    if group_by.repositories is not None:
+        values[DashboardChart.repositories] = await parse_request_repositories(
+            group_by.repositories, request, account, ".group_by.repositories",
+        )
+
+    for req_val, col in (
+        (group_by.teams, DashboardChartGroupBy.teams),
+        (group_by.jira_priorities, DashboardChartGroupBy.jira_priorities),
+        (group_by.jira_issue_types, DashboardChartGroupBy.jira_issue_types),
+        (group_by.jira_labels, DashboardChartGroupBy.jira_labels),
+    ):
+        if req_val is not None:
+            values[col] = req_val
     return values
 
 

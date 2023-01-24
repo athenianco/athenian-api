@@ -60,6 +60,7 @@ from athenian.api.models.web.dashboard import (
     DashboardChart,
     DashboardChartCreateRequest,
     DashboardChartFilters,
+    DashboardChartGroupBy,
     DashboardUpdateRequest,
     TeamDashboard,
 )

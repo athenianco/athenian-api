@@ -17,7 +17,7 @@ from athenian.api.internal.dashboard import (
     get_team_default_dashboard,
     reorder_dashboard_charts,
 )
-from athenian.api.models.state.models import DashboardChart, TeamDashboard
+from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
 from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
 from tests.testutils.db import (
     assert_existing_row,
@@ -94,7 +94,7 @@ class TestCreateDashboardChart:
         create_req = self._create_request()
         await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, {}, sdb_conn)
 
         row = await assert_existing_row(
             sdb, DashboardChart, dashboard_id=1, id=chart_id, name="n", description="d",
@@ -104,13 +104,15 @@ class TestCreateDashboardChart:
         assert row[DashboardChart.time_to.name] is None
         assert row[DashboardChart.position.name] == 0
 
+        await assert_missing_row(sdb, DashboardChartGroupBy, chart_id=chart_id)
+
     async def test_static_time_interval(self, sdb: Database) -> None:
         create_req = self._create_request(
             time_interval=None, date_from=date(2001, 1, 1), date_to=date(2001, 1, 31),
         )
         await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.time_interval.name] is None
@@ -127,7 +129,7 @@ class TestCreateDashboardChart:
             DashboardChartFactory(id=7, position=0, dashboard_id=1),
         )
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.position.name] == 2
@@ -144,7 +146,7 @@ class TestCreateDashboardChart:
         )
         create_req = self._create_request(position=1)
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, {}, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, {}, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.position.name] == 2
@@ -161,11 +163,25 @@ class TestCreateDashboardChart:
         }
 
         async with transaction_conn(sdb) as sdb_conn:
-            chart_id = await create_dashboard_chart(1, create_req, extra_values, sdb_conn)
+            chart_id = await create_dashboard_chart(1, create_req, extra_values, {}, sdb_conn)
 
         row = await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
         assert row[DashboardChart.repositories.name] == [[1, ""]]
         assert row[DashboardChart.jira_labels.name] == ["labelA", "labelB"]
+
+    async def test_group_by(self, sdb: Database) -> None:
+        create_req = self._create_request()
+        await models_insert(sdb, TeamFactory(id=6), TeamDashboardFactory(id=1, team_id=6))
+        group_by_values = {DashboardChartGroupBy.teams: [1, 2]}
+
+        async with transaction_conn(sdb) as sdb_conn:
+            chart_id = await create_dashboard_chart(1, create_req, {}, group_by_values, sdb_conn)
+
+        await assert_existing_row(sdb, DashboardChart, dashboard_id=1, id=chart_id)
+        group_by = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=chart_id)
+
+        assert group_by[DashboardChartGroupBy.teams.name] == [1, 2]
+        assert group_by[DashboardChartGroupBy.repositories.name] is None
 
     @classmethod
     def _create_request(cls, **kwargs: Any) -> DashboardChartCreateRequest:
