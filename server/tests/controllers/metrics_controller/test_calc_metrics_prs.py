@@ -7,20 +7,24 @@ import pandas as pd
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.release_mine import mine_releases, override_first_releases
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
-from athenian.api.models.state.models import Team
+from athenian.api.models.state.models import AccountJiraInstallation, Team
 from athenian.api.models.web import (
     CalculatedPullRequestMetrics,
     PullRequestMetricID,
     PullRequestWith,
 )
-from tests.testutils.db import models_insert
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import ReleaseSettingFactory
+from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 class BaseCalcMetricsPRsTest(Requester):
@@ -216,27 +220,6 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
         assert cscores > 0
         assert all((v == 2) for v in gcounts.values())
 
-    async def test_access_denied(self):
-        """https://athenianco.atlassian.net/browse/ENG-116"""
-        body = self._body(
-            for_=[
-                {
-                    "with": {
-                        "commit_committer": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                    },
-                    "repositories": [
-                        "github.com/src-d/go-git",
-                        "github.com/athenianco/athenian-api",
-                    ],
-                },
-            ],
-            metrics=list(PullRequestMetricID),
-            date_from="2015-10-13",
-            date_to="2019-03-15",
-            granularities=["month"],
-        )
-        await self._request(json=body, assert_status=403)
-
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize(
@@ -256,63 +239,6 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
         res = await self._request(json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
         assert len(cm.calculated[0].values) > 0
-
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
-    @pytest.mark.parametrize(
-        "account, date_to, quantiles, lines, in_, code",
-        [
-            (3, "2020-02-22", [0, 1], None, "{1}", 404),
-            (2, "2020-02-22", [0, 1], None, "{1}", 422),
-            (10, "2020-02-22", [0, 1], None, "{1}", 404),
-            (1, "2015-10-13", [0, 1], None, "{1}", 200),
-            (1, "2010-01-11", [0, 1], None, "{1}", 400),
-            (1, "2020-01-32", [0, 1], None, "{1}", 400),
-            (1, "2020-01-01", [-1, 0.5], None, "{1}", 400),
-            (1, "2020-01-01", [0, -1], None, "{1}", 400),
-            (1, "2020-01-01", [10, 20], None, "{1}", 400),
-            (1, "2020-01-01", [0.5, 0.25], None, "{1}", 400),
-            (1, "2020-01-01", [0.5, 0.5], None, "{1}", 400),
-            (1, "2015-10-13", [0, 1], [], "{1}", 400),
-            (1, "2015-10-13", [0, 1], [1], "{1}", 400),
-            (1, "2015-10-13", [0, 1], [1, 1], "{1}", 400),
-            (1, "2015-10-13", [0, 1], [-1, 1], "{1}", 400),
-            (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
-            (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
-            ("1", "2020-02-22", [0, 1], None, "{1}", 400),
-            (1, "0015-10-13", [0, 1], None, "{1}", 400),
-        ],
-    )
-    async def test_nasty_input(self, account, date_to, quantiles, lines, in_, code, mdb):
-        """What if we specify a date that does not exist?"""
-        body = self._body(
-            for_=[
-                {
-                    "with": {"merger": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
-                    "repositories": [in_],
-                    **({"lines": lines} if lines is not None else {}),
-                },
-                {
-                    "with": {"releaser": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
-                    "repositories": ["github.com/src-d/go-git"],
-                },
-            ],
-            metrics=[PullRequestMetricID.PR_LEAD_TIME],
-            date_from="2015-10-13" if date_to != "0015-10-13" else "0015-10-13",
-            date_to=date_to if date_to != "0015-10-13" else "2015-10-13",
-            granularities=["week"],
-            quantiles=quantiles,
-        )
-        await self._request(assert_status=code, json=body)
-
-    async def test_repogroups_with_no_repositories(self) -> None:
-        body = self._body(
-            for_=[{"repogroups": [[0]]}],
-            metrics=[PullRequestMetricID.PR_LEAD_TIME],
-            date_from="2017-10-13",
-            date_to="2018-01-23",
-        )
-        await self._request(assert_status=400, json=body)
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
@@ -803,6 +729,32 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
+    async def test_jira_not_installed(self, sdb: Database):
+        await sdb.execute(
+            sa.delete(AccountJiraInstallation).where(AccountJiraInstallation.account_id == 1),
+        )
+        body = {
+            "for": [
+                {"jiragroups": [{"issue_types": ["Task"]}, {"projects": ["ENG"]}]},
+            ],
+            "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+            "date_from": "2015-10-13",
+            "date_to": "2020-01-23",
+            "granularities": ["all"],
+            "exclude_inactive": False,
+            "account": 1,
+        }
+        res = await self._request(json=body)
+        assert len(calcs := res["calculated"]) == 2
+
+        # jiragroups are preserved in response "for" but are ignored when computing the metric
+        calc_issue = next(c for c in calcs if c["for"]["jira"] == {"issue_types": ["Task"]})
+        calc_projs = next(c for c in calcs if c["for"]["jira"] == {"projects": ["ENG"]})
+
+        assert calc_issue["values"][0]["values"] == calc_projs["values"][0]["values"]
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
     async def test_groups_smoke(self):
         """Two repository groups."""
         body = self._body(
@@ -1096,3 +1048,155 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
         assert calculated[0]["values"][0]["values"] == [179]
         assert calculated[1]["for"] == body["for"][1]
         assert calculated[1]["values"][0]["values"] == [386]
+
+    @pytest.mark.app_validate_responses(False)
+    async def test_multiple_jiragroups(self, sdb: Database, mdb_rw: Database) -> None:
+        jiragroups = [
+            {"issue_types": ["task"]},
+            {"issue_types": ["bug"]},
+            {"issue_types": ["task", "bug"]},
+        ]
+        body = self._body(
+            date_from="2022-02-01",
+            date_to="2022-03-01",
+            for_=[{"repositories": ["github.com/o/r"], "jiragroups": jiragroups}],
+            granularities=["all"],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT, PullRequestMetricID.PR_SIZE],
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {"repository_full_name": "o/r", "created_at": dt(2022, 2, 3)}
+            models = [
+                *pr_models(99, 11, 1, additions=10, **pr_kwargs),
+                *pr_models(99, 12, 2, additions=20, **pr_kwargs),
+                *pr_models(99, 13, 3, additions=30, **pr_kwargs),
+                *pr_models(99, 14, 4, additions=40, **pr_kwargs),
+                md_factory.JIRAProjectFactory(id="1", name="PRJ"),
+                md_factory.JIRAIssueTypeFactory(id="t", name="task"),
+                md_factory.JIRAIssueTypeFactory(id="b", name="bug"),
+                md_factory.JIRAIssueFactory(id="20", project_id="1", type_id="t", type="task"),
+                md_factory.JIRAIssueFactory(id="30", project_id="1", type_id="b", type="bug"),
+                md_factory.JIRAIssueFactory(id="40", project_id="1", type_id="b", type="task"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=12, jira_id="30"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=13, jira_id="40"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res = await self._request(json=body)
+            assert len(calcs := res["calculated"]) == 3
+            group_0_res = next(c for c in calcs if c["for"]["jira"] == {"issue_types": ["bug"]})
+            assert group_0_res["values"][0]["values"][0] == 2
+            assert group_0_res["values"][0]["values"][1] == 25
+
+            group_1_res = next(c for c in calcs if c["for"]["jira"] == {"issue_types": ["task"]})
+            assert group_1_res["values"][0]["values"][0] == 1
+            assert group_1_res["values"][0]["values"][1] == 10
+
+            group_2_res = next(
+                c for c in calcs if c["for"]["jira"] == {"issue_types": ["task", "bug"]}
+            )
+            assert group_2_res["values"][0]["values"][0] == 3
+            assert group_2_res["values"][0]["values"][1] == 20
+
+
+class TestCalcMetricsPRsErrors(BaseCalcMetricsPRsTest):
+    async def test_access_denied(self):
+        """https://athenianco.atlassian.net/browse/ENG-116"""
+        body = self._body(
+            for_=[
+                {
+                    "with": {
+                        "commit_committer": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                    },
+                    "repositories": [
+                        "github.com/src-d/go-git",
+                        "github.com/athenianco/athenian-api",
+                    ],
+                },
+            ],
+            metrics=list(PullRequestMetricID),
+            date_from="2015-10-13",
+            date_to="2019-03-15",
+            granularities=["month"],
+        )
+        await self._request(json=body, assert_status=403)
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.parametrize(
+        "account, date_to, quantiles, lines, in_, code",
+        [
+            (3, "2020-02-22", [0, 1], None, "{1}", 404),
+            (2, "2020-02-22", [0, 1], None, "{1}", 422),
+            (10, "2020-02-22", [0, 1], None, "{1}", 404),
+            (1, "2015-10-13", [0, 1], None, "{1}", 200),
+            (1, "2010-01-11", [0, 1], None, "{1}", 400),
+            (1, "2020-01-32", [0, 1], None, "{1}", 400),
+            (1, "2020-01-01", [-1, 0.5], None, "{1}", 400),
+            (1, "2020-01-01", [0, -1], None, "{1}", 400),
+            (1, "2020-01-01", [10, 20], None, "{1}", 400),
+            (1, "2020-01-01", [0.5, 0.25], None, "{1}", 400),
+            (1, "2020-01-01", [0.5, 0.5], None, "{1}", 400),
+            (1, "2015-10-13", [0, 1], [], "{1}", 400),
+            (1, "2015-10-13", [0, 1], [1], "{1}", 400),
+            (1, "2015-10-13", [0, 1], [1, 1], "{1}", 400),
+            (1, "2015-10-13", [0, 1], [-1, 1], "{1}", 400),
+            (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
+            (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
+            ("1", "2020-02-22", [0, 1], None, "{1}", 400),
+            (1, "0015-10-13", [0, 1], None, "{1}", 400),
+        ],
+    )
+    async def test_nasty_input(self, account, date_to, quantiles, lines, in_, code, mdb):
+        """What if we specify a date that does not exist?"""
+        body = self._body(
+            for_=[
+                {
+                    "with": {"merger": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                    "repositories": [in_],
+                    **({"lines": lines} if lines is not None else {}),
+                },
+                {
+                    "with": {"releaser": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+            ],
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2015-10-13" if date_to != "0015-10-13" else "0015-10-13",
+            date_to=date_to if date_to != "0015-10-13" else "2015-10-13",
+            granularities=["week"],
+            quantiles=quantiles,
+            account=account,
+        )
+        await self._request(assert_status=code, json=body)
+
+    async def test_repogroups_with_no_repositories(self) -> None:
+        body = self._body(
+            for_=[{"repogroups": [[0]]}],
+            metrics=[PullRequestMetricID.PR_LEAD_TIME],
+            date_from="2017-10-13",
+            date_to="2018-01-23",
+        )
+        await self._request(assert_status=400, json=body)
+
+    @pytest.mark.app_validate_responses(False)
+    async def test_both_jira_and_jiragroups(self, sdb: Database) -> None:
+        body = self._body(
+            date_from="2022-02-01",
+            date_to="2022-03-01",
+            for_=[
+                {
+                    "jiragroups": [{"issue_types": ["task"]}, {"issue_types": ["bug"]}],
+                    "jira": {"issue_types": ["task"]},
+                },
+            ],
+            granularities=["all"],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT, PullRequestMetricID.PR_SIZE],
+        )
+
+        res = await self._request(assert_status=400, json=body)
+        assert "jiragroups" in res["detail"]
+        assert "jira" in res["detail"]

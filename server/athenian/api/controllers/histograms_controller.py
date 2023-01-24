@@ -103,7 +103,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 filter_prs.repogroups,
                 filter_prs.participants,
                 filter_prs.labels,
-                filter_prs.jira,
+                filter_prs.jiragroups[0],  # multiple jira groups not yet supported
                 filt.exclude_inactive,
                 account_bots,
                 release_settings,
