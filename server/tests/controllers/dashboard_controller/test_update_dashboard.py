@@ -12,15 +12,10 @@ from tests.testutils.auth import force_request_auth
 from tests.testutils.db import assert_existing_row, models_insert
 from tests.testutils.factory.state import (
     DashboardChartFactory,
-<<<<<<< Updated upstream
-    TeamDashboardFactory,
-    TeamFactory,
-    UserAccountFactory,
-=======
     DashboardChartGroupByFactory,
     TeamDashboardFactory,
     TeamFactory,
->>>>>>> Stashed changes
+    UserAccountFactory,
 )
 from tests.testutils.requester import Requester
 
