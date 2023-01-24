@@ -13,6 +13,7 @@ from athenian.api.internal.dashboard import (
     get_dashboard_charts,
     get_team_default_dashboard,
     reorder_dashboard_charts,
+    update_dashboard_chart as update_dashboard_chart_in_db,
 )
 from athenian.api.internal.jira import parse_request_issue_types, parse_request_priorities
 from athenian.api.internal.prefixer import Prefixer
@@ -27,6 +28,9 @@ from athenian.api.models.state.models import (
 from athenian.api.models.web import (
     CreatedIdentifier,
     DashboardChartCreateRequest,
+    DashboardChartFilters,
+    DashboardChartGroupBy as WebDashboardChartGroupBy,
+    DashboardChartUpdateRequest,
     DashboardUpdateRequest,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
@@ -73,9 +77,11 @@ async def create_dashboard_chart(
     dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
     create_request = model_from_body(DashboardChartCreateRequest, body)
 
-    extra_values = await _parse_request_chart_filters(create_request, request, dashboard.account)
+    extra_values = await _parse_request_chart_filters(
+        create_request.filters, request, dashboard.account,
+    )
     group_by_values = await _parse_request_chart_group_by(
-        create_request, request, dashboard.account,
+        create_request.group_by, request, dashboard.account,
     )
 
     async with request.sdb.connection() as sdb_conn:
@@ -104,6 +110,38 @@ async def delete_dashboard_chart(
     return web.Response(status=204)
 
 
+@disable_default_user
+async def update_dashboard_chart(
+    request: AthenianWebRequest,
+    team_id: int,
+    dashboard_id: int,
+    chart_id: int,
+    body: dict,
+) -> web.Response:
+    """Update an existing dashboard chart."""
+    dashboard = await _get_request_dashboard(request, team_id, dashboard_id)
+    update_request = model_from_body(DashboardChartUpdateRequest, body)
+
+    extra_values = await _parse_request_chart_filters(
+        update_request.filters, request, dashboard.account,
+    )
+    for f in DashboardChart.FILTER_FIELDS:
+        extra_values.setdefault(f, None)
+    group_by_values = await _parse_request_chart_group_by(
+        update_request.group_by, request, dashboard.account,
+    )
+    for f in DashboardChartGroupBy.GROUP_BY_FIELDS:
+        group_by_values.setdefault(f, None)
+
+    async with request.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            await update_dashboard_chart_in_db(
+                dashboard_id, chart_id, update_request, extra_values, group_by_values, sdb_conn,
+            )
+
+    return model_response(CreatedIdentifier(id=chart_id))
+
+
 @dataclasses.dataclass
 class _RequestDashboard:
     row: Row
@@ -127,12 +165,12 @@ async def _get_request_dashboard(
 
 
 async def _parse_request_chart_filters(
-    create_req: DashboardChartCreateRequest,
+    filters: DashboardChartFilters | None,
     request: AthenianWebRequest,
     account: int,
 ) -> dict:
     values: dict = {}
-    if not (filters := create_req.filters):
+    if not filters:
         return values
 
     if filters.repositories is not None:
@@ -157,12 +195,12 @@ async def _parse_request_chart_filters(
 
 
 async def _parse_request_chart_group_by(
-    create_req: DashboardChartCreateRequest,
+    group_by: WebDashboardChartGroupBy | None,
     request: AthenianWebRequest,
     account: int,
 ) -> dict:
     values: dict = {}
-    if not (group_by := create_req.group_by):
+    if not group_by:
         return values
 
     if group_by.repositories is not None:

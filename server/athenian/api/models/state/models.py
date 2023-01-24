@@ -584,6 +584,16 @@ class DashboardChart(create_time_mixin(created_at=True, updated_at=True), Base):
     )
 
 
+DashboardChart.FILTER_FIELDS = (
+    DashboardChart.repositories,
+    DashboardChart.environments,
+    DashboardChart.jira_issue_types,
+    DashboardChart.jira_labels,
+    DashboardChart.jira_priorities,
+    DashboardChart.jira_projects,
+)
+
+
 class DashboardChartGroupBy(create_time_mixin(created_at=True, updated_at=True), Base):
     """The group by configured for a dashboard chart."""
 
@@ -621,3 +631,12 @@ class DashboardChartGroupBy(create_time_mixin(created_at=True, updated_at=True),
     jira_labels = Column(
         JSONType, nullable=True, comment="The Jira labels by which chart data will be grouped.",
     )
+
+
+DashboardChartGroupBy.GROUP_BY_FIELDS = (
+    DashboardChartGroupBy.teams,
+    DashboardChartGroupBy.repositories,
+    DashboardChartGroupBy.jira_priorities,
+    DashboardChartGroupBy.jira_issue_types,
+    DashboardChartGroupBy.jira_labels,
+)
