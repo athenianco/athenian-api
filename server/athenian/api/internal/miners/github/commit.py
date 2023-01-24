@@ -40,6 +40,7 @@ from athenian.api.internal.miners.github.dag_accelerated import (
 from athenian.api.internal.miners.github.deployment_light import load_included_deployments
 from athenian.api.internal.miners.types import DAG as DAGStruct, Deployment
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import (
     Branch,
@@ -52,7 +53,6 @@ from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 from athenian.precomputer.db.models import GitHubCommitDeployment

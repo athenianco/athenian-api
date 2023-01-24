@@ -49,6 +49,7 @@ from athenian.api.internal.miners.github.dag_accelerated import extract_first_pa
 from athenian.api.internal.miners.github.precomputed_releases import compose_release_match
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.settings import (
     LogicalRepositorySettings,
     ReleaseMatch,
@@ -70,7 +71,6 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseMatchTimespan,
 )
 from athenian.api.object_arrays import is_null, nested_lengths
-from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 

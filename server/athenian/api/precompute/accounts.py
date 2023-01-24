@@ -51,6 +51,7 @@ from athenian.api.internal.miners.github.release_mine import (
     mine_releases,
 )
 from athenian.api.internal.prefixer import Prefixer, RepositoryName
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
@@ -60,7 +61,6 @@ from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.state.models import Feature, RepositorySet, Team, UserAccount
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
-from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import sentry_span
 

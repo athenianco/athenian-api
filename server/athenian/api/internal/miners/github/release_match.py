@@ -64,6 +64,7 @@ from athenian.api.internal.miners.github.released_pr import (
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.miners.types import PullRequestFactsMap, nonemax
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.settings import (
     LogicalPRSettings,
     LogicalRepositorySettings,
@@ -84,7 +85,6 @@ from athenian.api.models.precomputed.models import (
     GitHubRepository,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
-from athenian.api.precompute.refetcher import Refetcher
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
