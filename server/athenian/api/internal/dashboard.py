@@ -149,7 +149,7 @@ async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: Dat
     # no rowcount is returned with aysncpg
     select_stmt = sa.select([1]).where(*where)
     if (await sdb_conn.fetch_val(select_stmt)) is None:
-        raise DashboardChartNotFoundError(chart_id)
+        raise DashboardChartNotFoundError(dashboard_id, chart_id)
 
     delete_stmt = sa.delete(DashboardChart).where(*where)
     await sdb_conn.execute(delete_stmt)
@@ -350,13 +350,13 @@ class MultipleTeamDashboardsError(ResponseError):
 class DashboardChartNotFoundError(ResponseError):
     """A dashboard chart was not found."""
 
-    def __init__(self, chart_id: int):
+    def __init__(self, dashboard_id: int, chart_id: int):
         """Init the DashboardChartNotFoundError."""
         wrapped_error = GenericError(
             type="/errors/dashboards/DashboardChartNotFoundError",
             status=HTTPStatus.NOT_FOUND,
-            detail=f"Dashboard chart {chart_id} not found or access denied",
-            title=" Chart not found",
+            detail=f"Chart {chart_id} not found in dashboard {dashboard_id} or access denied",
+            title="Chart not found",
         )
         super().__init__(wrapped_error)
 
