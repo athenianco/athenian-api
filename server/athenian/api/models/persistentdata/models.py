@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    DECIMAL, Float, JSON,
+    DECIMAL,
+    JSON,
     TIMESTAMP,
     BigInteger,
     Boolean,
     Column,
+    Float,
     ForeignKeyConstraint,
     Integer,
     Text,
