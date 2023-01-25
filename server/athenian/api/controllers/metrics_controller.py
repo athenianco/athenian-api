@@ -61,7 +61,7 @@ from athenian.api.models.web import (
 )
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
-from athenian.api.request import AthenianWebRequest
+from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 
@@ -134,12 +134,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     :param body: Desired metric definitions.
     :type body: dict | bytes
     """
-    try:
-        filt = PullRequestMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(PullRequestMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account, prefixer)
@@ -582,12 +577,7 @@ async def _extract_repos(
 @weight(1.5)
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
-    try:
-        filt = CodeFilter.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(CodeFilter, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     repos, _ = await resolve_repos_with_request(
@@ -627,12 +617,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 @weight(1.5)
 async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
-    try:
-        filt = DeveloperMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(DeveloperMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account, prefixer)
@@ -768,11 +753,7 @@ async def _compile_filters_releases(
 @weight(4)
 async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
-    try:
-        filt = ReleaseMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(ReleaseMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos, prefixer, logical_settings, participants = await _compile_filters_releases(
         request, filt.for_, filt.with_, filt.account, meta_ids,
@@ -870,11 +851,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
 async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
     etc."""
-    try:
-        filt = CodeCheckMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(CodeCheckMetricsRequest, body)
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -975,11 +952,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
 @weight(2)
 async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on deployments submitted by `/events/deployments`."""
-    try:
-        filt = DeploymentMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(DeploymentMetricsRequest, body)
     meta_ids, jira_ids = await gather(
         get_metadata_account_ids(filt.account, request.sdb, request.cache),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
