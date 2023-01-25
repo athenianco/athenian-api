@@ -40,13 +40,17 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                     else:
                         cursor = None
                     for acc in body["results"]:
+                        if arr := acc.get("arr", acc.get("mrr", 0) * 12):
+                            mrr = arr // 12
+                        else:
+                            mrr = None
                         accounts.append(
                             VitallyAccount(
                                 account_id=int(
                                     acc.get("externalId", acc.get("traits", {}).get("id")),
                                 ),
                                 name=acc.get("name"),
-                                mrr=acc.get("mrr"),
+                                mrr=mrr,
                                 health_score=acc.get("healthScore"),
                             )
                             .create_defaults()

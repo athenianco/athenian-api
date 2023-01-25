@@ -42,6 +42,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import wraps
+from athenian.api.vitally import VitallyAccounts
 
 
 class Auth0:
@@ -732,7 +733,7 @@ class _RequestAccountValidation:
 
         if (account := request_json.get("account")) is not None:
             if isinstance(account, int):
-                self._sentry_scope_set_account(account)
+                self._sentry_scope_set_account(request.context, account)
                 if not self._route_ignore_account():
                     await get_user_account_status_from_request(request.context, account)
             else:
@@ -750,7 +751,7 @@ class _RequestAccountValidation:
         except (ValueError, KeyError):
             return
 
-        self._sentry_scope_set_account(account)
+        self._sentry_scope_set_account(request.context, account)
         if not self._route_ignore_account():
             await get_user_account_status_from_request(request.context, account)
 
@@ -774,6 +775,15 @@ class _RequestAccountValidation:
             return False
 
     @classmethod
-    def _sentry_scope_set_account(cls, account: int) -> None:
+    def _sentry_scope_set_account(cls, request: aiohttp.web.Request, account: int) -> None:
         with sentry_sdk.configure_scope() as scope:
+            try:
+                cs_data = request.app[VitallyAccounts.VAR_NAME].accounts[account]
+            except (AttributeError, KeyError):
+                pass
+            else:
+                if VitallyAccounts.is_vip_account(cs_data) and scope.transaction is not None:
+                    # we won't see the stack samples though, it's too late
+                    scope.transaction.sampled = True
+                    scope.transaction.init_span_recorder(1000)  # Sentry's default value
             scope.set_tag("account", account)
