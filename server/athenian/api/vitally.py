@@ -60,3 +60,8 @@ class VitallyAccounts:
         rows = await self.rdb.fetch_all(select(VitallyAccount))
         acc_col = VitallyAccount.account_id.name
         self._accounts = {r[acc_col]: r for r in rows}
+
+    @staticmethod
+    def is_vip_account(row: Row) -> bool:
+        """Calculat evalue indicating whether we should pay special attention to an account."""
+        return row[VitallyAccount.health_score.name] < 6.5 or row[VitallyAccount.mrr.name] > 1000
