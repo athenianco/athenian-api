@@ -79,6 +79,7 @@ from athenian.api.response import ResponseError
 from athenian.api.segment import SegmentClient
 from athenian.api.serialization import FriendlyJson
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH, InfiniteString
+from athenian.api.vitally import VitallyAccounts
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 flogging.trailing_dot_exceptions.update(
@@ -286,6 +287,7 @@ class AthenianApp(especifico.AioHttpApp):
         slack: Optional[SlackWebClient] = None,
         mandrill: Optional[MandrillClient] = None,
         refetcher: Optional[Refetcher] = None,
+        vitally_accounts: Optional[VitallyAccounts] = None,
         with_pdb_schema_checks: bool = True,
         segment: Optional[SegmentClient] = None,
         google_analytics: Optional[str] = "",
@@ -313,6 +315,7 @@ class AthenianApp(especifico.AioHttpApp):
         :param slack: Slack API client to post messages.
         :param mandrill: Mailchimp Transactional API client to send emails.
         :param refetcher: Metadata autohealer, e.g. to schedule team refetches.
+        :param vitally_accounts: Vitally accounts data fetcher and maintainer.
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
         :param google_analytics: Google Analytics tag to track Swagger UI.
@@ -409,6 +412,7 @@ class AthenianApp(especifico.AioHttpApp):
         self._enable_cors()
         self.app[SegmentClient.VAR_NAME] = self._segment = segment
         self.app[Refetcher.VAR_NAME] = self._refetcher = refetcher
+        self.app[VitallyAccounts.VAR_NAME] = self._vitally_accounts = vitally_accounts
 
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
@@ -448,6 +452,9 @@ class AthenianApp(especifico.AioHttpApp):
                         dereference_metadata_schemas()
                     elif shortcut == "rdb":
                         dereference_persistentdata_schemas()
+                        if self._vitally_accounts is not None:
+                            self._vitally_accounts.rdb = db
+                            await self._vitally_accounts.boot()
                     elif shortcut == "pdb":
                         dereference_precomputed_schemas()
             except asyncio.CancelledError:
@@ -551,6 +558,8 @@ class AthenianApp(especifico.AioHttpApp):
             await self._segment.close()
         if self._refetcher is not None:
             await self._refetcher.close()
+        if self._vitally_accounts is not None:
+            self._vitally_accounts.shutdown()
         if self._kms is not None:
             await self._kms.close()
         if self._slack is not None:

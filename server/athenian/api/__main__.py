@@ -54,6 +54,7 @@ from athenian.api.mandrill import MandrillClient
 from athenian.api.segment import SegmentClient
 from athenian.api.sentry_native import fini as sentry_native_fini, init as sentry_native_init
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
+from athenian.api.vitally import VitallyAccounts
 
 # Global Sentry tracing sample rate override
 trace_sample_rate_manhole = lambda request: None  # noqa(E731)
@@ -616,6 +617,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         slack=create_slack(log),
         mandrill=create_mandrill(),
         refetcher=Refetcher(args.refetch_topic),
+        vitally_accounts=VitallyAccounts(),
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)),
         segment=create_segment(),
