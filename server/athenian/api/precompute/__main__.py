@@ -20,6 +20,7 @@ from athenian.api.precompute import (
     resolve_deployments,
     store_external_health,
     sync_labels,
+    vitally,
 )
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.serialization import deserialize_datetime
@@ -31,6 +32,7 @@ commands = {
     "discover-accounts": discover_accounts.main,
     "accounts": accounts.main,
     "store-external-health": store_external_health.main,
+    "vitally": vitally.main,
 }
 
 
@@ -156,6 +158,10 @@ def _parse_args() -> argparse.Namespace:
     )
     store_external_health_parser.add_argument(
         "--prometheus", type=str, help="Prometheus API endpoint",
+    )
+
+    subparsers.add_parser(
+        "vitally", help="Record the most recent information about accounts from Vitally",
     )
     return parser.parse_args()
 

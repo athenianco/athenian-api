@@ -4,7 +4,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 import os
-from typing import Any
 
 import aiohttp
 import aiomcache
@@ -305,7 +304,7 @@ async def _record_idv2_migrated(
         )
 
 
-async def main(context: PrecomputeContext, args: argparse.Namespace) -> Any:
+async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     """Fill missing commit references in the deployed components."""
     acc_id_map_task = asyncio.create_task(_fetch_acc_id_map(context.sdb), name="_fetch_acc_id_map")
     await gather(
