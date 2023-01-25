@@ -3,9 +3,9 @@ import logging
 import os
 
 import aiohttp
-from sqlalchemy import insert
 
 from athenian.api import metadata
+from athenian.api.db import dialect_specific_insert
 from athenian.api.models.persistentdata.models import VitallyAccount
 from athenian.api.precompute.context import PrecomputeContext
 
@@ -51,4 +51,18 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                             .explode(with_primary_keys=True),
                         )
     if accounts:
-        await context.rdb.execute_many(insert(VitallyAccount), accounts)
+        log.info("updating %d accounts", len(accounts))
+        sql = (await dialect_specific_insert(context.rdb))(VitallyAccount)
+        sql = sql.on_conflict_do_update(
+            index_elements=VitallyAccount.__table__.primary_key.columns,
+            set_={
+                col.name: getattr(sql.excluded, col.name)
+                for col in (
+                    VitallyAccount.name,
+                    VitallyAccount.mrr,
+                    VitallyAccount.health_score,
+                    VitallyAccount.updated_at,
+                )
+            },
+        )
+        await context.rdb.execute_many(sql, accounts)
