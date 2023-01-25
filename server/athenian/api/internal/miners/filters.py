@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Iterable, Optional
+from functools import reduce
+import operator
+from typing import Any, Iterable, Optional, cast
 
 from athenian.api.internal.jira import JIRAConfig, normalize_issue_type, normalize_priority
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
@@ -95,13 +97,13 @@ class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
-    projects: frozenset[str]
-    labels: LabelFilter
-    epics: frozenset[str] | bool
-    issue_types: frozenset[str]
-    priorities: frozenset[str]
-    custom_projects: bool  # PRs must be mapped to any issue in `projects`
-    unmapped: bool  # select everything but the mapped PRs
+    projects: frozenset[str] = frozenset()
+    labels: LabelFilter = LabelFilter.empty()
+    epics: frozenset[str] | bool = frozenset()
+    issue_types: frozenset[str] = frozenset()
+    priorities: frozenset[str] = frozenset()
+    custom_projects: bool = True  # PRs must be mapped to any issue in `projects`
+    unmapped: bool = False  # select everything but the mapped PRs
 
     def __post_init__(self) -> None:
         """Apply post init validation."""
@@ -127,36 +129,46 @@ class JIRAFilter:
             ],
         )
 
-    def __or__(self, other: JIRAFilter) -> JIRAFilter:
-        """Return a new JIRAFilter which is logical union of this filter with another."""
+    @classmethod
+    def combine(cls, *filters: JIRAFilter) -> JIRAFilter:
+        """Combine multiple JIRAFilter into a single one which is the logical union of them."""
+        all_accounts = [f.account for f in filters]
+        all_epics = [f.epics for f in filters]
+        all_unmapped = [f.unmapped for f in filters]
         if (
-            ((self.account != other.account) and self.account and other.account)
-            or self.unmapped != other.unmapped
-            or isinstance(self.epics, bool) != isinstance(other.epics, bool)
+            len(set(filter(None, all_accounts))) > 1
+            or len(set(all_unmapped)) > 1
+            or len({isinstance(e, bool) for e in all_epics}) > 1
         ):
-            raise ValueError("Cannot union JIRAFilter with different accounts, unmapped or epics")
+            raise ValueError(
+                "Cannot combine JIRAFilter with different accounts, unmapped or epics",
+            )
 
-        if not self.account or not other.account:
-            return self.empty()
+        if not all(a for a in all_accounts):
+            return cls.empty()
 
-        if isinstance(self.epics, bool):
+        if isinstance(all_epics[0], bool):
             epics: bool | frozenset[str] = False
         else:
-            assert not isinstance(other.epics, bool)
-            epics = _join_filter_sets(self.epics, other.epics)
+            epics = _join_filter_sets(*cast(list[frozenset[str]], all_epics))
 
-        projects = self.projects | other.projects  # guaranteed to be filled in both
+        projects = frozenset.union(*(f.projects for f in filters))
+        labels = reduce(operator.or_, (f.labels for f in filters))
 
         return JIRAFilter(
-            self.account,
+            all_accounts[0],
             projects,
-            self.labels | other.labels,
+            labels,
             epics,
-            _join_filter_sets(self.issue_types, other.issue_types),
-            _join_filter_sets(self.priorities, other.priorities),
+            _join_filter_sets(*(f.issue_types for f in filters)),
+            _join_filter_sets(*(f.priorities for f in filters)),
             True,
-            self.unmapped,
+            all_unmapped[0],
         )
+
+    def __or__(self, other: JIRAFilter) -> JIRAFilter:
+        """Return a new JIRAFilter which is logical union of this filter with another."""
+        return self.combine(self, other)
 
     def __str__(self) -> str:
         """Implement str()."""
@@ -251,7 +263,7 @@ class JIRAFilter:
         return dataclasses.replace(self, **kwargs)
 
 
-def _join_filter_sets(set_a: frozenset, set_b: frozenset) -> frozenset:
-    if (not set_a) or (not set_b):
+def _join_filter_sets(*sets: frozenset) -> frozenset:
+    if not all(sets):
         return frozenset()
-    return set_a | set_b
+    return frozenset.union(*sets)

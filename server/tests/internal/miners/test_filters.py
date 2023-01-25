@@ -81,12 +81,22 @@ class TestJIRAFilterUnion:
         assert f0 | f1 == expected
 
 
-def _mk_jira_filter(account: int, **kwargs: Any) -> JIRAFilter:
-    for field in ("epics", "issue_types", "priorities"):
-        kwargs.setdefault(field, frozenset())
-    kwargs.setdefault("projects", frozenset(["1"] if account else []))
-    kwargs.setdefault("labels", LabelFilter.empty())
-    kwargs.setdefault("custom_projects", False)
-    kwargs.setdefault("unmapped", False)
+class TestJIRAFilterCombine:
+    def test_two_filters(self) -> None:
+        f0 = _mk_jira_filter(1, projects=frozenset(["proj0"]))
+        f1 = _mk_jira_filter(1, projects=frozenset(["proj0", "proj1"]))
+        expected = _mk_jira_filter(1, projects=frozenset(["proj0", "proj1"]), custom_projects=True)
+        assert JIRAFilter.combine(f0, f1) == expected
 
+    def test_more_filters(self) -> None:
+        f0 = _mk_jira_filter(1, projects=frozenset(["proj0"]))
+        f1 = _mk_jira_filter(1, projects=frozenset(["proj1"]))
+        f2 = _mk_jira_filter(0)
+        expected = _mk_jira_filter(0)
+        assert JIRAFilter.combine(f0, f1, f2) == expected
+
+
+def _mk_jira_filter(account: int, **kwargs: Any) -> JIRAFilter:
+    kwargs.setdefault("projects", frozenset(["1"] if account else []))
+    kwargs.setdefault("custom_projects", False)
     return JIRAFilter(account, **kwargs)

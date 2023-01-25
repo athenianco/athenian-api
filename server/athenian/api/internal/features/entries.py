@@ -5,12 +5,22 @@ from collections.abc import Iterator
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import partial, reduce
+from functools import partial
 from itertools import chain
 import logging
-import operator
 import pickle
-from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, Type, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+)
 
 import aiomcache
 import numpy as np
@@ -128,9 +138,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import HealthMetric
-from athenian.api.models.web import NoSourceDataError
 from athenian.api.pandas_io import deserialize_args, serialize_args
-from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -301,7 +309,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jiras, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
             # result can be cached independently from metrics order, see _PRMetricsLineGHCache
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -310,7 +318,7 @@ class MetricEntriesCalculator:
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels,
-            jira,
+            ",".join(str(j) for j in jiras),
             ",".join(sorted(environments)),
             exclude_inactive,
             release_settings,
@@ -330,7 +338,7 @@ class MetricEntriesCalculator:
         repositories: Sequence[Collection[str]],
         participants: list[PRParticipants],
         labels: LabelFilter,
-        jira: JIRAFilter,
+        jiras: Sequence[JIRAFilter],
         exclude_inactive: bool,
         bots: set[str],
         release_settings: ReleaseSettings,
@@ -343,7 +351,8 @@ class MetricEntriesCalculator:
         """
         Calculate pull request metrics on GitHub.
 
-        :return: lines x repositories x participants x granularities x time intervals x metrics.
+        :return: jiras x lines x repositories x participants x
+                 granularities x time intervals x metrics.
         """
         assert isinstance(repositories, (tuple, list))
         all_repositories = set(chain.from_iterable(repositories))
@@ -356,6 +365,10 @@ class MetricEntriesCalculator:
             environments=environments,
         )
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+
+        jiras = jiras or [JIRAFilter.empty()]
+        global_jira_filter = JIRAFilter.combine(*jiras)
+
         pr_facts_calc = self._build_pr_facts_calculator()
         df_facts = await pr_facts_calc(
             time_from,
@@ -363,17 +376,19 @@ class MetricEntriesCalculator:
             all_repositories,
             all_participants,
             labels,
-            jira,
+            global_jira_filter,
             exclude_inactive,
             bots,
             release_settings,
             logical_settings,
             prefixer,
             fresh,
-            JIRAEntityToFetch(pr_metrics_need_jira_mapping(metrics)),
+            self._get_jira_entities_to_fetch(jiras, metrics),
             branches,
             default_branches,
         )
+
+        jira_grouper = await self._jira_filters_prs_grouper(jiras)
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants, True)
@@ -382,6 +397,7 @@ class MetricEntriesCalculator:
         )
         groups = group_to_indexes(
             df_facts,
+            jira_grouper,
             lines_grouper,
             repo_grouper,
             with_grouper,
@@ -416,7 +432,6 @@ class MetricEntriesCalculator:
         branches: pd.DataFrame,
         default_branches: dict[str, str],
         fresh: bool,
-        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for pull request metrics.
 
@@ -441,9 +456,9 @@ class MetricEntriesCalculator:
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
-        jira_filter = reduce(operator.or_, jira_filters)
+        jira_filter = JIRAFilter.combine(*jira_filters)
 
         jira_entities_to_fetch = self._get_jira_entities_to_fetch(jira_filters, all_metrics)
 
@@ -830,6 +845,15 @@ class MetricEntriesCalculator:
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
 
+    async def _jira_filters_prs_grouper(
+        self,
+        filters: Sequence[JIRAFilter],
+    ) -> Callable[[pd.DataFrame], list[np.ndarray]]:
+        filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            filters, self._account, self._mdb, self._cache,
+        )
+        return partial(group_pr_facts_by_jira, filters_to_grouping(filters))
+
     @classmethod
     def _get_jira_entities_to_fetch(
         cls,
@@ -873,7 +897,6 @@ class MetricEntriesCalculator:
         prefixer: Prefixer,
         branches: pd.DataFrame,
         default_branches: dict[str, str],
-        jira_acc_id: Optional[int],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for release metrics.
 
@@ -894,9 +917,9 @@ class MetricEntriesCalculator:
         )
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
-        jira_filter = reduce(operator.or_, jira_filters)
+        jira_filter = JIRAFilter.combine(*jira_filters)
 
         df_facts, _, _, _ = await mine_releases(
             all_repositories,
@@ -1305,13 +1328,13 @@ class MetricEntriesCalculator:
 
         jira_filters = list(chain.from_iterable(req.all_jira_filters() for req in requests))
         convert_jira_filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            jira_filters, self._account, jira_ids.acc_id, self._mdb, self._cache,
+            jira_filters, self._account, self._mdb, self._cache,
         )
         if any(jira_filters):
             # if any filter is True-ish group_jira_facts_by_jira will need the extra info to group
             extra_columns.extend([Issue.type_id, Issue.priority_id, Issue.project_id])
 
-        jira_filter = reduce(operator.or_, jira_filters) or JIRAFilter.from_jira_config(jira_ids)
+        jira_filter = JIRAFilter.combine(*jira_filters) or JIRAFilter.from_jira_config(jira_ids)
 
         assert reporters or assignees or commenters
         issues = await fetch_jira_issues(
@@ -1516,16 +1539,15 @@ class _JIRAFilterToGroupingConverter:
         cls,
         all_filters: Iterable[JIRAFilter],
         account: int,
-        jira_acc_id: Optional[int],
         mdb: Database,
         cache: Optional[aiomcache.Client],
     ) -> _JIRAFilterToGroupingConverter:
-        if any((f.priorities or f.issue_types) for f in all_filters):
-            if jira_acc_id is None:
-                raise ResponseError(
-                    NoSourceDataError(detail="JIRA not installed for the account."),
-                )
-            entities_mapper = await JIRAEntitiesMapper.load(jira_acc_id, mdb)
+        actual_filters = [f for f in all_filters if f]
+        if any((f.priorities or f.issue_types) for f in actual_filters):
+            jira_acc_ids = [f.account for f in actual_filters]
+            if len(set(jira_acc_ids)) > 1:
+                raise ValueError("JIRAFilters about multiple Jira installations not supported")
+            entities_mapper = await JIRAEntitiesMapper.load(jira_acc_ids[0], mdb)
         else:
             entities_mapper = None
         return cls(entities_mapper)

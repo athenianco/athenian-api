@@ -1,9 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any, Collection, Optional, Sequence
+from typing import Any, Collection, Iterator, Optional, Sequence
 
 from aiohttp import web
+import numpy as np
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
@@ -204,7 +205,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
             filter_prs.repogroups,
             filter_prs.participants,
             filter_prs.labels,
-            filter_prs.jira,
+            [filter_prs.jira],
             filt.exclude_inactive,
             account_bots,
             release_settings,
@@ -215,42 +216,49 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
             filt.fresh,
         )
         mrange = range(len(met.metrics))
-        for lines_group_index, lines_group in enumerate(metric_values):
-            for repos_group_index, with_groups in enumerate(lines_group):
-                for with_group_index, repos_group in enumerate(with_groups):
-                    group_for_set = (
-                        for_set.select_lines(lines_group_index)
-                        .select_repogroup(repos_group_index)
-                        .select_withgroup(with_group_index)
-                    )
-                    for granularity, ts, mvs in zip(
-                        filt.granularities, time_intervals, repos_group,
-                    ):
-                        cm = CalculatedPullRequestMetricsItem(
-                            for_=group_for_set,
-                            granularity=granularity,
-                            values=[
-                                CalculatedLinearMetricValues(
-                                    date=(d - tzoffset).date(),
-                                    values=[mvs[i][m].value for m in mrange],
-                                    confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                                    confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                                    confidence_scores=[
-                                        mvs[i][m].confidence_score() for m in mrange
-                                    ],
-                                )
-                                for i, d in enumerate(ts[:-1])
-                            ],
+        for (
+            _,
+            lines_group_idx,
+            repos_group_idx,
+            with_group_idx,
+            repos_group,
+        ) in _flatten_pr_metric_values(metric_values):
+            group_for_set = (
+                for_set.select_lines(lines_group_idx)
+                .select_repogroup(repos_group_idx)
+                .select_withgroup(with_group_idx)
+            )
+            for granularity, ts, mvs in zip(filt.granularities, time_intervals, repos_group):
+                cm = CalculatedPullRequestMetricsItem(
+                    for_=group_for_set,
+                    granularity=granularity,
+                    values=[
+                        CalculatedLinearMetricValues(
+                            date=(d - tzoffset).date(),
+                            values=[mvs[i][m].value for m in mrange],
+                            confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                            confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                            confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
                         )
-                        for v in cm.values:
-                            if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                                v.confidence_mins = None
-                                v.confidence_maxs = None
-                                v.confidence_scores = None
-                        met.calculated.append(cm)
+                        for i, d in enumerate(ts[:-1])
+                    ],
+                )
+                for v in cm.values:
+                    v.clean_up_confidence_fields()
+                met.calculated.append(cm)
 
     await gather(*(calculate_for_set_metrics(filter_prs) for filter_prs in filters))
     return model_response(met)
+
+
+def _flatten_pr_metric_values(
+    _metric_values: np.ndarray,
+) -> Iterator[tuple[int, int, int, int, np.ndarray]]:
+    for jira_idx, jira_group in enumerate(_metric_values):
+        for lines_idx, lines_group in enumerate(jira_group):
+            for repos_idx, with_groups in enumerate(lines_group):
+                for with_idx, repos_group in enumerate(with_groups):
+                    yield (jira_idx, lines_idx, repos_idx, with_idx, repos_group)
 
 
 async def compile_filters_prs(
@@ -817,10 +825,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
                         ],
                     )
                     for v in cm.values:
-                        if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                            v.confidence_mins = None
-                            v.confidence_maxs = None
-                            v.confidence_scores = None
+                        v.clean_up_confidence_fields()
                     met.append(cm)
 
     await gather(
@@ -931,10 +936,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
                                 ],
                             )
                             for v in cm.values:
-                                if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                                    v.confidence_mins = None
-                                    v.confidence_maxs = None
-                                    v.confidence_scores = None
+                                v.clean_up_confidence_fields()
                             met.calculated.append(cm)
 
     await gather(*(calculate_for_set_metrics(filter_checks) for filter_checks in filters))

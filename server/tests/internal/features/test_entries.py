@@ -41,7 +41,8 @@ from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMe
 from tests.conftest import build_fake_cache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.time import dt
 
 
@@ -233,7 +234,7 @@ class TestCalcPullRequestMetricsLineGithub:
             **self._default_kwargs,
             **shared_kwargs,
             "labels": LabelFilter.empty(),
-            "jira": JIRAFilter.empty(),
+            "jiras": [],
         }
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
@@ -259,10 +260,10 @@ class TestCalcPullRequestMetricsLineGithub:
         # result must be cached, so PRFactsCalculator.__call__ only called once
         calc_mock.assert_called_once()
 
-        assert res1[0][0][0][0][0][0].value == res0[0][0][0][0][0][1].value
-        assert res1[0][0][0][0][0][1].value == res0[0][0][0][0][0][0].value
-        assert res1[0][0][0][1][0][0].value == res0[0][0][0][1][0][1].value
-        assert res1[0][0][0][1][0][1].value == res0[0][0][0][1][0][0].value
+        assert res1[0][0][0][0][0][0][0].value == res0[0][0][0][0][0][0][1].value
+        assert res1[0][0][0][0][0][0][1].value == res0[0][0][0][0][0][0][0].value
+        assert res1[0][0][0][0][1][0][0].value == res0[0][0][0][0][1][0][1].value
+        assert res1[0][0][0][0][1][0][1].value == res0[0][0][0][0][1][0][0].value
 
     @with_defer
     async def test_cache_different_metrics_order_multiple_intervals(
@@ -281,7 +282,7 @@ class TestCalcPullRequestMetricsLineGithub:
             **self._default_kwargs,
             **shared_kwargs,
             "labels": LabelFilter.empty(),
-            "jira": JIRAFilter.empty(),
+            "jiras": [],
         }
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
@@ -312,9 +313,15 @@ class TestCalcPullRequestMetricsLineGithub:
         calc_mock.assert_called_once()
 
         for intvl_idx in range(1):
-            assert res0[0][0][0][0][intvl_idx][0].value == res1[0][0][0][0][intvl_idx][1].value
-            assert res0[0][0][0][0][intvl_idx][1].value == res1[0][0][0][0][intvl_idx][2].value
-            assert res0[0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][intvl_idx][0].value
+            assert (
+                res0[0][0][0][0][0][intvl_idx][0].value == res1[0][0][0][0][0][intvl_idx][1].value
+            )
+            assert (
+                res0[0][0][0][0][0][intvl_idx][1].value == res1[0][0][0][0][0][intvl_idx][2].value
+            )
+            assert (
+                res0[0][0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][0][intvl_idx][0].value
+            )
 
     @with_defer
     async def test_lead_time_alias_for_pr_cycle_time(
@@ -335,11 +342,95 @@ class TestCalcPullRequestMetricsLineGithub:
             **self._default_kwargs,
             **shared_kwargs,
             labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
+            jiras=[JIRAFilter.empty()],
         )
         # result for the two metrics must be the same
-        assert res[0][0][0][0][0][0] == res[0][0][0][0][0][1]
+        assert res[0][0][0][0][0][0][0] == res[0][0][0][0][0][0][1]
         await wait_deferred()
+
+    @with_defer
+    async def test_multiple_jira_groups_projects(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        shared_kwargs = await _calc_shared_kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb, sdb)
+        calculator = MetricEntriesCalculator(
+            1, (DEFAULT_MD_ACCOUNT_ID,), DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
+        )
+        jira_filter = JIRAFilter(
+            account=DEFAULT_JIRA_ACCOUNT_ID, projects=frozenset(["10009"]), custom_projects=True,
+        )
+        res = await calculator.calc_pull_request_metrics_line_github(
+            metrics=[PullRequestMetricID.PR_CYCLE_TIME, PullRequestMetricID.PR_CYCLE_COUNT],
+            time_intervals=[[dt(2018, 1, 1), dt(2018, 10, 1)]],
+            **self._default_kwargs,
+            **shared_kwargs,
+            labels=LabelFilter.empty(),
+            jiras=[JIRAFilter.empty(), jira_filter],
+        )
+        count_all = res[0][0][0][0][0][0][1].value
+        count_proj_10009 = res[1][0][0][0][0][0][1].value
+        assert count_proj_10009 < count_all
+
+        cycle_time_all = res[0][0][0][0][0][0][0].value
+        cycle_time_proj_10009 = res[1][0][0][0][0][0][0].value
+        assert cycle_time_all != cycle_time_proj_10009
+
+    @with_defer
+    async def test_multiple_jira_groups_priorities(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        calculator = MetricEntriesCalculator(
+            1, (DEFAULT_MD_ACCOUNT_ID,), DEFAULT_QUANTILE_STRIDE, mdb_rw, pdb, rdb, None,
+        )
+        jira_filter0 = JIRAFilter(
+            account=DEFAULT_JIRA_ACCOUNT_ID, priorities=frozenset(["p0"]), custom_projects=False,
+        )
+        jira_filter1 = JIRAFilter(
+            account=DEFAULT_JIRA_ACCOUNT_ID, priorities=frozenset(["p1"]), custom_projects=False,
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            models = [
+                *pr_models(99, 11, 1, repository_full_name="o/r", created_at=dt(2015, 1, 2)),
+                *pr_models(99, 12, 2, repository_full_name="o/r", created_at=dt(2015, 1, 2)),
+                *pr_models(99, 13, 3, repository_full_name="o/r", created_at=dt(2015, 1, 2)),
+                *pr_models(99, 14, 4, repository_full_name="o/r", created_at=dt(2015, 1, 2)),
+                md_factory.JIRAPriorityFactory(id="p0", name="P0"),
+                md_factory.JIRAPriorityFactory(id="p1", name="P1"),
+                md_factory.JIRAIssueFactory(id="20", priority_id="p0"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="20"),
+                md_factory.JIRAIssueFactory(id="30", priority_id="p1"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=12, jira_id="30"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=13, jira_id="30"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            shared_kwargs = await _calc_shared_kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, sdb)
+            kwargs = {
+                **shared_kwargs,
+                **self._default_kwargs,
+                "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+                "time_intervals": [[dt(2015, 1, 1), dt(2015, 2, 1)]],
+                "labels": LabelFilter.empty(),
+                "jiras": [jira_filter0, jira_filter1, JIRAFilter.empty()],
+                "repositories": [["o/r"]],
+            }
+
+            res = await calculator.calc_pull_request_metrics_line_github(**kwargs)
+
+        assert res[0][0][0][0][0][0][0].value == 1
+        assert res[1][0][0][0][0][0][0].value == 2
+        assert res[2][0][0][0][0][0][0].value == 4
 
 
 class TestBatchCalcPullRequestMetrics:
@@ -414,7 +505,7 @@ class TestBatchCalcPullRequestMetrics:
             time_intervals=all_intervals,
             lines=[],
             labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
+            jiras=[JIRAFilter.empty()],
             environments=[],
             repositories=[{"src-d/go-git"}],
             participants=[{PRParticipationKind.AUTHOR: {"mcuadros"}}],
@@ -423,13 +514,13 @@ class TestBatchCalcPullRequestMetrics:
 
         await wait_deferred()
         batch_calc_res = await calculator.batch_calc_pull_request_metrics_line_github(
-            requests, jira_acc_id=None, **base_kwargs,
+            requests, **base_kwargs,
         )
         batched_res_values = [req_res[0][0][0][0].value for req_res in batch_calc_res]
         for i in range(len(requests)):
             # for each batch request the same value in global result must be
             # found in interval index i and metric index i
-            global_value = global_calc_res[0][0][0][i][0][i].value
+            global_value = global_calc_res[0][0][0][0][i][0][i].value
 
             assert batched_res_values[i] == global_value
 
@@ -472,7 +563,6 @@ class TestBatchCalcPullRequestMetrics:
             exclude_inactive=False,
             bots=set(),
             fresh=False,
-            jira_acc_id=None,
             **shared_kwargs,
         )
 
@@ -526,7 +616,6 @@ class TestBatchCalcPullRequestMetrics:
             exclude_inactive=False,
             bots=set(),
             fresh=False,
-            jira_acc_id=None,
             **shared_kwargs,
         )
 
@@ -653,7 +742,7 @@ class TestBatchCalcReleaseMetrics:
         await wait_deferred()
 
         batched_calc_res = await calculator.batch_calc_release_metrics_line_github(
-            requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
+            requests, quantiles=[0, 1], **shared_kwargs,
         )
 
         release_prs = global_calc_res[0][0][0][0][0]
@@ -697,7 +786,7 @@ class TestBatchCalcReleaseMetrics:
 
         calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
         first_res = await calculator.batch_calc_release_metrics_line_github(
-            requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
+            requests, quantiles=[0, 1], **shared_kwargs,
         )
         await wait_deferred()
 
@@ -705,7 +794,7 @@ class TestBatchCalcReleaseMetrics:
             f"{MetricEntriesCalculator.__module__}.mine_releases", wraps=mine_releases,
         ) as mine_mock:
             second_res = await calculator.batch_calc_release_metrics_line_github(
-                requests, quantiles=[0, 1], jira_acc_id=None, **shared_kwargs,
+                requests, quantiles=[0, 1], **shared_kwargs,
             )
 
         mine_mock.assert_not_called()

@@ -191,7 +191,6 @@ async def calculate_team_metrics(
 
     calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
     tasks = []
-    jira_acc_id = unchecked_jira_config.acc_id if unchecked_jira_config else None
     if pr_requests := pr_collector.requests:
         pr_task = calculator.batch_calc_pull_request_metrics_line_github(
             requests=pr_requests,
@@ -204,7 +203,6 @@ async def calculate_team_metrics(
             branches=branches,
             default_branches=default_branches,
             fresh=False,
-            jira_acc_id=jira_acc_id,
         )
         tasks.append(pr_task)
 
@@ -217,7 +215,6 @@ async def calculate_team_metrics(
             prefixer=prefixer,
             branches=branches,
             default_branches=default_branches,
-            jira_acc_id=jira_acc_id,
         )
         tasks.append(release_task)
 
