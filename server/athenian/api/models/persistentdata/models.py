@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    JSON,
+    DECIMAL, Float, JSON,
     TIMESTAMP,
     BigInteger,
     Boolean,
@@ -140,3 +140,13 @@ class HealthMetric(Base):
         server_default=func.now(),
     )
     value = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)
+
+
+class VitallyAccount(Base, create_time_mixin(created_at=False, updated_at=True)):
+    """Information about accounts stored in Vitally."""
+
+    __tablename__ = "vitally_accounts"
+
+    name = Column(Text())
+    mrr = Column(DECIMAL())
+    health_score = Column(Float())
