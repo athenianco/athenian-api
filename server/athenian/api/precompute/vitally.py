@@ -15,7 +15,9 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     log = logging.getLogger(f"{metadata.__package__}.record_vitally")
     cursor = {"limit": 100}
     accounts = []
-    token = os.environ["VITALLY_TOKEN"]
+    if not (token := os.getenv("VITALLY_TOKEN")):
+        log.warning("skipped - must define VITALLY_TOKEN")
+        return
     while cursor is not None:
         for attempt in range(3):
             async with aiohttp.ClientSession() as session:
