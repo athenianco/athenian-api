@@ -77,7 +77,7 @@ jobs:
     - name: pip
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       run: |
-        python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements-lint.txt --no-warn-script-location
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: static checks
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
@@ -173,12 +173,12 @@ jobs:
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
-        python3 -m pip install --upgrade setuptools pip
+        python3 -m pip install --user --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        python3 -m pip install -r server/requirements.txt --no-warn-script-location
-        python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
-        python3 -m pip install -r server/requirements-test.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements-lint.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements-test.txt --no-warn-script-location
         git checkout -f server/requirements.txt
         python3 -m pip install --user --no-deps -e server/
         python3 -m pip list
@@ -309,12 +309,11 @@ jobs:
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
-        python3 -m pip install --upgrade setuptools pip
+        python3 -m pip install --user --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        python3 -m pip install -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
         python3 -m pip install --user --no-deps -e server/
-        patch --forward $HOME/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch || true
         patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: setup postgres
@@ -500,12 +499,11 @@ jobs:
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
-        python3 -m pip install --upgrade setuptools pip
+        python3 -m pip install --user --upgrade setuptools pip
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        python3 -m pip install -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
+        python3 -m pip install --user -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
         python3 -m pip install --user --no-deps -e server/
-        patch --forward $HOME/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch || true
         patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: setup postgres
