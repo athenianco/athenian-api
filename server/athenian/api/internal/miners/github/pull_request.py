@@ -2084,7 +2084,8 @@ class PullRequestMiner:
     ) -> pd.DataFrame:
         """Load the deployments for each PR node ID."""
         ghprd = GitHubPullRequestDeployment
-        sentry_sdk.Hub.current.scope.span.description = str(len(pr_node_ids))
+        if sentry_sdk.Hub.current.scope.span is not None:
+            sentry_sdk.Hub.current.scope.span.description = str(len(pr_node_ids))
         cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_full_name]
         pull_request_id_cond = (
             ghprd.pull_request_id.in_any_values(pr_node_ids)

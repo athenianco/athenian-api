@@ -472,7 +472,8 @@ class ReleaseLoader:
                 ascending=False,
                 ignore_index=index is None,
             )
-        sentry_sdk.Hub.current.scope.span.description = f"{repos_count} -> {len(releases)}"
+        if sentry_sdk.Hub.current.scope.span is not None:
+            sentry_sdk.Hub.current.scope.span.description = f"{repos_count} -> {len(releases)}"
         return releases, applied_matches
 
     @classmethod

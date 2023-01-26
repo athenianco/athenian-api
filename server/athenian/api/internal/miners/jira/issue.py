@@ -805,7 +805,8 @@ async def _fetch_raw_issues(
             await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query)),
         )
     df = _validate_and_clean_issues(df, jira_filter.account)
-    sentry_sdk.Hub.current.scope.span.description = str(len(df))
+    if sentry_sdk.Hub.current.scope.span is not None:
+        sentry_sdk.Hub.current.scope.span.description = str(len(df))
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
         return df
