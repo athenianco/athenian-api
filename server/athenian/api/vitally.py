@@ -49,6 +49,11 @@ class VitallyAccounts:
                 + random() * self.jitter
             )
             await asyncio.sleep((deadline - now).total_seconds())
+        else:
+            self.log.info(
+                "Scheduled regular Vitally account updates once per %s",
+                timedelta(hours=self.refresh_interval.total_seconds() // 3600),
+            )
         await self.refresh()
         self._task = asyncio.create_task(self.boot(), name="refresh Vitally accounts")
 

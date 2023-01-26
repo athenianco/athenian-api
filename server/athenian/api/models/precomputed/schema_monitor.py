@@ -1,8 +1,7 @@
 import asyncio
-from collections import defaultdict
+from datetime import timedelta
 import logging
 
-import aiohttp
 from alembic import script
 from alembic.runtime.migration import MigrationContext
 import morcilla
@@ -13,7 +12,6 @@ from athenian.api.models.precomputed import template
 
 def schedule_pdb_schema_check(
     pdb: morcilla.Database,
-    app: aiohttp.web.Application,
     interval: float = 15 * 60,
 ) -> list[asyncio.Task]:
     """
@@ -23,14 +21,13 @@ def schedule_pdb_schema_check(
 
     :return: List with one element. That element is always the next scheduled asyncio task.
     """
-    log = logging.getLogger("%s.scheduled_pdb_schema_check" % metadata.__package__)
+    log = logging.getLogger(f"{metadata.__package__}.scheduled_pdb_schema_check")
     req_rev = script.ScriptDirectory(str(template.parent)).get_current_head()
     sql = MigrationContext.configure(url=str(pdb.url), opts={"as_sql": True})._version.select()
     task_box: list[asyncio.Task | None] = [None]
 
     async def pdb_schema_check_callback() -> None:
         await asyncio.sleep(interval)
-        app["db_elapsed"].set(defaultdict(float))
         try:
             real_rev = await pdb.fetch_val(sql)
         except Exception as e:
@@ -43,5 +40,7 @@ def schedule_pdb_schema_check(
         task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
 
     task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
-    log.info("Scheduled regular pdb schema version checks once per %ds", interval)
+    log.info(
+        "Scheduled regular pdb schema version checks once per %s", timedelta(seconds=interval),
+    )
     return task_box
