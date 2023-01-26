@@ -714,6 +714,8 @@ def ensure_non_default_user(request: AthenianWebRequest):
 class _RequestAccountValidation:
     """Vaidate and enforce the account in the HTTP request."""
 
+    log = logging.getLogger(f"{metadata.__package__}.auth0")
+
     def __init__(self, route_spec: dict):
         self._route_spec = route_spec
 
