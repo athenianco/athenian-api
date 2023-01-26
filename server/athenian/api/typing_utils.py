@@ -678,7 +678,8 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
         obj_names = [obj_names[i] for i in left_untyped]
 
     df = create_data_frame_from_arrays(typed_arrs, obj_arr, typed_names, obj_names, length)
-    sentry_sdk.Hub.current.scope.span.description = str(len(df))
+    if sentry_sdk.Hub.current.scope.span is not None:
+        sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
 
 
