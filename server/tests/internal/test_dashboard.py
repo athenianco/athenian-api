@@ -16,9 +16,14 @@ from athenian.api.internal.dashboard import (
     get_dashboard,
     get_team_default_dashboard,
     reorder_dashboard_charts,
+    update_dashboard_chart,
 )
 from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
-from athenian.api.models.web import DashboardChartCreateRequest, PullRequestMetricID
+from athenian.api.models.web import (
+    DashboardChartCreateRequest,
+    DashboardChartUpdateRequest,
+    PullRequestMetricID,
+)
 from tests.testutils.db import (
     assert_existing_row,
     assert_missing_row,
@@ -216,6 +221,82 @@ class TestDeleteDashboardChart:
 
         with pytest.raises(DashboardChartNotFoundError):
             await delete_dashboard_chart(2, 10, sdb)
+
+
+class TestUpdateDashboardChart:
+    async def test_not_found(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(id=10, dashboard_id=1),
+        )
+        req = self._update_request()
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(DashboardChartNotFoundError):
+                await update_dashboard_chart(1, 11, req, {}, {}, sdb_conn)
+
+        async with transaction_conn(sdb) as sdb_conn:
+            with pytest.raises(DashboardChartNotFoundError):
+                await update_dashboard_chart(2, 10, req, {}, {}, sdb_conn)
+
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            DashboardChartFactory(
+                id=10,
+                dashboard_id=1,
+                name="old",
+                time_from=dt(2022, 3, 1),
+                time_to=dt(2022, 3, 30),
+                jira_issue_types=["bug"],
+            ),
+        )
+        req = self._update_request(name="new", time_interval="P1M")
+        extra_values = {DashboardChart.jira_labels: ["l0"], DashboardChart.jira_issue_types: None}
+        async with transaction_conn(sdb) as sdb_conn:
+            await update_dashboard_chart(1, 10, req, extra_values, {}, sdb_conn)
+
+        row = await assert_existing_row(sdb, DashboardChart, id=10, name="new")
+        assert row[DashboardChart.jira_labels.name] == ["l0"]
+        assert row[DashboardChart.name.name] == "new"
+        assert row[DashboardChart.jira_issue_types.name] is None
+        assert row[DashboardChart.time_from.name] is None
+        assert row[DashboardChart.time_to.name] is None
+
+    async def test_with_group_by(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=5),
+            TeamDashboardFactory(id=2, team_id=5),
+            DashboardChartFactory(id=9, dashboard_id=2),
+        )
+        req = self._update_request()
+        group_by: dict = {DashboardChartGroupBy.repositories: [[1, ""]]}
+        async with transaction_conn(sdb) as sdb_conn:
+            await update_dashboard_chart(2, 9, req, {}, group_by, sdb_conn)
+
+        await assert_existing_row(sdb, DashboardChart, id=9)
+        group_by_row = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=9)
+        assert group_by_row[DashboardChartGroupBy.repositories.name] == [[1, ""]]
+
+        group_by = {
+            DashboardChartGroupBy.repositories: None,
+            DashboardChartGroupBy.jira_priorities: ["h", "l"],
+        }
+        async with transaction_conn(sdb) as sdb_conn:
+            await update_dashboard_chart(2, 9, req, {}, group_by, sdb_conn)
+        group_by_row = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=9)
+        assert group_by_row[DashboardChartGroupBy.repositories.name] is None
+        assert group_by_row[DashboardChartGroupBy.jira_priorities.name] == ["h", "l"]
+
+    @classmethod
+    def _update_request(cls, **kwargs: Any) -> DashboardChartCreateRequest:
+        kwargs.setdefault("time_interval", "P1Y")
+        kwargs.setdefault("name", "n")
+        return DashboardChartUpdateRequest(**kwargs)
 
 
 class TestReorderDashboardCharts:

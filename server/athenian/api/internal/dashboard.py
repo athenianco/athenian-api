@@ -1,11 +1,19 @@
 from datetime import datetime, timezone
 from enum import Enum
 from http import HTTPStatus
-from typing import Sequence
+from typing import Any, Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.db import Connection, DatabaseLike, Row, conn_in_transaction, is_postgresql
+from athenian.api.db import (
+    Connection,
+    DatabaseLike,
+    Row,
+    conn_in_transaction,
+    dialect_specific_insert,
+    is_postgresql,
+)
 from athenian.api.internal.datetime_utils import (
     closed_dates_interval_to_datetimes,
     datetimes_to_closed_dates_interval,
@@ -18,6 +26,7 @@ from athenian.api.models.web import (
     DashboardChartCreateRequest,
     DashboardChartFilters,
     DashboardChartGroupBy as WebDashboardChartGroupBy,
+    DashboardChartUpdateRequest,
     GenericError,
     JIRAFilter,
     TeamDashboard as WebTeamDashboard,
@@ -93,8 +102,8 @@ async def get_dashboard_charts(dashboard_id: int, sdb_conn: DatabaseLike) -> Seq
 async def create_dashboard_chart(
     dashboard_id: int,
     req: DashboardChartCreateRequest,
-    extra_values: dict,
-    group_by_values: dict,
+    extra_values: dict[InstrumentedAttribute, Any],
+    group_by_values: dict[InstrumentedAttribute, Any],
     sdb_conn: Connection,
 ) -> int:
     """Create a new dashboard chart and return its ID."""
@@ -124,22 +133,17 @@ async def create_dashboard_chart(
             ids_to_update = [r[DashboardChart.id.name] for r in existing_rows[req.position :]]
             await _reassign_charts_positions(ids_to_update, position + 1, now, sdb_conn)
 
-    values = _build_chart_row_values(req, now)
-    values.update(extra_values)
-    values.update({DashboardChart.dashboard_id: dashboard_id, DashboardChart.position: position})
+    values = {
+        **_build_new_chart_row_values(req, now),
+        **extra_values,
+        DashboardChart.dashboard_id: dashboard_id,
+        DashboardChart.position: position,
+    }
+
     insert_stmt = sa.insert(DashboardChart).values(values)
     new_chart_id = await sdb_conn.execute(insert_stmt)
     if group_by_values:
-        all_group_by_values = {
-            **group_by_values,
-            DashboardChartGroupBy.chart_id: new_chart_id,
-            DashboardChartGroupBy.created_at: now,
-            DashboardChartGroupBy.updated_at: now,
-        }
-
-        insert_group_by_stmt = sa.insert(DashboardChartGroupBy).values(all_group_by_values)
-        await sdb_conn.execute(insert_group_by_stmt)
-
+        await _upsert_chart_group_by(new_chart_id, group_by_values, now, sdb_conn)
     return new_chart_id
 
 
@@ -149,10 +153,40 @@ async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: Dat
     # no rowcount is returned with aysncpg
     select_stmt = sa.select([1]).where(*where)
     if (await sdb_conn.fetch_val(select_stmt)) is None:
-        raise DashboardChartNotFoundError(chart_id)
+        raise DashboardChartNotFoundError(dashboard_id, chart_id)
 
     delete_stmt = sa.delete(DashboardChart).where(*where)
     await sdb_conn.execute(delete_stmt)
+
+
+async def update_dashboard_chart(
+    dashboard_id: int,
+    chart_id: int,
+    req: DashboardChartUpdateRequest,
+    extra_values: dict[InstrumentedAttribute, Any],
+    group_by_values: dict[InstrumentedAttribute, Any],
+    sdb_conn: Connection,
+) -> None:
+    """Update an existing dashboard chart."""
+    assert await conn_in_transaction(sdb_conn)
+
+    now = datetime.now(timezone.utc)
+
+    values = {**_build_update_chart_row_values(req, now), **extra_values}
+    update_stmt = (
+        sa.update(DashboardChart)
+        .where(DashboardChart.id == chart_id, DashboardChart.dashboard_id == dashboard_id)
+        .values(values)
+    )
+    if await is_postgresql(sdb_conn):
+        updated = await sdb_conn.fetch_val(update_stmt.returning(DashboardChart.id))
+    else:
+        updated = await sdb_conn.execute(update_stmt)
+    if not updated:
+        raise DashboardChartNotFoundError(dashboard_id, chart_id)
+
+    if group_by_values:
+        await _upsert_chart_group_by(chart_id, group_by_values, now, sdb_conn)
 
 
 async def reorder_dashboard_charts(
@@ -255,22 +289,56 @@ def _build_chart_web_model(chart: Row, prefixer: Prefixer) -> WebDashboardChart:
     )
 
 
-def _build_chart_row_values(chart: DashboardChartCreateRequest, now: datetime) -> dict:
+def _build_new_chart_row_values(chart: DashboardChartCreateRequest, now: datetime) -> dict:
+    values = _build_update_chart_row_values(chart, now)
+    return {
+        **values,
+        DashboardChart.metric: chart.metric,
+        DashboardChart.description: chart.description,
+        DashboardChart.created_at: now,
+    }
+
+
+def _build_update_chart_row_values(
+    chart: DashboardChartUpdateRequest | DashboardChartCreateRequest,
+    now: datetime,
+) -> dict:
     if chart.date_from is None or chart.date_to is None:
         time_from = time_to = None
     else:
         time_from, time_to = closed_dates_interval_to_datetimes(chart.date_from, chart.date_to)
-
     return {
-        DashboardChart.metric: chart.metric,
         DashboardChart.name: chart.name,
-        DashboardChart.description: chart.description,
         DashboardChart.time_to: time_to,
         DashboardChart.time_from: time_from,
         DashboardChart.time_interval: chart.time_interval,
-        DashboardChart.created_at: now,
         DashboardChart.updated_at: now,
     }
+
+
+async def _upsert_chart_group_by(
+    chart_id: int,
+    values: dict[InstrumentedAttribute, Any],
+    now: datetime,
+    sdb_conn: Connection,
+) -> None:
+    all_values = {
+        **values,
+        DashboardChartGroupBy.chart_id: chart_id,
+        DashboardChartGroupBy.created_at: now,
+        DashboardChartGroupBy.updated_at: now,
+    }
+    insert = await dialect_specific_insert(sdb_conn)
+    insert_stmt = insert(DashboardChartGroupBy)
+
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=DashboardChartGroupBy.__table__.primary_key.columns,
+        set_={
+            **{col.name: getattr(insert_stmt.excluded, col.name) for col in values},
+            DashboardChartGroupBy.updated_at: now,
+        },
+    ).values(all_values)
+    await sdb_conn.execute(upsert_stmt)
 
 
 async def _reassign_charts_positions(
@@ -350,13 +418,13 @@ class MultipleTeamDashboardsError(ResponseError):
 class DashboardChartNotFoundError(ResponseError):
     """A dashboard chart was not found."""
 
-    def __init__(self, chart_id: int):
+    def __init__(self, dashboard_id: int, chart_id: int):
         """Init the DashboardChartNotFoundError."""
         wrapped_error = GenericError(
             type="/errors/dashboards/DashboardChartNotFoundError",
             status=HTTPStatus.NOT_FOUND,
-            detail=f"Dashboard chart {chart_id} not found or access denied",
-            title=" Chart not found",
+            detail=f"Chart {chart_id} not found in dashboard {dashboard_id} or access denied",
+            title="Chart not found",
         )
         super().__init__(wrapped_error)
 
