@@ -1,10 +1,12 @@
 import asyncio
 from datetime import datetime, timedelta
+import logging
 from random import random
 from typing import Optional
 
 from sqlalchemy import select
 
+from athenian.api import metadata
 from athenian.api.db import Database, Row
 from athenian.api.models.persistentdata.models import VitallyAccount
 
@@ -13,6 +15,7 @@ class VitallyAccounts:
     """Maintain the fresh mapping from account ID to the details stored in Vitally."""
 
     VAR_NAME = "vitally_accounts"
+    log = logging.getLogger(f"{metadata.__package__}.vitally_accounts")
 
     def __init__(
         self,
@@ -60,8 +63,15 @@ class VitallyAccounts:
         rows = await self.rdb.fetch_all(select(VitallyAccount))
         acc_col = VitallyAccount.account_id.name
         self._accounts = {r[acc_col]: r for r in rows}
+        self.log.info("refreshed %d accounts", len(self._accounts))
 
     @staticmethod
-    def is_vip_account(row: Row) -> bool:
+    def is_vic_account(row: Row) -> bool:
         """Calculat evalue indicating whether we should pay special attention to an account."""
-        return row[VitallyAccount.health_score.name] < 6.5 or row[VitallyAccount.mrr.name] > 1000
+        # fmt: off
+        return (
+            (row[VitallyAccount.health_score.name] or 10) < 6.5
+            or
+            (row[VitallyAccount.mrr.name] or 0) > 1000
+        )
+        # fmt: on
