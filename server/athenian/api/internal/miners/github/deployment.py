@@ -2501,6 +2501,7 @@ async def _resolve_commit_relationship(
     commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values
     root_details_per_repo = defaultdict(dict)
     commit_relationship = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+    missing_commits = {}
     for env, env_commits_per_repo in commits_per_repo_per_env.items():
         for repo_name, (
             successful_commits,
@@ -2513,9 +2514,9 @@ async def _resolve_commit_relationship(
             all_commits = np.concatenate([successful_commits, unique_failed_commits])
             found_indexes = searchsorted_inrange(commit_ids_in_df, all_commits)
             missed_mask = commit_ids_in_df[found_indexes] != all_commits
-            assert (
-                not missed_mask.any()
-            ), f"some commits missed in {repo_name}: {np.unique(all_commits[missed_mask])}"
+            if missed_mask.any():
+                missing_commits[repo_name] = np.unique(all_commits[missed_mask]).tolist()
+                continue
             found_successful_indexes = found_indexes[: len(successful_commits)]
             found_failed_indexes = found_indexes[len(successful_commits) :][failed_remap]
             successful_shas = commit_shas_in_df[found_successful_indexes]
@@ -2543,6 +2544,9 @@ async def _resolve_commit_relationship(
                     all_shas[my_parents],
                     np.zeros(len(my_parents), dtype=bool),
                 )
+        assert (
+            not missing_commits
+        ), f"cannot analyze deployments to {env} with missing commit node IDs: {missing_commits}"
     del commits_per_repo_per_env
     missing_sha = b"0" * 40
     suspects = defaultdict(dict)

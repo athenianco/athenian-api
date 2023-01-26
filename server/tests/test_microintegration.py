@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from threading import Condition, Thread
+import time
 
 import pytest
 
@@ -37,6 +38,7 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, gunicor
     if persistentdata_db_path.exists():
         persistentdata_db_path.unlink()
     migrate("persistentdata", persistentdata_db, exec=False)
+    time.sleep(0.1)  # let PostgreSQL to digest everything, we had flaky runs without this
     unused_port = str(aiohttp_unused_port())
     env = os.environ.copy()
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
