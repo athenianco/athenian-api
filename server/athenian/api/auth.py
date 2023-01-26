@@ -20,10 +20,13 @@ from especifico.lifecycle import EspecificoRequest
 import especifico.security
 from especifico.utils import deep_get
 
+from athenian.api import metadata
+
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
     warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
     from jose import jwt
+
 from multidict import CIMultiDict
 import sentry_sdk
 from sqlalchemy import select
@@ -55,7 +58,7 @@ class Auth0:
     DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER")
     KEY = os.getenv("ATHENIAN_INVITATION_KEY")
     USERINFO_CACHE_TTL = 60  # seconds
-    log = logging.getLogger("auth")
+    log = logging.getLogger(f"{metadata.__package__}.auth0")
 
     def __init__(
         self,
@@ -782,8 +785,13 @@ class _RequestAccountValidation:
             except (AttributeError, KeyError):
                 pass
             else:
-                if VitallyAccounts.is_vip_account(cs_data) and scope.transaction is not None:
+                if (
+                    VitallyAccounts.is_vic_account(cs_data)
+                    and scope.transaction is not None
+                    and not scope.transaction.sampled
+                ):
                     # we won't see the stack samples though, it's too late
                     scope.transaction.sampled = True
                     scope.transaction.init_span_recorder(1000)  # Sentry's default value
+                    cls.log.info("account %d is a VIC, enabled Sentry tracing", account)
             scope.set_tag("account", account)
