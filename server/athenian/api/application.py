@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import bdb
+from collections import defaultdict
 from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
@@ -416,6 +417,8 @@ class AthenianApp(especifico.AioHttpApp):
 
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
+        self.app["db_elapsed"].set(defaultdict(float))
+        sleep_interval = 0.2
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
@@ -437,7 +440,13 @@ class AthenianApp(especifico.AioHttpApp):
                             attempts,
                             db_conn,
                         )
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(sleep_interval)
+                        exc = e
+                    except ConnectionError as e:
+                        self.log.warning(
+                            "%d/%d couldn't connect to %s: %s", i + 1, attempts, db_conn, e,
+                        )
+                        await asyncio.sleep(sleep_interval)
                         exc = e
                 else:
                     raise exc from None
@@ -446,15 +455,16 @@ class AthenianApp(especifico.AioHttpApp):
                 if shortcut == "pdb":
                     db.metrics = pdbctx
                     if with_pdb_schema_checks:
-                        self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
+                        self._pdb_schema_task_box = schedule_pdb_schema_check(db)
+                elif shortcut == "rdb":
+                    if self._vitally_accounts is not None:
+                        self._vitally_accounts.rdb = db
+                        await self._vitally_accounts.boot()
                 if db.url.dialect == "sqlite":
                     if shortcut == "mdb":
                         dereference_metadata_schemas()
                     elif shortcut == "rdb":
                         dereference_persistentdata_schemas()
-                        if self._vitally_accounts is not None:
-                            self._vitally_accounts.rdb = db
-                            await self._vitally_accounts.boot()
                     elif shortcut == "pdb":
                         dereference_precomputed_schemas()
             except asyncio.CancelledError:

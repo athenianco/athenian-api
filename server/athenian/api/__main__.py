@@ -220,7 +220,7 @@ def setup_context(log: logging.Logger) -> None:
     log.info("%s", argv)
     log.info("Version: %s", metadata.__version__)
     log.info("Local time: %s", now := datetime.now())
-    log.info("UTC time: %s", now.replace(tzinfo=timezone.utc))
+    log.info("UTC time: %s", now.astimezone(timezone.utc))
 
     app_env = _ApplicationEnvironment.discover(log)
 
