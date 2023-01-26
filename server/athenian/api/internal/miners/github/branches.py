@@ -471,12 +471,11 @@ class BranchMiner:
         )
         if not rows:
             return pd.DataFrame()
-        repo_node_to_name = prefixer.repo_node_to_name.__getitem__
+        repo_node_to_name = prefixer.repo_node_to_name.get
         branches = [
-            PrecomputedBranches(
-                r[1], repository_node_id=r[0], repository_full_name=repo_node_to_name(r[0]),
-            )
+            PrecomputedBranches(r[1], repository_node_id=r[0], repository_full_name=name)
             for r in rows
+            if (name := repo_node_to_name(r[0])) is not None
         ]
         columns = {}
         for col in PrecomputedBranches.dtype.names:
