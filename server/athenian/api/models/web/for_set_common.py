@@ -100,6 +100,27 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
 CommonPullRequestFilters = make_common_pull_request_filters("")
 
 
+class JIRAGroupsMixin:
+    """Model mixin adding `jiragroups` property.  Model must already have `jira` property."""
+
+    attribute_map = {"jiragroups": "jiragroups"}
+    attribute_types = {
+        "jiragroups": Optional[list[JIRAFilter]],
+    }
+
+    def select_jiragroup(self, index: int) -> "JIRAGroupsMixin":
+        """Change `jiras` to point at a single specified element in `jiragroups`."""
+        fs = self.copy()
+        if self.jiragroups is None and index == 0:
+            return fs
+        if self.jiragroups is None or index > len(self.jiragroups):
+            raise IndexError(f"jiragroup {index} doesn't exist")
+
+        fs.jira = fs.jiragroups[index]
+        fs.jiragroups = None
+        return fs
+
+
 class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
     """Support for splitting metrics by the number of changed lines."""
 

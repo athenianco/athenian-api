@@ -3,12 +3,12 @@ from typing import Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
-from athenian.api.models.web.for_set_common import CommonPullRequestFilters
+from athenian.api.models.web.for_set_common import CommonPullRequestFilters, JIRAGroupsMixin
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
 
-class _ReleaseMetricsRequest(Model, sealed=False):
+class _ReleaseMetricsRequest(JIRAGroupsMixin, Model, sealed=False):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
     for_: (list[Optional[list[str]]], "for")
