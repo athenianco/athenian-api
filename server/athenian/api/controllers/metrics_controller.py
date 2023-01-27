@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any, Collection, Iterator, Optional, Sequence
+from typing import Any, Collection, Iterable, Iterator, Optional, Sequence
 
 from aiohttp import web
 import numpy as np
@@ -54,13 +54,14 @@ from athenian.api.models.web import (
     ForSetDeployments,
     ForSetDevelopers,
     ForSetPullRequests,
+    JIRAFilter as WebJIRAFilter,
     PullRequestMetricID,
     ReleaseMetricsRequest,
     ReleaseWith,
 )
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
-from athenian.api.request import AthenianWebRequest
+from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 
@@ -73,7 +74,7 @@ class FilterPRs:
     repogroups: list[set[str]]
     participants: list[dict[PRParticipationKind, set[str]]]
     labels: LabelFilter
-    jira: JIRAFilter
+    jiragroups: list[JIRAFilter]
     for_set_index: int
     """Index of `for_set` inside its containing sequence."""
     for_set: ForSetPullRequests
@@ -133,12 +134,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     :param body: Desired metric definitions.
     :type body: dict | bytes
     """
-    try:
-        filt = PullRequestMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(PullRequestMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account, prefixer)
@@ -190,7 +186,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     )
 
     @sentry_span
-    async def calculate_for_set_metrics(filter_prs: FilterPRs):
+    async def calculate_for_set_metrics(filter_prs: FilterPRs) -> None:
         calculator = make_calculator(
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
         )
@@ -205,7 +201,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
             filter_prs.repogroups,
             filter_prs.participants,
             filter_prs.labels,
-            [filter_prs.jira],
+            filter_prs.jiragroups,
             filt.exclude_inactive,
             account_bots,
             release_settings,
@@ -217,14 +213,15 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         )
         mrange = range(len(met.metrics))
         for (
-            _,
+            jira_group_idx,
             lines_group_idx,
             repos_group_idx,
             with_group_idx,
             repos_group,
         ) in _flatten_pr_metric_values(metric_values):
             group_for_set = (
-                for_set.select_lines(lines_group_idx)
+                for_set.select_jiragroup(jira_group_idx)
+                .select_lines(lines_group_idx)
                 .select_repogroup(repos_group_idx)
                 .select_withgroup(with_group_idx)
             )
@@ -311,8 +308,12 @@ async def compile_filters_prs(
             group_type=set,
         )
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-        jira = await _compile_jira(for_set, account, request)
-        filters.append(FilterPRs(service, repogroups, withgroups, labels, jira, i, for_set))
+
+        if for_set.jiragroups:
+            jiragroups = await _compile_jira_filters(for_set.jiragroups, account, request)
+        else:
+            jiragroups = [await _compile_jira_filter(for_set.jira, account, request)]
+        filters.append(FilterPRs(service, repogroups, withgroups, labels, jiragroups, i, for_set))
     return filters, all_repos
 
 
@@ -379,7 +380,7 @@ async def _compile_filters_devs(
             for_set.developers, {}, prefix, False, prefixer, f".for[{i}].developers", unique=False,
         )
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-        jira = await _compile_jira(for_set, account, request)
+        jira = await _compile_jira_filter(for_set.jira, account, request)
         filters.append(FilterDevs(service, repogroups, devs, labels, jira, for_set))
     return filters, all_repos
 
@@ -444,7 +445,7 @@ async def compile_filters_checks(
             ):
                 commit_author_groups.append(sorted(ca_group))
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-        jira = await _compile_jira(for_set, account, request)
+        jira = await _compile_jira_filter(for_set.jira, account, request)
         filters.append(
             FilterChecks(service, repogroups, commit_author_groups, labels, jira, for_set),
         )
@@ -491,7 +492,7 @@ async def _compile_filters_deployments(
         pr_labels = LabelFilter.from_iterables(
             for_set.pr_labels_include, for_set.pr_labels_exclude,
         )
-        jira = await _compile_jira(for_set, account, request)
+        jira = await _compile_jira_filter(for_set.jira, account, request)
         if for_set.environments:
             envs = [[env] for env in for_set.environments]
         elif for_set.envgroups:
@@ -515,14 +516,36 @@ async def _compile_filters_deployments(
     return filters
 
 
-async def _compile_jira(for_set, account: int, request: AthenianWebRequest) -> JIRAFilter:
+async def _compile_jira_filter(
+    jira_filter: WebJIRAFilter | None,
+    account: int,
+    request: AthenianWebRequest,
+) -> JIRAFilter:
+    if jira_filter is None:
+        return JIRAFilter.empty()
     try:
-        return JIRAFilter.from_web(
-            for_set.jira,
-            await get_jira_installation(account, request.sdb, request.mdb, request.cache),
-        )
+        jira_config = await get_jira_installation(account, request.sdb, request.mdb, request.cache)
     except ResponseError:
         return JIRAFilter.empty()
+    return JIRAFilter.from_web(jira_filter, jira_config)
+
+
+async def _compile_jira_filters(
+    jira_filters: Iterable[WebJIRAFilter | None],
+    account: int,
+    request: AthenianWebRequest,
+) -> JIRAFilter:
+    try:
+        jira_config = await get_jira_installation(account, request.sdb, request.mdb, request.cache)
+    except ResponseError:
+        return [JIRAFilter.empty() for _ in jira_filters]
+
+    return [
+        JIRAFilter.empty()
+        if jira_filter is None
+        else JIRAFilter.from_web(jira_filter, jira_config)
+        for jira_filter in jira_filters
+    ]
 
 
 async def _extract_repos(
@@ -554,12 +577,7 @@ async def _extract_repos(
 @weight(1.5)
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
-    try:
-        filt = CodeFilter.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(CodeFilter, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     repos, _ = await resolve_repos_with_request(
@@ -599,12 +617,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 @weight(1.5)
 async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
-    try:
-        filt = DeveloperMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
-
+    filt = model_from_body(DeveloperMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account, prefixer)
@@ -740,11 +753,7 @@ async def _compile_filters_releases(
 @weight(4)
 async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
-    try:
-        filt = ReleaseMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(ReleaseMetricsRequest, body)
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos, prefixer, logical_settings, participants = await _compile_filters_releases(
         request, filt.for_, filt.with_, filt.account, meta_ids,
@@ -842,11 +851,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
 async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
     etc."""
-    try:
-        filt = CodeCheckMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(CodeCheckMetricsRequest, body)
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
@@ -947,11 +952,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
 @weight(2)
 async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on deployments submitted by `/events/deployments`."""
-    try:
-        filt = DeploymentMetricsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(DeploymentMetricsRequest, body)
     meta_ids, jira_ids = await gather(
         get_metadata_account_ids(filt.account, request.sdb, request.cache),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
