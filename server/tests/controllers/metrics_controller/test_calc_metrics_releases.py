@@ -1,14 +1,20 @@
+from functools import partial
 from typing import Any
 
 import pytest
 
+from athenian.api.db import Database
 from athenian.api.models.web import CalculatedReleaseMetric, ReleaseMetricID
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 class TestCalcMetricsReleases(Requester):
-    async def _request(self, *, assert_status=200, **kwargs) -> dict:
+    async def _request(self, *, assert_status=200, **kwargs) -> dict | list:
         response = await self.client.request(
             method="POST", path="/v1/metrics/releases", headers=self.headers, **kwargs,
         )
@@ -314,21 +320,69 @@ class TestCalcMetricsReleases(Requester):
         # all repositories is the same as ALL reposet repositories, metric values are the same
         assert calculated[1]["values"] == calculated[0]["values"]
 
-    # async def test_jiragroups(self) -> None:
-    #     body = self._body(
-    #         date_from="2018-01-01",
-    #         date_to="2020-03-01",
-    #         for_=[["{1}"]],
-    #         metrics=[ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_PRS],
-    #         jiragroups=[{"priorities": ["high"]}, {"priorities": ["low"]}, {}],
-    #     )
-    #     rbody = await self._request(json=body)
-    #     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
-    # assert len(models) == 1
-    # assert models[0].values[0].values == [8, 43]
-    # del body["jira"]
+    async def test_jiragroups(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2018-01-01",
+            date_to="2018-02-01",
+            for_=[["github.com/org/repo"]],
+            metrics=[
+                ReleaseMetricID.RELEASE_COUNT,
+                ReleaseMetricID.RELEASE_PRS,
+            ],
+            jiragroups=[
+                {"issue_types": ["bug"]},
+                {"issue_types": ["task"]},
+                {},
+            ],
+        )
 
-    # rbody = await self._request(json=body)
-    # models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
-    # assert len(models) == 1
-    # assert models[0].values[0].values == [22, 235]
+        mk_release = partial(
+            md_factory.ReleaseFactory,
+            repository_full_name="org/repo",
+            repository_node_id=99,
+            published_at=dt(2018, 1, 5),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org/repo")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            models = [
+                mk_release(sha="A" * 40, name="r0"),
+                mk_release(sha="B" * 40, name="r1"),
+                mk_release(sha="C" * 40, name="r2"),
+                mk_release(sha="D" * 40, name="r3"),
+                md_factory.NodeCommitFactory(node_id=101, repository_id=99, sha="A" * 40),
+                md_factory.NodeCommitFactory(node_id=102, repository_id=99, sha="B" * 40),
+                md_factory.NodeCommitFactory(node_id=103, repository_id=99, sha="C" * 40),
+                md_factory.NodeCommitFactory(node_id=104, repository_id=99, sha="D" * 40),
+                *pr_models(99, 1, 1, merge_commit_id=101),
+                *pr_models(99, 2, 2, merge_commit_id=102),
+                *pr_models(99, 3, 3, merge_commit_id=103),
+                *pr_models(99, 4, 4, merge_commit_id=104),
+                md_factory.JIRAProjectFactory(id="1", key="DD"),
+                md_factory.JIRAIssueTypeFactory(id="t", name="task"),
+                md_factory.JIRAIssueTypeFactory(id="b", name="bug"),
+                md_factory.JIRAIssueFactory(id="20", project_id="1", type_id="t", type="task"),
+                md_factory.JIRAIssueFactory(id="30", project_id="1", type_id="b", type="bug"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="30"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=3, jira_id="20"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            rbody = await self._request(json=body)
+            assert len(rbody) == 3
+
+            res_all = next(r for r in rbody if not r.get("jira"))
+            assert res_all["values"][0]["values"] == [4, 4]
+            res_bug = next(r for r in rbody if r.get("jira") == {"issue_types": ["bug"]})
+            assert res_bug["values"][0]["values"] == [1, 1]
+            res_task = next(r for r in rbody if r.get("jira") == {"issue_types": ["task"]})
+            assert res_task["values"][0]["values"] == [2, 2]
+
+            body.pop("jiragroups")
+            rbody = await self._request(json=body)
+            assert len(rbody) == 1
+            assert rbody[0]["values"][0]["values"] == [4, 4]
