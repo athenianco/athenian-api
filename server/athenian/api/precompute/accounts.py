@@ -202,7 +202,14 @@ async def precompute_reposet(
     time_from: datetime,
 ) -> DataHealthMetrics:
     """
-    Execute precomputations for a single reposet.
+    Precompute a single reposet.
+
+    - sync teams
+    - map jira people
+    - releases
+    - prs
+    - deployments
+    - record related health metrics
 
     There's at most one reposet per account, so a single Sentry scope is created per account.
     """
@@ -216,9 +223,7 @@ async def precompute_reposet(
         context.cache,
         context.slack,
     )
-    health_metrics = (
-        DataHealthMetrics.empty() if not args.skip_health_metrics else DataHealthMetrics.skip()
-    )
+    health_metrics = DataHealthMetrics.empty()
     try:
         prefixer, bots, user_rows, account_name = await gather(
             Prefixer.load(meta_ids, mdb, cache),
