@@ -633,9 +633,9 @@ async def test_map_releases_to_prs_early_merges(
     assert isinstance(dag, dict)
     dag = dag["src-d/go-git"][1]
     assert len(dag) == 3
-    assert len(dag[0]) == 1012
+    assert len(dag[0]) == 3308
     assert dag[0].dtype == np.dtype("S40")
-    assert len(dag[1]) == 1013
+    assert len(dag[1]) == len(dag[0]) + 1
     assert dag[1].dtype == np.uint32
     assert len(dag[2]) == dag[1][-1]
     assert dag[2].dtype == np.uint32
@@ -685,7 +685,7 @@ async def test_map_releases_to_prs_smoke(
         )
         await wait_deferred()
         assert len(prs) == 7
-        assert len(dag["src-d/go-git"][1][0]) == 1508
+        assert len(dag["src-d/go-git"][1][0]) == 3308
         assert (
             prs[PullRequest.merged_at.name]
             < pd.Timestamp("2019-07-31 00:00:00", tzinfo=timezone.utc)

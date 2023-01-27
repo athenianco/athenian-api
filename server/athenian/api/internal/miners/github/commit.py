@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, outerjoin, select, union_all
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -45,6 +46,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import (
     Branch,
     NodeCommit,
+    NodeCommitParent,
     NodePullRequestCommit,
     PushCommit,
     Release,
@@ -395,6 +397,7 @@ async def fetch_repository_commits(
     cache: Optional[aiomcache.Client],
     metrics: Optional[CommitDAGMetrics] = None,
     refetcher: Optional[Refetcher] = None,
+    disable_full_mode: bool = False,
 ) -> dict[str, tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
@@ -409,6 +412,8 @@ async def fetch_repository_commits(
     :param prune: Remove any commits that are not accessible from `branches`.
     :param metrics: Mutable error statistics, will be written on new fetches.
     :param refetcher: Metadata self-healer to request DAG repairs.
+    :param disable_full_mode: Disable the optimization of fetching whole DAGs when there are \
+                              too many heads or empty existing hashes.
     :return: Map from repository names to their DAG consistency indicators and bodies.
     """
     if branches.empty:
@@ -468,6 +473,7 @@ async def fetch_repository_commits(
                     alloc=alloc,
                     metrics=metrics,
                     refetcher=refetcher,
+                    disable_full_mode=disable_full_mode,
                 ),
             )
         else:
@@ -648,8 +654,10 @@ async def _fetch_commit_history_dag(
     alloc=None,
     metrics: Optional[CommitDAGMetrics] = None,
     refetcher: Optional[Refetcher] = None,
+    disable_full_mode: bool = False,
 ) -> tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
     # these are some approximately sensible defaults, found by experiment
+    fetch_batch_size = 20
     max_stop_heads = 25
     max_inner_partitions = 25
     log = logging.getLogger(f"{metadata.__package__}._fetch_commit_history_dag")
@@ -659,46 +667,65 @@ async def _fetch_commit_history_dag(
     _, unique_indexes = np.unique(head_hashes, return_index=True)
     head_hashes = head_hashes[unique_indexes]
     head_ids = head_ids[unique_indexes]
-    # find max `max_stop_heads` top-level most recent commit hashes
-    stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
-    if alloc is None:
-        alloc = make_mi_heap_allocator_capsule()
-    if len(stop_heads) > 0:
-        if len(stop_heads) > max_stop_heads:
-            min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
-            rows = await mdb.fetch_all(
-                select(NodeCommit.oid)
-                .where(
-                    NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.oid.in_(stop_heads),
-                    NodeCommit.committed_date > min_commit_time,
-                )
-                .order_by(desc(NodeCommit.committed_date))
-                .limit(max_stop_heads),
+    if full_fetch := (
+        (len(head_hashes) > 20 * fetch_batch_size or len(hashes) == 0) and not disable_full_mode
+    ):
+        # alternative approach without traversals - just fetch everything we see in that repo
+        all_commit_ids = (
+            await read_sql_query(
+                select(PushCommit.node_id).where(
+                    PushCommit.acc_id.in_(meta_ids), PushCommit.repository_full_name == repo,
+                ),
+                mdb,
+                [PushCommit.node_id],
             )
-            stop_heads = np.fromiter((r[0] for r in rows), dtype="S40", count=len(rows))
-        first_parents = extract_first_parents(hashes, vertexes, edges, stop_heads, max_depth=1000)
-        # We can still branch from an arbitrary point. Choose `max_partitions` graph partitions.
-        if len(first_parents) >= max_inner_partitions:
-            step = len(first_parents) // max_inner_partitions
-            partition_seeds = first_parents[: max_inner_partitions * step : step]
-        else:
-            partition_seeds = first_parents
-        partition_seeds = np.concatenate([stop_heads, partition_seeds])
-        assert partition_seeds.dtype.char == "S"
-        # the expansion factor is ~6x, so 2 * 25 -> 300
-        with sentry_sdk.start_span(
-            op="partition_dag", description="%d %d" % (len(hashes), len(partition_seeds)),
-        ):
-            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds, alloc)
+        )[PushCommit.node_id.name].values
     else:
-        stop_hashes = []
-    batch_size = 20
+        # find max `max_stop_heads` top-level most recent commit hashes
+        stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
+        if alloc is None:
+            alloc = make_mi_heap_allocator_capsule()
+        if len(stop_heads) > 0:
+            if len(stop_heads) > max_stop_heads:
+                min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
+                rows = await mdb.fetch_all(
+                    select(NodeCommit.oid)
+                    .where(
+                        NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.oid.in_(stop_heads),
+                        NodeCommit.committed_date > min_commit_time,
+                    )
+                    .order_by(desc(NodeCommit.committed_date))
+                    .limit(max_stop_heads),
+                )
+                stop_heads = np.fromiter((r[0] for r in rows), dtype="S40", count=len(rows))
+            first_parents = extract_first_parents(
+                hashes, vertexes, edges, stop_heads, max_depth=1000,
+            )
+            # We can still branch from an arbitrary point. Choose `max_partitions` graph partitions
+            if len(first_parents) >= max_inner_partitions:
+                step = len(first_parents) // max_inner_partitions
+                partition_seeds = first_parents[: max_inner_partitions * step : step]
+            else:
+                partition_seeds = first_parents
+            partition_seeds = np.concatenate([stop_heads, partition_seeds])
+            assert partition_seeds.dtype.char == "S"
+            # the expansion factor is ~6x, so 2 * 25 -> 300
+            with sentry_sdk.start_span(
+                op="partition_dag", description="%d %d" % (len(hashes), len(partition_seeds)),
+            ):
+                stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds, alloc)
+        else:
+            stop_hashes = []
+    batch_size = len(head_hashes) if full_fetch else fetch_batch_size
     must_refetch = []
     while len(head_hashes) > 0:
-        new_edges = await _fetch_commit_history_edges(
-            head_ids[:batch_size], stop_hashes, meta_ids, mdb,
-        )
+        if full_fetch:
+            new_edges = await _fetch_all_edges(all_commit_ids, meta_ids, mdb)
+        else:
+            new_edges = await _fetch_commit_history_edges(
+                head_ids[:batch_size], stop_hashes, meta_ids, mdb,
+            )
         bads, bad_seeds, bad_hashes = verify_edges_integrity(new_edges, alloc)
         if bads:
             log.warning(
@@ -761,7 +788,7 @@ async def _fetch_commit_history_dag(
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges, alloc)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
-        if len(head_hashes) > 0 and len(hashes) > 0:
+        if len(head_hashes) > 0 and len(hashes) > 0 and not full_fetch:
             collateral = np.flatnonzero(
                 hashes[searchsorted_inrange(hashes, head_hashes)] == head_hashes,
             )
@@ -780,6 +807,49 @@ async def _fetch_commit_history_dag(
         )[NodeCommit.node_id.name].values
         await refetcher.submit_commits(refetch_nodes, True)
     return consistent, repo, hashes, vertexes, edges
+
+
+async def _fetch_all_edges(
+    all_commit_ids: np.ndarray,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> list[tuple]:
+    parent = aliased(NodeCommit, name="cp")
+    child = aliased(NodeCommit, name="cc")
+    rows = await mdb.fetch_all(
+        select(parent.oid.label("parent"), child.oid.label("child"), NodeCommitParent.index)
+        .select_from(
+            outerjoin(
+                outerjoin(
+                    NodeCommitParent,
+                    parent,
+                    and_(
+                        NodeCommitParent.acc_id == parent.acc_id,
+                        NodeCommitParent.parent_id == parent.node_id,
+                    ),
+                ),
+                child,
+                and_(
+                    NodeCommitParent.acc_id == child.acc_id,
+                    NodeCommitParent.child_id == child.node_id,
+                ),
+            ),
+        )
+        .where(
+            NodeCommitParent.acc_id.in_(meta_ids),
+            NodeCommitParent.parent_id.in_any_values(all_commit_ids),
+        )
+        .with_statement_hint(
+            f"Rows({NodeCommitParent.__tablename__} *VALUES* #{len(all_commit_ids)})",
+        )
+        .with_statement_hint(
+            f"Rows({NodeCommitParent.__tablename__} *VALUES* pc cc #{len(all_commit_ids)})",
+        )
+        .with_statement_hint(f"Leading({NodeCommitParent.__tablename__} *VALUES*)"),
+    )
+    if mdb.url.dialect == "sqlite":
+        rows = [tuple(r) for r in rows]
+    return rows
 
 
 async def _fetch_commit_history_edges(

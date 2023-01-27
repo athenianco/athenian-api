@@ -226,13 +226,19 @@ def test_find_orphans():
         ("1" * 40, "2" * 40, 0),
         ("2" * 40, "4" * 40, 0),
     ]
-    assert find_orphans(edges, hashes) == {"4" * 40: [1]}
+    orphans = find_orphans(edges, hashes)
+    assert "4" * 40 in orphans
+    orphans["4" * 40].sort()
+    assert orphans == {"4" * 40: [0, 1]}
     edges = [
         ("1" * 40, "2" * 40, 0),
         ("2" * 40, "4" * 40, 0),
         ("2" * 40, "4" * 40, 0),
     ]
-    assert find_orphans(edges, hashes) == {"4" * 40: [0, 1, 2]}
+    orphans = find_orphans(edges, hashes)
+    assert "4" * 40 in orphans
+    orphans["4" * 40].sort()
+    assert orphans == {"4" * 40: [0, 1, 2]}
 
 
 async def test__fetch_commit_history_dag_inconsistent(mdb_rw, dag):

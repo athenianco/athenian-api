@@ -5,6 +5,7 @@ from itertools import chain
 import pickle
 from typing import Any, Dict
 
+import numpy as np
 from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
@@ -1950,10 +1951,12 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer, meta_i
     pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
     dag = await fetch_dag(meta_ids, mdb, branches[Branch.commit_id.name].tolist())
     assert not (set(dag["src-d/go-git"][1][0]) - set(pdb_dag.hashes))
-    for i in range(3):
-        assert_array_equal(
-            xdags["src-d/go-git"][1][i], pdb_dag[["hashes", "vertexes", "edges"][i]],
-        )
+    assert np.in1d(xdags["src-d/go-git"][1][0], pdb_dag["hashes"]).all()
+    vertexes = np.searchsorted(pdb_dag["hashes"], xdags["src-d/go-git"][1][0])
+    assert_array_equal(
+        np.diff(xdags["src-d/go-git"][1][1]),
+        pdb_dag["vertexes"][vertexes + 1] - pdb_dag["vertexes"][vertexes],
+    )
 
 
 @with_defer

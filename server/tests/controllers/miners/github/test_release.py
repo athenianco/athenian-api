@@ -902,8 +902,9 @@ def heads_df2():
 
 
 @pytest.mark.parametrize("prune", [False, True])
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
-async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
+async def test__fetch_repository_commits_smoke(mdb, pdb, prune, disable_full_mode, heads_df2):
     dags = await fetch_repository_commits(
         {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
@@ -914,6 +915,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
         mdb,
         pdb,
         None,
+        disable_full_mode=disable_full_mode,
     )
     assert isinstance(dags, dict)
     assert len(dags) == 1
@@ -935,7 +937,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
     for k, v in ground_truth.items():
         vertex = np.where(hashes == k.encode())[0][0]
         assert hashes[edges[vertexes[vertex] : vertexes[vertex + 1]]].astype("U40").tolist() == v
-    assert len(hashes) == 9
+    assert len(hashes) == 9 if disable_full_mode else 3308
     await wait_deferred()
     dags2 = await fetch_repository_commits(
         dags,
@@ -967,8 +969,15 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
 
 
 @pytest.mark.parametrize("prune", [False, True])
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
-async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_df1):
+async def test__fetch_repository_commits_initial_commit(
+    mdb,
+    pdb,
+    prune,
+    disable_full_mode,
+    heads_df1,
+):
     dags = await fetch_repository_commits(
         {"src-d/go-git": (True, _empty_dag())},
         heads_df1,
@@ -979,12 +988,18 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_d
         mdb,
         pdb,
         None,
+        disable_full_mode=disable_full_mode,
     )
     consistent, (hashes, vertexes, edges) = dags["src-d/go-git"]
     assert consistent != prune
-    assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
-    assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
-    assert (edges == np.array([], dtype=np.uint32)).all()
+    if disable_full_mode:
+        assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
+        assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
+        assert (edges == np.array([], dtype=np.uint32)).all()
+    else:
+        assert b"5d7303c49ac984a9fec60523f2d5297682e16646" in hashes
+        i = hashes.tolist().index(b"5d7303c49ac984a9fec60523f2d5297682e16646")
+        assert vertexes[i] == vertexes[i + 1]
 
 
 @pytest.mark.parametrize("prune", [False, True])
@@ -1087,7 +1102,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
             return defaultdict(int)
 
     fake_pdb.metrics = {"hits": FakeMetrics(), "misses": FakeMetrics()}
-    with pytest.raises(AssertionError):
+    with pytest.raises(AttributeError):
         await fetch_repository_commits(
             {"src-d/go-git": (True, _empty_dag())},
             heads_df2,
@@ -1101,8 +1116,9 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
         )
 
 
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
-async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
+async def test__fetch_repository_commits_many(mdb, pdb, disable_full_mode, heads_df2):
     dags = await fetch_repository_commits(
         {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
@@ -1113,8 +1129,9 @@ async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
         mdb,
         pdb,
         None,
+        disable_full_mode=disable_full_mode,
     )
-    assert len(dags["src-d/go-git"][1][0]) == 9
+    assert len(dags["src-d/go-git"][1][0]) == 9 if disable_full_mode else 3308
 
 
 @with_defer
