@@ -226,6 +226,7 @@ def measure_db_overhead_and_retry(
                             asyncpg.PostgresConnectionError,
                             asyncpg.OperatorInterventionError,
                             asyncpg.InsufficientResourcesError,
+                            asyncpg.InterfaceError,  # pgbouncer transaction body fails
                             sqlite3.OperationalError,
                             asyncio.TimeoutError,
                         ) as e:

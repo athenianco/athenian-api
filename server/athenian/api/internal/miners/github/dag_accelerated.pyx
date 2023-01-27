@@ -669,10 +669,9 @@ def find_orphans(
         sha_t *attach_data
         Py_ssize_t attach_length = len(attach_to)
         PyObject *record
-        PyObject *obj
         optional[mi_vector[RawEdge]] leaves
         optional[mi_vector[RawEdge]] boilerplate
-        RawEdge edge
+        RawEdge edge, root_edge
         RawEdge *leaves_data
         RawEdge *reversed_data
         optional[mi_vector[mi_unordered_set[int]]] rejected
@@ -698,7 +697,7 @@ def find_orphans(
                 record = PyList_GET_ITEM(<PyObject *>edges, i)
                 parent_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
                 child_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
-                if strncmp(child_oid, "0" * 40, 40):
+                if strncmp(child_oid, b"0" * 40, 40):
                     dereference(parents).emplace(parent_oid, 40)
                     dereference(leaves).emplace_back(i, child_oid)
                     dereference(dereference(reversed_edges).try_emplace(
@@ -711,7 +710,7 @@ def find_orphans(
                 record = PyList_GET_ITEM(<PyObject *> edges, i)
                 parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
                 child_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
-                if strncmp(child_oid, "0" * 40, 40):
+                if strncmp(child_oid, b"0" * 40, 40):
                     dereference(parents).emplace(parent_oid, 40)
                     dereference(leaves).emplace_back(i, child_oid)
                     dereference(dereference(reversed_edges).try_emplace(
@@ -731,21 +730,24 @@ def find_orphans(
                     dereference(<sha_t *>leaves_data[i].second),
                     _compare_shas,
                 ):
-                    dereference(boilerplate).emplace_back(leaves_data[i])
-                    leaves_data[size] = leaves_data[i]
+                    root_edge = leaves_data[i]
+                    # we must set index to -1 to be not exist the cycle after the first iteration
+                    dereference(boilerplate).emplace_back(-1, root_edge.second)
+                    leaves_data[size] = root_edge
                     size += 1
                     dereference(rejected).emplace_back(dereference(alloc))
                     while not dereference(boilerplate).empty():
                         edge = dereference(boilerplate).back()
-                        dereference(rejected).back().emplace(edge.first)
                         dereference(boilerplate).pop_back()
+                        if edge.first >= 0 and not dereference(rejected).back().emplace(edge.first).second:
+                            continue
                         reversed_parents = dereference(reversed_edges).find(string_view(edge.second, 40))
                         if reversed_parents != dereference(reversed_edges).end():
                             reversed_data = dereference(reversed_parents).second.data()
                             for j in range(dereference(reversed_parents).second.size()):
-                                edge = reversed_data[j]
-                                if dereference(rejected).back().find(edge.first) == dereference(rejected).back().end():
-                                    dereference(boilerplate).emplace_back(edge)
+                                dereference(boilerplate).emplace_back(reversed_data[j])
+                    # in case hash -> 0000000000000000000000000000000000000000
+                    dereference(rejected).back().emplace(root_edge.first)
 
     result = {
         PyUnicode_FromStringAndSize(leaves_data[i].second, 40):

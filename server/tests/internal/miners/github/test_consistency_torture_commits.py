@@ -33,16 +33,18 @@ from athenian.api.models import check_collation
 from athenian.api.models.metadata.github import (
     AccountMixin,
     GitHubSchemaMixin,
+    IDMixin,
     IDMixinNode,
     ParentChildMixin,
     PushCommit,
+    RepositoryMixin,
 )
 from tests.conftest import connect_to_db
 
 Base = declarative_base()
 
 
-class NodeCommit(
+class _NodeCommit(
     Base,
     GitHubSchemaMixin,
     IDMixinNode,
@@ -57,7 +59,11 @@ class NodeCommit(
     )
 
 
-class NodeCommitParent(
+class _PushCommit(Base, GitHubSchemaMixin, IDMixin, RepositoryMixin):
+    __tablename__ = "api_push_commits"
+
+
+class _NodeCommitParent(
     Base,
     GitHubSchemaMixin,
     ParentChildMixin,
@@ -83,8 +89,10 @@ def insert_table(file_name, model, date_columns, engine, preprocess):
 
 
 def _fill_fetched_at_from_committed_date(df):
-    nulls = df[NodeCommit.fetched_at.name].isnull().values
-    df[NodeCommit.fetched_at.name].values[nulls] = df[NodeCommit.committed_date.name].values[nulls]
+    nulls = df[_NodeCommit.fetched_at.name].isnull().values
+    df[_NodeCommit.fetched_at.name].values[nulls] = df[_NodeCommit.committed_date.name].values[
+        nulls
+    ]
     return df
 
 
@@ -103,13 +111,20 @@ def mdb_torture_file(worker_id) -> Path:
         Base.metadata.create_all(engine)
         insert_table(
             "consistency_torture_commits.csv.xz",
-            NodeCommit,
+            _NodeCommit,
             ["committed_date", "fetched_at"],
             engine,
             _fill_fetched_at_from_committed_date,
         )
         insert_table(
-            "consistency_torture_edges.csv.xz", NodeCommitParent, ["fetched_at"], engine, None,
+            "consistency_torture_edges.csv.xz", _NodeCommitParent, ["fetched_at"], engine, None,
+        )
+        engine.execute(
+            """
+            INSERT INTO "github.api_push_commits"
+            (acc_id, node_id, repository_node_id, repository_full_name)
+            SELECT acc_id, graph_id, repository_id, 'org/repo' FROM "github.node_commit";
+            """,
         )
         check_collation(conn_str)
 
@@ -135,7 +150,7 @@ async def mdb_torture(mdb_torture_file, metadata_db, event_loop, request, worker
     async def truncate(preserve_node_commit=()):
         if getattr(request, "param", None) is None:
             return
-        models = (NodeCommit, NodeCommitParent)
+        models = (_NodeCommit, _NodeCommitParent)
         log = logging.getLogger("mdb_torture")
         counts = await gather(
             *(db.fetch_val(select(count()).select_from(model)) for model in models),
@@ -147,8 +162,8 @@ async def mdb_torture(mdb_torture_file, metadata_db, event_loop, request, worker
                     delete(model).where(
                         model.fetched_at > request.param,
                         *(
-                            (NodeCommit.oid.notin_(preserve_node_commit),)
-                            if preserve_node_commit and model is NodeCommit
+                            (_NodeCommit.oid.notin_(preserve_node_commit),)
+                            if preserve_node_commit and model is _NodeCommit
                             else ()
                         ),
                     ),
@@ -174,19 +189,20 @@ async def _test_consistency_torture(
     result_len,
     includes,
     excludes,
+    disable_full_mode,
     preserve_node_commit=(),
 ):
     mdb_torture, truncate = mdb_torture
-    rows = await mdb_torture.fetch_all(select(NodeCommit).where(NodeCommit.oid.in_(heads)))
+    rows = await mdb_torture.fetch_all(select(_NodeCommit).where(_NodeCommit.oid.in_(heads)))
     assert len(rows) == len(heads)
     log = logging.getLogger("_test_consistency_torture")
     for row in rows:
         log.info(
             "resolved %s %s %s @ %s",
-            row[NodeCommit.graph_id.name],
-            row[NodeCommit.oid.name],
-            row[NodeCommit.committed_date.name],
-            row[NodeCommit.fetched_at.name],
+            row[_NodeCommit.graph_id.name],
+            row[_NodeCommit.oid.name],
+            row[_NodeCommit.committed_date.name],
+            row[_NodeCommit.fetched_at.name],
         )
     await truncate(preserve_node_commit=preserve_node_commit)
     dags = await fetch_repository_commits(
@@ -194,11 +210,11 @@ async def _test_consistency_torture(
         pd.DataFrame(
             {
                 PushCommit.sha.name: np.array(
-                    [row[NodeCommit.oid.name] for row in rows], dtype="S40",
+                    [row[_NodeCommit.oid.name] for row in rows], dtype="S40",
                 ),
-                PushCommit.node_id.name: [row[NodeCommit.graph_id.name] for row in rows],
+                PushCommit.node_id.name: [row[_NodeCommit.graph_id.name] for row in rows],
                 PushCommit.committed_date.name: [
-                    row[NodeCommit.committed_date.name] for row in rows
+                    row[_NodeCommit.committed_date.name] for row in rows
                 ],
                 PushCommit.repository_full_name.name: ["org/repo"] * len(rows),
             },
@@ -210,6 +226,7 @@ async def _test_consistency_torture(
         mdb_torture,
         pdb,
         None,
+        disable_full_mode=disable_full_mode,
     )
     consistent, dag = dags["org/repo"]
     assert consistent == result_consistent
@@ -220,16 +237,18 @@ async def _test_consistency_torture(
     assert len(dag[0]) == result_len
 
 
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
-async def test_consistency_torture_base(mdb_torture, pdb):
+async def test_consistency_torture_base(mdb_torture, disable_full_mode, pdb):
     await _test_consistency_torture(
         mdb_torture,
         pdb,
         ["717d445f45263d29429c0a76f2e9336c46cb229b"],
         True,
-        162992,
+        162992 if disable_full_mode else 253594,
         ["717d445f45263d29429c0a76f2e9336c46cb229b"],
         [],
+        disable_full_mode,
     )
 
 
@@ -238,16 +257,18 @@ async def test_consistency_torture_base(mdb_torture, pdb):
     [pd.Timestamp("2022-10-07 16:16:00+00")],
     indirect=["mdb_torture"],
 )
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
-async def test_consistency_torture_pure(mdb_torture, pdb):
+async def test_consistency_torture_pure(mdb_torture, disable_full_mode, pdb):
     await _test_consistency_torture(
         mdb_torture,
         pdb,
         ["8fe7ea710314c0d850e09875a1c77e9fe6d2ecc4"],
         False,
-        0,
+        0 if disable_full_mode else 252485,
         [],
         [],
+        disable_full_mode,
     )
 
 
@@ -256,9 +277,10 @@ async def test_consistency_torture_pure(mdb_torture, pdb):
     [pd.Timestamp("2022-10-07 16:16:00+00")],
     indirect=["mdb_torture"],
 )
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
 @freeze_time("2022-10-07 16:16:00+00")
-async def test_consistency_torture_oct7(mdb_torture, pdb):
+async def test_consistency_torture_oct7(mdb_torture, disable_full_mode, pdb):
     # 96815f9c8ba3cd92a9620fcb11035ee896563a39 is the main branch
     # 96815f9c8ba3cd92a9620fcb11035ee896563a39 -> ... -> ec38c1f54bbe008fb60a4e19f42199a520eec73e
     # ec38c1f54bbe008fb60a4e19f42199a520eec73e -> f1576430c35492d824255a4d2b1892517429232c
@@ -273,7 +295,7 @@ async def test_consistency_torture_oct7(mdb_torture, pdb):
         pdb,
         ["8fe7ea710314c0d850e09875a1c77e9fe6d2ecc4", "96815f9c8ba3cd92a9620fcb11035ee896563a39"],
         False,
-        162555,
+        162555 if disable_full_mode else 252485,
         [],
         [
             "96815f9c8ba3cd92a9620fcb11035ee896563a39",
@@ -281,6 +303,7 @@ async def test_consistency_torture_oct7(mdb_torture, pdb):
             "8fe7ea710314c0d850e09875a1c77e9fe6d2ecc4",
             "0672cf47016ff70929632f25c8fb864919af4a75",
         ],
+        disable_full_mode,
     )
 
 
@@ -289,16 +312,17 @@ async def test_consistency_torture_oct7(mdb_torture, pdb):
     [pd.Timestamp("2022-10-07 16:16:00+00")],
     indirect=["mdb_torture"],
 )
+@pytest.mark.parametrize("disable_full_mode", [False, True])
 @with_defer
 @freeze_time("2022-10-07 16:16:00+00")
-async def test_consistency_torture_second_line_of_defense(mdb_torture, pdb):
+async def test_consistency_torture_second_line_of_defense(mdb_torture, pdb, disable_full_mode):
     # what happens if we fetched 0672cf47016ff70929632f25c8fb864919af4a75
     await _test_consistency_torture(
         mdb_torture,
         pdb,
         ["45b176dd4689c791126bbfb2f9b3a140d79f0b4a", "96815f9c8ba3cd92a9620fcb11035ee896563a39"],
         False,
-        162555,
+        162555 if disable_full_mode else 252485,
         [],
         [
             "96815f9c8ba3cd92a9620fcb11035ee896563a39",
@@ -306,5 +330,6 @@ async def test_consistency_torture_second_line_of_defense(mdb_torture, pdb):
             "45b176dd4689c791126bbfb2f9b3a140d79f0b4a",
             "0672cf47016ff70929632f25c8fb864919af4a75",
         ],
+        disable_full_mode,
         preserve_node_commit=["0672cf47016ff70929632f25c8fb864919af4a75"],
     )
