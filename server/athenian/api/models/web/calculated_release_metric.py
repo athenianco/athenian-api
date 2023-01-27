@@ -3,6 +3,7 @@ from typing import Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.granularity import GranularityMixin
+from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
@@ -16,6 +17,7 @@ class CalculatedReleaseMetric(Model, GranularityMixin):
     metrics: list[str]
     granularity: str
     values: list[CalculatedLinearMetricValues]
+    jira: Optional[JIRAFilter]
 
     def validate_metrics(self, metrics: list[str]) -> list[str]:
         """Sets the metrics of this CalculatedReleaseMetric.
