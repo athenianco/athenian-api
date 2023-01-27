@@ -11,7 +11,7 @@ cimport cython
 from cpython cimport Py_INCREF, PyObject
 from cython.operator cimport dereference, postincrement
 from libc.stdint cimport int8_t, int32_t, int64_t, uint32_t, uint64_t
-from libc.string cimport memcpy, memset, strlen, strncmp
+from libc.string cimport memcpy, memset, strncmp
 from libcpp cimport bool
 from libcpp.algorithm cimport binary_search
 from libcpp.utility cimport pair
@@ -35,6 +35,7 @@ from athenian.api.native.cpython cimport (
     PyTuple_GET_ITEM,
     PyUnicode_DATA,
     PyUnicode_FromStringAndSize,
+    PyUnicode_GET_LENGTH,
     PyUnicode_New,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
@@ -517,10 +518,10 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                 if obj == Py_None:
                     dereference(bads)[i] = 1
                     continue
-                oid = <const char *> PyUnicode_DATA(obj)
-                if strlen(oid) != 40:
+                if PyUnicode_GET_LENGTH(obj) != 40:
                     dereference(bads)[i] = 1
                     continue
+                oid = <const char *> PyUnicode_DATA(obj)
                 dereference(edge_parent_map)[string_view(oid, 40)] = i
                 dereference(edge_parents)[i] = oid
                 parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
@@ -530,10 +531,10 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                 if obj == Py_None:
                     dereference(bads)[i] = 1
                     continue
-                oid = <const char *> PyUnicode_DATA(obj)
-                if strlen(oid) != 40:
+                if PyUnicode_GET_LENGTH(obj) != 40:
                     dereference(bads)[i] = 1
                     continue
+                oid = <const char *> PyUnicode_DATA(obj)
 
                 exists = False
                 for j in range(<int>children_range.size()):
@@ -552,10 +553,10 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                 if obj == Py_None:
                     dereference(bads)[i] = 1
                     continue
-                oid = <const char *> PyUnicode_DATA(obj)
-                if strlen(oid) != 40:
+                if PyUnicode_GET_LENGTH(obj) != 40:
                     dereference(bads)[i] = 1
                     continue
+                oid = <const char *> PyUnicode_DATA(obj)
                 dereference(edge_parent_map)[string_view(oid, 40)] = i
                 dereference(edge_parents)[i] = oid
                 parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
@@ -565,10 +566,10 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                 if obj == Py_None:
                     dereference(bads)[i] = 1
                     continue
-                oid = <const char *> PyUnicode_DATA(obj)
-                if strlen(oid) != 40:
+                if PyUnicode_GET_LENGTH(obj) != 40:
                     dereference(bads)[i] = 1
                     continue
+                oid = <const char *> PyUnicode_DATA(obj)
 
                 exists = False
                 for j in range(<int>children_range.size()):
