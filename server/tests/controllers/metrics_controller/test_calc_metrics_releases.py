@@ -293,3 +293,22 @@ class TestCalcMetricsReleases(Requester):
         assert calculated[1]["for"] == ["{1}"]
         # all repositories is the same as ALL reposet repositories, metric values are the same
         assert calculated[1]["values"] == calculated[0]["values"]
+
+    # async def test_jiragroups(self) -> None:
+    #     body = self._body(
+    #         date_from="2018-01-01",
+    #         date_to="2020-03-01",
+    #         for_=[["{1}"]],
+    #         metrics=[ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_PRS],
+    #         jiragroups=[{"priorities": ["high"]}, {"priorities": ["low"]}, {}],
+    #     )
+    #     rbody = await self._request(json=body)
+    #     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    # assert len(models) == 1
+    # assert models[0].values[0].values == [8, 43]
+    # del body["jira"]
+
+    # rbody = await self._request(json=body)
+    # models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    # assert len(models) == 1
+    # assert models[0].values[0].values == [22, 235]

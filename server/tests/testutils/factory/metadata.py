@@ -7,12 +7,14 @@ from athenian.api.models.metadata.github import (
     AccountRepository,
     Bot,
     FetchProgress,
+    NodeCommit,
     NodePullRequest,
     NodePullRequestJiraIssues,
     PullRequest,
     PullRequestCommit,
     PullRequestReview,
     PullRequestReviewRequest,
+    Release,
     Repository,
     Team,
     TeamMember,
@@ -151,6 +153,33 @@ class UserFactory(SQLAlchemyModelFactory):
     avatar_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}.jpg")
     login = factory.LazyAttribute(lambda user: f"user-{user.node_id}")
     html_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}")
+
+
+class ReleaseFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Release
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
+    commit_id = factory.Sequence(lambda n: n + 1)
+    type = "Release[Tag]"
+    url = factory.Sequence(lambda n: f"https://my-release/{n + 1}")
+
+
+class NodeCommitFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = NodeCommit
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    oid = "A" * 40
+    repository_id = factory.Sequence(lambda n: n + 10)
+    message = "Commit message"
+    committed_date = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    additions = 1
+    deletions = 0
 
 
 class NodePullRequestFactory(SQLAlchemyModelFactory):

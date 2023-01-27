@@ -785,6 +785,8 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     )
     met = []
 
+    jira = JIRAFilter.from_web(filt.jira, jira_ids)
+
     @sentry_span
     async def calculate_for_set_metrics(service, repos, for_sets):
         calculator = make_calculator(
@@ -797,45 +799,37 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
             repos,
             participants,
             LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
-            JIRAFilter.from_web(filt.jira, jira_ids),
+            [jira],
             release_settings,
             logical_settings,
             prefixer,
             branches,
             default_branches,
         )
-        release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
-        for with_, repos_mvs in zip((filt.with_ or [None]), release_metric_values):
-            for (prefix, for_set), repo_group, granular_mvs in zip(for_sets, repos, repos_mvs):
-                for granularity, ts, mvs in zip(filt.granularities, time_intervals, granular_mvs):
-                    my_release_matches = {}
-                    for r in repo_group:
-                        r = prefix + r
-                        try:
-                            my_release_matches[r] = release_matches[r]
-                        except KeyError:
-                            continue
-                    cm = CalculatedReleaseMetric(
-                        for_=for_set,
-                        with_=with_,
-                        matches=my_release_matches,
-                        metrics=filt.metrics,
-                        granularity=granularity,
-                        values=[
-                            CalculatedLinearMetricValues(
-                                date=(d - tzoffset).date(),
-                                values=[mvs[i][m].value for m in mrange],
-                                confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                                confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                                confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
-                            )
-                            for i, d in enumerate(ts[:-1])
-                        ],
+        for with_, for_set, granularity, ts, matches, mvs, in _flatten_release_metric_values(
+            release_metric_values, filt, for_sets, repos, time_intervals, release_matches,
+        ):
+            cm = CalculatedReleaseMetric(
+                for_=for_set,
+                with_=with_,
+                matches=matches,
+                metrics=filt.metrics,
+                granularity=granularity,
+                values=[
+                    CalculatedLinearMetricValues(
+                        date=(d - tzoffset).date(),
+                        values=[mvs[i][m].value for m in mrange],
+                        confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                        confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                        confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
                     )
-                    for v in cm.values:
-                        v.clean_up_confidence_fields()
-                    met.append(cm)
+                    for i, d in enumerate(ts[:-1])
+                ],
+            )
+            for v in cm.values:
+                v.clean_up_confidence_fields()
+            met.append(cm)
 
     await gather(
         *(
@@ -844,6 +838,36 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         ),
     )
     return model_response(met)
+
+
+def _flatten_release_metric_values(
+    metric_values: np.ndarray,
+    filt: ReleaseMetricsRequest,
+    for_sets,
+    repos,
+    time_intervals,
+    release_matches,
+) -> Iterator:
+    # iterate in parallel release metric values and user request and emit a tuple for
+    # each result to render
+    release_matches = {k: v.name for k, v in release_matches.items()}
+
+    def _get_matches(prefix, repo_group):
+        matches = {}
+        for r in repo_group:
+            r = prefix + r
+            try:
+                matches[r] = release_matches[r]
+            except KeyError:
+                continue
+        return matches
+
+    for jira_mvs in metric_values:
+        for with_, repos_mvs in zip((filt.with_ or [None]), jira_mvs):
+            for (prefix, for_set), repo_group, granular_mvs in zip(for_sets, repos, repos_mvs):
+                for granularity, ts, mvs in zip(filt.granularities, time_intervals, granular_mvs):
+                    matches = _get_matches(prefix, repo_group)
+                    yield with_, for_set, granularity, ts, matches, mvs
 
 
 @expires_header(short_term_exptime)

@@ -24,6 +24,7 @@ from typing import (
 
 import aiomcache
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 
@@ -365,9 +366,10 @@ class MetricEntriesCalculator:
             environments=environments,
         )
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-
         jiras = jiras or [JIRAFilter.empty()]
-        global_jira_filter = JIRAFilter.combine(*jiras)
+        jira_helper = await _PRsJIRAFiltersHelper.build(
+            jiras, metrics, self._account, self._mdb, self._cache,
+        )
 
         pr_facts_calc = self._build_pr_facts_calculator()
         df_facts = await pr_facts_calc(
@@ -376,19 +378,18 @@ class MetricEntriesCalculator:
             all_repositories,
             all_participants,
             labels,
-            global_jira_filter,
+            jira_helper.filter_,
             exclude_inactive,
             bots,
             release_settings,
             logical_settings,
             prefixer,
             fresh,
-            self._get_jira_entities_to_fetch(jiras, metrics),
+            jira_helper.entities_to_fetch,
             branches,
             default_branches,
         )
 
-        jira_grouper = await self._jira_filters_prs_grouper(jiras)
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants, True)
@@ -397,7 +398,7 @@ class MetricEntriesCalculator:
         )
         groups = group_to_indexes(
             df_facts,
-            jira_grouper,
+            jira_helper.grouper,
             lines_grouper,
             repo_grouper,
             with_grouper,
@@ -460,7 +461,7 @@ class MetricEntriesCalculator:
         )
         jira_filter = JIRAFilter.combine(*jira_filters)
 
-        jira_entities_to_fetch = self._get_jira_entities_to_fetch(jira_filters, all_metrics)
+        jira_entities_to_fetch = _get_jira_entities_to_fetch(jira_filters, all_metrics)
 
         pr_facts_calc = self._build_pr_facts_calculator()
         df_facts = await pr_facts_calc(
@@ -769,14 +770,14 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jiras, release_settings, logical_settings, **_: (  # noqa
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
             _compose_cache_key_participants(participants),
             labels,
-            jira,
+            ",".join(str(j) for j in jiras),
             release_settings,
             logical_settings,
         ),
@@ -792,7 +793,7 @@ class MetricEntriesCalculator:
         repositories: Sequence[Collection[str]],
         participants: list[ReleaseParticipants],
         labels: LabelFilter,
-        jira: JIRAFilter,
+        jiras: Sequence[JIRAFilter],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
@@ -802,13 +803,18 @@ class MetricEntriesCalculator:
         """
         Calculate the release metrics on GitHub.
 
-        :return: 1. participants x repositories x granularities x time intervals x metrics.
+        :return: 1. jiras x participants x repositories x granularities x time intervals x metrics.
                  2. matched_bys - map from repository names to applied release matches.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         all_participants = ParticipantsMerge.release(participants)
+        jiras = jiras or [JIRAFilter.empty()]
+        jira_helper = await _ReleaseJIRAFiltersHelper.build(
+            jiras, self._account, self._mdb, self._cache,
+        )
+
         df_facts, _, matched_bys, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -817,7 +823,7 @@ class MetricEntriesCalculator:
             time_from,
             time_to,
             labels,
-            jira,
+            jira_helper.filter_,
             release_settings,
             logical_settings,
             prefixer,
@@ -829,7 +835,9 @@ class MetricEntriesCalculator:
             self._cache,
             with_avatars=False,
             with_extended_pr_details=False,
+            with_jira=jira_helper.entities_to_fetch,
         )
+
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         dedupe_mask = calculate_logical_release_duplication_mask(
@@ -837,6 +845,7 @@ class MetricEntriesCalculator:
         )
         groups = group_to_indexes(
             df_facts,
+            jira_helper.grouper,
             participant_grouper,
             repo_grouper,
             deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
@@ -844,36 +853,6 @@ class MetricEntriesCalculator:
         )
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
-
-    async def _jira_filters_prs_grouper(
-        self,
-        filters: Sequence[JIRAFilter],
-    ) -> Callable[[pd.DataFrame], list[np.ndarray]]:
-        filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
-            filters, self._account, self._mdb, self._cache,
-        )
-        return partial(group_pr_facts_by_jira, filters_to_grouping(filters))
-
-    @classmethod
-    def _get_jira_entities_to_fetch(
-        cls,
-        jira_filters: Iterable[JIRAFilter],
-        pr_metrics: Iterable[str],
-    ) -> JIRAEntityToFetch:
-        """Get entities to fetch, in order to compute `pr_metrics` and then group by the filter."""
-        jira_entities_to_fetch = JIRAEntityToFetch.NOTHING
-        if pr_metrics_need_jira_mapping(pr_metrics):
-            jira_entities_to_fetch |= JIRAEntityToFetch.ISSUES
-        # for projects, types, and priorities, if at least one filter constraints on the property
-        # we need to fetch it to group on it
-        for jira_filter in jira_filters:
-            if jira_filter.projects:
-                jira_entities_to_fetch |= JIRAEntityToFetch.PROJECTS
-            if jira_filter.issue_types:
-                jira_entities_to_fetch |= JIRAEntityToFetch.TYPES
-            if jira_filter.priorities:
-                jira_entities_to_fetch |= JIRAEntityToFetch.PRIORITIES
-        return jira_entities_to_fetch
 
     @sentry_span
     @cached(
@@ -941,7 +920,7 @@ class MetricEntriesCalculator:
             self._cache,
             with_avatars=False,
             with_extended_pr_details=False,
-            with_jira=self._get_jira_entities_to_fetch(jira_filters, ()),
+            with_jira=_get_jira_entities_to_fetch(jira_filters, ()),
         )
 
         results = []
@@ -1579,6 +1558,90 @@ class _JIRAFilterToGroupingConverter:
         return self._entities_mapper
 
 
+@dataclasses.dataclass
+class _FactsJIRAFiltersHelper:
+    """Collect the needed information to correctly mine and group facts by JIRAFilter-s."""
+
+    filter_: JIRAFilter
+    """The single filter to use to mine facts."""
+    entities_to_fetch: JIRAEntityToFetch
+    """The entities to fetch in order to correctly apply grouping on mined facts"""
+    grouper: Callable[[pd.DataFrame], list[np.ndarray]]
+    """The grouping function to group by jira filters."""
+
+
+class _PRsJIRAFiltersHelper(_FactsJIRAFiltersHelper):
+    """Collect the needed information to correctly fetch and group prs by JIRAFilter-s."""
+
+    @classmethod
+    async def build(
+        cls,
+        jiras: Sequence[JIRAFilter],
+        metrics: Sequence[str],
+        account: int,
+        mdb: Database,
+        cache: aiomcache.Client | None,
+    ) -> _PRsJIRAFiltersHelper:
+        filter_ = JIRAFilter.combine(*jiras)
+        if len(jiras) == 1:
+            # if there's a single JIRAFilter the global `filter_` used to mine/fetch
+            # will only include releases matching the single filter, so we can avoid grouping
+            # and fetch no jira entities
+            with_jira = _get_jira_entities_to_fetch((), metrics)
+            grouper = _global_grouper
+        else:
+            with_jira = _get_jira_entities_to_fetch(jiras, metrics)
+            filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+                jiras, account, mdb, cache,
+            )
+            grouper = partial(group_pr_facts_by_jira, filters_to_grouping(jiras))
+        return cls(filter_, with_jira, grouper)
+
+
+class _ReleaseJIRAFiltersHelper(_FactsJIRAFiltersHelper):
+    """Collect the needed information to correctly fetch and group releases by JIRAFilter-s."""
+
+    @classmethod
+    async def build(
+        cls,
+        jiras: Sequence[JIRAFilter],
+        account: int,
+        mdb: Database,
+        cache: aiomcache.Client | None,
+    ) -> _ReleaseJIRAFiltersHelper:
+        filter_ = JIRAFilter.combine(*jiras)
+        if len(jiras) == 1:
+            with_jira = JIRAEntityToFetch.NOTHING
+            grouper = _global_grouper
+        else:
+            with_jira = _get_jira_entities_to_fetch(jiras, ())
+            filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+                jiras, account, mdb, cache,
+            )
+            grouper = partial(group_release_facts_by_jira, filters_to_grouping(jiras))
+        return cls(filter_, with_jira, grouper)
+
+
+def _get_jira_entities_to_fetch(
+    jira_filters: Iterable[JIRAFilter],
+    pr_metrics: Iterable[str],
+) -> JIRAEntityToFetch:
+    """Get entities to fetch, in order to compute `pr_metrics` and then group by the filter."""
+    jira_entities_to_fetch = JIRAEntityToFetch.NOTHING
+    if pr_metrics_need_jira_mapping(pr_metrics):
+        jira_entities_to_fetch |= JIRAEntityToFetch.ISSUES
+    # for projects, types, and priorities, if at least one filter constraints on the property
+    # we need to fetch it to group on it
+    for jira_filter in jira_filters:
+        if jira_filter.projects:
+            jira_entities_to_fetch |= JIRAEntityToFetch.PROJECTS
+        if jira_filter.issue_types:
+            jira_entities_to_fetch |= JIRAEntityToFetch.TYPES
+        if jira_filter.priorities:
+            jira_entities_to_fetch |= JIRAEntityToFetch.PRIORITIES
+    return jira_entities_to_fetch
+
+
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
     return ",".join(str(sorted(r)) for r in repositories)
 
@@ -1611,6 +1674,11 @@ def _intersect_items_groups(
             group[mask] += 1
         groups[i] = np.flatnonzero(group == len(group_masks))
     return groups
+
+
+def _global_grouper(facts: pd.Dataframe) -> list[npt.NDArray[int]]:
+    """Group the facts to select everything, in a single group."""
+    return [np.arange(len(facts))]
 
 
 def make_calculator(

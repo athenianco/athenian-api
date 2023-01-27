@@ -81,6 +81,7 @@ def pr_models(
     review_request: datetime | None = None,
     review_submit: datetime | None = None,
     commits: Collection[datetime] = (),
+    merge_commit_id: int | None = None,
     **kwargs: Any,
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid pull request.
@@ -92,8 +93,11 @@ def pr_models(
     All other parameters are passed to PullRequestFactory.
     """
     pr_kwargs: dict = {"node_id": node_id, "number": number}
+
     if title is not None:
         pr_kwargs["title"] = title
+    if merge_commit_id is not None:
+        pr_kwargs["merge_commit_id"] = merge_commit_id
 
     models = [
         md_factory.PullRequestFactory(repository_node_id=repo_id, **pr_kwargs, **kwargs),
