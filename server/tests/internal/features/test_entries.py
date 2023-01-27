@@ -654,7 +654,7 @@ class TestCalcReleaseMetricsLineGithub:
             "participants": [],
             "quantiles": [0, 1],
             "labels": LabelFilter.empty(),
-            "jira": JIRAFilter.empty(),
+            "jiras": [],
             **shared_kwargs,
         }
 
@@ -679,10 +679,162 @@ class TestCalcReleaseMetricsLineGithub:
 
         mine_releases_mock.assert_called_once()
 
-        for intvl_idx in range(1):
-            assert res0[0][0][0][0][intvl_idx][0].value == res1[0][0][0][0][intvl_idx][1].value
-            assert res0[0][0][0][0][intvl_idx][1].value == res1[0][0][0][0][intvl_idx][2].value
-            assert res0[0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][intvl_idx][0].value
+        for intvl_idx in range(2):
+            res0_intvl = res0[0][0][0][0][0][intvl_idx]
+            res1_intvl = res1[0][0][0][0][0][intvl_idx]
+            assert res0_intvl[0].value == res1_intvl[1].value
+            assert res0_intvl[1].value == res1_intvl[2].value
+            assert res0_intvl[2].value == res1_intvl[0].value
+
+    @with_defer
+    async def test_multiple_jiras(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        jira_p0 = JIRAFilter(
+            account=DEFAULT_JIRA_ACCOUNT_ID,
+            priorities=frozenset(["p0"]),
+            custom_projects=False,
+            projects=frozenset(["1"]),
+        )
+        jira_p1 = jira_p0.replace(priorities=frozenset(["p1"]))
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb_rw, pdb, rdb, None)
+
+        mk_release = partial(
+            md_factory.ReleaseFactory,
+            repository_full_name="org/repo",
+            repository_node_id=99,
+            published_at=dt(2018, 1, 5),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org/repo")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            models = [
+                mk_release(sha="A" * 40, name="r0"),
+                mk_release(sha="B" * 40, name="r1"),
+                mk_release(sha="C" * 40, name="r2"),
+                mk_release(sha="D" * 40, name="r3"),
+                md_factory.NodeCommitFactory(node_id=101, repository_id=99, sha="A" * 40),
+                md_factory.NodeCommitFactory(node_id=102, repository_id=99, sha="B" * 40),
+                md_factory.NodeCommitFactory(node_id=103, repository_id=99, sha="C" * 40),
+                md_factory.NodeCommitFactory(node_id=104, repository_id=99, sha="D" * 40),
+                *pr_models(99, 1, 1, merge_commit_id=101),
+                *pr_models(99, 2, 2, merge_commit_id=102),
+                *pr_models(99, 3, 3, merge_commit_id=103),
+                *pr_models(99, 4, 4, merge_commit_id=104),
+                md_factory.JIRAProjectFactory(id="1", key="DD"),
+                md_factory.JIRAPriorityFactory(id="id_p0", name="P0"),
+                md_factory.JIRAPriorityFactory(id="id_p1", name="P1"),
+                md_factory.JIRAIssueFactory(
+                    id="20", priority_id="id_p0", project_id="1", priority_name="P0",
+                ),
+                md_factory.JIRAIssueFactory(
+                    id="21", priority_id="id_p1", project_id="1", priority_name="P1",
+                ),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="20"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=3, jira_id="21"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            shared_kwargs = await _calc_shared_kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, sdb)
+
+            kwargs = {
+                "time_intervals": [[dt(2018, 1, 1), dt(2018, 6, 1)]],
+                "repositories": [["org/repo"]],
+                "participants": [],
+                "quantiles": [0, 1],
+                "labels": LabelFilter.empty(),
+                "metrics": [ReleaseMetricID.RELEASE_COUNT],
+                **shared_kwargs,
+            }
+
+            # with empty jiras I get a single group with every release
+            res, _ = await calculator.calc_release_metrics_line_github(**kwargs, jiras=[])
+            assert len(res) == 1
+            assert res[0][0][0][0][0][0].value == 4
+
+            # single jira group with priority p0
+            res, _ = await calculator.calc_release_metrics_line_github(**kwargs, jiras=[jira_p0])
+            assert len(res) == 1
+            assert res[0][0][0][0][0][0].value == 2
+
+            # single jira group with priority p1
+            res, _ = await calculator.calc_release_metrics_line_github(**kwargs, jiras=[jira_p1])
+            assert len(res) == 1
+            assert res[0][0][0][0][0][0].value == 1
+
+            # two jira groups for priorities p0 and p1
+            res, _ = await calculator.calc_release_metrics_line_github(
+                **kwargs, jiras=[jira_p0, jira_p1],
+            )
+            assert len(res) == 2
+            assert res[0][0][0][0][0][0].value == 2
+            assert res[1][0][0][0][0][0].value == 1
+
+            # all together now
+            res, _ = await calculator.calc_release_metrics_line_github(
+                **kwargs, jiras=[jira_p0, JIRAFilter.empty(), jira_p1],
+            )
+            assert len(res) == 3
+            assert res[0][0][0][0][0][0].value == 2
+            assert res[1][0][0][0][0][0].value == 4
+            assert res[2][0][0][0][0][0].value == 1
+
+    @with_defer
+    async def test_multiple_jiras_using_fixture(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        time_intervals = [[dt(2018, 1, 1), dt(2019, 6, 1)]]
+
+        base_filter = JIRAFilter(
+            account=DEFAULT_JIRA_ACCOUNT_ID,
+            priorities=frozenset(["high"]),
+            custom_projects=True,
+            projects=frozenset(["10009"]),
+        )
+
+        kwargs = {
+            "time_intervals": time_intervals,
+            "repositories": [["src-d/go-git"]],
+            "participants": [],
+            "quantiles": [0, 1],
+            "labels": LabelFilter.empty(),
+            "jiras": [
+                base_filter.replace(priorities=frozenset(["high"])),
+                base_filter.replace(priorities=frozenset(["low", "medium"])),
+                base_filter.replace(issue_types=frozenset(["story"])),
+                JIRAFilter.empty(),
+            ],
+            "metrics": [ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_LINES],
+            **shared_kwargs,
+        }
+
+        res, _ = await calculator.calc_release_metrics_line_github(**kwargs)
+        assert res[0][0][0][0][0][0].value == 9
+        assert res[1][0][0][0][0][0].value == 12
+        assert res[2][0][0][0][0][0].value == 5
+        assert res[3][0][0][0][0][0].value == 19
+
+        assert res[0][0][0][0][0][1].value == 20771
+        assert res[1][0][0][0][0][1].value == 51292
+        assert res[2][0][0][0][0][1].value == 16128
+        assert res[3][0][0][0][0][1].value == 61306
 
 
 class TestBatchCalcReleaseMetrics:
@@ -735,7 +887,7 @@ class TestBatchCalcReleaseMetrics:
             repositories=[["src-d/go-git"]],
             participants=[{ReleaseParticipationKind.COMMIT_AUTHOR: [39789]}],
             labels=LabelFilter.empty(),
-            jira=JIRAFilter.empty(),
+            jiras=[JIRAFilter.empty()],
             quantiles=[0, 1],
             **shared_kwargs,
         )
@@ -745,15 +897,15 @@ class TestBatchCalcReleaseMetrics:
             requests, quantiles=[0, 1], **shared_kwargs,
         )
 
-        release_prs = global_calc_res[0][0][0][0][0]
+        release_prs = global_calc_res[0][0][0][0][0][0]
         assert release_prs.value == 131
         assert batched_calc_res[0][0][0][0][0] == release_prs
 
-        release_count = global_calc_res[0][0][0][0][1]
+        release_count = global_calc_res[0][0][0][0][0][1]
         assert release_count.value == 13
         assert batched_calc_res[0][0][0][0][1] == release_count
 
-        release_age = global_calc_res[0][0][1][0][2]
+        release_age = global_calc_res[0][0][0][1][0][2]
         assert release_age.value == timedelta(days=31, seconds=61494)
         assert batched_calc_res[1][0][0][0][0] == release_age
 

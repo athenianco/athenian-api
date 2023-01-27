@@ -388,6 +388,7 @@ class MetricEntriesCalculator:
             default_branches,
         )
 
+        # TODO: optimize when len(jiras) == 1, no need for grouping, facts filtering is enough
         jira_grouper = await self._jira_filters_prs_grouper(jiras)
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
@@ -769,14 +770,14 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jiras, release_settings, logical_settings, **_: (  # noqa
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
             _compose_cache_key_participants(participants),
             labels,
-            jira,
+            ",".join(str(j) for j in jiras),
             release_settings,
             logical_settings,
         ),
@@ -792,7 +793,7 @@ class MetricEntriesCalculator:
         repositories: Sequence[Collection[str]],
         participants: list[ReleaseParticipants],
         labels: LabelFilter,
-        jira: JIRAFilter,
+        jiras: Sequence[JIRAFilter],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
@@ -802,13 +803,17 @@ class MetricEntriesCalculator:
         """
         Calculate the release metrics on GitHub.
 
-        :return: 1. participants x repositories x granularities x time intervals x metrics.
+        :return: 1. jiras x participants x repositories x granularities x time intervals x metrics.
                  2. matched_bys - map from repository names to applied release matches.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         all_participants = ParticipantsMerge.release(participants)
+        jiras = jiras or [JIRAFilter.empty()]
+
+        global_jira_filter = JIRAFilter.combine(*jiras)
+
         df_facts, _, matched_bys, _ = await mine_releases(
             all_repositories,
             all_participants,
@@ -817,7 +822,7 @@ class MetricEntriesCalculator:
             time_from,
             time_to,
             labels,
-            jira,
+            global_jira_filter,
             release_settings,
             logical_settings,
             prefixer,
@@ -829,7 +834,11 @@ class MetricEntriesCalculator:
             self._cache,
             with_avatars=False,
             with_extended_pr_details=False,
+            with_jira=self._get_jira_entities_to_fetch(jiras, ()),
         )
+
+        # TODO: optimize when len(jiras) == 1, no need for grouping, facts filtering is enough
+        jira_grouper = await self._jira_filters_releases_grouper(jiras)
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         dedupe_mask = calculate_logical_release_duplication_mask(
@@ -837,6 +846,7 @@ class MetricEntriesCalculator:
         )
         groups = group_to_indexes(
             df_facts,
+            jira_grouper,
             participant_grouper,
             repo_grouper,
             deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
@@ -853,6 +863,15 @@ class MetricEntriesCalculator:
             filters, self._account, self._mdb, self._cache,
         )
         return partial(group_pr_facts_by_jira, filters_to_grouping(filters))
+
+    async def _jira_filters_releases_grouper(
+        self,
+        filters: Sequence[JIRAFilter],
+    ) -> Callable[[pd.DataFrame], list[np.ndarray]]:
+        filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+            filters, self._account, self._mdb, self._cache,
+        )
+        return partial(group_release_facts_by_jira, filters_to_grouping(filters))
 
     @classmethod
     def _get_jira_entities_to_fetch(
