@@ -31,7 +31,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         [["src-d/go-git"]],
         [],
         LabelFilter.empty(),
-        JIRAFilter.empty(),
+        [JIRAFilter.empty()],
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
         prefixer,
@@ -39,7 +39,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         default_branches,
     )
     await wait_deferred()
-    assert metrics[0][0][0][0][0].value == 131
+    assert metrics[0][0][0][0][0][0].value == 131
     metrics, _ = await metrics_calculator.calc_release_metrics_line_github(
         [ReleaseMetricID.RELEASE_PRS],
         [
@@ -52,20 +52,18 @@ async def test_calc_release_metrics_line_github_jira_cache(
         [["src-d/go-git"]],
         [],
         LabelFilter.empty(),
-        JIRAFilter(
-            1,
-            frozenset(("10003", "10009")),
-            LabelFilter({"performance", "bug"}, set()),
-            frozenset(),
-            frozenset(),
-            frozenset(),
-            False,
-            False,
-        ),
+        [
+            JIRAFilter(
+                1,
+                frozenset(("10003", "10009")),
+                LabelFilter({"performance", "bug"}, set()),
+                custom_projects=False,
+            ),
+        ],
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
         prefixer,
         branches,
         default_branches,
     )
-    assert metrics[0][0][0][0][0].value == 7
+    assert metrics[0][0][0][0][0][0].value == 7
