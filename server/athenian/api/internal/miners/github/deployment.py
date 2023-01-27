@@ -1375,11 +1375,22 @@ async def _generate_deployment_facts(
     pr_inserts = {}
     all_releases_authors = defaultdict(set)
     if not releases.empty:
-        unique_release_deps, release_index, release_group_counts = np.unique(
-            releases[GitHubReleaseDeployment.deployment_name.name].values,
-            return_inverse=True,
-            return_counts=True,
-        )
+        try:
+            unique_release_deps, release_index, release_group_counts = np.unique(
+                releases[GitHubReleaseDeployment.deployment_name.name].values,
+                return_inverse=True,
+                return_counts=True,
+            )
+        except TypeError as e:
+            log = logging.getLogger(f"{metadata.__package__}._generate_deployment_facts")
+            for i, v in enumerate(releases[GitHubReleaseDeployment.deployment_name.name].values):
+                if not isinstance(v, str):
+                    log.error(
+                        "non-string release name: %s %s",
+                        v,
+                        releases[GitHubReleaseDeployment.deployment_name.name].iloc[i],
+                    )
+            raise e from None
         release_order = np.argsort(release_index)
         release_pos = 0
         for name, group_size in zip(unique_release_deps, release_group_counts):
