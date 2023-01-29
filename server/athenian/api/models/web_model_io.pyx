@@ -149,13 +149,13 @@ cdef enum DataFlags:
     DF_VERBATIM = 4
 
 
-ctypedef struct ModelFields:
+ctypedef struct SpecNode:
     DataType type
     uint8_t flags
     Py_ssize_t offset
     const void *key
     PyTypeObject *model
-    optional[mi_vector[ModelFields]] nested
+    optional[mi_vector[SpecNode]] nested
 
 
 cdef inline DataType _discover_data_type(
@@ -205,14 +205,14 @@ cdef inline void _apply_data_type(
     Py_ssize_t offset,
     const char *key,
     PyTypeObject *member_type,
-    ModelFields *fields,
+    SpecNode *fields,
     mi_heap_destroy_stl_allocator[char] &alloc,
 ) except *:
     cdef:
         PyTypeObject *deref = NULL
         bint optional = 0, verbatim = 0
         DataType dtype = _discover_data_type(member_type, key, &deref, &optional, &verbatim)
-        ModelFields *back = &dereference(fields.nested).emplace_back()
+        SpecNode *back = &dereference(fields.nested).emplace_back()
     back.type = dtype
     back.offset = offset
     if optional:
@@ -226,7 +226,7 @@ cdef inline void _apply_data_type(
 
 cdef void _discover_fields(
     PyTypeObject *model,
-    ModelFields *fields,
+    SpecNode *fields,
     mi_heap_destroy_stl_allocator[char] &alloc,
 ) except *:
     cdef:
@@ -235,14 +235,15 @@ cdef void _discover_fields(
         PyTypeObject *member_type
         PyMemberDef *members
         PyObject *key
-        ModelFields *back
+        SpecNode *back
 
     if fields.type == DT_MODEL:
         attribute_types = (<object> model).attribute_types
         attribute_map = (<object> model).attribute_map
         fields.model = model
         members = model.tp_members
-        for i in range(len((<object> model).__slots__)):
+        i = 0
+        while members[i].name != NULL:
             member_type = <PyTypeObject *> PyDict_GetItemString(attribute_types, members[i].name + 1)
             _apply_data_type(members[i].offset, members[i].name + 1, member_type, fields, alloc)
             back = &dereference(fields.nested).back()
@@ -253,6 +254,7 @@ cdef void _discover_fields(
             else:
                 back.flags |= DF_KEY_UNMAPPED
                 back.key = members[i].name + 1
+            i += 1
     elif fields.type == DT_LIST:
         attribute_types = (<object> model).__args__
         _apply_data_type(
@@ -283,7 +285,7 @@ cdef void _discover_fields(
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, chunked_stream &stream) nogil:
+cdef PyObject *_write_object(PyObject *obj, SpecNode *spec, chunked_stream &stream) nogil:
     cdef:
         char dtype = spec.type, bool
         long val_long
@@ -300,7 +302,7 @@ cdef PyObject *_write_object(PyObject *obj, ModelFields *spec, chunked_stream &s
         PyObject *dict_key = NULL
         PyObject *dict_val = NULL
         PyObject **npdata
-        ModelFields *field
+        SpecNode *field
     if obj == Py_None:
         dtype = 0
         stream.write(<char *> &dtype, 1)
@@ -455,7 +457,7 @@ cdef void _serialize_list_of_models(
 ) except *:
     cdef:
         uint32_t size
-        ModelFields spec
+        SpecNode spec
         type item_type
         PyObject *exc
 
@@ -521,7 +523,7 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
         long pos
         bytes type_buf
         object model_type
-        ModelFields spec
+        SpecNode spec
         optional[mi_heap_destroy_stl_allocator[char]] alloc
 
     if alloc_capsule is not None:
@@ -556,7 +558,7 @@ def deserialize_models(bytes buffer not None, alloc_capsule=None) -> tuple[list[
     return result
 
 
-cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str corrupted_msg):
+cdef object _read_model(SpecNode *spec, FILE *stream, const char *raw, str corrupted_msg):
     cdef:
         char dtype, bool
         long val_long
@@ -568,7 +570,7 @@ cdef object _read_model(ModelFields *spec, FILE *stream, const char *raw, str co
         int year, month, day, hour, minute, second
         PyObject *utctz = (<PyDateTime_CAPI *> PyDateTimeAPI).TimeZone_UTC
         PyObject *obj_val
-        ModelFields *field
+        SpecNode *field
 
     if fread(&dtype, 1, 1, stream) != 1:
         raise ValueError(corrupted_msg % (ftell(stream), "dtype"))
@@ -669,7 +671,7 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
         optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[chunked_stream] stream
         type root_type
-        ModelFields spec
+        SpecNode spec
         PyObject *error
 
     if model is None:
@@ -707,12 +709,12 @@ def model_to_json(model, alloc_capsule=None) -> bytes:
     return result
 
 
-cdef ModelFields fake_str_model
+cdef SpecNode fake_str_model
 fake_str_model.type = DT_STRING
 
 
 @cython.cdivision(True)
-cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, chunked_stream &stream) nogil:
+cdef PyObject *_write_json(PyObject *obj, SpecNode &spec, chunked_stream &stream) nogil:
     cdef:
         PyObject *key = NULL
         PyObject *value = NULL
@@ -727,7 +729,7 @@ cdef PyObject *_write_json(PyObject *obj, ModelFields &spec, chunked_stream &str
         double val_double
         float val_float
         char buffer[24]
-        ModelFields *nested
+        SpecNode *nested
 
     if obj == Py_None:
         stream.write(b"null", 4)
