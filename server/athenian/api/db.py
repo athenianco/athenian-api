@@ -226,7 +226,7 @@ def measure_db_overhead_and_retry(
                             asyncpg.PostgresConnectionError,
                             asyncpg.OperatorInterventionError,
                             asyncpg.InsufficientResourcesError,
-                            asyncpg.InterfaceError,  # pgbouncer transaction body fails
+                            asyncpg.InterfaceError,
                             sqlite3.OperationalError,
                             asyncio.TimeoutError,
                         ) as e:
@@ -234,7 +234,12 @@ def measure_db_overhead_and_retry(
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
                             if need_acquire := isinstance(
-                                e, (asyncpg.PostgresConnectionError, asyncio.TimeoutError),
+                                e,
+                                (
+                                    asyncpg.InterfaceError,
+                                    asyncpg.PostgresConnectionError,
+                                    asyncio.TimeoutError,
+                                ),
                             ):
                                 try:
                                     connection.raw_connection is not None  # noqa: B015, PIE791
