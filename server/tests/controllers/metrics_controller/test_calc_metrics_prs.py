@@ -755,6 +755,26 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
+    async def test_empty_jira_object_is_ignored(self):
+        """Metrics over PRs filtered by JIRA properties."""
+        body = self._body(
+            for_=[{"repositories": ["{1}"]}],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+            date_from="2018-10-13",
+            date_to="2019-01-23",
+        )
+        res = await self._request(json=body)
+        all_count = res["calculated"][0]["values"][0]["values"][0]
+
+        body["for"][0]["jira"] = {"epics": []}
+        res = await self._request(json=body)
+
+        all_count_empty_jira = res["calculated"][0]["values"][0]["values"][0]
+
+        assert all_count == all_count_empty_jira
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
     async def test_groups_smoke(self):
         """Two repository groups."""
         body = self._body(

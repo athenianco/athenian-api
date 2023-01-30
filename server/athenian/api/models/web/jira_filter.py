@@ -81,3 +81,7 @@ class JIRAFilter(Model):
         ):
             raise ValueError("`unmapped` may not be mixed with anything else")
         return unmapped
+
+    def __bool__(self):
+        """Return True if the filter has any field defined."""
+        return any(getattr(self, field) for field in self.attribute_types)

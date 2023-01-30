@@ -521,7 +521,7 @@ async def _compile_jira_filter(
     account: int,
     request: AthenianWebRequest,
 ) -> JIRAFilter:
-    if jira_filter is None:
+    if not jira_filter:
         return JIRAFilter.empty()
     try:
         jira_config = await get_jira_installation(account, request.sdb, request.mdb, request.cache)
@@ -541,9 +541,7 @@ async def _compile_jira_filters(
         return [JIRAFilter.empty() for _ in jira_filters]
 
     return [
-        JIRAFilter.empty()
-        if jira_filter is None
-        else JIRAFilter.from_web(jira_filter, jira_config)
+        JIRAFilter.from_web(jira_filter, jira_config) if jira_filter else JIRAFilter.empty()
         for jira_filter in jira_filters
     ]
 
