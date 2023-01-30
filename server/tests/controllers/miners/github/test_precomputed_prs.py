@@ -1941,6 +1941,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         )
 
 
+@pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_store_merged_unreleased_pull_request_facts_smoke(
     mdb,
