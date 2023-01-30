@@ -2053,8 +2053,20 @@ class PullRequestMiner:
     ) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
         assert jira
+        if not (model_is_pr := model is PullRequest):
+            aliased_model = aliased(model, name="pr")
+            if model is columns:
+                columns = aliased_model
+            else:
+                columns = [getattr(aliased_model, c.key) for c in columns]
+            model = aliased_model
+        pr_node_values = len(pr_node_ids) > 100 and not jira.is_complex
         query = await generate_jira_prs_query(
-            [model.node_id.in_(pr_node_ids)],
+            [
+                model.node_id.in_any_values(pr_node_ids)
+                if pr_node_values
+                else model.node_id.in_(pr_node_ids),
+            ],
             jira,
             meta_ids,
             mdb,
@@ -2065,10 +2077,19 @@ class PullRequestMiner:
         )
         # speculate that m JOIN pr is ~0.5 of len(pr_node_ids), that is, half of PRs mapped to JIRA
         # also, m JOIN j is too pessimistic
-        query = query.with_statement_hint(
-            f"Rows(m pr #{len(pr_node_ids) // 2})",
-        ).with_statement_hint("Rows(m j *10)")
-        if model is PullRequest:
+        row_count = len(pr_node_ids) // 2
+        if pr_node_values:
+            query = (
+                query.with_statement_hint(f"Rows(pr *VALUES* #{len(pr_node_ids)})")
+                .with_statement_hint(f"Rows(pr *VALUES* m #{row_count})")
+                .with_statement_hint(f"Rows(pr *VALUES* m j #{row_count})")
+                .with_statement_hint("Leading((((pr *VALUES*) m) j))")
+            )
+        else:
+            query = query.with_statement_hint(f"Rows(pr m #{row_count})").with_statement_hint(
+                f"Rows(m j {'*10' if jira.is_complex() else ('#' + str(len(pr_node_ids)))})",
+            )
+        if model_is_pr:
             # pr JOIN repo is always len(pr_node_ids)
             query = query.with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")
         return await read_sql_query(query, mdb, columns, index=model.node_id.name)
