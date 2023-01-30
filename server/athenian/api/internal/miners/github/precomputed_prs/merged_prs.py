@@ -183,7 +183,7 @@ class MergedPRFactsLoader:
                     *common_filters,
                 ]
                 my_selected = sorted(my_selected, key=lambda i: i.key)
-                queries.append(select(my_selected).where(and_(*filters)))
+                queries.append(select(*my_selected).where(*filters))
         if not queries:
             return {}
         query = union_all(*queries)

@@ -853,9 +853,8 @@ def _flatten_release_metric_values(
     def _get_matches(prefix, repo_group):
         matches = {}
         for r in repo_group:
-            r = prefix + r
             try:
-                matches[r] = release_matches[r]
+                matches[prefix + r] = release_matches[r]
             except KeyError:
                 continue
         return matches
