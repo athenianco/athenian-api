@@ -254,7 +254,7 @@ class NumpyStruct(Mapping[str, Any]):
             kwargs_str = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items()) + ", "
         else:
             kwargs_str = ""
-        return f"{type(self).__name__}({kwargs_str}data={repr(bytes(self._data))})"
+        return f"{type(self).__name__}({kwargs_str}data={repr(bytes(self._data or b''))})"
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
