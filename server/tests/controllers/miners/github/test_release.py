@@ -1539,7 +1539,7 @@ class TestMineReleases:
         releases, avatars, matched_bys, _ = await mine_releases(**kwargs)
         assert len(releases) == 53
         assert len(avatars) == 125
-        assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
+        assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
         for facts in releases.itertuples():
             assert facts.name
             assert facts.url

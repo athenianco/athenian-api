@@ -1376,14 +1376,12 @@ async def unwrap_pull_requests(
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__", description=str(len(prs))):
         facts_miner = PullRequestFactsMiner(bots)
         pdb_misses = 0
+        node_id_col = PullRequest.node_id.name
+        repo_col = PullRequest.repository_full_name.name
         for pr in prs:
-            node_id, repo = (
-                pr.pr[PullRequest.node_id.name],
-                pr.pr[PullRequest.repository_full_name.name],
-            )
-            if (node_id, repo) not in facts:
+            if (node_id_repo := (pr.pr[node_id_col], pr.pr[repo_col])) not in facts:
                 try:
-                    facts[(node_id, repo)] = facts_miner(pr)
+                    facts[node_id_repo] = facts_miner(pr)
                 except ImpossiblePullRequest:
                     continue
                 finally:

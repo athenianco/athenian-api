@@ -906,7 +906,7 @@ async def _mine_releases(
     return (
         df_from_structs(result),
         avatars,
-        {r: v.match for r, v in release_settings.prefixed.items()},
+        {r: v.match for r, v in release_settings.native.items()},
         deployments,
         with_avatars,
         with_extended_pr_details,
