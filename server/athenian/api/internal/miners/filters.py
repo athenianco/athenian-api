@@ -116,6 +116,15 @@ class JIRAFilter:
         emptyset: frozenset[str] = frozenset()
         return cls(0, emptyset, LabelFilter.empty(), emptyset, emptyset, emptyset, False, False)
 
+    def is_complex(self) -> bool:
+        """Return value indicating whether this filter can potentially narrow the scope much."""
+        return (
+            bool(self.labels)
+            or bool(self.epics)
+            or bool(self.issue_types)
+            or bool(self.priorities)
+        )
+
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
         return self.account > 0 and any(
