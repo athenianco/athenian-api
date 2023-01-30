@@ -687,6 +687,35 @@ class TestCalcReleaseMetricsLineGithub:
             assert res0_intvl[2].value == res1_intvl[0].value
 
     @with_defer
+    async def test_jira_cache(self, sdb, mdb, pdb, rdb):
+        shared_kwargs = await _calc_shared_kwargs((DEFAULT_MD_ACCOUNT_ID,), mdb, sdb)
+        kwargs = {
+            **shared_kwargs,
+            "metrics": [ReleaseMetricID.RELEASE_PRS],
+            "time_intervals": [[dt(2018, 6, 12), dt(2020, 11, 11)]],
+            "repositories": [["src-d/go-git"]],
+            "participants": [],
+            "quantiles": [0, 1],
+            "labels": LabelFilter.empty(),
+            "jiras": [JIRAFilter.empty()],
+        }
+        cache = build_fake_cache()
+        calculator = MetricEntriesCalculator(1, (DEFAULT_MD_ACCOUNT_ID,), 28, mdb, pdb, rdb, cache)
+        metrics, _ = await calculator.calc_release_metrics_line_github(**kwargs)
+        await wait_deferred()
+        assert metrics[0][0][0][0][0][0].value == 131
+        kwargs["jiras"] = [
+            JIRAFilter(
+                1,
+                frozenset(("10003", "10009")),
+                LabelFilter({"performance", "bug"}, set()),
+                custom_projects=False,
+            ),
+        ]
+        metrics, _ = await calculator.calc_release_metrics_line_github(**kwargs)
+        assert metrics[0][0][0][0][0][0].value == 7
+
+    @with_defer
     async def test_multiple_jiras(
         self,
         mdb_rw: Database,
