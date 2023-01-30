@@ -96,7 +96,7 @@ from athenian.api.models.web import (
     PullRequest as WebPullRequest,
 )
 from athenian.api.models.web_model_io import deserialize_models, serialize_models
-from athenian.api.request import AthenianWebRequest
+from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import unordered_unique
@@ -106,11 +106,7 @@ from athenian.api.unordered_unique import unordered_unique
 @weight(2.0)
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find JIRA epics and labels used in the specified date interval."""
-    try:
-        filt = FilterJIRAStuff.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e))
+    filt = model_from_body(FilterJIRAStuff, body)
     return_ = set(filt.return_ or JIRAFilterReturn)
     if not filt.return_:
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
@@ -1320,11 +1316,7 @@ async def _calc_jira_entry(
         np.ndarray,
     ],
 ]:
-    try:
-        filt = model.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError.from_validation_error(e)) from None
+    filt = model_from_body(model, body)
     (
         meta_ids,
         jira_ids,
