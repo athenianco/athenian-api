@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.models.web import JIRAFilter as WebJIRAFilter
 
 
 class TestJIRAFilter:
@@ -94,6 +95,14 @@ class TestJIRAFilterCombine:
         f2 = _mk_jira_filter(0)
         expected = _mk_jira_filter(0)
         assert JIRAFilter.combine(f0, f1, f2) == expected
+
+
+class TestJIRAFilterFromWeb:
+    def test_empty_web_filter(self) -> None:
+        web_filter = WebJIRAFilter()
+        f = JIRAFilter.from_web(web_filter, 1)
+        assert not f
+        assert f == JIRAFilter.empty()
 
 
 def _mk_jira_filter(account: int, **kwargs: Any) -> JIRAFilter:
