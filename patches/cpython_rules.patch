@@ -6,7 +6,7 @@
  	    ../configure \
 -		$(common_configure_args)
 +		$(common_configure_args) \
-+		--with-llvm=/usr/lib/llvm-16/bin --enable-bolt
++		--with-llvm=/usr/lib/llvm-$(LLVM)/bin --enable-bolt
  
  	$(call __post_configure,$(buildd_static))
  	touch $@

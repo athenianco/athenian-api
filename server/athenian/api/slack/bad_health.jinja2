@@ -1,4 +1,4 @@
-*Account {{ account }} is not feeling well in {{ env }}*
+*Account {{ account }} (health: {{ vitally[account] }}) is not feeling well in {{ env }}*
 {% for msg in msgs %}
 - {{ msg }}
 {% endfor %}

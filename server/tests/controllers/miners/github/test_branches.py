@@ -8,19 +8,43 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.github.branches import BranchMinerMetrics
-from athenian.api.models.metadata.github import Branch
+from athenian.api.models.metadata.github import Branch, NodeRepositoryRef
 
 
-async def test_load_branches_zero(mdb, branch_miner, prefixer, meta_ids):
+async def test_load_branches_zero(mdb_rw, branch_miner, prefixer, meta_ids):
     metrics = BranchMinerMetrics.empty()
-    branches, defaults = await branch_miner.load_branches(
-        ["src-d/gitbase"], prefixer, 1, meta_ids, mdb, None, None, metrics=metrics,
+    gitbase_nodes = (39652699, 39652769)
+    await mdb_rw.execute_many(
+        insert(NodeRepositoryRef),
+        [
+            {
+                NodeRepositoryRef.acc_id.name: meta_ids[0],
+                NodeRepositoryRef.parent_id.name: node_id,
+                NodeRepositoryRef.child_id.name: 0,
+            }
+            for node_id in gitbase_nodes
+        ],
     )
+    try:
+        branches, defaults = await branch_miner.load_branches(
+            ["src-d/gitbase"], prefixer, 1, meta_ids, mdb_rw, None, None, metrics=metrics,
+        )
+    finally:
+        await mdb_rw.execute(
+            delete(NodeRepositoryRef).where(NodeRepositoryRef.parent_id.in_((39652699, 39652769))),
+        )
     assert branches.empty
-    assert metrics.empty_count == 1
+    assert metrics.missing == {"src-d/gitbase"}
     assert defaults == {"src-d/gitbase": "master"}
+
+    metrics = BranchMinerMetrics.empty()
+    _, _ = await branch_miner.load_branches(
+        ["src-d/gitbase"], prefixer, 1, meta_ids, mdb_rw, None, None, metrics=metrics,
+    )
+    assert not metrics.missing
+
     branches, defaults = await branch_miner.load_branches(
-        ["src-d/gitbase"], prefixer, 1, meta_ids, mdb, None, None,
+        ["src-d/gitbase"], prefixer, 1, meta_ids, mdb_rw, None, None,
     )
     assert branches.empty
     assert defaults == {"src-d/gitbase": "master"}
@@ -120,7 +144,7 @@ async def test_load_branches_main(mdb_rw, branch_miner, prefixer, meta_ids):
             ),
         )
     assert metrics.count == 5
-    assert metrics.no_default == 1
+    assert metrics.no_default == {"src-d/go-git"}
 
 
 async def test_load_branches_max_date(mdb_rw, branch_miner, prefixer, meta_ids):
