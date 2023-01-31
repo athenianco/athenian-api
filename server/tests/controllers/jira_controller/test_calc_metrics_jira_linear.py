@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.settings import LogicalRepositorySettings
@@ -14,7 +15,7 @@ from athenian.api.models.web import (
 )
 from tests.testutils.db import models_insert
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
-from tests.testutils.factory.state import MappedJIRAIdentityFactory
+from tests.testutils.factory.state import MappedJIRAIdentityFactory, TeamFactory
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -214,6 +215,41 @@ class TestCalcMetricsJiraLinear(Requester):
         assert items[0].with_.to_dict() == with_
         assert items[0].values[0].values == [count]
 
+    async def test_participants_as_team_id(self, sdb: Database, mdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1),
+            TeamFactory(id=2, members=[40020]),
+            TeamFactory(id=3, members=[29]),
+            MappedJIRAIdentityFactory(
+                github_user_id=40020, jira_user_id="5de5049e2c5dd20d0f9040c1",
+            ),
+            MappedJIRAIdentityFactory(github_user_id=29, jira_user_id="5dd58cb9c7ac480ee5674902"),
+        )
+        body = self._body(
+            date_from="2020-08-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            with_=[
+                {"assignees": ["vadim Markovtsev"]},
+                {"assignees": ["{2}"]},
+                {"reporters": ["waren Long"]},
+                {"reporters": ["{3}"]},
+            ],
+        )
+        res = await self._request(json=body)
+
+        assert len(res) == 4
+        items = sorted(res, key=lambda i: str(i["with"]))
+        assert items[0]["with"] == {"assignees": ["vadim Markovtsev"]}
+        assert items[1]["with"] == {"assignees": ["{2}"]}
+        assert items[0]["values"][0]["values"] == [155]
+        assert items[1]["values"][0]["values"] == [155]
+
+        assert items[2]["with"] == {"reporters": ["waren Long"]}
+        assert items[3]["with"] == {"reporters": ["{3}"]}
+        assert items[2]["values"][0]["values"] == [116]
+
     async def test_teams(self):
         body = self._body(
             date_from="2020-01-01",
@@ -393,6 +429,55 @@ class TestCalcMetricsJiraLinear(Requester):
         assert items[0].granularity == "all"
         assert items[0].jira_label == "performance"
         assert items[0].values[0].values == [142]
+
+    async def test_group_by_label_only_exclude(self) -> None:
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            group_by_jira_label=True,
+            labels_exclude=["security"],
+        )
+
+        body["labels_exclude"] = ["security"]
+        res = await self._request(json=body)
+
+        items = [CalculatedJIRAMetricValues.from_dict(i) for i in res]
+        assert len(items) == 48
+
+        assert not any(i["jira_label"] == "security" for i in items)
+
+        rel_item = next(i for i in items if i["jira_label"] == "reliability")
+        assert rel_item["values"][0]["values"][0] == 83
+
+        enhancement_item = next(i for i in items if i["jira_label"] == "enhancement")
+        assert enhancement_item["values"][0]["values"][0] == 36
+
+    @pytest.mark.xfail
+    async def test_group_by_label_comma(self) -> None:
+        # TODO: fix grouping when the label is a list of comma separated labels
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            group_by_jira_label=True,
+        )
+
+        body["labels_include"] = ["performance"]
+        res = await self._request(json=body)
+        assert len(res) == 1
+        items = [CalculatedJIRAMetricValues.from_dict(i) for i in res]
+        assert items[0].jira_label == "performance"
+        assert items[0].values[0].values == [143]
+
+        body["labels_include"] = ["performance,security"]
+        res = await self._request(json=body)
+        items = [CalculatedJIRAMetricValues.from_dict(i) for i in res]
+        assert items[0].jira_label == "performance"
+        assert items[0].values[0].values == [1]
+
+        assert items[1].jira_label == "security"
+        assert items[1].values[0].values == [1]
 
     async def test_group_by_label_empty(self) -> None:
         body = self._body(
