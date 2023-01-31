@@ -56,6 +56,7 @@ from athenian.api.internal.miners.github.precomputed_releases import (
     reverse_release_settings,
     store_precomputed_release_facts,
 )
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.rebased_pr import match_rebased_prs
 from athenian.api.internal.miners.github.release_load import (
     MineReleaseMetrics,
@@ -1138,15 +1139,9 @@ async def _filter_precomputed_release_facts_by_jira(
         return {}
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
-    query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids)],
-        jira,
-        meta_ids,
-        mdb,
-        cache,
-        columns=[PullRequest.node_id],
+    df = await PullRequestMiner.filter_jira(
+        pr_ids, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id],
     )
-    query = query.with_statement_hint(f"Rows(pr repo #{len(pr_ids)})")
     release_ids = np.repeat([k[0] for k in precomputed_facts], lengths)
     release_repos = np.repeat([k[1] for k in precomputed_facts], lengths)
     release_keys = np.empty(len(release_ids), dtype=[("id", int), ("repo", release_repos.dtype)])
@@ -1157,9 +1152,7 @@ async def _filter_precomputed_release_facts_by_jira(
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
     release_keys = release_keys[order]
-    df = await read_sql_query(query, mdb, columns=[PullRequest.node_id])
-    matching_pr_ids = np.sort(df[PullRequest.node_id.name].values)
-    release_keys = np.unique(release_keys[np.searchsorted(pr_ids, matching_pr_ids)])
+    release_keys = np.unique(release_keys[np.searchsorted(pr_ids, df.index.values)])
     return {(tk := tuple(k)): precomputed_facts[tk] for k in release_keys}
 
 
