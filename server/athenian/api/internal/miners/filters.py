@@ -141,6 +141,8 @@ class JIRAFilter:
     @classmethod
     def combine(cls, *filters: JIRAFilter) -> JIRAFilter:
         """Combine multiple JIRAFilter into a single one which is the logical union of them."""
+        if len(filters) == 1:
+            return filters[0]
         all_accounts = [f.account for f in filters]
         all_epics = [f.epics for f in filters]
         all_unmapped = [f.unmapped for f in filters]
@@ -171,7 +173,7 @@ class JIRAFilter:
             epics,
             _join_filter_sets(*(f.issue_types for f in filters)),
             _join_filter_sets(*(f.priorities for f in filters)),
-            True,
+            all(f.custom_projects for f in filters),
             all_unmapped[0],
         )
 

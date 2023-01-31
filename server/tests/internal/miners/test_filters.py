@@ -71,7 +71,6 @@ class TestJIRAFilterUnion:
             1,
             projects=frozenset(["proj1", "proj0"]),
             priorities=frozenset(["low", "high", "medium"]),
-            custom_projects=True,
         )
         assert f0 | f1 == expected
 
@@ -86,7 +85,7 @@ class TestJIRAFilterCombine:
     def test_two_filters(self) -> None:
         f0 = _mk_jira_filter(1, projects=frozenset(["proj0"]))
         f1 = _mk_jira_filter(1, projects=frozenset(["proj0", "proj1"]))
-        expected = _mk_jira_filter(1, projects=frozenset(["proj0", "proj1"]), custom_projects=True)
+        expected = _mk_jira_filter(1, projects=frozenset(["proj0", "proj1"]))
         assert JIRAFilter.combine(f0, f1) == expected
 
     def test_more_filters(self) -> None:
@@ -95,6 +94,17 @@ class TestJIRAFilterCombine:
         f2 = _mk_jira_filter(0)
         expected = _mk_jira_filter(0)
         assert JIRAFilter.combine(f0, f1, f2) == expected
+
+    def test_two_filters_custom_projects(self) -> None:
+        f0 = JIRAFilter(account=1, projects=frozenset(["p0", "p1"]), custom_projects=False)
+        f1 = JIRAFilter(account=1, projects=frozenset(["p0"]), custom_projects=True)
+        expected = JIRAFilter(account=1, projects=frozenset(["p0", "p1"]), custom_projects=False)
+        assert JIRAFilter.combine(f0, f1) == expected
+
+    def test_one_filter(self) -> None:
+        f = JIRAFilter(account=1, projects=frozenset(), custom_projects=False)
+        f1 = JIRAFilter.combine(f)
+        assert f == f1
 
 
 class TestJIRAFilterFromWeb:
