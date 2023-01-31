@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from itertools import compress
 import logging
 from typing import Collection, Iterable, Iterator, Optional
 
@@ -7,7 +8,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import func, select, union_all
+from sqlalchemy import distinct, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -288,33 +289,27 @@ class BranchMiner:
                 for repo in deleted_repos:
                     default_branches[repo] = "master"
                 log.error("some repositories do not exist: %s", deleted_repos)
-            if zero_names := (zero_branch_repos & prefixer.repo_name_to_node.keys()):
-                zero_nodes = [prefixer.repo_name_to_node[k] for k in zero_names]
-                rows = await mdb.fetch_all(
-                    select(
-                        NodeRepositoryRef.parent_id,
-                        func.count(NodeRepositoryRef.child_id).label("numrefs"),
-                    )
-                    .where(
-                        NodeRepositoryRef.acc_id.in_(meta_ids),
-                        NodeRepositoryRef.parent_id.in_(zero_nodes),
-                    )
-                    .group_by(NodeRepositoryRef.parent_id),
+            if zero_names := zero_branch_repos & prefixer.repo_name_to_node.keys():
+                for full_name in zero_names:
+                    default_branches[full_name] = "master"
+                zero_nodes = np.fromiter(
+                    (prefixer.repo_name_to_node[k] for k in zero_names), int, len(zero_names),
                 )
-                refs = {r[NodeRepositoryRef.parent_id.name]: r["numrefs"] for r in rows}
-                reported_repos = set()
-                warnings = []
-                errors = []
-                for node_id, full_name in zip(zero_nodes, zero_names):
-                    if full_name not in reported_repos:
-                        (warnings if refs.get(node_id, 0) == 0 else errors).append(full_name)
-                        default_branches[full_name] = "master"
-                        reported_repos.add(full_name)
-                for report, items in ((log.warning, warnings), (log.error, errors)):
-                    if items:
-                        report("the following repositories have 0 branches: %s", items)
-                        if metrics is not None:
-                            metrics.empty_count += len(items)
+                refs = (
+                    await read_sql_query(
+                        select(distinct(NodeRepositoryRef.parent_id)).where(
+                            NodeRepositoryRef.acc_id.in_(meta_ids),
+                            NodeRepositoryRef.parent_id.in_(zero_nodes),
+                        ),
+                        mdb,
+                        [NodeRepositoryRef.parent_id],
+                    )
+                )[NodeRepositoryRef.parent_id.name].values
+                inconsistent = np.in1d(zero_nodes, refs, assume_unique=True, invert=True)
+                if errors := list(compress(zero_names, inconsistent)):
+                    if metrics is not None:
+                        metrics.empty_count += len(errors)
+                    log.error("the following repositories have 0 branches but >0 refs: %s", errors)
         if metrics is not None:
             metrics.count = len(branches)
         return branches, default_branches, repo_ids is not None
