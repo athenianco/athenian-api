@@ -211,6 +211,26 @@ class TestCalcMetricsReleases(Requester):
         assert len(models) == 1
         assert models[0].values[0].values == [22, 235]
 
+    async def test_empty_jira_object(self):
+        body = self._body(
+            date_from="2018-01-01",
+            date_to="2020-03-01",
+            for_=[["{1}"]],
+            metrics=[ReleaseMetricID.RELEASE_COUNT],
+        )
+        rbody = await self._request(json=body)
+        count = rbody[0]["values"][0]["values"][0]
+
+        body["jira"] = {}
+        rbody = await self._request(json=body)
+        count_empty_jira = rbody[0]["values"][0]["values"][0]
+        assert count == count_empty_jira
+
+        body["jira"] = {"epics": [], "labels_include": []}
+        rbody = await self._request(json=body)
+        count_empty_jira_2 = rbody[0]["values"][0]["values"][0]
+        assert count == count_empty_jira_2
+
     async def test_labels(self):
         body = self._body(
             date_from="2018-01-01",
