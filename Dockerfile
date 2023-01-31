@@ -7,7 +7,8 @@ ENV BROWSER=/browser \
     TZ=Europe/Madrid \
     PYTHON_TARGET_VERSION="3.11.0-1+jammy1" \
     PYTHON_VERSION=3.11 \
-    MKL=2020.4-304
+    MKL=2020.4-304 \
+    LLVM=17
 
 RUN echo '#!/bin/bash\n\
 \n\
@@ -64,8 +65,8 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main" >>/etc/apt/sources.list.d/llvm.list && \
     wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
-    apt-get install -y bolt-16 llvm-16 && \
-    export LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-16/bin/llvm-symbolizer && \
+    apt-get install -y bolt-$LLVM llvm-$LLVM && \
+    export LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-$LLVM/bin/llvm-symbolizer && \
     add-apt-repository -s ppa:deadsnakes/ppa && \
     mkdir /cpython && \
     cd /cpython && \
@@ -110,7 +111,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
       python$PYTHON_VERSION-venv* \
       python$PYTHON_VERSION-full* && \
     echo "========" && ls && \
-    apt-get purge -y dpkg-dev devscripts software-properties-common html2text bolt-16 llvm-16 $(cat build_bloat) && \
+    apt-get purge -y dpkg-dev devscripts software-properties-common html2text bolt-$LLVM llvm-$LLVM $(cat build_bloat) && \
     apt-get autoremove -y && \
     dpkg -i *python3.11*.deb && \
     dpkg -i python3-minimal*.deb libpython3-stdlib*.deb && \
@@ -123,7 +124,9 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     cd / && \
     rm -rf /cpython && \
     apt-mark hold python$PYTHON_VERSION python$PYTHON_VERSION-minimal libpython$PYTHON_VERSION libpython$PYTHON_VERSION-minimal && \
-    wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
+    wget https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py "pip!=23.0" && \
+    rm get-pip.py && \
     python3 -m pip install --no-cache-dir 'cython>=0.29.30' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -157,7 +160,7 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
       libfftw3-3 libfftw3-dev gfortran libgfortran5 gcc g++ && \
-    pip3 install 'setuptools<60.0.0' && \
+    pip3 install 'setuptools!=60.6.0,!=64.0.0' && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
     pip3 $VERBOSE install --no-cache-dir numpy==1.23.4 --no-binary numpy && \

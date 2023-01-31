@@ -57,19 +57,19 @@ class BranchMinerMetrics:
     """Branch source data error statistics."""
 
     count: int
-    empty_count: int
-    no_default: int
+    missing: set[str]
+    no_default: set[str]
 
     @classmethod
     def empty(cls) -> "BranchMinerMetrics":
         """Initialize a new BranchMinerMetrics instance filled with zeros."""
-        return BranchMinerMetrics(0, 0, 0)
+        return BranchMinerMetrics(0, set(), set())
 
     def as_db(self) -> Iterator[HealthMetric]:
         """Generate HealthMetric-s from this instance."""
         yield HealthMetric(name="branches_count", value=self.count)
-        yield HealthMetric(name="branches_empty_count", value=self.empty_count)
-        yield HealthMetric(name="branches_no_default", value=self.no_default)
+        yield HealthMetric(name="branches_empty_count", value=len(self.missing))
+        yield HealthMetric(name="branches_no_default", value=len(self.no_default))
 
 
 @cached_methods
@@ -250,7 +250,7 @@ class BranchMiner:
                     default_branch,
                 )
                 if metrics is not None:
-                    metrics.no_default += 1
+                    metrics.no_default.add(repo)
             default_branches[repo] = default_branch
             pos = next_pos
         if ambiguous_defaults:
@@ -305,10 +305,10 @@ class BranchMiner:
                         [NodeRepositoryRef.parent_id],
                     )
                 )[NodeRepositoryRef.parent_id.name].values
-                inconsistent = np.in1d(zero_nodes, refs, assume_unique=True, invert=True)
+                inconsistent = np.in1d(zero_nodes, refs, assume_unique=True)
                 if errors := list(compress(zero_names, inconsistent)):
                     if metrics is not None:
-                        metrics.empty_count += len(errors)
+                        metrics.missing.update(errors)
                     log.error("the following repositories have 0 branches but >0 refs: %s", errors)
         if metrics is not None:
             metrics.count = len(branches)

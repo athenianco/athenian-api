@@ -63,6 +63,7 @@ from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import sentry_span
+from athenian.api.vitally import VitallyAccounts
 
 
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional[Callable]:
@@ -800,15 +801,20 @@ async def alert_bad_health(
     cache: Optional[aiomcache.Client],
 ) -> None:
     """Apply 101 rules to detect some common data issues and report them to Slack."""
+    await (vitally := VitallyAccounts(rdb)).refresh()
     msgs = []
     if metrics.releases.commits.pristine:
-        msgs.append(f"repositories with 0 commits: `{metrics.releases.commits.pristine}`")
+        msgs.append(f"repositories without commits: `{metrics.releases.commits.pristine}`")
     if metrics.releases.commits.corrupted:
         msgs.append(
             f"repositories with corrupted commit DAGs: `{metrics.releases.commits.corrupted}`",
         )
     if metrics.releases.commits.orphaned:
         msgs.append(f"repositories with commit DAG orphans: `{metrics.releases.commits.orphaned}`")
+    if metrics.branches.no_default:
+        msgs.append(f"repositories without default branches: `{metrics.branches.no_default}`")
+    if metrics.branches.missing:
+        msgs.append(f"repositories without branches: `{metrics.branches.missing}`")
     previous_done_prs = await rdb.fetch_val(
         sa.select(HealthMetric.value)
         .where(
@@ -839,6 +845,11 @@ async def alert_bad_health(
     if msgs:
 
         async def report_msg():
-            await slack.post_health("bad_health.jinja2", account=account, msgs=msgs)
+            await slack.post_health(
+                "bad_health.jinja2",
+                account=account,
+                msgs=msgs,
+                vitally=vitally.accounts.get(account),
+            )
 
         await defer(report_msg(), "report bad health to Slack")
