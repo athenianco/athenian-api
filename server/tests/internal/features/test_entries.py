@@ -991,19 +991,15 @@ class BaseCalcJIRAMetricsTest:
         sdb: Database,
         mdb: Database,
     ) -> dict[str, Any]:
-        jira_ids = await get_jira_installation(1, sdb, mdb, None)
-        jira_config = JIRAConfig(jira_ids.acc_id, jira_ids.projects, jira_ids.epics)
-
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         for f in ("prefixer", "branches"):
             shared_kwargs.pop(f)
+        return {"quantiles": [0, 1], "exclude_inactive": False, **shared_kwargs}
 
-        return {
-            "quantiles": [0, 1],
-            "exclude_inactive": False,
-            "jira_ids": jira_config,
-            **shared_kwargs,
-        }
+    @classmethod
+    async def _get_jira_config(cls, sdb: Database, mdb: Database) -> JIRAConfig:
+        jira_ids = await get_jira_installation(DEFAULT_JIRA_ACCOUNT_ID, sdb, mdb, None)
+        return JIRAConfig(jira_ids.acc_id, jira_ids.projects, jira_ids.epics)
 
 
 class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
@@ -1016,7 +1012,7 @@ class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
         sdb: Database,
     ) -> None:
         cache = build_fake_cache()
-        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
         calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
         time_intervals = [[dt(2020, 5, 1), dt(2020, 5, 5)]]
 
@@ -1024,14 +1020,9 @@ class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
         metrics1 = [JIRAMetricID.JIRA_LEAD_TIME, JIRAMetricID.JIRA_OPEN, JIRAMetricID.JIRA_RAISED]
 
         base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
+        jira_config = await self._get_jira_config(sdb, mdb)
         base_kwargs.update(
-            {
-                "label_filter": LabelFilter.empty(),
-                "split_by_label": False,
-                "priorities": [],
-                "types": [],
-                "epics": [],
-            },
+            {"groups": [JIRAFilter.from_jira_config(jira_config)], "split_by_label": False},
         )
         kwargs = {"time_intervals": time_intervals, "participants": [], **base_kwargs}
 
@@ -1058,7 +1049,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
         rdb: Database,
         sdb: Database,
     ) -> None:
-        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
         requests = [
             MetricsLineRequest(
                 [JIRAMetricID.JIRA_OPEN],
@@ -1090,22 +1081,22 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
 
         calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, None)
 
+        jira_config = await self._get_jira_config(sdb, mdb)
         all_metrics = list(chain.from_iterable(req.metrics for req in requests))
         all_intervals = list(chain.from_iterable(req.time_intervals for req in requests))
         global_calc_res, _ = await calculator.calc_jira_metrics_line_github(
             metrics=all_metrics,
             time_intervals=all_intervals,
-            label_filter=LabelFilter.empty(),
+            groups=[JIRAFilter.from_jira_config(jira_config)],
             participants=[{JIRAParticipationKind.REPORTER: ["vadim markovtsev"]}],
             split_by_label=False,
-            priorities=[],
-            types=[],
-            epics=[],
             **base_kwargs,
         )
         await wait_deferred()
 
-        batch_res = await calculator.batch_calc_jira_metrics_line_github(requests, **base_kwargs)
+        batch_res = await calculator.batch_calc_jira_metrics_line_github(
+            requests, jira_ids=jira_config, **base_kwargs,
+        )
 
         jira_open = global_calc_res[0][0][0][0][0]
         assert jira_open.value == 7
@@ -1145,7 +1136,7 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
             ),
         ]
         base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
-
+        base_kwargs["jira_ids"] = await self._get_jira_config(sdb, mdb)
         calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
 
         first_res = await calculator.batch_calc_jira_metrics_line_github(requests, **base_kwargs)
