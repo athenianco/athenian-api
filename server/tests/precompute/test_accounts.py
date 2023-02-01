@@ -1,15 +1,18 @@
 from argparse import Namespace
 import contextlib
 import logging
+import os
 from typing import Any
 from unittest import mock
 
 from freezegun import freeze_time
+import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database
-from athenian.api.defer import with_defer
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.data_health_metrics import DataHealthMetrics
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team_sync import TeamSyncMetrics
@@ -19,6 +22,7 @@ from athenian.api.precompute.accounts import (
     _ensure_bot_team,
     _ensure_root_team,
     _StatusTracker,
+    alert_bad_health,
     ensure_teams,
     main,
     precompute_reposet,
@@ -452,3 +456,24 @@ def _mock_prometheus_push_handler():
     mocked_defaults = orig_defaults[:2] + (handler_mock,)
     with mock.patch.object(push_to_gateway, "__defaults__", mocked_defaults):
         yield handler_mock
+
+
+@with_defer
+async def test_alert_bad_health_smoke(cache, rdb, slack):
+    if slack is None or "SLACK_HEALTH_CHANNEL" not in os.environ:
+        pytest.skip()
+    called_post = False
+    original_chat_postMessage = slack.chat_postMessage
+
+    async def tracing_chat_postMessage(*args, **kwargs):
+        nonlocal called_post
+        called_post = True
+        return await original_chat_postMessage(*args, **kwargs)
+
+    slack.chat_postMessage = tracing_chat_postMessage
+    metrics = DataHealthMetrics.empty()
+    metrics.releases.commits.orphaned = {"src-d/go-git"}
+    await alert_bad_health(metrics, True, 1, rdb, slack, cache)
+    await wait_deferred()
+    assert called_post
+    await alert_bad_health(metrics, True, 1, None, slack, cache)

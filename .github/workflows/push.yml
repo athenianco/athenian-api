@@ -365,6 +365,8 @@ jobs:
         echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
         echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
         echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
+        echo 'SLACK_HEALTH_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+        echo 'SLACK_PERFORMANCE_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
     - name: test suite
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       working-directory: server
@@ -554,6 +556,8 @@ jobs:
         echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
         echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
         echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
+        echo 'SLACK_HEALTH_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+        echo 'SLACK_PERFORMANCE_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
     - name: test user
       if: "matrix.type == 'user' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       working-directory: server

@@ -21,6 +21,7 @@ from filelock import FileLock
 import sentry_sdk
 import sqlalchemy as sa
 
+from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import read_sql_query
 from athenian.api.internal.features.entries import MetricEntriesCalculator, PRFactsCalculator
 from tests.testutils.factory.miners import PullRequestFactsFactory
@@ -416,9 +417,23 @@ def headers() -> Dict[str, str]:
     }
 
 
-@pytest.fixture(scope="session")
-def slack():
-    return create_slack(logging.getLogger("pytest"))
+@pytest.fixture(scope="function")
+def slack(request, event_loop):
+    client = create_slack(logging.getLogger("pytest"))
+    if client is not None:
+
+        async def close_slack():
+            client.session_future.cancel()
+            if client.session is not None:
+                close_event = create_aiohttp_closed_event(client.session)
+                await client.session.close()
+                await close_event.wait()
+
+        def shutdown():
+            event_loop.run_until_complete(close_slack())
+
+        request.addfinalizer(shutdown)
+    return client
 
 
 @pytest.fixture(scope="function")

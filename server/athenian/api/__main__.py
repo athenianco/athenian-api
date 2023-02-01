@@ -452,6 +452,7 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     installations."""
     slack_token = os.getenv("SLACK_API_TOKEN")
     if not slack_token:
+        log.warning("Slack messaging is disabled, define SLACK_API_TOKEN envvar")
         return None
     slack_client = SlackWebClient(token=slack_token)
 
