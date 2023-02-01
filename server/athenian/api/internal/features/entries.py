@@ -1205,7 +1205,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, jira_ids, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, participants, groups, split_by_label, exclude_inactive, release_settings, logical_settings, default_branches, **_: (  # noqa
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
@@ -1214,12 +1214,8 @@ class MetricEntriesCalculator:
                 ",".join(f"{k.name}:{sorted(map(str, v))}" for k, v in sorted(p.items()))
                 for p in participants
             ),
-            label_filter,
+            ",".join(str(g) for g in groups),
             split_by_label,
-            ",".join(sorted(priorities)),
-            ",".join(sorted(types)),
-            ",".join(sorted(jira_ids.projects)),
-            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
             exclude_inactive,
             release_settings,
             logical_settings,
@@ -1234,35 +1230,35 @@ class MetricEntriesCalculator:
         time_intervals: Sequence[Sequence[datetime]],
         quantiles: Sequence[float],
         participants: list[JIRAParticipants],
-        label_filter: LabelFilter,
+        groups: Sequence[JIRAFilter],
         split_by_label: bool,
-        priorities: Collection[str],
-        types: Collection[str],
-        epics: Collection[str] | bool,
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         default_branches: dict[str, str],
-        jira_ids: Optional[JIRAConfig],
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Calculate the JIRA issue metrics.
 
-        :return: 1. participants x labels x granularities x time intervals x metrics. \
+        :return: 1. participants x groups x granularities x time intervals x metrics. \
                  2. Labels by which we grouped the issues.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         reporters, assignees, commenters = ParticipantsMerge.jira(participants)
-        jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
-            labels=label_filter, issue_types=types, epics=epics, priorities=priorities,
-        )
         extra_columns = list(participant_columns) if len(participants) > 1 else []
+
+        # there should be at least one group, and every should include a valid jira account id
+        assert len(groups)
+        assert all(g.account for g in groups)
+
         if split_by_label:
+            assert len(groups) == 1
             extra_columns.append(Issue.labels)
+
         issues = await fetch_jira_issues(
             time_from,
             time_to,
-            jira_filter,
+            JIRAFilter.combine(*groups),
             exclude_inactive,
             reporters,
             assignees,
@@ -1279,7 +1275,7 @@ class MetricEntriesCalculator:
             extra_columns=extra_columns,
         )
         calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
+        label_splitter = IssuesLabelSplitter(split_by_label, groups[0].labels)
         groupers = partial(split_issues_by_participants, participants), label_splitter
         groups = group_to_indexes(issues, *groupers)
         return calc(issues, time_intervals, groups), label_splitter.labels
