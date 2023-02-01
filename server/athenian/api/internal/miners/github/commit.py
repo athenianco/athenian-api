@@ -726,22 +726,52 @@ async def _fetch_commit_history_dag(
             new_edges = await _fetch_commit_history_edges(
                 head_ids[:batch_size], stop_hashes, meta_ids, mdb,
             )
-        bads, bad_seeds, bad_hashes = verify_edges_integrity(new_edges, alloc)
+        bads, bad_seed_indexes, bad_hashes = verify_edges_integrity(new_edges, None, alloc)
         if bads:
             log.warning(
                 "%s: %d @ %d new DAG edges are not consistent (%d commits / %d existing): %s",
                 repo,
                 len(bads),
-                len(bad_seeds),
+                len(bad_seed_indexes),
                 len(bad_hashes),
                 len(hashes),
-                [new_edges[i] for i in bad_seeds[:10]],
+                [new_edges[i] for i in bad_seed_indexes[:10]],
             )
-            for i in bad_seeds:
-                must_refetch.append(new_edges[i][0])
-            if metrics is not None:
-                metrics.corrupted.add(repo)
-            consistent = False
+            bad_seed_hashes = set()
+            for i in bad_seed_indexes:
+                parent, child = new_edges[i][0], new_edges[i][1]
+                if child is not None and len(child) == 40 and child != "0" * 40:
+                    bad_seed_hashes.add(child)
+                if parent is not None and len(parent) == 40 and parent != "0" * 40:
+                    bad_seed_hashes.add(parent)
+            now = datetime.now(timezone.utc)
+            ignored_seed_hashes = (
+                await read_sql_query(
+                    select(NodeCommit.oid).where(
+                        NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.oid.in_(bad_seed_hashes),
+                        NodeCommit.committed_date < now.replace(year=now.year - 3),
+                    ),
+                    mdb,
+                    [NodeCommit.oid],
+                )
+            )[NodeCommit.oid.name].values
+            if len(ignored_seed_hashes) > 0:
+                log.warning(
+                    "%s: ignored %d outdated inconsistent seeds: %s",
+                    repo,
+                    len(ignored_seed_hashes),
+                    ignored_seed_hashes.tolist(),
+                )
+                bads, bad_seed_indexes, bad_hashes = verify_edges_integrity(
+                    new_edges, ignored_seed_hashes, alloc,
+                )
+            if bad_seed_indexes:
+                consistent = False
+                for i in bad_seed_indexes:
+                    must_refetch.append(new_edges[i][0])
+                if metrics is not None:
+                    metrics.corrupted.add(repo)
             for i in bads[::-1]:
                 new_edges.pop(i)
         if len(
