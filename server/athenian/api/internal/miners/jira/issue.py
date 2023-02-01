@@ -417,7 +417,7 @@ async def _fetch_jira_issues(
         if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
             log.error(
                 "JIRA issues are missing in jira.athenian_issue: %s",
-                ", ".join(issues[Issue.key.name].values[missing_updated]),
+                ", ".join(map(str, issues.index.values[missing_updated])),
             )
             issues = issues.take(np.flatnonzero(~missing_updated))
     if on_raw_fetch_complete is not None:
