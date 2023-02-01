@@ -263,7 +263,7 @@ class JIRAFilter:
         """Initialize a new JIRAFilter selecting everything belonging to the jira account."""
         return cls.empty().replace(
             account=jira_config.acc_id,
-            projects=list(jira_config.projects),
+            projects=frozenset(jira_config.projects),
             # TODO: sometimes JIRAFilter is built from a JIRAConfig after projects have been
             # manually restricted there, so setting False here is not possible
             custom_projects=True,
