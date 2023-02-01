@@ -837,7 +837,7 @@ async def alert_bad_health(
             f"{previous_done_prs} -> {metrics.prs.done_count}",
         )
 
-    if metrics.teams.added >= 5 and not precomputed:
+    if metrics.teams.added >= 5 and precomputed:
         msgs.append(f"team sync added {metrics.teams.added} >= 5 new teams")
     if metrics.teams.removed >= 5:
         msgs.append(f"team sync removed {metrics.teams.removed} >= 5 teams")

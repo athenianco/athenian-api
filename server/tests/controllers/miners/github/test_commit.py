@@ -210,8 +210,22 @@ async def test_extract_commits_users(
         ),
     ],
 )
-def test_verify_edges_integrity_indexes(edges, result):
+def test_verify_edges_integrity_indexes_smoke(edges, result):
     assert verify_edges_integrity(edges)[:2] == result
+
+
+def test_verify_edges_integrity_indexes_ignored():
+    assert verify_edges_integrity(
+        [
+            ("2" * 40, "3" * 40, 0),
+            ("2" * 40, "4" * 40, 1),
+            ("1" * 40, "2" * 40, 1),
+            ("2" * 40, "4" * 40, 1),
+            ("5" * 40, "1" * 40, 0),
+            ("6" * 40, "1" * 40, 1),
+        ],
+        np.array(["1" * 40, "6" * 40], dtype="S40"),
+    )[:2] == ([2, 5], [])
 
 
 def test_find_orphans():

@@ -17,9 +17,11 @@ from libcpp.algorithm cimport binary_search
 from libcpp.utility cimport pair
 from numpy cimport (
     PyArray_BYTES,
+    PyArray_CheckExact,
     PyArray_DIM,
     PyArray_IS_C_CONTIGUOUS,
     PyArray_NDIM,
+    import_array,
     ndarray,
     npy_intp,
 )
@@ -66,6 +68,7 @@ cdef _ApgRecord_New ApgRecord_New
 cdef void *_self = dlopen(NULL, RTLD_LAZY)
 ApgRecord_New = <_ApgRecord_New>dlsym(_self, "ApgRecord_New")
 dlclose(_self)
+import_array()
 
 
 def searchsorted_inrange(ndarray a, v: Any, side="left", sorter=None):
@@ -465,13 +468,15 @@ ctypedef pair[int, const char *] RawEdge
 
 
 @cython.boundscheck(False)
-def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], list[int], ndarray]:
+def verify_edges_integrity(list edges, ignored=None, alloc_capsule=None) -> tuple[list[int], list[int], ndarray]:
     cdef:
         Py_ssize_t size = len(edges)
         Py_ssize_t children_size
         const char *oid
-        long indexes_sum, parent_index, i, j, is_asyncpg
+        long indexes_sum, parent_index, i, j, is_asyncpg, ignored_size = 0
         optional[mi_heap_destroy_stl_allocator[char]] alloc
+        optional[mi_unordered_set[string_view]] ignored_set
+        const char *ignored_data = NULL
         optional[mi_unordered_map[string_view, mi_vector[RawEdge]]] children_indexes
         mi_unordered_map[string_view, mi_vector[RawEdge]].iterator it
         PyObject *record
@@ -484,6 +489,7 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
         mi_unordered_map[string_view, mi_vector[int]].iterator parent_it
         optional[mi_vector[const char *]] edge_parents
         optional[mi_vector[int]] boilerplate
+        string_view tmpstr
         int *edges_data
         size_t edge_i
         bool exists
@@ -498,6 +504,13 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
     is_asyncpg = isinstance(edges[0], asyncpg.Record)
     if not is_asyncpg:
         assert isinstance(edges[0], tuple)
+    if ignored is not None:
+        assert PyArray_CheckExact(ignored)
+        assert PyArray_NDIM(ignored) == 1
+        assert PyArray_IS_C_CONTIGUOUS(ignored)
+        assert ignored.dtype == "S40"
+        ignored_data = PyArray_BYTES(ignored)
+        ignored_size = PyArray_DIM(ignored, 0)
 
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
@@ -505,11 +518,16 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
         alloc.emplace()
 
     with nogil:
+        ignored_set.emplace(dereference(alloc))
         bads.emplace(size, dereference(alloc))
         edge_parents.emplace(size, dereference(alloc))
         children_indexes.emplace(dereference(alloc))
         edge_parent_map.emplace(dereference(alloc))
         reversed_edges.emplace(dereference(alloc))
+
+        if <PyObject *>ignored != Py_None:
+            for i in range(ignored_size):
+                dereference(ignored_set).emplace(ignored_data + i * 40, 40)
 
         if is_asyncpg:
             for i in range(size):
@@ -522,10 +540,11 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                     dereference(bads)[i] = 1
                     continue
                 oid = <const char *> PyUnicode_DATA(obj)
-                dereference(edge_parent_map)[string_view(oid, 40)] = i
+                tmpstr = string_view(oid, 40)
+                dereference(edge_parent_map)[tmpstr] = i
                 dereference(edge_parents)[i] = oid
                 parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
-                children_range = &dereference(dereference(children_indexes).try_emplace(string_view(oid, 40), dereference(alloc)).first).second
+                children_range = &dereference(dereference(children_indexes).try_emplace(tmpstr, dereference(alloc)).first).second
 
                 obj = ApgRecord_GET_ITEM(record, 1)
                 if obj == Py_None:
@@ -557,10 +576,11 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                     dereference(bads)[i] = 1
                     continue
                 oid = <const char *> PyUnicode_DATA(obj)
-                dereference(edge_parent_map)[string_view(oid, 40)] = i
+                tmpstr = string_view(oid, 40)
+                dereference(edge_parent_map)[tmpstr] = i
                 dereference(edge_parents)[i] = oid
                 parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
-                children_range = &dereference(dereference(children_indexes).try_emplace(string_view(oid, 40), dereference(alloc)).first).second
+                children_range = &dereference(dereference(children_indexes).try_emplace(tmpstr, dereference(alloc)).first).second
 
                 obj = PyTuple_GET_ITEM(record, 1)
                 if obj == Py_None:
@@ -606,8 +626,11 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
                     oid = dereference(edge_parents)[parent_index]
                     if oid == NULL:
                         continue
-                    dereference(edge_parent_map)[string_view(oid, 40)] = True
-                    parent_it = dereference(reversed_edges).find(string_view(oid, 40))
+                    tmpstr = string_view(oid, 40)
+                    if dereference(ignored_set).count(tmpstr) > 0:
+                        continue
+                    dereference(edge_parent_map)[tmpstr] = True
+                    parent_it = dereference(reversed_edges).find(tmpstr)
                     if parent_it != dereference(reversed_edges).end():
                         edges_data = dereference(parent_it).second.data()
                         for edge_i in range(dereference(parent_it).second.size()):
@@ -621,14 +644,17 @@ def verify_edges_integrity(list edges, alloc_capsule=None) -> tuple[list[int], l
     edge_parent_map_end = dereference(edge_parent_map).end()
     for i in range(size):
         oid = dereference(edge_parents)[i]
+        if oid != NULL:
+            tmpstr = string_view(oid, 40)
         bad_kind = dereference(bads)[i]
         if (
             bad_kind
             or
-            oid != NULL and dereference(edge_parent_map).find(string_view(oid, 40)) != edge_parent_map_end
+            oid != NULL and dereference(edge_parent_map).find(tmpstr) != edge_parent_map_end
         ):
-            if bad_kind < 2:
+            if bad_kind < 2 and (oid == NULL or dereference(ignored_set).count(string_view(oid, 40)) == 0):
                 bad_seeds.append(i)
+            # we should always remove the bad seeds to not break downstream
             tainted_indexes.append(i)
 
     tainted_hashes = np.empty(dereference(edge_parent_map).size(), dtype="S40")
