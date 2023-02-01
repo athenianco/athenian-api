@@ -1343,21 +1343,25 @@ async def _calc_jira_entry(
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
     )
     if issubclass(model, JIRAMetricsRequest):
+        group = JIRAFilter.from_jira_config(jira_ids).replace(
+            labels=label_filter,
+            custom_projects=filt.projects is not None,
+            priorities=frozenset([normalize_priority(p) for p in (filt.priorities or [])]),
+            issue_types=frozenset([normalize_issue_type(t) for t in (filt.types or [])]),
+            epics=frozenset([s.upper() for s in (filt.epics or [])]),
+        )
+
         metric_values, split_labels = await calculator.calc_jira_metrics_line_github(
             filt.metrics,
             time_intervals,
             filt.quantiles or (0, 1),
             [g.as_participants() for g in (with_ or [])],
-            label_filter,
+            [group],
             filt.group_by_jira_label,
-            {normalize_priority(p) for p in (filt.priorities or [])},
-            {normalize_issue_type(t) for t in (filt.types or [])},
-            filt.epics or [],
             filt.exclude_inactive,
             release_settings,
             logical_settings,
             default_branches,
-            jira_ids,
         )
         return filt, time_intervals, tzoffset, metric_values, split_labels
     defs = defaultdict(list)
