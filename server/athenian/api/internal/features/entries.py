@@ -486,24 +486,18 @@ class MetricEntriesCalculator:
             df_facts, release_settings, logical_settings,
         )
 
+        repo_grouping = _BatchRepoGrouping(all_repositories, df_facts, logical_settings)
         results = []
         for request in requests:
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
+            repo_groups = repo_grouping.get_groups([t.repositories for t in request.teams])
             group_by = [
-                group_by_repo(
-                    PullRequest.repository_full_name.name,
-                    [
-                        logical_settings.augment_with_logical_repos(t.repositories)
-                        for t in request.teams
-                    ],
-                    df_facts,
-                ),
+                repo_groups,
                 group_prs_by_participants(
                     [t.participants for t in request.teams], False, df_facts,
                 ),
                 group_pr_facts_by_jira(jira_grouping, df_facts),
             ]
-
             groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
             groups = deduplicate_groups(
                 groups,
@@ -923,22 +917,13 @@ class MetricEntriesCalculator:
             with_jira=_get_jira_entities_to_fetch(jira_filters, ()),
         )
 
+        repo_grouping = _BatchRepoGrouping(all_repositories, df_facts, logical_settings)
         results = []
         for request in requests:
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
             group_by = [
-                group_by_repo(
-                    Release.repository_full_name.name,
-                    [
-                        logical_settings.augment_with_logical_repos(t.repositories)
-                        for t in request.teams
-                    ],
-                    df_facts,
-                ),
-                group_releases_by_participants(
-                    [t.participants for t in request.teams],
-                    df_facts,
-                ),
+                repo_grouping.get_groups([t.repositories for t in request.teams]),
+                group_releases_by_participants([t.participants for t in request.teams], df_facts),
                 group_release_facts_by_jira(jira_grouping, df_facts),
             ]
             groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
@@ -1499,6 +1484,33 @@ class MetricEntriesCalculator:
             self.pr_jira_mapper,
             self._cache,
         )
+
+
+class _BatchRepoGrouping:
+    """Handles the grouping by repositories for batch metrics calculation."""
+
+    def __init__(
+        self,
+        all_repositories: set[str],
+        df_facts: pd.Dataframe,
+        logical_settings: LogicalRepositorySettings,
+    ):
+        self._all_repositories = all_repositories
+        self._df_facts = df_facts
+        self._augment_with_logical = logical_settings.augment_with_logical_repos
+
+    def get_groups(self, request_repos: Collection[Collection[str]]) -> list[npt.NDarray[int]]:
+        """Get the groups for the given repository sets."""
+        # when every repo set is equal to `all_repositories` we can just select all `df_facts`
+        # since `all_repositories` is the union of every repo set received here
+        # it's faster to just compare the lengths
+        if all(len(r) == len(self._all_repositories) for r in request_repos):
+            return [np.arange(len(self._df_facts))] * len(request_repos)
+        else:
+            augmented_request_repos = [self._augment_with_logical(r) for r in request_repos]
+            return group_by_repo(
+                PullRequest.repository_full_name.name, augmented_request_repos, self._df_facts,
+            )
 
 
 class _JIRAFilterToGroupingConverter:
