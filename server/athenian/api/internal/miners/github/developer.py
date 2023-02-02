@@ -8,7 +8,7 @@ import aiomcache
 import morcilla
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, exists, func, not_, select
+from sqlalchemy import exists, func, not_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_utils import gather, read_sql_query
@@ -213,7 +213,7 @@ async def _mine_prs(
                 on=(NodePullRequest.node_id, NodePullRequest.acc_id),
             )
         else:
-            query = select(selected).where(and_(*filters))
+            query = select(*selected).where(*filters)
     elif jira:
         query = await generate_jira_prs_query(
             filters,
@@ -226,7 +226,7 @@ async def _mine_prs(
             on=(NodePullRequest.node_id, NodePullRequest.acc_id),
         )
     else:
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(*filters)
         for hint in hints:
             query = query.with_statement_hint(hint)
     return await read_sql_query(query, mdb, [c.name for c in selected])
@@ -374,7 +374,7 @@ async def _mine_reviews(
                 on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id),
             )
         else:
-            query = select(selected).where(and_(*filters))
+            query = select(*selected).where(*filters)
     elif jira:
         query = await generate_jira_prs_query(
             filters,
@@ -387,7 +387,7 @@ async def _mine_reviews(
             on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id),
         )
     else:
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(*filters)
     return await read_sql_query(query, mdb, selected)
 
 
@@ -420,7 +420,9 @@ async def _mine_pr_comments(
     filters = [
         model.acc_id.in_(meta_ids),
         model.created_at.between(time_from, time_to),
-        model.user_node_id.in_(dev_ids),
+        model.user_node_id.in_(dev_ids)
+        if len(dev_ids) < 100
+        else model.user_node_id.in_any_values(dev_ids),
         model.repository_node_id.in_(repo_ids),
     ]
     if labels:
@@ -437,7 +439,7 @@ async def _mine_pr_comments(
                 on=(model.pull_request_node_id, model.acc_id),
             )
         else:
-            query = select(selected).where(and_(*filters))
+            query = select(*selected).where(*filters)
     elif jira:
         query = await generate_jira_prs_query(
             filters,
@@ -450,7 +452,7 @@ async def _mine_pr_comments(
             on=(model.pull_request_node_id, model.acc_id),
         )
     else:
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(*filters)
     return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
