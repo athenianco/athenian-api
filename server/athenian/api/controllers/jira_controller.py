@@ -1,7 +1,7 @@
 import asyncio
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
+from itertools import chain, repeat
 import logging
 from typing import Any, Collection, Mapping, Optional, Type, Union
 
@@ -53,6 +53,7 @@ from athenian.api.internal.miners.jira.issue import (
     ISSUE_PRS_RELEASED,
     fetch_jira_issues,
     participant_columns,
+    query_jira_raw,
     resolve_work_began_and_resolved,
 )
 from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
@@ -627,7 +628,7 @@ async def _issue_flow(
     Optional[dict[str, WebDeploymentNotification]],
 ]:
     """Fetch various information related to JIRA issues."""
-    if JIRAFilterReturn.ISSUES not in return_:
+    if JIRAFilterReturn.ISSUES not in return_ or return_ == {JIRAFilterReturn.ISSUES}:
         return [], [], [], [], [], [], None
     log = logging.getLogger("%s.filter_jira_stuff/issue" % metadata.__package__)
     extra_columns = [
@@ -667,26 +668,57 @@ async def _issue_flow(
         priorities=priorities,
     )
 
-    issues = await fetch_jira_issues(
-        time_from,
-        time_to,
-        jira_filter,
-        exclude_inactive,
-        reporters,
-        assignees,
-        commenters,
-        False,
-        default_branches,
-        release_settings,
-        logical_settings,
-        account,
-        meta_ids,
-        mdb,
-        pdb,
-        cache,
-        extra_columns=extra_columns,
-        adjust_timestamps_using_prs=JIRAFilterReturn.ISSUE_BODIES in return_,
-    )
+    if full_fetch := return_.difference(
+        {
+            JIRAFilterReturn.ISSUES,
+            JIRAFilterReturn.PRIORITIES,
+            JIRAFilterReturn.ISSUE_TYPES,
+            JIRAFilterReturn.STATUSES,
+        },
+    ):
+        issues = await fetch_jira_issues(
+            time_from,
+            time_to,
+            jira_filter,
+            exclude_inactive,
+            reporters,
+            assignees,
+            commenters,
+            False,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            cache,
+            extra_columns=extra_columns,
+            adjust_timestamps_using_prs=JIRAFilterReturn.ISSUE_BODIES in return_,
+        )
+    else:
+        # fast lane: it's enough to select distinct ID values
+        distinct_columns = [Issue.project_id]
+        if JIRAFilterReturn.PRIORITIES in return_:
+            distinct_columns.append(Issue.priority_id)
+        if JIRAFilterReturn.ISSUE_TYPES in return_:
+            distinct_columns.append(Issue.type_id)
+        if JIRAFilterReturn.STATUSES in return_:
+            distinct_columns.append(Issue.status_id)
+        issues = await query_jira_raw(
+            distinct_columns,
+            time_from,
+            time_to,
+            jira_filter,
+            exclude_inactive,
+            reporters,
+            assignees,
+            commenters,
+            False,
+            mdb,
+            cache,
+            distinct=True,
+        )
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name].values)))
     else:
@@ -722,14 +754,16 @@ async def _issue_flow(
     if JIRAFilterReturn.ISSUE_TYPES in return_ or JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_type_counts = defaultdict(int)
         issue_type_projects = defaultdict(set)
-        for project_id, issue_type_id in zip(
+        for project_id, issue_type_id, count in zip(
             issues[Issue.project_id.name].values,
             issues[Issue.type_id.name].values,
+            repeat(1) if full_fetch else issues["count"].values,
         ):
             issue_type_projects[project_id].add(issue_type_id)
-            issue_type_counts[(project_id, issue_type_id)] += 1
+            issue_type_counts[(project_id, issue_type_id)] += count
     else:
         issue_type_counts = issue_type_projects = []
+
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         if not issues.empty:
             pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
