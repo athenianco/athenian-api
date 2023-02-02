@@ -10,7 +10,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import func, sql
+from sqlalchemy import BigInteger, func, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -391,7 +391,16 @@ async def _fetch_jira_issues(
     log = logging.getLogger("%s.jira" % metadata.__package__)
     resolved_colname = AthenianIssue.resolved.name
     created_colname = Issue.created.name
-    issues = await _fetch_raw_issues(
+    issues = await query_jira_raw(
+        [
+            Issue.id,
+            Issue.created,
+            AthenianIssue.updated,
+            AthenianIssue.work_began,
+            AthenianIssue.resolved,
+            Status.category_name,
+            *extra_columns,
+        ],
         time_from,
         time_to,
         jira_filter,
@@ -402,7 +411,6 @@ async def _fetch_jira_issues(
         nested_assignees,
         mdb,
         cache,
-        extra_columns=extra_columns,
     )
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
@@ -626,7 +634,8 @@ async def _fetch_released_prs(
 
 
 @sentry_span
-async def _fetch_raw_issues(
+async def query_jira_raw(
+    columns: list[InstrumentedAttribute],
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     jira_filter: JIRAFilter,
@@ -637,18 +646,15 @@ async def _fetch_raw_issues(
     nested_assignees: bool,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-    extra_columns: Iterable[InstrumentedAttribute] = (),
+    distinct: bool = False,
 ) -> pd.DataFrame:
+    """
+    Fetch arbitrary columns from Issue or any joined tables according to the filters.
+
+    :param distinct: Generate a counting "GROUP BY" instead of a plain SELECT.
+    """
+    assert columns
     postgres = mdb.url.dialect == "postgresql"
-    columns = [
-        Issue.id,
-        Issue.created,
-        AthenianIssue.updated,
-        AthenianIssue.work_began,
-        AthenianIssue.resolved,
-        Status.category_name,
-    ]
-    columns.extend(extra_columns)
     # this is backed with a DB index
     far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     and_filters = [
@@ -699,26 +705,31 @@ async def _fetch_raw_issues(
         if postgres:
             or_filters.append(Issue.commenters_display_names.overlap(commenters))
         else:
+            assert not distinct, "not supported in SQLite"
             if reporters:
                 columns.append(sql.func.lower(Issue.reporter_display_name).label("_reporter"))
             if assignees:
                 columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
                 if nested_assignees and all(
-                    c.name != AthenianIssue.nested_assignee_display_names.name
-                    for c in extra_columns
+                    c.name != AthenianIssue.nested_assignee_display_names.name for c in columns
                 ):
                     columns.append(AthenianIssue.nested_assignee_display_names)
-            if all(c.name != "commenters" for c in extra_columns):
+            if all(c.name != "commenters" for c in columns):
                 columns.append(Issue.commenters_display_names.label("commenters"))
     if assignees and not postgres:
         if nested_assignees and all(
             c.name != AthenianIssue.nested_assignee_display_names.name for c in columns
         ):
+            assert not distinct, "not supported in SQLite"
             columns.append(AthenianIssue.nested_assignee_display_names)
         if None in assignees and all(c.name != "_assignee" for c in columns):
+            assert not distinct, "not supported in SQLite"
             columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
+    if distinct:
+        columns.append(count_col := sql.literal_column("COUNT(*)", BigInteger).label("count"))
+        count_col.nullable = False
 
-    def query_starts():
+    def query_start():
         seed = sql.join(
             Issue,
             Status,
@@ -752,7 +763,7 @@ async def _fetch_raw_issues(
                     Issue.acc_id == epic.acc_id,
                 ),
             )
-        return sql.select(columns).select_from(
+        return sql.select(*columns).select_from(
             sql.outerjoin(
                 seed,
                 AthenianIssue,
@@ -763,15 +774,21 @@ async def _fetch_raw_issues(
             ),
         )
 
+    def query_finish(query):
+        if not distinct:
+            return query
+        return query.group_by(*columns[:-1])
+
     if or_filters:
         if postgres:
             query = [
-                query_starts().where(sql.and_(or_filter, *and_filters)) for or_filter in or_filters
+                query_finish(query_start().where(or_filter, *and_filters))
+                for or_filter in or_filters
             ]
         else:
-            query = [query_starts().where(sql.and_(sql.or_(*or_filters), *and_filters))]
+            query = [query_finish(query_start().where(sql.or_(*or_filters), *and_filters))]
     else:
-        query = [query_starts().where(*and_filters)]
+        query = [query_finish(query_start().where(*and_filters))]
 
     def hint(q):
         return (
@@ -798,16 +815,23 @@ async def _fetch_raw_issues(
             _, unique = np.unique(df.index.values, return_index=True)
             df = df.take(unique)
         else:
-            df = await read_sql_query(query, mdb, columns, index=Issue.id.name)
+            df = await read_sql_query(
+                query, mdb, columns, index=Issue.id.name if not distinct else None,
+            )
     else:
         # SQLite does not allow to use parameters multiple times
         df = pd.concat(
-            await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query)),
+            await gather(
+                *(
+                    read_sql_query(q, mdb, columns, index=Issue.id.name if not distinct else None)
+                    for q in query
+                ),
+            ),
         )
-    df = _validate_and_clean_issues(df, jira_filter.account)
+    if not distinct:
+        df = _validate_and_clean_issues(df, jira_filter.account)
     if sentry_sdk.Hub.current.scope.span is not None:
         sentry_sdk.Hub.current.scope.span.description = str(len(df))
-    df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
         return df
     passed = np.full(len(df), False)
@@ -845,6 +869,7 @@ def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
     done_no_resolved = done & no_resolved
     invalid = in_progress_no_work_began | done_no_work_began | done_no_resolved
     if not invalid.any():
+        df.sort_index(inplace=True)
         return df
     log = logging.getLogger(f"{metadata.__package__}.validate_and_clean_issues")
     issue_ids = df.index.values
@@ -868,6 +893,7 @@ def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
         )
     old_len = len(df)
     df = df.take(np.flatnonzero(~invalid))
+    df.sort_index(inplace=True)
     log.warning("cleaned JIRA issues %d / %d", len(df), old_len)
     return df
 

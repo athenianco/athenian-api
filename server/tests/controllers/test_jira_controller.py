@@ -70,6 +70,20 @@ from athenian.api.serialization import FriendlyJson
                 * 2
             ),
         ],
+        ([JIRAFilterReturn.ISSUES, JIRAFilterReturn.ISSUE_TYPES], {JIRAFilterReturn.ISSUE_TYPES}),
+        [
+            *(
+                [
+                    [
+                        JIRAFilterReturn.ISSUES,
+                        JIRAFilterReturn.ISSUE_TYPES,
+                        JIRAFilterReturn.STATUSES,
+                        JIRAFilterReturn.PRIORITIES,
+                    ],
+                ]
+                * 2
+            ),
+        ],
     ],
 )
 async def test_filter_jira_return(client, headers, return_, checked):
@@ -1124,7 +1138,7 @@ async def test_filter_jira_extended_filters(client, headers):
     assert len(model.statuses) == 7
 
 
-async def test_filter_jira_issue_types_filter(client, headers):
+async def test_filter_jira_issue_types_filter(client, headers, metadata_db):
     body = {
         "date_from": None,
         "date_to": None,
@@ -1135,6 +1149,8 @@ async def test_filter_jira_issue_types_filter(client, headers):
         "with": {"assignees": ["Vadim Markovtsev", None]},
         "return": ["issues", "issue_types"],
     }
+    if metadata_db.startswith("sqlite://"):
+        body["return"].append("epics")  # hack
     response = await client.request(
         method="POST", path="/v1/filter/jira", headers=headers, json=body,
     )
