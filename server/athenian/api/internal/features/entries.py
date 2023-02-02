@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 from itertools import chain
 import logging
+import os
 import pickle
 from typing import (
     Any,
@@ -742,14 +744,27 @@ class MetricEntriesCalculator:
             self._cache,
         )
         topics_seq = []
-        arrays = []
+        arrays = [None] * len(mined_dfs)
         repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
         developer_grouper = partial(group_actions_by_developers, devs)
-        for mined_topics, mined_df in mined_dfs:
-            topics_seq.extend(mined_topics)
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(mined_dfs)))
+
+        def calculate(i: int):
+            mined_topics, mined_df = mined_dfs[i]
             calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1), 0)
             groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
-            arrays.append(calc(mined_df, time_intervals, groups))
+            arrays[i] = calc(mined_df, time_intervals, groups)
+
+        with sentry_sdk.start_span(
+            op="DeveloperBinnedMetricCalculator",
+            description=str(len(mined_dfs)),
+        ):
+            for i, (mined_topics, _) in enumerate(mined_dfs):
+                topics_seq.extend(mined_topics)
+                executor.submit(calculate, i)
+
+            executor.shutdown(wait=True)
+
         result = np.full(arrays[0].shape, None)
         result.ravel()[:] = [
             [list(chain.from_iterable(m)) for m in zip(*lists)]
