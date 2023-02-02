@@ -135,6 +135,7 @@ async def update_dashboard_chart(
 
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
+            dashboard_id = dashboard.row[TeamDashboard.id.name]
             await update_dashboard_chart_in_db(
                 dashboard_id, chart_id, update_request, extra_values, group_by_values, sdb_conn,
             )

@@ -157,6 +157,13 @@ class TestUpdateDashboardChart(BaseUpdateDashboardChartTest):
         assert group_by_row[DashboardChartGroupBy.jira_priorities.name] == ["high", "medium"]
         assert group_by_row[DashboardChartGroupBy.repositories.name] is None
 
+    async def test_dashboard_id_0(self, sdb: Database) -> None:
+        await models_insert(sdb, *self._base_models(name="n"))
+        body = self._body(name="new name")
+        await self.post_json(9, 0, 4, json=body)
+
+        await assert_existing_row(sdb, DashboardChart, id=4, name="new name")
+
     async def test_set_static_time_interval(self, sdb: Database) -> None:
         await models_insert(
             sdb, *self._base_models(time_from=dt(2021, 1, 1), time_to=dt(2021, 2, 1)),
