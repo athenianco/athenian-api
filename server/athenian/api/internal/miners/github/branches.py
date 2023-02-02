@@ -386,8 +386,10 @@ class BranchMiner:
                     else "BitmapScan"
                 )
                 query = query.with_statement_hint(f"{scan}(ref node_ref_heads_repository_id)")
+            # fmt: off
             query = (
-                query.with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+                query
+                .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
                 .with_statement_hint(
                     "Rows(ref c repo rr n1 n2 "
                     f"*{len(repos) if repos is not None else len(prefixer.repo_node_to_name)})",
@@ -396,9 +398,16 @@ class BranchMiner:
                 .with_statement_hint("Rows(ref c repo rr *100)")
                 .with_statement_hint("set(join_collapse_limit 1)")
             )
+            # fmt: on
         else:
             # Postgres still thinks we will fetch 0 rows, but that's OK on a narrow time window
-            query = query.with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
+            # fmt: off
+            query = (
+                query
+                .with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
+                .with_statement_hint("Rows(repo ref *1000)")
+            )
+            # fmt: on
         return await read_sql_query(query, mdb, columns)
 
     @classmethod

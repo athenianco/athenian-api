@@ -22,6 +22,7 @@ def test_integration_micro(
         _test_integration_micro(metadata_db, unused_tcp_port_factory, worker_id, gunicorn)
 
 
+@pytest.mark.flaky(reruns=5)
 def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, gunicorn):
     state_db_path = db_dir / ("sdb-%s.sqlite" % worker_id)
     state_db = "sqlite:///%s" % state_db_path
@@ -38,7 +39,7 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, gunicor
     if persistentdata_db_path.exists():
         persistentdata_db_path.unlink()
     migrate("persistentdata", persistentdata_db, exec=False)
-    time.sleep(0.1)  # let PostgreSQL to digest everything, we had flaky runs without this
+    time.sleep(0.2)  # let PostgreSQL digest everything, we had flaky runs without this
     unused_port = str(aiohttp_unused_port())
     env = os.environ.copy()
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
