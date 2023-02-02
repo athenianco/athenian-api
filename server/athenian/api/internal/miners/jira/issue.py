@@ -808,7 +808,10 @@ async def query_jira_raw(
             query = [hint(q) for q in query]
         if isinstance(query, list):
             df = await gather(
-                *(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query),
+                *(
+                    read_sql_query(q, mdb, columns, index=Issue.id.name if not distinct else None)
+                    for q in query
+                ),
             )
             df = pd.concat(df, copy=False)
             df.disable_consolidate()
