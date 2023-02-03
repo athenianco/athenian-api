@@ -489,8 +489,10 @@ class MetricEntriesCalculator:
         )
 
         repo_grouping = _BatchRepoGrouping(all_repositories, df_facts, logical_settings)
-        results = []
-        for request in requests:
+        results = [None] * len(requests)
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
+
+        def calc_request(i: int, request: MetricsLineRequest) -> None:
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
             group_by = [
                 repo_grouping.get_groups([t.repositories for t in request.teams]),
@@ -514,8 +516,16 @@ class MetricEntriesCalculator:
                 **request.metric_params,
                 # environments=request.environments,
             )
-            results.append(calc(df_facts, request.time_intervals, groups))
+            results[i] = calc(df_facts, request.time_intervals, groups)
 
+        with sentry_sdk.start_span(
+            op="PullRequestBinnedMetricCalculator",
+            description=str(len(requests)),
+        ):
+            for i, request in enumerate(requests):
+                executor.submit(calc_request, i, request)
+
+            executor.shutdown(wait=True)
         return results
 
     @sentry_span
@@ -749,7 +759,7 @@ class MetricEntriesCalculator:
         developer_grouper = partial(group_actions_by_developers, devs)
         executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(mined_dfs)))
 
-        def calculate(i: int):
+        def calculate(i: int) -> None:
             mined_topics, mined_df = mined_dfs[i]
             calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1), 0)
             groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
@@ -932,8 +942,11 @@ class MetricEntriesCalculator:
         )
 
         repo_grouping = _BatchRepoGrouping(all_repositories, df_facts, logical_settings)
-        results = []
-        for request in requests:
+        results = [None] * len(requests)
+
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
+
+        def calc_request(i: int, request: MetricsLineRequest) -> None:
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
             group_by = [
                 repo_grouping.get_groups([t.repositories for t in request.teams]),
@@ -954,8 +967,16 @@ class MetricEntriesCalculator:
             calc = ReleaseBinnedMetricCalculator(
                 request.metrics, quantiles, self._quantile_stride, **request.metric_params,
             )
-            results.append(calc(df_facts, request.time_intervals, groups))
+            results[i] = calc(df_facts, request.time_intervals, groups)
 
+        with sentry_sdk.start_span(
+            op="ReleaseBinnedMetricCalculator",
+            description=str(len(requests)),
+        ):
+            for i, request in enumerate(requests):
+                executor.submit(calc_request, i, request)
+
+            executor.shutdown(wait=True)
         return results
 
     @sentry_span
@@ -1335,8 +1356,10 @@ class MetricEntriesCalculator:
             extra_columns=extra_columns,
         )
 
-        results = []
-        for request in requests:
+        results = [None] * len(requests)
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
+
+        def calc_request(i: int, request: MetricsLineRequest) -> None:
             jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
             group_by = [
                 split_issues_by_participants([t.participants for t in request.teams], issues),
@@ -1346,8 +1369,16 @@ class MetricEntriesCalculator:
             calc = JIRABinnedMetricCalculator(
                 request.metrics, quantiles, self._quantile_stride, **request.metric_params,
             )
-            results.append(calc(issues, request.time_intervals, groups))
+            results[i] = calc(issues, request.time_intervals, groups)
 
+        with sentry_sdk.start_span(
+            op="JIRABinnedMetricCalculator",
+            description=str(len(requests)),
+        ):
+            for i, request in enumerate(requests):
+                executor.submit(calc_request, i, request)
+
+            executor.shutdown(wait=True)
         return results
 
     @sentry_span
