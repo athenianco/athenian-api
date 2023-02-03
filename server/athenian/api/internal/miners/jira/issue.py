@@ -790,22 +790,36 @@ async def query_jira_raw(
     else:
         query = [query_finish(query_start().where(*and_filters))]
 
-    def hint(q):
+    def hint_athenian_issue(q):
         return (
             q.with_statement_hint("Leading(((athenian_issue issue) (s c)))")
             .with_statement_hint("Rows(athenian_issue issue *1000)")
             .with_statement_hint("Rows(s c *200)")
         )
 
+    def hint_epics(q):
+        exp_rows = len(jira_filter.epics) * 2
+        return (
+            q.with_statement_hint("Leading(((((epic issue) s) c) athenian_issue))")
+            .with_statement_hint(f"Rows(epic issue s c athenian_issue #{exp_rows})")
+            .with_statement_hint(f"Rows(epic issue #{exp_rows})")
+            .with_statement_hint(f"Rows(epic issue s #{exp_rows})")
+            .with_statement_hint(f"Rows(epic issue s c #{exp_rows})")
+        )
+
     if postgres:
         if len(query) == 1:
             query = query[0]
             if filter_by_athenian_issue:
-                query = hint(query)
-        elif not filter_by_athenian_issue:
-            query = sql.union(*query)
+                query = hint_athenian_issue(query)
+            elif len(jira_filter.epics):
+                query = hint_epics(query)
+        elif filter_by_athenian_issue:
+            query = [hint_athenian_issue(q) for q in query]
+        elif len(jira_filter.epics):
+            query = [hint_epics(q) for q in query]
         else:
-            query = [hint(q) for q in query]
+            query = sql.union(*query)
         if isinstance(query, list):
             df = await gather(
                 *(
