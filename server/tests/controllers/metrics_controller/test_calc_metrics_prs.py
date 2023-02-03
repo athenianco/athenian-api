@@ -663,6 +663,24 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
+    async def test_jira_priority(self, client_cache) -> None:
+        body = self._body(
+            for_=[{"repositories": ["{1}"], "jira": {}}],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+            date_from="2019-07-13",
+            date_to="2020-01-23",
+            exclude_inactive=False,
+        )
+        res = await self._request(json=body)
+        all_count = res["calculated"][0]["values"][0]["values"][0]
+        assert all_count == 50
+
+        body["for"][0]["jira"] = {"priorities": ["High"]}
+        res = await self._request(json=body)
+        assert res["calculated"][0]["values"][0]["values"][0] == 1
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
     async def test_jira_disabled_projects(self, disabled_dev):
         body = {
             "for": [

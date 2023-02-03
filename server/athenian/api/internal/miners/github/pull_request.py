@@ -6,7 +6,7 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
-from typing import Collection, Generator, Iterable, Iterator, KeysView, Mapping, Optional
+from typing import Collection, Generator, Iterable, Iterator, KeysView, Mapping, Optional, Sequence
 
 import aiomcache
 import numpy as np
@@ -909,11 +909,12 @@ class PullRequestMiner:
         physical_repositories: Optional[set[str] | KeysView[str]] = None,
         skip_check_runs: bool = False,
         skip_deployments: bool = False,
+        extra_jira_issue_columns: Sequence[InstrumentedAttribute] = (),
     ) -> tuple[PRDataFrames, PullRequestFactsMap, asyncio.Event]:
         assert prs.index.nlevels == 1
         node_ids = prs.index.values if len(prs) > 0 else np.array([], dtype=int)
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
-        unreleased_prs_event: asyncio.Event = None
+        unreleased_prs_event: asyncio.Event | None = None
         merged_unreleased_indexes = []
 
         @sentry_span
@@ -1121,6 +1122,7 @@ class PullRequestMiner:
                 _issue.acc_id,
                 _issue_epic.key.label("epic"),
                 _issue.project_id,
+                _issue.priority_name,
             ]
             if with_jira & JIRAEntityToFetch.TYPES:
                 selected.append(_issue.type_id)
@@ -2532,6 +2534,14 @@ class PullRequestMiner:
                     np.flatnonzero(dfs.jiras[Issue.project_id.name].isin(jira.projects).values),
                 ).unique(),
             )
+        if jira.priorities:
+            df_priorities = dfs.jiras[Issue.priority_name.name].str.lower()
+            left.append(
+                jira_index.take(
+                    np.flatnonzero(df_priorities.isin(jira.priorities).values),
+                ).unique(),
+            )
+
         result = left[0]
         for other in left[1:]:
             result = result.intersection(other)
