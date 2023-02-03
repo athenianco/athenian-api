@@ -533,6 +533,8 @@ class BranchMiner:
             if not isinstance(repo_ids_to_update, (tuple, list, np.ndarray)):
                 repo_ids_to_update = list(repo_ids_to_update)
             repo_indexes = np.flatnonzero(np.in1d(repo_ids, repo_ids_to_update))
+        else:
+            repo_indexes = []
         borders = np.zeros(len(counts) + 1, dtype=int)
         np.cumsum(counts, out=borders[1:])
         inserted_branches = []
