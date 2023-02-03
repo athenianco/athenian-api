@@ -18,7 +18,9 @@ from athenian.api.internal.miners.github.check_run import (
 from athenian.api.internal.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import CheckRun
+from athenian.api.object_arrays import objects_to_pyunicode_bytes
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import in1d_str
 
 
 @sentry_span
@@ -84,12 +86,14 @@ async def filter_check_runs(
     if df_check_runs.empty:
         return timeline_dates, []
     suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values
-    completed = np.nonzero(np.in1d(suite_statuses, [b"COMPLETED", b"SUCCESS", b"FAILURE"]))[0]
+    completed = np.flatnonzero(
+        in1d_str(suite_statuses, np.array([b"COMPLETED", b"SUCCESS", b"FAILURE"], dtype="S")),
+    )
     df_check_runs = df_check_runs.take(completed)
     del suite_statuses, completed
     df_check_runs.sort_values(CheckRun.started_at.name, inplace=True, ascending=False)
-    repocol = df_check_runs[CheckRun.repository_full_name.name].values.astype("S")
-    crnamecol = np.char.encode(df_check_runs[CheckRun.name.name].values.astype("U"), "UTF-8")
+    repocol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.repository_full_name.name].values)
+    crnamecol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.name.name].values)
     group_keys = np.char.add(np.char.add(repocol, b"|"), crnamecol)
     unique_repo_crnames, first_encounters, inverse_cr_map, repo_crnames_counts = np.unique(
         group_keys, return_counts=True, return_index=True, return_inverse=True,

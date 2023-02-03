@@ -10,12 +10,12 @@ from typing import Any, Sequence
 cimport cython
 from cpython cimport Py_INCREF, PyObject
 from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_Check
-from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check, PyBytes_FromStringAndSize
 from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cpython.unicode cimport PyUnicode_Check
 from cython.operator cimport dereference
 from libc.stdint cimport int32_t, int64_t
-from libc.string cimport memcpy
+from libc.string cimport memcpy, memset
 from numpy cimport (
     NPY_ARRAY_C_CONTIGUOUS,
     NPY_OBJECT,
@@ -24,6 +24,7 @@ from numpy cimport (
     PyArray_Descr,
     PyArray_DescrFromType,
     PyArray_DIM,
+    PyArray_IS_C_CONTIGUOUS,
     PyArray_ISOBJECT,
     PyArray_ISSTRING,
     PyArray_NDIM,
@@ -45,10 +46,17 @@ from athenian.api.native.cpython cimport (
     PyList_GET_SIZE,
     PyTuple_GET_ITEM,
     PyTypeObject,
+    PyUnicode_DATA,
     PyUnicode_GET_LENGTH,
+    PyUnicode_KIND,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator cimport mi_heap_destroy_stl_allocator
-from athenian.api.native.numpy cimport PyArray_DescrNew, PyArray_NewFromDescr, PyArray_Type
+from athenian.api.native.numpy cimport (
+    PyArray_DESCR,
+    PyArray_DescrNew,
+    PyArray_NewFromDescr,
+    PyArray_Type,
+)
 from athenian.api.native.optional cimport optional
 
 import asyncpg
@@ -399,7 +407,7 @@ def vectorize_numpy_struct_array_field(
         char *struct_data
         int32_t field_offset, field_count
         int32_t *field
-        npdtype int_dtype = np.dtype(int)
+        npdtype int_dtype = npdtype(int)
         int64_t pos = 0, delta
         optional[chunked_stream] dump
         optional[mi_heap_destroy_stl_allocator[char]] alloc
@@ -457,3 +465,83 @@ def vectorize_numpy_struct_array_field(
     dereference(dump).dump(<char *>PyArray_DATA(arr), pos)
 
     return arr, arr_offsets
+
+
+def objects_to_pyunicode_bytes(ndarray arr not None, char_limit=None) -> ndarray:
+    assert PyArray_NDIM(arr) == 1
+
+    cdef npy_intp length = PyArray_DIM(arr, 0)
+
+    if length == 0:
+        return np.array([], dtype="S")
+
+    assert PyArray_IS_C_CONTIGUOUS(arr)
+    assert PyArray_DESCR(<PyObject *> arr).kind == b"O"
+
+    cdef:
+        npy_intp i, max_itemsize = 0
+        PyObject **data = <PyObject **> PyArray_DATA(arr)
+        PyObject *obj
+        Py_ssize_t i_itemsize, char_limit_native
+        npdtype dtype
+        ndarray converted
+        char *converted_data
+        char *head
+
+    if char_limit is None:
+        for i in range(length):
+            obj = data[i]
+            if obj == Py_None:
+                i_itemsize = 4
+            else:
+                assert PyUnicode_Check(<object> obj), f"arr[{i}]: {arr[i]}"
+                i_itemsize = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj)
+            if i_itemsize > max_itemsize:
+                max_itemsize = i_itemsize
+    else:
+        assert char_limit > 0
+        char_limit_native = char_limit
+        for i in range(length):
+            obj = data[i]
+            if obj == Py_None:
+                i_itemsize = 4
+            else:
+                assert PyUnicode_Check(<object> obj), f"arr[{i}]: {arr[i]}"
+                i_itemsize = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj)
+            if i_itemsize >= char_limit_native:
+                max_itemsize = char_limit_native
+                break
+            if i_itemsize > max_itemsize:
+                max_itemsize = i_itemsize
+
+    dtype = npdtype("S" + str(max_itemsize))
+    converted = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> dtype,
+        1,
+        &length,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(dtype)
+    converted_data = <char *> PyArray_DATA(converted)
+
+    for i in range(length):
+        obj = data[i]
+        head = converted_data + i * max_itemsize
+
+        if obj == Py_None:
+            i_itemsize = 4
+            if i_itemsize > max_itemsize:
+                i_itemsize = max_itemsize
+            memcpy(head, b"None", i_itemsize)
+        else:
+            i_itemsize = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj)
+            if i_itemsize > max_itemsize:
+                i_itemsize = max_itemsize
+            memcpy(head, PyUnicode_DATA(obj), i_itemsize)
+        memset(head + i_itemsize, 0, max_itemsize - i_itemsize)
+
+    return converted

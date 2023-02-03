@@ -2312,7 +2312,7 @@ async def test_mine_releases_unicode_match(
         ),
     )
     try:
-        for _ in range(2):
+        for i in range(2):
             releases, _, _, _ = await mine_releases(
                 ["src-d/go-git"],
                 {},
@@ -2333,7 +2333,7 @@ async def test_mine_releases_unicode_match(
                 None,
                 with_deployments=False,
             )
-            assert len(releases) == 1
+            assert len(releases) == 1, i
             assert releases.iloc[0][Release.node_id.name] == 100501
             assert releases.iloc[0][Release.name.name] == "v4.0.0+Юникод"
             await wait_deferred()

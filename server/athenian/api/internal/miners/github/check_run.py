@@ -37,7 +37,7 @@ from athenian.api.models.metadata.github import (
     NodeRepository,
     PullRequestLabel,
 )
-from athenian.api.object_arrays import as_bool
+from athenian.api.object_arrays import as_bool, objects_to_pyunicode_bytes
 from athenian.api.pandas_io import deserialize_df, serialize_df
 from athenian.api.tracing import sentry_span
 
@@ -666,7 +666,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     # 1. check run start time - general sequence
     # 2. check run status, PENDING must be the first - for merges
     # 3. check run name - for splits
-    names32 = np.array([s[:32] for s in df[CheckRun.name.name].values], dtype="U32").view("S128")
+    names32 = objects_to_pyunicode_bytes(df[CheckRun.name.name].values, 128)
     order = np.argsort(np.char.add(np.char.add(int_to_str(starteds.view(int)), statuses), names32))
     df.disable_consolidate()
     df = df.take(order)
