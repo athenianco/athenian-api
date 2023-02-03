@@ -15,10 +15,12 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, cached_methods, short_term_exptime
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
 from athenian.api.defer import defer
+from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeRepositoryRef
 from athenian.api.models.persistentdata.models import HealthMetric
+from athenian.api.object_arrays import objects_to_pyunicode_bytes
 from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import numpy_struct
@@ -189,8 +191,14 @@ class BranchMiner:
         else:
             old_indexes = np.flatnonzero(
                 np.in1d(
-                    old_branches[Branch.branch_id.name].values,
-                    new_branches[Branch.branch_id.name].values,
+                    np.char.add(
+                        int_to_str(old_branches[Branch.repository_node_id.name].values),
+                        objects_to_pyunicode_bytes(old_branches[Branch.branch_name.name].values),
+                    ),
+                    np.char.add(
+                        int_to_str(new_branches[Branch.repository_node_id.name].values),
+                        objects_to_pyunicode_bytes(new_branches[Branch.branch_name.name].values),
+                    ),
                     invert=True,
                 ),
             )
@@ -200,13 +208,17 @@ class BranchMiner:
                 branches = pd.concat([new_branches, old_branches], ignore_index=True)
             else:
                 branches = new_branches
-        if pdb is not None and not new_branches.empty:
+        if pdb is not None:
             await defer(
                 cls._store_precomputed_branches(
                     account,
                     branches,
-                    new_branches[Branch.repository_node_id.name].unique(),
+                    repo_ids,
+                    new_branches[Branch.repository_node_id.name].unique()
+                    if not new_branches.empty
+                    else [],
                     now,
+                    prefixer,
                     pdb,
                 ),
                 f"store_branches({len(branches)})",
@@ -405,7 +417,7 @@ class BranchMiner:
             query = (
                 query
                 .with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
-                .with_statement_hint("Rows(repo ref *1000)")
+                .with_statement_hint("Leading((((((c ref) rr) repo) n1) n2))")
             )
             # fmt: on
         return await read_sql_query(query, mdb, columns)
@@ -505,8 +517,10 @@ class BranchMiner:
         cls,
         account: int,
         branches: pd.DataFrame,
-        repo_ids_to_update: Optional[Iterable[int]],
+        all_repo_ids: Optional[list[int]],
+        repo_ids_to_update: Collection[int],
         now: datetime,
+        prefixer: Prefixer,
         pdb: Database,
     ) -> None:
         order = np.argsort(branches[Branch.repository_node_id.name].values)
@@ -515,10 +529,7 @@ class BranchMiner:
             return_index=True,
             return_counts=True,
         )
-        repo_names = branches[Branch.repository_full_name.name].values[order[repo_id_ff]]
-        if repo_ids_to_update is None:
-            repo_indexes = np.arange(len(repo_ids), dtype=int)
-        else:
+        if len(repo_ids_to_update):
             if not isinstance(repo_ids_to_update, (tuple, list, np.ndarray)):
                 repo_ids_to_update = list(repo_ids_to_update)
             repo_indexes = np.flatnonzero(np.in1d(repo_ids, repo_ids_to_update))
@@ -543,11 +554,15 @@ class BranchMiner:
                     updated_at=now,
                 ).explode(with_primary_keys=True),
             )
+        if all_repo_ids is None:
+            all_repo_ids = repo_ids
+        repo_node_to_name = prefixer.repo_node_to_name.get
+        for repo_id in all_repo_ids:
             inserted_repos.append(
                 GitHubRepository(
                     acc_id=account,
-                    node_id=repo_ids[repo_index],
-                    repository_full_name=repo_names[repo_index],
+                    node_id=repo_id,
+                    repository_full_name=repo_node_to_name(repo_id),
                     branches_fetched_at=now,
                     updated_at=now,
                 ).explode(with_primary_keys=True),

@@ -70,7 +70,7 @@ from athenian.api.models.precomputed.models import (
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseMatchTimespan,
 )
-from athenian.api.object_arrays import is_null, nested_lengths
+from athenian.api.object_arrays import is_null, nested_lengths, objects_to_pyunicode_bytes
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str
 
@@ -1040,9 +1040,7 @@ def _deduplicate_tags(releases: pd.DataFrame, logical: bool) -> npt.NDArray[bool
         repos = int_to_str(releases[Release.repository_node_id.name].values[tag_notnull_indexes])
     tag_names = np.char.add(
         repos,
-        np.char.encode(
-            releases[Release.tag.name].values[tag_notnull_indexes].astype("U"), "UTF-8",
-        ),
+        objects_to_pyunicode_bytes(releases[Release.tag.name].values[tag_notnull_indexes]),
     )
     _, tag_uniques = np.unique(tag_names[::-1], return_index=True)
     tag_null[tag_notnull_indexes[len(tag_notnull_indexes) - tag_uniques - 1]] = True
@@ -1334,7 +1332,7 @@ class ReleaseMatcher:
 
         # remove the duplicate tags
         release_types = releases[Release.type.name].values
-        release_index_tags = releases[Release.tag.name].values.astype("U")
+        release_index_tags = releases[Release.tag.name].values
         del releases[Release.type.name]
         if not (unique_mask := _deduplicate_tags(releases, False)).all():
             releases = releases.take(np.flatnonzero(unique_mask))
@@ -1343,7 +1341,7 @@ class ReleaseMatcher:
             # throw away any secondary releases after the original tag
             uncertain_tags = release_index_tags[uncertain]
             release_index_tags = release_index_tags[unique_mask]
-            release_tags = np.char.encode(release_index_tags, "UTF-8")
+            release_tags = objects_to_pyunicode_bytes(release_index_tags)
             with sentry_sdk.start_span(
                 op="fetch_tags/uncertain", description=str(len(uncertain_tags)),
             ):
@@ -1362,7 +1360,7 @@ class ReleaseMatcher:
             )
             extra_ids = np.char.add(
                 int_to_str(extra_releases[Release.repository_node_id.name].values),
-                np.char.encode(extra_releases[Release.tag.name].values.astype("U"), "UTF-8"),
+                objects_to_pyunicode_bytes(extra_releases[Release.tag.name].values),
             )
             if (removed := in1d_str(release_ids, extra_ids, skip_leading_zeros=True)).any():
                 left = np.flatnonzero(~removed)
@@ -1389,6 +1387,7 @@ class ReleaseMatcher:
             except KeyError:
                 regexp = regexp_cache[regexp] = re.compile(regexp, re.MULTILINE)
             tags_to_check = release_index_tags[repo_indexes]
+            tags_to_check[is_null(tags_to_check)] = "None"
             tags_concat = "\n".join(tags_to_check)
             found = [m.start() for m in regexp.finditer(tags_concat)]
             offsets = np.zeros(len(tags_to_check), dtype=int)

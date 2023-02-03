@@ -39,6 +39,7 @@ from athenian.api.internal.miners.github.check_run import (
 )
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
+from athenian.api.object_arrays import objects_to_pyunicode_bytes
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -585,7 +586,7 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
             statuses, conclusions, check_suite_conclusions, True, True, False,
         )
         commits = facts[CheckRun.commit_node_id.name].values.copy()
-        check_run_names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
+        check_run_names = objects_to_pyunicode_bytes(facts[CheckRun.name.name].values)
         commits_with_names = np.char.add(int_to_str(commits), check_run_names)
         _, unique_map = np.unique(commits_with_names, return_inverse=True)
         unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
@@ -636,7 +637,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         ]
         df = df.sort_values(CheckRun.started_at.name, ascending=False)  # no inplace=True, yes
         pull_requests = df[CheckRun.pull_request_node_id.name].values
-        names = np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8")
+        names = objects_to_pyunicode_bytes(df[CheckRun.name.name].values)
         joint = np.char.add(int_to_str(pull_requests), names)
         _, first_encounters = np.unique(joint, return_index=True)
         statuses = df[CheckRun.status.name].values
@@ -717,7 +718,7 @@ class ConcurrencyCalculator(MetricCalculator[float]):
         **_,
     ) -> np.ndarray:
         repos = facts[CheckRun.repository_full_name.name].values.astype("S")
-        names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
+        names = objects_to_pyunicode_bytes(facts[CheckRun.name.name].values)
         crtypes = np.char.add(np.char.add(repos, b"|"), names)
         del repos, names
         started_ats = facts[CheckRun.started_at.name].values.astype(min_times.dtype, copy=False)
