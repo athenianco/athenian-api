@@ -24,7 +24,7 @@ from numpy cimport (
     PyArray_Descr,
     PyArray_DescrFromType,
     PyArray_DIM,
-    PyArray_IS_C_CONTIGUOUS,
+    PyArray_GETCONTIGUOUS,
     PyArray_ISOBJECT,
     PyArray_ISSTRING,
     PyArray_NDIM,
@@ -469,14 +469,14 @@ def vectorize_numpy_struct_array_field(
 
 def objects_to_pyunicode_bytes(ndarray arr not None, char_limit=None) -> ndarray:
     assert PyArray_NDIM(arr) == 1
+    assert PyArray_DESCR(<PyObject *> arr).kind == b"O"
 
     cdef npy_intp length = PyArray_DIM(arr, 0)
 
     if length == 0:
         return np.array([], dtype="S")
 
-    assert PyArray_IS_C_CONTIGUOUS(arr)
-    assert PyArray_DESCR(<PyObject *> arr).kind == b"O"
+    arr = PyArray_GETCONTIGUOUS(arr)
 
     cdef:
         npy_intp i, max_itemsize = 0
