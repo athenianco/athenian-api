@@ -1245,15 +1245,28 @@ class MetricEntriesCalculator:
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         reporters, assignees, commenters = ParticipantsMerge.jira(participants)
-        extra_columns = list(participant_columns) if len(participants) > 1 else []
 
         # there should be at least one group, and every should include a valid jira account id
         assert len(groups)
         assert all(g.account for g in groups)
 
+        jira_entities = _get_jira_entities_to_fetch(groups, ())
+        extra_columns = JIRAEntityToFetch.to_columns(jira_entities)
+        if len(participants) > 1:
+            extra_columns.extend(participant_columns)
+
+        label_splitter = IssuesLabelSplitter(split_by_label, groups[0].labels)
         if split_by_label:
             assert len(groups) == 1
             extra_columns.append(Issue.labels)
+            general_grouper = label_splitter
+        elif len(groups) == 1:
+            general_grouper = _global_grouper
+        else:
+            filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
+                groups, self._account, self._mdb, self._cache,
+            )
+            general_grouper = partial(group_jira_facts_by_jira, filters_to_grouping(groups))
 
         issues = await fetch_jira_issues(
             time_from,
@@ -1275,8 +1288,8 @@ class MetricEntriesCalculator:
             extra_columns=extra_columns,
         )
         calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        label_splitter = IssuesLabelSplitter(split_by_label, groups[0].labels)
-        groupers = partial(split_issues_by_participants, participants), label_splitter
+
+        groupers = partial(split_issues_by_participants, participants), general_grouper
         groups = group_to_indexes(issues, *groupers)
         return calc(issues, time_intervals, groups), label_splitter.labels
 
