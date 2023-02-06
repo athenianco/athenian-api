@@ -104,8 +104,15 @@ class JIRAConfig(NamedTuple):
 
         Unknown project keys are ignored.
         """
+        return list(self.project_ids_map(project_keys))
+
+    def project_ids_map(self, project_keys: Iterable[str]) -> dict[str, str]:
+        """Return a map from project id to key for the given keys.
+
+        Unknown project keys are ignored.
+        """
         key_to_id = {key: id_ for id_, key in self.projects.items()}
-        return [id_ for k in project_keys if (id_ := key_to_id.get(k)) is not None]
+        return {id_: k for k in project_keys if (id_ := key_to_id.get(k)) is not None}
 
 
 @sentry_span
@@ -283,19 +290,6 @@ async def fetch_jira_installation_progress(
         tables=tables,
     )
     return model
-
-
-@sentry_span
-async def resolve_projects(
-    keys: Iterable[str],
-    jira_acc: int,
-    mdb: DatabaseLike,
-) -> dict[str, str]:
-    """Lookup JIRA project IDs by their keys."""
-    rows = await mdb.fetch_all(
-        select(Project.id, Project.key).where(Project.acc_id == jira_acc, Project.key.in_(keys)),
-    )
-    return {r[0]: r[1] for r in rows}
 
 
 @sentry_span
