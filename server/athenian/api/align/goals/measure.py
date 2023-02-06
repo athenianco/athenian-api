@@ -283,7 +283,7 @@ class GoalToServe:
             if jira_projects or jira_priorities or jira_issue_types:
                 jira_config = check_jira_installation(unchecked_jira_config)
                 if jira_projects:
-                    jira_projects = frozenset(jira_config.translate_project_keys(jira_projects))
+                    jira_projects = jira_config.translate_project_keys(jira_projects)
                     custom_projects = True
                 else:
                     jira_projects = frozenset(jira_config.projects)

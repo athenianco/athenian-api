@@ -245,8 +245,7 @@ class JIRAFilter:
         if not (custom_projects := bool(model.projects)):
             projects = frozenset(ids.projects)
         else:
-            reverse_map = {v: k for k, v in ids[1].items()}
-            projects = frozenset(reverse_map[k] for k in model.projects if k in reverse_map)
+            projects = ids.translate_project_keys(model.projects)
         return JIRAFilter(
             account=ids.acc_id,
             projects=projects,

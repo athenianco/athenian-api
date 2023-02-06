@@ -36,7 +36,6 @@ from athenian.api.internal.jira import (
     normalize_issue_type,
     normalize_priority,
     normalize_user_type,
-    resolve_projects,
 )
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -112,7 +111,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
     (
         meta_ids,
-        jira_ids,
+        jira_conf,
         branches,
         default_branches,
         release_settings,
@@ -128,9 +127,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         request.cache,
     )
     if filt.projects is not None:
-        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
-        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
-        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
+        projects = jira_conf.project_ids_map(filt.projects)
+        jira_conf = JIRAConfig(jira_conf.acc_id, projects, jira_conf.epics)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(
@@ -159,7 +157,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ) = await gather(
         _epic_flow(
             return_,
-            jira_ids,
+            jira_conf,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -180,7 +178,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         _issue_flow(
             return_,
             filt.account,
-            jira_ids,
+            jira_conf,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -1319,7 +1317,7 @@ async def _calc_jira_entry(
     filt = model_from_body(model, body)
     (
         meta_ids,
-        jira_ids,
+        jira_conf,
         _,
         default_branches,
         release_settings,
@@ -1329,9 +1327,8 @@ async def _calc_jira_entry(
         filt.account, request, True, request.sdb, request.mdb, request.pdb, request.cache,
     )
     if filt.projects is not None:
-        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
-        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
-        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
+        projects = jira_conf.project_ids_map(filt.projects)
+        jira_conf = JIRAConfig(jira_conf.acc_id, projects, jira_conf.epics)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone,
     )
@@ -1343,7 +1340,7 @@ async def _calc_jira_entry(
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
     )
     if issubclass(model, JIRAMetricsRequest):
-        group = JIRAFilter.from_jira_config(jira_ids).replace(
+        group = JIRAFilter.from_jira_config(jira_conf).replace(
             labels=label_filter,
             custom_projects=filt.projects is not None,
             priorities=frozenset([normalize_priority(p) for p in (filt.priorities or [])]),
@@ -1388,7 +1385,7 @@ async def _calc_jira_entry(
             release_settings,
             logical_settings,
             default_branches,
-            jira_ids,
+            jira_conf,
         )
     except UnsupportedMetricError as e:
         raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
