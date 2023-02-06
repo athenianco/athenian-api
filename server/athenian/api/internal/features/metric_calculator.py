@@ -1191,12 +1191,15 @@ def group_jira_facts_by_jira(
     for jira_group in jira_groups:
         if jira_group:
             df_matches = np.full(len(df), True, dtype=bool)
-            for group_props, df_values in (
-                (jira_group.projects, df[Issue.project_id.name].values),
-                (jira_group.priorities, df[Issue.priority_id.name].values),
-                (jira_group.types, df[Issue.type_id.name].values),
+            for group_props, df_col in (
+                (jira_group.projects, Issue.project_id.name),
+                (jira_group.priorities, Issue.priority_id.name),
+                (jira_group.types, Issue.type_id.name),
             ):
+                # lazy access the dataframe column since it could be missing
+                # when no grouping is needed for the property
                 if group_props is not None:
+                    df_values = df[df_col].values
                     filter_values = np.array(list(group_props), dtype="S")
                     prop_matches = in1d_str(df_values, filter_values)
                     df_matches[~prop_matches] = False
