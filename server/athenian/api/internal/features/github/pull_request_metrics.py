@@ -1321,10 +1321,20 @@ class AverageCommentsCalculator(AverageMetricCalculator[np.float32]):
 EnvironmentsMarkerDType = np.dtype(
     [
         ("environments", np.ndarray),
+        # One bitmask for each PR.
+        # Each bitmask has one bit per environment telling if the PR is deployed in the env.
         ("counts", np.ndarray),
+        # One array for each env.
+        # Each contains the counts of deployments for each PR deployed in the env.
         ("successful", np.ndarray),
+        # One array for each env.
+        # Each contains a boolean for each PR deployed in the env.
         ("conclusions", np.ndarray),
+        # One array for each env.
+        # Each contains bitmasks of DeployConclusion for each PR deployed in the env.
         ("finished", np.ndarray),
+        # One array for each env.
+        # Each has the finished field fo each PR deployed in the env.
     ],
 )
 EnvironmentsMarkerMetric = make_metric(
