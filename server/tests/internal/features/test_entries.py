@@ -42,7 +42,7 @@ from tests.conftest import build_fake_cache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
-from tests.testutils.factory.wizards import insert_repo, pr_models
+from tests.testutils.factory.wizards import insert_repo, jira_issue_models, pr_models
 from tests.testutils.time import dt
 
 
@@ -1038,6 +1038,198 @@ class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
         assert res0[0][0][0][0][0][0].value == res1[0][0][0][0][0][2].value
         assert res0[0][0][0][0][0][1].value == res1[0][0][0][0][0][1].value
         assert res0[0][0][0][0][0][2].value == res1[0][0][0][0][0][0].value
+
+    @with_defer
+    async def test_multiple_groups_priority(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, None)
+
+        jira_config = await self._get_jira_config(sdb, mdb)
+
+        filt_ = JIRAFilter.from_jira_config(jira_config).replace(custom_projects=False)
+        group_high = filt_.replace(priorities=frozenset(["high"]))
+        group_low = filt_.replace(priorities=frozenset(["low"]))
+        group_medium = filt_.replace(priorities=frozenset(["medium"]))
+        group_lowm = filt_.replace(priorities=frozenset(["low", "medium"]))
+
+        base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
+        kwargs = {
+            **base_kwargs,
+            "time_intervals": [[dt(2020, 5, 1), dt(2020, 5, 5)]],
+            "participants": [],
+            "metrics": [JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_RESOLVED],
+            "split_by_label": False,
+        }
+        res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_high])
+        raised_high = res[0][0][0][0][0].value
+        resolved_high = res[0][0][0][0][1].value
+        assert raised_high == 8
+        assert resolved_high == 6
+
+        res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_low])
+        raised_low = res[0][0][0][0][0].value
+        resolved_low = res[0][0][0][0][1].value
+        assert raised_low == 3
+        assert resolved_low == 3
+
+        res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_medium])
+        raised_medium = res[0][0][0][0][0].value
+        resolved_medium = res[0][0][0][0][1].value
+        assert raised_medium == 11
+        assert resolved_medium == 9
+
+        res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_lowm])
+        raised_lowm = res[0][0][0][0][0].value
+        resolved_lowm = res[0][0][0][0][1].value
+        assert raised_lowm == 14
+        assert resolved_lowm == 12
+
+        assert raised_lowm == raised_low + raised_medium
+        assert resolved_lowm == resolved_low + resolved_medium
+
+        res, _ = await calculator.calc_jira_metrics_line_github(
+            **kwargs, groups=[group_high, group_low, group_medium, group_lowm],
+        )
+        assert res[0][0][0][0][0].value == raised_high
+        assert res[0][0][0][0][1].value == resolved_high
+        assert res[0][1][0][0][0].value == raised_low
+        assert res[0][1][0][0][1].value == resolved_low
+        assert res[0][2][0][0][0].value == raised_medium
+        assert res[0][2][0][0][1].value == resolved_medium
+        assert res[0][3][0][0][0].value == raised_lowm
+        assert res[0][3][0][0][1].value == resolved_lowm
+
+    @with_defer
+    async def test_multiple_groups_types(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb_rw, pdb, rdb, None)
+        jira_config = await self._get_jira_config(sdb, mdb_rw)
+        filt_ = JIRAFilter.from_jira_config(jira_config).replace(
+            custom_projects=False, projects=frozenset(["1"]),
+        )
+        group_t0 = filt_.replace(issue_types=frozenset(["t0"]))
+        group_t1 = filt_.replace(issue_types=frozenset(["t1"]))
+        group_t01 = filt_.replace(issue_types=frozenset(["t0", "t1"]))
+        base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb_rw)
+        kwargs = {
+            **base_kwargs,
+            "time_intervals": [[dt(2020, 5, 1), dt(2020, 5, 5)]],
+            "participants": [],
+            "metrics": [JIRAMetricID.JIRA_OPEN],
+            "split_by_label": False,
+        }
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            issue_kwargs = {"created": dt(2020, 5, 2), "project_id": "1"}
+            models = [
+                md_factory.JIRAProjectFactory(id="1", key="P"),
+                md_factory.JIRAIssueTypeFactory(id="1", name="t0", project_id="1"),
+                md_factory.JIRAIssueTypeFactory(id="2", name="t1", project_id="1"),
+                *jira_issue_models("1", type_id="1", type="t0", **issue_kwargs),
+                *jira_issue_models("2", type_id="1", type="t0", **issue_kwargs),
+                *jira_issue_models("3", type_id="1", type="t0", **issue_kwargs),
+                *jira_issue_models("4", type_id="2", type="t1", **issue_kwargs),
+                *jira_issue_models("5", type_id="2", type="t1", **issue_kwargs),
+                *jira_issue_models("6", **issue_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[filt_])
+            assert res[0][0][0][0][0].value == 6
+
+            res, _ = await calculator.calc_jira_metrics_line_github(
+                **kwargs, groups=[group_t1, group_t01, group_t0],
+            )
+            res_t1 = res[0][0][0][0][0].value
+            res_t01 = res[0][1][0][0][0].value
+            res_t0 = res[0][2][0][0][0].value
+
+            assert res_t1 == 2
+            assert res_t0 == 3
+            assert res_t01 == 5
+
+            res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_t0])
+            assert res[0][0][0][0][0].value == res_t0
+
+            res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[group_t01])
+            assert res[0][0][0][0][0].value == res_t01
+
+            res, _ = await calculator.calc_jira_metrics_line_github(
+                **kwargs, groups=[group_t0, group_t01],
+            )
+            assert res[0][0][0][0][0].value == res_t0
+            assert res[0][1][0][0][0].value == res_t01
+
+    @with_defer
+    async def test_multiple_groups_mixed(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb_rw, pdb, rdb, None)
+        jira_config = await self._get_jira_config(sdb, mdb_rw)
+        filt_ = JIRAFilter.from_jira_config(jira_config).replace(
+            custom_projects=False, projects=frozenset(["1", "2"]),
+        )
+        group_p1_t0 = filt_.replace(
+            issue_types=frozenset(["t0"]), projects=frozenset(["1"]), custom_projects=True,
+        )
+        group_p1 = filt_.replace(projects=frozenset(["1"]), custom_projects=True)
+        group_t1 = filt_.replace(issue_types=frozenset(["t1"]))
+        base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb_rw)
+        kwargs = {
+            **base_kwargs,
+            "time_intervals": [[dt(2020, 5, 1), dt(2020, 5, 5)]],
+            "participants": [],
+            "metrics": [JIRAMetricID.JIRA_OPEN],
+            "split_by_label": False,
+        }
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            issue_kwargs = {"created": dt(2020, 5, 2)}
+            models = [
+                md_factory.JIRAProjectFactory(id="1", key="P1"),
+                md_factory.JIRAProjectFactory(id="2", key="P2"),
+                md_factory.JIRAIssueTypeFactory(id="0", name="t0", project_id="1"),
+                md_factory.JIRAIssueTypeFactory(id="1", name="t1", project_id="1"),
+                md_factory.JIRAIssueTypeFactory(id="0", name="t0", project_id="2"),
+                md_factory.JIRAIssueTypeFactory(id="1", name="t1", project_id="2"),
+                *jira_issue_models("1", type_id="0", type="t0", project_id="1", **issue_kwargs),
+                *jira_issue_models("2", type_id="0", type="t0", project_id="1", **issue_kwargs),
+                *jira_issue_models("3", type_id="0", type="t0", project_id="2", **issue_kwargs),
+                *jira_issue_models("4", type_id="1", type="t1", project_id="1", **issue_kwargs),
+                *jira_issue_models("5", type_id="1", type="t1", project_id="2", **issue_kwargs),
+                *jira_issue_models("6", project_id="1", type_id="3", **issue_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res, _ = await calculator.calc_jira_metrics_line_github(**kwargs, groups=[filt_])
+            assert res[0][0][0][0][0].value == 6
+
+            res, _ = await calculator.calc_jira_metrics_line_github(
+                **kwargs, groups=[group_p1, filt_, group_p1_t0, group_t1],
+            )
+            assert res[0][0][0][0][0].value == 4
+            assert res[0][1][0][0][0].value == 6
+            assert res[0][2][0][0][0].value == 2
+            assert res[0][3][0][0][0].value == 2
 
 
 class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
