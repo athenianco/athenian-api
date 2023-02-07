@@ -737,6 +737,9 @@ async def _fetch_github_installation_progress_db(
         models.append(model)
     await fetch_repositories
     if not models:
+        log.warning(
+            "No installation progress exists for account %d / events %s", account, event_ids,
+        )
         raise ResponseError(
             NoSourceDataError(detail="No installation progress exists for account %d." % account),
         )
