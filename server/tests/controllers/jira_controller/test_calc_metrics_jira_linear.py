@@ -120,6 +120,19 @@ class TestCalcMetricsJiraLinear(BaseCalcMetricsJiraLinearTest):
         )
         await self._request(json=body, assert_status=status)
 
+    async def test_empty_granularities(self) -> None:
+        body = self._body(
+            date_from="2020-09-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            granularities=[],
+        )
+        res = await self._request(json=body)
+        assert len(res) == 1
+        items = [CalculatedJIRAMetricValues.from_dict(i) for i in res]
+        assert items[0].granularity == "all"
+        assert items[0].values[0].values == [233]
+
     async def test_priorities(self) -> None:
         body = self._body(
             date_from="2020-01-01",

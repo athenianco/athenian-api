@@ -1435,6 +1435,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     else:
         res_groups = [None] * len(split_labels)
 
+    granularities = metrics_req.granularities or ["all"]
     mets = [
         CalculatedJIRAMetricValues(
             granularity=gran,
@@ -1454,7 +1455,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         )
         for with_group, label_values in zip(metrics_req.with_ or [None], metric_values)
         for label, res_group, group_values in zip(split_labels, res_groups, label_values)
-        for gran, ts, ts_values in zip(metrics_req.granularities, time_intervals, group_values)
+        for gran, ts, ts_values in zip(granularities, time_intervals, group_values)
     ]
     return model_response(mets)
 
