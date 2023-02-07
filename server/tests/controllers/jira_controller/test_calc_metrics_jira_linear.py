@@ -13,14 +13,16 @@ from athenian.api.models.web import (
     CalculatedLinearMetricValues,
     JIRAMetricID,
 )
-from tests.testutils.db import models_insert
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import MappedJIRAIdentityFactory, TeamFactory
+from tests.testutils.factory.wizards import jira_issue_models
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
 
-class TestCalcMetricsJiraLinear(Requester):
+class BaseCalcMetricsJiraLinearTest(Requester):
     async def _request(self, *, assert_status=200, **kwargs) -> dict | list:
         response = await self.client.request(
             method="POST", path="/v1/metrics/jira", headers=self.headers, **kwargs,
@@ -36,8 +38,12 @@ class TestCalcMetricsJiraLinear(Requester):
         kwargs.setdefault("timezone", 0)
         if "with" not in kwargs and "with_" in kwargs:
             kwargs["with"] = kwargs.pop("with_")
+        if "for" not in kwargs and "for_" in kwargs:
+            kwargs["for"] = kwargs.pop("for_")
         return kwargs
 
+
+class TestCalcMetricsJiraLinear(BaseCalcMetricsJiraLinearTest):
     @pytest.mark.parametrize("exclude_inactive", [False, True])
     async def test_smoke(self, exclude_inactive):
         body = self._body(
@@ -502,6 +508,188 @@ class TestCalcMetricsJiraLinear(Requester):
         assert items[0].granularity == "all"
         assert items[0].jira_label is None
         assert items[0].values[0].values == [0]
+
+
+class TestGroups(BaseCalcMetricsJiraLinearTest):
+    async def test_single_group_fixture(self) -> None:
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[{"priorities": ["high"]}],
+        )
+        res = await self._request(json=body)
+        assert len(res) == 1
+        assert res[0]["values"][0]["values"][0] == 392
+        assert res[0]["for"] == {"priorities": ["high"]}
+
+        body.pop("for")
+        body["priorities"] = ["high"]
+
+        res = await self._request(json=body)
+        assert len(res) == 1
+        assert res[0]["values"][0]["values"][0] == 392
+        assert "for" not in res[0]
+
+    async def test_two_groups_fixture(self) -> None:
+        body = self._body(
+            date_from="2020-09-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_RESOLVED],
+            for_=[
+                {"issue_types": ["task"]},
+                {"issue_types": ["bug"]},
+                {"issue_types": ["task", "bug"]},
+            ],
+        )
+        res = await self._request(json=body)
+        assert len(res) == 3
+
+        task_res = next(r for r in res if r["for"] == {"issue_types": ["task"]})
+        assert task_res["values"][0]["values"] == [119, 118]
+
+        bug_res = next(r for r in res if r["for"] == {"issue_types": ["bug"]})
+        assert bug_res["values"][0]["values"] == [78, 83]
+
+        both_res = next(r for r in res if r["for"] == {"issue_types": ["task", "bug"]})
+        assert both_res["values"][0]["values"] == [197, 201]
+
+        body.pop("for")
+        body["types"] = ["task"]
+        task_global_res = await self._request(json=body)
+        assert task_global_res[0]["values"][0]["values"] == task_res["values"][0]["values"]
+
+        body["types"] = ["bug"]
+        bug_global_res = await self._request(json=body)
+        assert bug_global_res[0]["values"][0]["values"] == bug_res["values"][0]["values"]
+
+        body["types"] = ["task", "bug"]
+        both_global_res = await self._request(json=body)
+        assert both_global_res[0]["values"][0]["values"] == both_res["values"][0]["values"]
+
+    @pytest.mark.app_validate_responses(False)
+    async def test_more_groups(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2020-05-01",
+            date_to="2020-6-20",
+            metrics=[JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_LIFE_TIME],
+            for_=[
+                {"priorities": ["P0"]},
+                {"projects": ["PJ1", "PJ2"]},
+                {"projects": ["PJ2"]},
+                {"priorities": ["P0"], "projects": ["PJ2"]},
+                {"priorities": ["P0"], "projects": ["PJ1"]},
+                {"priorities": ["P1"]},
+            ],
+        )
+
+        issue_kwargs = {"created": dt(2020, 5, 1)}
+        prio0 = {"priority_id": "00", "priority_name": "p0"}
+        prio1 = {"priority_id": "10", "priority_name": "p1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+            md_factory.JIRAProjectFactory(id="2", key="PJ2"),
+            md_factory.JIRAPriorityFactory(id="00", name="P0"),
+            md_factory.JIRAPriorityFactory(id="10", name="P1"),
+            *jira_issue_models(
+                "1", resolved=dt(2020, 5, 1, 10), project_id="1", **prio0, **issue_kwargs,
+            ),
+            *jira_issue_models(
+                "2", project_id="2", resolved=dt(2020, 5, 1, 8), **prio0, **issue_kwargs,
+            ),
+            *jira_issue_models(
+                "3", project_id="1", resolved=dt(2020, 5, 1, 5), **prio1, **issue_kwargs,
+            ),
+            *jira_issue_models("4", project_id="1", **prio1, **issue_kwargs),
+            *jira_issue_models("5", project_id="2", **prio0, **issue_kwargs),
+            *jira_issue_models(
+                "6", project_id="2", resolved=dt(2020, 5, 1, 4), **prio0, **issue_kwargs,
+            ),
+            *jira_issue_models("7", project_id="2", **prio0, **issue_kwargs),
+            *jira_issue_models(
+                "8", resolved=dt(2020, 5, 1, 4), project_id="2", **prio1, **issue_kwargs,
+            ),
+            *jira_issue_models("9", project_id="2", **prio0, created=dt(2021, 1, 1)),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self._request(json=body)
+            res = sorted(res, key=lambda r: body["for"].index(r["for"]))
+
+            for i, r in enumerate(res):
+                assert r["for"] == body["for"][i]
+
+            assert res[0]["values"][0]["values"] == [5, "26400s"]  # life times are 10h,8h,4h
+            assert res[1]["values"][0]["values"] == [8, "22320s"]  # life times are 10,8,5,4,4
+            assert res[2]["values"][0]["values"] == [5, "19200s"]  # life times are 8,4,4
+            assert res[3]["values"][0]["values"] == [4, "21600s"]  # life times are 8,4
+            assert res[4]["values"][0]["values"] == [1, "36000s"]  # life times are 10
+            assert res[5]["values"][0]["values"] == [3, "16200s"]  # life times are 5,4
+
+            assert len(res) == 6
+
+    async def test_empty_groups(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2001-04-01",
+            date_to="2001-05-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[
+                {"projects": ["PJ1"]},
+                {},
+            ],
+        )
+        issue_kwargs = {"created": dt(2001, 5, 1)}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+            md_factory.JIRAProjectFactory(id="2", key="PJ2"),
+            *jira_issue_models("1", project_id="1", **issue_kwargs),
+            *jira_issue_models("2", project_id="2", **issue_kwargs),
+            *jira_issue_models("3", project_id="2", **issue_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self._request(json=body)
+            assert len(res) == 2
+            res_p1 = next(r for r in res if r["for"] == {"projects": ["PJ1"]})
+            assert res_p1["values"][0]["values"] == [1]
+            res_all = next(r for r in res if r["for"] == {})
+            assert res_all["values"][0]["values"] == [3]
+
+
+class TestGroupsErrors(BaseCalcMetricsJiraLinearTest):
+    async def test_both_groups_and_filters(self) -> None:
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[{"issue_types": ["bug", "task"]}],
+            labels_include=["foolabel"],
+            projects=["p1", "p2"],
+        )
+        res = await self._request(assert_status=400, json=body)
+        assert isinstance(res, dict)
+        assert "`for` cannot be used with" in res["detail"]
+        assert "labels_include" in res["detail"]
+        assert "projects" in res["detail"]
+
+    async def test_both_groups_and_group_by_label(self) -> None:
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[{"issue_types": ["bug", "task"]}],
+            group_by_jira_label=True,
+        )
+        res = await self._request(assert_status=400, json=body)
+        assert isinstance(res, dict)
+        assert "`for` cannot be used with" in res["detail"]
+        assert "group_by_jira_label" in res["detail"]
 
 
 def _check_metrics_no_dev_project(items: list[CalculatedJIRAMetricValues]) -> None:

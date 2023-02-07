@@ -128,9 +128,20 @@ def pr_models(
     return models
 
 
-def jira_issue_models(id: int, **kwargs: Any) -> Sequence[Any]:
+def jira_issue_models(
+    id: int,
+    *,
+    resolved: datetime | None = None,
+    **kwargs: Any,
+) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid jira issue."""
 
     issue = md_factory.JIRAIssueFactory(id=id, **kwargs)
-    athenian_issue = md_factory.JIRAAthenianIssueFactory(id=id, updated=issue.updated)
+    athenian_extra_kwargs = {}
+    if resolved is not None:
+        athenian_extra_kwargs["resolved"] = resolved
+
+    athenian_issue = md_factory.JIRAAthenianIssueFactory(
+        id=id, updated=issue.updated, **athenian_extra_kwargs,
+    )
     return [issue, athenian_issue]
