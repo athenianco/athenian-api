@@ -15,7 +15,7 @@ from .conftest import build_context, clear_all_accounts
 async def test_no_accounts(sdb, mdb_rw, tqdm_disable) -> None:
     await clear_all_accounts(sdb)
     ctx = build_context(sdb=sdb, mdb=mdb_rw)
-    accounts = await main(ctx, Namespace(partition=False))
+    accounts = await main(ctx, Namespace(partition=False, accounts=[]))
     assert accounts == []
 
 
@@ -26,7 +26,7 @@ async def test_some_accounts(sdb, mdb_rw, tqdm_disable) -> None:
     async with DBCleaner(mdb_rw) as mdb_cleaner:
         await _make_installed_account(sdb, mdb_rw, 10, 110, mdb_cleaner)
         ctx = build_context(sdb=sdb, mdb=mdb_rw)
-        accounts = await main(ctx, Namespace(partition=False))
+        accounts = await main(ctx, Namespace(partition=False, accounts=[]))
 
     # account 10 is installed, account 12 not
     assert accounts == [10]
@@ -48,7 +48,7 @@ async def test_partition(sdb, mdb_rw, tqdm_disable) -> None:
         )
         await sdb.execute(update_stmt)
         ctx = build_context(sdb=sdb, mdb=mdb_rw)
-        accounts = await main(ctx, Namespace(partition=True))
+        accounts = await main(ctx, Namespace(partition=True, accounts=[]))
 
     # account 13 is "precomputed", 11 and 12 are installed but fresh, 10 is not installed
     assert accounts == {"fresh": [11, 12], "precomputed": [13]}

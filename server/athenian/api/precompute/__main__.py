@@ -109,6 +109,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Emit two different lists for fresh and already precomputed accounts",
     )
+    discover_accounts_parser.add_argument(
+        "accounts",
+        type=int,
+        nargs="*",
+        help="Consider only the specified account IDs",
+    )
 
     accounts_parser = subparsers.add_parser("accounts", help="Precompute one or more accounts")
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")

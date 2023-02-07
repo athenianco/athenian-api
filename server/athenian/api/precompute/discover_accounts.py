@@ -23,7 +23,7 @@ async def main(
     """
     log, sdb = context.log, context.sdb
 
-    accounts = await _get_accounts(sdb)
+    accounts = await _get_accounts(args.accounts, sdb)
     log.info("Checking progress of %d accounts", len(accounts))
 
     discovered: dict[str, list[int]] = {"precomputed": [], "fresh": []}
@@ -46,7 +46,7 @@ async def main(
         return sorted(chain(*discovered.values()))
 
 
-async def _get_accounts(sdb: Database) -> list[tuple[int, bool]]:
+async def _get_accounts(accounts: list[int], sdb: Database) -> list[tuple[int, bool]]:
     """Return the existing account IDs, each with a precomputed flag."""
     # already precomputed accounts have an ALL repository set that is precomputed
     # outer join will return one row per account, since (owner_id, name) is unique in RepositorySet
@@ -59,6 +59,9 @@ async def _get_accounts(sdb: Database) -> list[tuple[int, bool]]:
             Account.id, sa.func.coalesce(RepositorySet.precomputed, False).label("precomputed"),
         )
         .join(RepositorySet, join_cond, isouter=True)
-        .where(Account.expires_at > datetime.now(timezone.utc))
+        .where(
+            Account.expires_at > datetime.now(timezone.utc),
+            *((Account.id.in_(accounts),) if accounts else ()),
+        )
     )
     return await sdb.fetch_all(stmt)
