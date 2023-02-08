@@ -39,6 +39,7 @@ from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import pr_jira_issue_mappings
 
 
 class TestFetchJIRAIssues:
@@ -301,9 +302,7 @@ class TestGenerateJIRAPRsQuery:
                 md_factory.PullRequestFactory(node_id=1),
                 md_factory.PullRequestFactory(node_id=2),
                 md_factory.PullRequestFactory(node_id=3),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="2"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="3"),
+                *pr_jira_issue_mappings((1, "1"), (1, "2"), (2, "3")),
                 md_factory.JIRAIssueFactory(id="1", project_id="1", priority_name="Pr1"),
                 md_factory.JIRAIssueFactory(id="2", project_id="1", priority_name="pr1"),
                 md_factory.JIRAIssueFactory(id="3", project_id="1", priority_name="PR2"),
@@ -337,8 +336,7 @@ class TestGenerateJIRAPRsQuery:
             models = [
                 md_factory.PullRequestFactory(node_id=1),
                 md_factory.PullRequestFactory(node_id=2),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="2"),
+                *pr_jira_issue_mappings((1, "1"), (2, "2")),
                 md_factory.JIRAIssueFactory(id="1", project_id="P1", priority_name="PR1"),
                 md_factory.JIRAIssueFactory(id="2", project_id="P2", priority_name="PR2"),
             ]
@@ -403,17 +401,14 @@ class TestPullRequestJiraMapper:
         assert_array_equal(prs[(11, "repo1")].jira.types, np.array([b"T", b"T"]))
 
     async def test_load_only_issues(self, mdb_rw: Database, sdb: Database) -> None:
+        models = [
+            *pr_jira_issue_mappings((10, "20"), (10, "21"), (11, "22"), (12, "20"), (13, "20")),
+            md_factory.JIRAIssueFactory(id="20", key="I20"),
+            md_factory.JIRAIssueFactory(id="21", key="I21"),
+            md_factory.JIRAIssueFactory(id="22", key="I22"),
+        ]
+
         async with DBCleaner(mdb_rw) as mdb_cleaner:
-            models = [
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=10, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=10, jira_id="21"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="22"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=12, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=13, jira_id="20"),
-                md_factory.JIRAIssueFactory(id="20", key="I20"),
-                md_factory.JIRAIssueFactory(id="21", key="I21"),
-                md_factory.JIRAIssueFactory(id="22", key="I22"),
-            ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
@@ -432,7 +427,7 @@ class TestPullRequestJiraMapper:
     async def test_load_everything(self, mdb_rw: Database, sdb: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=10, jira_id="20"),
+                *pr_jira_issue_mappings((10, "20")),
                 md_factory.JIRAIssueFactory(
                     id="20", key="I20", project_id="P0", type_id="T0", priority_id="PR0",
                 ),

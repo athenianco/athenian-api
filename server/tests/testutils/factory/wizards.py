@@ -145,3 +145,11 @@ def jira_issue_models(
         id=id, updated=issue.updated, **athenian_extra_kwargs,
     )
     return [issue, athenian_issue]
+
+
+def pr_jira_issue_mappings(*mappings: tuple[int, str]) -> Sequence[Any]:
+    """Return the models to map pull requests to jira issues"""
+    return [
+        md_factory.NodePullRequestJiraIssuesFactory(node_id=node_id, jira_id=issue_id)
+        for node_id, issue_id in mappings
+    ]
