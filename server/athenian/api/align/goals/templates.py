@@ -26,13 +26,31 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": "259200s"},
     },
     {
+        "metric": PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Ensure pull requests get merged quickly",
+        "metric_params": {"threshold": "14400s"},
+    },
+    {
+        "metric": PullRequestMetricID.PR_WIP_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Improve the time PRs stay work in progress",
+        "metric_params": {"threshold": "86400s"},
+    },
+    {
         "metric": JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO,
         "name": "Improve our time to resolve Jira issues",
         "metric_params": {"threshold": "432000s"},
     },
     {
+        "metric": PullRequestMetricID.PR_WIP_TIME,
+        "name": "Reduce WIP time",
+    },
+    {
         "metric": PullRequestMetricID.PR_REVIEW_TIME,
         "name": "Reduce code review time",
+    },
+    {
+        "metric": PullRequestMetricID.PR_MERGING_TIME,
+        "name": "Reduce PR merging time",
     },
     {
         "metric": PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
