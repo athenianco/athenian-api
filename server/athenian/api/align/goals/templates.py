@@ -41,8 +41,16 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": "432000s"},
     },
     {
+        "metric": PullRequestMetricID.PR_WIP_TIME,
+        "name": "Reduce WIP time",
+    },
+    {
         "metric": PullRequestMetricID.PR_REVIEW_TIME,
         "name": "Reduce code review time",
+    },
+    {
+        "metric": PullRequestMetricID.PR_MERGING_TIME,
+        "name": "Reduce PR merging time",
     },
     {
         "metric": PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
