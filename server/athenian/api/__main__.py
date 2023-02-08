@@ -201,6 +201,10 @@ def parse_args() -> argparse.Namespace:
             " adjustments"
         ),
     )
+    parser.add_argument(
+        "--db-fetch-cache",
+        help="Bypass sending queries to the DBs by using the local cache at this path.",
+    )
     return parser.parse_args()
 
 
@@ -601,7 +605,10 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         return None
     patch_pandas()
     set_endpoint_weights(args.weights, log)
-    pgdb_opts = {"pgbouncer_transaction": args.pgbouncer_transaction}
+    pgdb_opts = {
+        "pgbouncer_transaction": args.pgbouncer_transaction,
+        "local_cache": args.db_fetch_cache,
+    }
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
