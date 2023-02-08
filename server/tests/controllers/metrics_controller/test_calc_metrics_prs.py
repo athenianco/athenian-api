@@ -22,7 +22,7 @@ from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import ReleaseSettingFactory
-from tests.testutils.factory.wizards import insert_repo, pr_models
+from tests.testutils.factory.wizards import insert_repo, pr_jira_issue_mappings, pr_models
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -1116,9 +1116,7 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
                 md_factory.JIRAIssueFactory(id="20", project_id="1", type_id="t", type="task"),
                 md_factory.JIRAIssueFactory(id="30", project_id="1", type_id="b", type="bug"),
                 md_factory.JIRAIssueFactory(id="40", project_id="1", type_id="b", type="task"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=11, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=12, jira_id="30"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=13, jira_id="40"),
+                *pr_jira_issue_mappings((11, "20"), (12, "30"), (13, "40")),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)

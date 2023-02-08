@@ -23,6 +23,7 @@ from tests.testutils.factory.state import (
     TeamFactory,
     UserAccountFactory,
 )
+from tests.testutils.factory.wizards import pr_jira_issue_mappings
 from tests.testutils.requester import Requester
 from tests.testutils.time import freeze_time
 
@@ -256,10 +257,9 @@ class TestJIRAFiltering(BaseTeamMetricsTest):
                 md_factory.JIRAPriorityFactory(id="101", name="medium"),
                 md_factory.JIRAIssueTypeFactory(id="100", name="t0"),
                 md_factory.JIRAIssueTypeFactory(id="101", name="t1"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="21"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162907, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162908, jira_id="20"),
+                *pr_jira_issue_mappings(
+                    (162901, "20"), (162901, "21"), (162907, "20"), (162908, "20"),
+                ),
                 md_factory.JIRAIssueFactory(
                     id="20",
                     project_id="0",
