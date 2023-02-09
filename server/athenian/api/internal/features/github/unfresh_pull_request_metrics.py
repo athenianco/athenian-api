@@ -394,6 +394,9 @@ class UnfreshPullRequestFactsFetcher:
         finisheds = deps[DeploymentNotification.finished_at.name].values.astype("datetime64[s]")
         envs = deps[DeploymentNotification.environment.name].values.astype("U", copy=False)
         conclusions = deps[DeploymentNotification.conclusion.name].values
+        # enums are very slow to use directly: DeploymentConclusion[conclusion]
+        # this is an optimization that actually makes a big difference in the profile
+        deployment_conclusion_cache = {c.name: c for c in DeploymentConclusion}
         for node_id, name, finished, env, conclusion, repo in zip(
             pr_node_ids, names, finisheds, envs, conclusions, repos,
         ):
@@ -407,13 +410,13 @@ class UnfreshPullRequestFactsFetcher:
                 f.deployments = [name]
                 f.deployed = [finished]
                 f.environments = [env]
-                f.deployment_conclusions = [DeploymentConclusion[conclusion]]
+                f.deployment_conclusions = [deployment_conclusion_cache[conclusion]]
             else:
                 try:
                     f.deployments.append(name)
                     f.deployed.append(finished)
                     f.environments.append(env)
-                    f.deployment_conclusions.append(DeploymentConclusion[conclusion])
+                    f.deployment_conclusions.append(deployment_conclusion_cache[conclusion])
                 except AttributeError:
                     continue  # numpy array, already set
         empty_deployments = np.array([], dtype=object)

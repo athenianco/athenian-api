@@ -72,18 +72,14 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         kw["literal_binds"] = True
     if render_any_values:
         # = ANY(VALUES ...)
-        if (
-            is_array
-            and (
-                values.dtype.kind in ("S", "U")
-                or (values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8)
-            )
-        ) or isinstance(values, list):
-            right = any_(Grouping(text(in_any_values_inline(values))))
-        else:
+        try:
+            values_str = in_any_values_inline(values)
+        except (ValueError, NotImplementedError):
             right = any_(
                 Grouping(Values(binary.left, literal_binds=True).data(TupleWrapper(values))),
             )
+        else:
+            right = any_(Grouping(text(values_str)))
         left = compiler.process(binary.left, **kw)
         right = compiler.process(right, **kw)
         sql = left + OPERATORS[operators.eq] + right
@@ -98,15 +94,13 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
             if is_array and values.dtype.kind == "S":
                 value = value.decode()
             return compiler.process(binary.left == value, **kw)
-        if is_array:
-            if (
-                values.dtype.kind in ("S", "U")
-                or values.dtype.kind in ("i", "u")
-                and values.dtype.itemsize == 8
-            ):
+        if is_array or len(values):
+            # must check len(values) to let POSTCOMPILE work
+            try:
                 binary.right = Grouping(text(in_inline(values)))
-            else:
-                binary.right.value = values.tolist()
+            except (ValueError, NotImplementedError):
+                if is_array:
+                    binary.right.value = values.tolist()
         return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
 

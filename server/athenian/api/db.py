@@ -451,7 +451,10 @@ async def conn_in_transaction(con: Connection) -> bool:
 def _conn_backend_in_transaction(raw_connection: Any) -> bool:
     """Return True if the connection backend is inside a transaction."""
     if isinstance(raw_connection, asyncpg.Connection):
-        return raw_connection.is_in_transaction()
+        try:
+            return raw_connection.is_in_transaction()
+        except asyncpg.InterfaceError:
+            return False
     elif isinstance(raw_connection, aiosqlite.Connection):
         return raw_connection.in_transaction
     raise AssertionError(f"Unhandled db connection type {type(raw_connection)}")

@@ -1195,16 +1195,21 @@ class PullRequestMiner:
             cmap = {}
             for r in rows:
                 cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
-            df[Issue.labels.name] = df[Issue.labels.name].apply(
-                lambda i: [s.lower() for s in (i or [])],
-            ) + df[[Issue.acc_id.name, Issue.components.name]].apply(
-                lambda row: (
-                    [cmap[row[Issue.acc_id.name]][c] for c in row[Issue.components.name]]
-                    if row[Issue.components.name] is not None
-                    else []
+            labels_col = df[Issue.labels.name].values
+            for i, (acc_id, row_labels, row_components) in enumerate(
+                zip(
+                    df[Issue.acc_id.name].values,
+                    labels_col,
+                    df[Issue.components.name].values,
                 ),
-                axis=1,
-            )
+            ):
+                if row_labels is None:
+                    labels_col[i] = row_labels = []
+                else:
+                    for j, s in enumerate(row_labels):
+                        row_labels[j] = s.lower()
+                if row_components is not None:
+                    row_labels.extend(cmap[acc_id][c] for c in row_components)
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
