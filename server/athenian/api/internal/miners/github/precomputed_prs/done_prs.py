@@ -96,10 +96,13 @@ class DonePRFactsLoader:
             rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+        pr_node_id_col = 0  # performance: faster than ghprt.pr_node_id.name
+        repository_full_name_col = 1  # performance: faster than ghprt.repository_full_name.name
+        release_match_col = 2  # performance: faster than ghprt.release_match.name
         for row in rows:
             dump = triage_by_release_match(
-                row[ghprt.repository_full_name.name],
-                row[ghprt.release_match.name],
+                row[repository_full_name_col],
+                row[release_match_col],
                 release_settings,
                 default_branches,
                 result,
@@ -107,7 +110,7 @@ class DonePRFactsLoader:
             )
             if dump is None:
                 continue
-            dump[(row[ghprt.pr_node_id.name], row[ghprt.repository_full_name.name])] = row
+            dump[(row[pr_node_id_col], row[repository_full_name_col])] = row
         result, ambiguous = cls._post_process_ambiguous_done_prs(result, ambiguous)
         return {node_id for node_id, _ in result}, ambiguous
 

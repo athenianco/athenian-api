@@ -32,7 +32,7 @@ async def test_in_inlining(dtype):
             return np.array(vals, dtype=dtype)
 
     if dtype is None:
-        check_any_values = "= ANY (VALUES ('r0'), ('r1'),"
+        check_any_values = "= ANY (VALUES ('r0'),('r1'),"
     else:
         check_any_values = "= ANY (VALUES ('r0'"
     sql = select([Repository]).where(

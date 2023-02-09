@@ -780,16 +780,34 @@ class ReleaseLoader:
         releases = []
         updated = []
         empty_resolved = None, None, None
+
+        rn_repository_node_id_col = ReleaseNotification.repository_node_id.name
+        rn_url_col = ReleaseNotification.url.name
+        rn_resolved_commit_node_id_col = ReleaseNotification.resolved_commit_node_id.name
+        rn_commit_hash_prefix_col = ReleaseNotification.commit_hash_prefix.name
+        rn_resolved_commit_hash_col = ReleaseNotification.resolved_commit_hash.name
+        rn_author_node_id_col = ReleaseNotification.author_node_id.name
+        rn_name_col = ReleaseNotification.name.name
+        rn_published_at_col = ReleaseNotification.published_at.name
+        r_author_col = Release.author.name
+        r_author_node_id_col = Release.author_node_id.name
+        r_commit_id_col = Release.commit_id.name
+        r_node_id_col = Release.node_id.name
+        r_name_col = Release.name.name
+        r_published_at_col = Release.published_at.name
+        r_repository_full_name_col = Release.repository_full_name.name
+        r_repository_node_id_col = Release.repository_node_id.name
+        r_sha_col = Release.sha.name
+        r_tag_col = Release.tag.name
+        r_url_col = Release.url.name
+
         for row in release_rows:
-            repo = row[ReleaseNotification.repository_node_id.name]
+            repo = row[rn_repository_node_id_col]
             repo_name = repo_ids[repo]
-            commit_url = row[ReleaseNotification.url.name]
-            if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
+            commit_url = row[rn_url_col]
+            if (commit_node_id := row[rn_resolved_commit_node_id_col]) is None:
                 commit_node_id, commit_hash, commit_url = resolved_commits.get(
-                    (
-                        repo,
-                        commit_prefix := row[ReleaseNotification.commit_hash_prefix.name].encode(),
-                    ),
+                    (repo, commit_prefix := row[rn_commit_hash_prefix_col].encode()),
                     empty_resolved,
                 )
                 if commit_node_id is not None:
@@ -797,9 +815,9 @@ class ReleaseLoader:
                 else:
                     continue
             else:
-                commit_hash = row[ReleaseNotification.resolved_commit_hash.name]
-            author = row[ReleaseNotification.author_node_id.name]
-            name = row[ReleaseNotification.name.name]
+                commit_hash = row[rn_resolved_commit_hash_col]
+            author = row[rn_author_node_id_col]
+            name = row[rn_name_col]
             try:
                 logical_repos = logical_settings.prs(repo_name).logical_repositories
             except KeyError:
@@ -815,19 +833,17 @@ class ReleaseLoader:
 
                 releases.append(
                     {
-                        Release.author.name: user_map.get(author, author),
-                        Release.author_node_id.name: author,
-                        Release.commit_id.name: commit_node_id,
-                        Release.node_id.name: commit_node_id,
-                        Release.name.name: name,
-                        Release.published_at.name: row[
-                            ReleaseNotification.published_at.name
-                        ].replace(tzinfo=timezone.utc),
-                        Release.repository_full_name.name: logical_repo,
-                        Release.repository_node_id.name: repo,
-                        Release.sha.name: commit_hash,
-                        Release.tag.name: None,
-                        Release.url.name: row[ReleaseNotification.url.name] or commit_url,
+                        r_author_col: user_map.get(author, author),
+                        r_author_node_id_col: author,
+                        r_commit_id_col: commit_node_id,
+                        r_node_id_col: commit_node_id,
+                        r_name_col: name,
+                        r_published_at_col: row[rn_published_at_col].replace(tzinfo=timezone.utc),
+                        r_repository_full_name_col: logical_repo,
+                        r_repository_node_id_col: repo,
+                        r_sha_col: commit_hash,
+                        r_tag_col: None,
+                        r_url_col: row[rn_url_col] or commit_url,
                         matched_by_column: ReleaseMatch.event.value,
                     },
                 )
