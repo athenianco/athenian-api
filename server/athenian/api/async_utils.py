@@ -90,10 +90,15 @@ async def _read_sql_query_numpy(
     finally:
         sql.dtype = None
     blocks = {}
-    rows_count = 0
+    rows_count = len(data[0]) if len(data) else 0
+    ndarray = np.ndarray
     for i, arr in enumerate(data):
-        blocks.setdefault(arr.dtype, [arr.base, []])[1].append(i)
-        rows_count = len(arr)
+        # we need this check to support the local query cache
+        if isinstance(arr.base, ndarray) and arr.ndim == 2:
+            base = arr.base
+        else:
+            base = arr[None, :]
+        blocks.setdefault((arr.dtype, id(base)), [base, []])[1].append(i)
     if nulls and (int_erase_nulls or int_reset_nulls or str_erase_nulls or str_reset_nulls):
         null_items, null_cols = np.unravel_index(nulls, (rows_count, len(dtype)))
         order = np.argsort(null_cols)
