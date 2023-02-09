@@ -72,11 +72,13 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         kw["literal_binds"] = True
     if render_any_values:
         # = ANY(VALUES ...)
-        if is_array and (
-            values.dtype.kind in ("S", "U")
-            or values.dtype.kind in ("i", "u")
-            and values.dtype.itemsize == 8
-        ):
+        if (
+            is_array
+            and (
+                values.dtype.kind in ("S", "U")
+                or (values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8)
+            )
+        ) or isinstance(values, list):
             right = any_(Grouping(text(in_any_values_inline(values))))
         else:
             right = any_(
