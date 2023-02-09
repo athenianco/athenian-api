@@ -1612,7 +1612,7 @@ class _JIRAFilterToGroupingConverter:
                 else:
                     issue_types = None
                 group = JIRAGrouping(projects, priorities, issue_types)
-            else:  # this includes when custom_project is True and only projects is present
+            else:  # this includes when custom_project is False and only projects is present
                 group = JIRAGrouping.empty()
             groups.append(group)
 
