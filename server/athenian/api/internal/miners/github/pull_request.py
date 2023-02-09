@@ -78,6 +78,7 @@ from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
+    PR_JIRA_DETAILS_COLUMN_MAP,
     DeploymentConclusion,
     JIRAEntityToFetch,
     LoadedJIRADetails,
@@ -3096,17 +3097,13 @@ class PullRequestFactsMiner:
             jira_details = LoadedJIRADetails.empty()
         else:
             jira_fields = {"ids": pr.jiras.index.values}
-            for field, col in (
-                (LoadedJIRADetails.projects, Issue.project_id),
-                (LoadedJIRADetails.priorities, Issue.priority_id),
-                (LoadedJIRADetails.types, Issue.type_id),
-            ):
-                field_name = field.__name__
-                col_name = col.name
+            for col, (field_name, dtype) in PR_JIRA_DETAILS_COLUMN_MAP.items():
+                if col is Issue.key:
+                    continue
                 try:
-                    jira_fields[field_name] = pr.jiras[col_name].values
+                    jira_fields[field_name] = pr.jiras[col.name].values
                 except KeyError:
-                    jira_fields[field_name] = np.array([], dtype="S")
+                    jira_fields[field_name] = np.array([], dtype=dtype)
             jira_details = LoadedJIRADetails(**jira_fields)
 
         facts = PullRequestFacts.from_fields(

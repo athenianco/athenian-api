@@ -1185,6 +1185,7 @@ def _convert_pr_jira_map_to_release_jira_map(
         (JIRAEntityToFetch.PROJECTS, "projects"),
         (JIRAEntityToFetch.PRIORITIES, "priorities"),
         (JIRAEntityToFetch.TYPES, "types"),
+        (JIRAEntityToFetch.LABELS, "labels"),
     ]
     empty = LoadedJIRAReleaseDetails.empty()
     empty_ids = np.array([], dtype=object)
