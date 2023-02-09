@@ -42,6 +42,7 @@ from athenian.api.internal.features.statistics import (
     median_confidence_interval,
 )
 from athenian.api.internal.logical_repos import coerce_logical_repos
+from athenian.api.internal.miners.types import PR_JIRA_DETAILS_COLUMN_MAP
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.sparse_mask import SparseMask
@@ -1118,10 +1119,12 @@ class JIRAGrouping:
     projects: Optional[Collection[str]] = None
     priorities: Optional[Collection[str]] = None
     types: Optional[Collection[str]] = None
+    labels: Optional[Collection[str]] = None
 
     def __bool__(self) -> bool:
         """Get whether the group definition is empty.  An empty group does not do any grouping."""
-        return any(f is not None for f in (self.projects, self.priorities, self.types))
+        values = (self.projects, self.priorities, self.types, self.labels)
+        return any(val is not None for val in values)
 
     @classmethod
     def empty(cls) -> JIRAGrouping:
@@ -1146,14 +1149,16 @@ def group_pr_facts_by_jira(
             df_matches = np.zeros(len(df), dtype=np.uint8)
             required_n_matches = 0
 
-            for group_props, df_values in (
-                (jira_group.projects, df.jira_projects.values),
-                (jira_group.priorities, df.jira_priorities.values),
-                (jira_group.types, df.jira_types.values),
+            DETAILS = PR_JIRA_DETAILS_COLUMN_MAP
+            for group_props, df_values, dtype in (
+                (jira_group.projects, df.jira_projects.values, DETAILS[Issue.project_id][1]),
+                (jira_group.priorities, df.jira_priorities.values, DETAILS[Issue.priority_id][1]),
+                (jira_group.types, df.jira_types.values, DETAILS[Issue.type_id][1]),
+                (jira_group.labels, df.jira_labels.values, DETAILS[Issue.labels][1]),
             ):
                 if group_props is not None:
                     required_n_matches += 1
-                    filter_values = np.array(list(group_props), dtype="S")
+                    filter_values = np.array(list(group_props), dtype=dtype)
                     all_values = np.concatenate(df_values)
                     splits = np.cumsum(np.fromiter((len(v) for v in df_values), int, len(df)))
                     match_mask = in1d_str(all_values, filter_values)

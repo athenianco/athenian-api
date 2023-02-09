@@ -3095,9 +3095,13 @@ class PullRequestFactsMiner:
                 if col is Issue.key:
                     continue
                 try:
-                    jira_fields[field_name] = pr.jiras[col.name].values
+                    value = pr.jiras[col.name].values
                 except KeyError:
                     jira_fields[field_name] = np.array([], dtype=dtype)
+                else:
+                    if col is Issue.labels:
+                        value = np.concatenate(value, dtype=dtype)
+                    jira_fields[field_name] = value
             jira_details = LoadedJIRADetails(**jira_fields)
 
         facts = PullRequestFacts.from_fields(
