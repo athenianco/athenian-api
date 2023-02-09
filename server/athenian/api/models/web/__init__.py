@@ -111,6 +111,7 @@ from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 from athenian.api.models.web.for_set_common import (
     CommonPullRequestFilters,
     ForSetLines,
+    JIRAGroupsMixin,
     RepositoryGroupsMixin,
     make_common_pull_request_filters,
 )

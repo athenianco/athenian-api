@@ -1,8 +1,11 @@
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.for_set_common import CommonPullRequestFilters, ForSetLines
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.for_set_common import (
+    CommonPullRequestFilters,
+    ForSetLines,
+    JIRAGroupsMixin,
+)
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
@@ -12,7 +15,6 @@ class _ForSetPullRequests(Model, sealed=False):
     with_: (Optional[PullRequestWith], "with")
     withgroups: Optional[list[PullRequestWith]]
     environments: Optional[list[str]]
-    jiragroups: Optional[list[JIRAFilter]]
 
     def select_withgroup(self, index: int) -> "ForSetPullRequests":
         """Change `with` to point at the specified `withgroup`."""
@@ -27,20 +29,10 @@ class _ForSetPullRequests(Model, sealed=False):
         fs.withgroups = None
         return fs
 
-    def select_jiragroup(self, index: int) -> "ForSetPullRequests":
-        fs = self.copy()
-        if self.jiragroups is None and index == 0:
-            return fs
-        if self.jiragroups is None or index > len(self.jiragroups):
-            raise IndexError(f"jiragroup {index} doesn't exist")
-
-        fs.jira = fs.jiragroups[index]
-        fs.jiragroups = None
-        return fs
-
 
 ForSetPullRequests = AllOf(
     _ForSetPullRequests,
+    JIRAGroupsMixin,
     ForSetLines,
     CommonPullRequestFilters,
     name="ForSetPullRequests",
