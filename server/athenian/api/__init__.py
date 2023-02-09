@@ -11,7 +11,7 @@ import pytz
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 # Workaround https://github.com/pandas-dev/pandas/issues/32619
-pytz.UTC = pytz.utc = timezone.utc
+pytz.UTC = pytz.utc = timezone.utc  # type: ignore
 
 is_testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") in (
     "development",
@@ -25,5 +25,5 @@ def _version_init_without_warnings(self, vstring=None):
         self.parse(vstring)
 
 
-Version.__init__ = _version_init_without_warnings
+Version.__init__ = _version_init_without_warnings  # type: ignore
 del _version_init_without_warnings

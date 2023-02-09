@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import json
 import typing
-from typing import Optional, Union
+from typing import Optional
 
 import dateutil.parser
 from dateutil.tz import tzutc
@@ -25,10 +25,10 @@ class ParseError(ValueError):
 
 
 def _deserialize(
-    data: Union[dict, list, str],
-    klass: Union[Class, str],
+    data: dict | list | str,
+    klass: Class,
     path: str,
-) -> Union[dict, list, Class, int, float, str, bool, date, datetime, timedelta]:
+) -> dict | list | Class | int | float | str | bool | date | datetime | timedelta:
     """Deserializes dict, list, str into an object.
 
     :param data: dict, list or str.
@@ -45,16 +45,16 @@ def _deserialize(
         elif klass is object or klass is dict:
             return _deserialize_object(data)
         elif klass is _reliable_datetime_types[0]:
-            return deserialize_date(data)
+            return deserialize_date(data)  # type: ignore
         elif klass is _reliable_datetime_types[1]:
-            return deserialize_datetime(data)
+            return deserialize_datetime(data)  # type: ignore
         elif klass is timedelta:
-            return deserialize_timedelta(data)
+            return deserialize_timedelta(data)  # type: ignore
         elif typing_utils.is_generic(klass):
             if typing_utils.is_list(klass):
-                return _deserialize_list(data, klass.__args__[0], path)
+                return _deserialize_list(data, klass.__args__[0], path)  # type: ignore
             elif typing_utils.is_dict(klass):
-                return _deserialize_dict(data, klass.__args__[1], path)
+                return _deserialize_dict(data, klass.__args__[1], path)  # type: ignore
             # optional is also a union, must stand the first
             elif typing_utils.is_optional(klass):
                 return _deserialize(data, klass.__args__[0], path)
@@ -65,17 +65,20 @@ def _deserialize(
                     except (ValueError, TypeError):
                         continue
                 raise ValueError(f"None of the union options fit: {klass.__args__}")
+            raise ValueError(f"Invalid generic klass {klass}")
         else:
-            return deserialize_model(data, klass, path)
+            return deserialize_model(data, klass, path)  # type: ignore
     except ParseError as e:
         raise e from None
     except Exception as e:
         if klass in (date, datetime):
-            klass = "RFC 3339 datetime (https://ijmacd.github.io/rfc3339-iso8601)"
-        raise ParseError(f"Failed to parse {data} as {klass}: {e}", path) from e
+            klass_str = "RFC 3339 datetime (https://ijmacd.github.io/rfc3339-iso8601)"
+        else:
+            klass_str = str(klass)
+        raise ParseError(f"Failed to parse {data} as {klass_str}: {e}", path) from e
 
 
-def _deserialize_primitive(data, klass: Class) -> Union[Class, int, float, str, bool]:
+def _deserialize_primitive(data, klass: Class) -> Class | int | float | str | bool:
     """Deserializes to primitive type.
 
     :param data: data to deserialize.
@@ -158,7 +161,7 @@ def deserialize_timedelta(string: str) -> timedelta:
     return td
 
 
-def deserialize_model(data: dict, klass: typing.Type[T], path: str = "") -> T:
+def deserialize_model(data: dict, klass: typing.Type[T], path: str = "") -> T | dict:
     """Deserializes dict to model.
 
     :param data: dict that represents the serialized model.
@@ -171,12 +174,12 @@ def deserialize_model(data: dict, klass: typing.Type[T], path: str = "") -> T:
 
     instance = klass.__new__(klass)
     if data is not None and isinstance(data, dict):
-        for attr, attr_type in klass.attribute_types.items():
-            attr_key = klass.attribute_map.get(attr, attr)
+        for attr, attr_type in klass.attribute_types.items():  # type: ignore
+            attr_key = klass.attribute_map.get(attr, attr)  # type: ignore
             if attr_key in data:
                 value = _deserialize(data[attr_key], attr_type, f"{path}.{attr}")
             else:
-                value = klass.default_values.get(attr, None)
+                value = klass.default_values.get(attr, None)  # type: ignore
             setattr(instance, attr, value)
 
     return instance
