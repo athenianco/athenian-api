@@ -1258,7 +1258,8 @@ class MetricEntriesCalculator:
         label_splitter = IssuesLabelSplitter(split_by_label, groups[0].labels)
         if split_by_label:
             assert len(groups) == 1
-            extra_columns.append(Issue.labels)
+            if Issue.labels not in extra_columns:
+                extra_columns.append(Issue.labels)
             jira_filter_grouper = label_splitter
         elif len(groups) == 1:
             jira_filter_grouper = _global_grouper
@@ -1610,7 +1611,9 @@ class _JIRAFilterToGroupingConverter:
                     issue_types = self._mapper.translate_types(jira_filter.issue_types)
                 else:
                     issue_types = None
-                group = JIRAGrouping(projects, priorities, issue_types)
+                # jira_filter.labels.exclude are ignored for grouping
+                labels = jira_filter.labels.include or None
+                group = JIRAGrouping(projects, priorities, issue_types, labels)
             else:  # this includes when custom_project is False and only projects is present
                 group = JIRAGrouping.empty()
             groups.append(group)
@@ -1705,6 +1708,8 @@ def _get_jira_entities_to_fetch(
             jira_entities_to_fetch |= JIRAEntityToFetch.TYPES
         if jira_filter.priorities:
             jira_entities_to_fetch |= JIRAEntityToFetch.PRIORITIES
+        if jira_filter.labels.include:
+            jira_entities_to_fetch |= JIRAEntityToFetch.LABELS
     return jira_entities_to_fetch
 
 
