@@ -48,7 +48,7 @@ def test_in_any_values_inline_list(values, result):
     ],
 )
 def test_in_any_values_inline_empty(dtype):
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         in_any_values_inline(np.array([], dtype=dtype))
 
 
@@ -57,10 +57,27 @@ def test_in_any_values_inline_null():
 
 
 @pytest.mark.parametrize(
+    "hack",
+    [["normal", "oops')); drop table users;"], [b"normal", b"oops')); drop table users;"]],
+)
+@pytest.mark.parametrize("numpy", [False, True])
+@pytest.mark.parametrize("method", [in_any_values_inline, in_inline])
+def test_inline_injection(hack, numpy, method):
+    values = hack if not numpy else np.array(hack)
+    with pytest.raises(NotImplementedError):
+        method(values)
+
+
+@pytest.mark.parametrize(
     "values, dtype, result",
     [
         (["aaa", "bbb"], "S3", "'aaa','bbb'"),
+        (["aaa", "b"], "S3", "'aaa','b'  "),
         (["aaa", "bbb"], "U3", "'aaa','bbb'"),
+        (["aaa", "b"], "U3", "'aaa','b'  "),
+        (["aaa", "ц"], "U3", "'aaa','ц'  "),
+        (["aaa", "ц", "👍"], "U3", "'aaa','ц'  ,'👍'  "),
+        (["aaa", "👍" * 1000], "U1000", "'aaa'" + " " * (1000 - 3) + ",'" + "👍" * 1000 + "'"),
         ([], "S1", "null"),
         ([], "U1", "null"),
         ([], int, "null"),
@@ -68,5 +85,23 @@ def test_in_any_values_inline_null():
         ([1, 203], int, "  1,203"),
     ],
 )
-def test_in_inline(values, dtype, result):
+def test_in_inline_array(values, dtype, result):
     assert in_inline(np.array(values, dtype=dtype)) == result
+
+
+@pytest.mark.parametrize(
+    "values, result",
+    [
+        (["aaa", "bbb"], "'aaa','bbb'"),
+        (["aaa", "b"], "'aaa','b'"),
+        (["aaa", "ц"], "'aaa','ц'"),
+        ([b"aaa", b"bbb"], "'aaa','bbb'"),
+        ([b"aaa", b"b"], "'aaa','b'"),
+        ([None], "null"),
+        ([], "null"),
+        ([1, 2], "1,2"),
+        ([1, 203], "  1,203"),
+    ],
+)
+def test_in_inline_list(values, result):
+    assert in_inline(values) == result

@@ -43,6 +43,9 @@ cdef extern from "Python.h":
     Py_ssize_t PyUnicode_GET_LENGTH(PyObject *) nogil
     unsigned int PyUnicode_KIND(PyObject *) nogil
     void *PyUnicode_DATA(PyObject *) nogil
+    Py_ssize_t PyUnicode_FindChar(
+        PyObject *str, Py_UCS4 ch, Py_ssize_t start, Py_ssize_t end, int direction
+    ) nogil
 
     bint PyBytes_Check(PyObject *) nogil
     char *PyBytes_AS_STRING(PyObject *) nogil
