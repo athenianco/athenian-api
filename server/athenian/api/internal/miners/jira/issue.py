@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Type
+from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Sequence, Type
 
 import aiomcache
 import numpy as np
@@ -18,7 +18,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, Row
+from athenian.api.db import Database, DatabaseLike, Row, column_values_condition
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
@@ -951,10 +951,7 @@ class PullRequestJiraMapper:
     ) -> dict[int, LoadedJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
-        if len(prs) >= 100:
-            node_id_cond = nprji.node_id.in_any_values(prs)
-        else:
-            node_id_cond = nprji.node_id.in_(prs)
+        node_id_cond, _ = column_values_condition(nprji.node_id, prs)
         columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
         df = await read_sql_query(
             sql.select(*columns)
@@ -999,8 +996,13 @@ class PullRequestJiraMapper:
             pos += group_count
             # we can deduplicate. shall we? must benchmark the profit.
             existing[pr_id] = LoadedJIRADetails(
+                # labels are handled differently since they are already an array for each issue
                 **{
-                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: df[c.name].values[indexes]
+                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: _concatenate_or_first(
+                        df[c.name].values[indexes],
+                    )
+                    if c is Issue.labels
+                    else df[c.name].values[indexes]
                     for c in payload_columns
                 },
                 **empty_cols,
@@ -1039,6 +1041,10 @@ class PullRequestJiraMapper:
         empty_jira = LoadedJIRADetails.empty()
         for f in facts.values():
             f.jira = empty_jira
+
+
+def _concatenate_or_first(arrays: Sequence[np.ndarray]) -> np.ndarray:
+    return arrays[0] if len(arrays) == 1 else np.concatenate(arrays)
 
 
 def resolve_work_began_and_resolved(
