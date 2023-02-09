@@ -412,10 +412,7 @@ class TestCreateGoals(BaseCreateGoalTest):
         await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11, parent_id=10))
         body = self._body(
             metric=metric,
-            team_goals=[
-                (10, 42),
-                (11, 43, {"threshold": 2}),
-            ],
+            team_goals=[(10, 42), (11, 43, {"threshold": 2})],
             metric_params={"threshold": 1},
         )
         new_goal_id = (await self._request(json=body))["id"]
@@ -427,6 +424,20 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         tg_11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
         assert tg_11_row[TeamGoal.metric_params.name] == {"threshold": 2}
+
+    async def test_metric_params_duration(self, sdb: Database) -> None:
+        metric = PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO
+        await models_insert(sdb, TeamFactory(id=10))
+        body = self._body(
+            metric=metric,
+            team_goals=[(10, 42, {"threshold": "100s"})],
+            metric_params={"threshold": "100s"},
+        )
+        new_goal_id = (await self._request(json=body))["id"]
+        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        assert goal_row[Goal.metric_params.name] == {"threshold": "100s"}
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_row[TeamGoal.metric_params.name] == {"threshold": "100s"}
 
 
 class BaseUpdateGoalTest(BaseGoalTest):
