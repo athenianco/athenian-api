@@ -304,6 +304,7 @@ class PullRequestFacts:
         JIRA_PROJECTS = "jira_projects"
         JIRA_PRIORITIES = "jira_priorities"
         JIRA_TYPES = "jira_types"
+        JIRA_LABELS = "jira_labels"
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""

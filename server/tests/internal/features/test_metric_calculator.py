@@ -32,6 +32,7 @@ class TestGroupPRFactsByJIRA:
     PROJECTS = PullRequestFacts.INDIRECT_FIELDS.JIRA_PROJECTS
     PRIORITIES = PullRequestFacts.INDIRECT_FIELDS.JIRA_PRIORITIES
     TYPES = PullRequestFacts.INDIRECT_FIELDS.JIRA_TYPES
+    LABELS = PullRequestFacts.INDIRECT_FIELDS.JIRA_LABELS
 
     def test_empty_df(self) -> None:
         df = self._make_df()
@@ -41,7 +42,7 @@ class TestGroupPRFactsByJIRA:
 
     def test_total_groups(self) -> None:
         groups = [JIRAGrouping.empty()] * 2
-        df = self._make_df(([], [], []), ([], [], []))
+        df = self._make_df(([], [], [], []), ([], [], [], []))
         res = group_pr_facts_by_jira(groups, df)
         assert len(res) == 2
         assert_array_equal(res[0], np.array([0, 1], dtype=int))
@@ -50,8 +51,8 @@ class TestGroupPRFactsByJIRA:
     def test_empty_group(self) -> None:
         groups = [JIRAGrouping(None, None, [])]
         df = self._make_df(
-            ([b"pr0"], [], [b"t0"]),
-            ([b"pr1"], [], []),
+            ([b"pr0"], [], [b"t0"], []),
+            ([b"pr1"], [], [], []),
         )
         res = group_pr_facts_by_jira(groups, df)
         assert len(res) == 1
@@ -59,11 +60,11 @@ class TestGroupPRFactsByJIRA:
 
     def test_single_group(self) -> None:
         df = self._make_df(
-            ([b"pr0"], [], [b"t0"]),
-            ([b"pr1"], [], [b"t0"]),
-            ([b"pr0", b"pr1"], [], []),
-            ([b"pr0", b"pr1"], [], [b"t1"]),
-            ([b"pr1"], [], [b"t1", b"t2"]),
+            ([b"pr0"], [], [b"t0"], []),
+            ([b"pr1"], [], [b"t0"], []),
+            ([b"pr0", b"pr1"], [], [], []),
+            ([b"pr0", b"pr1"], [], [b"t1"], []),
+            ([b"pr1"], [], [b"t1", b"t2"], []),
         )
 
         res = group_pr_facts_by_jira([JIRAGrouping(["pr0"], None, ["t0", "t1"])], df)
@@ -85,10 +86,10 @@ class TestGroupPRFactsByJIRA:
 
     def test_multiple_groups(self) -> None:
         df = self._make_df(
-            ([b"pr0", b"pr1"], [b"pri0"], [b"t0"]),
-            ([b"pr0"], [b"pri1"], [b"t0"]),
-            ([b"pr1"], [b"pri0"], [b"t0", b"t1"]),
-            ([b"pr1"], [], [b"t1"]),
+            ([b"pr0", b"pr1"], [b"pri0"], [b"t0"], []),
+            ([b"pr0"], [b"pri1"], [b"t0"], []),
+            ([b"pr1"], [b"pri0"], [b"t0", b"t1"], []),
+            ([b"pr1"], [], [b"t1"], []),
         )
         groups = [
             JIRAGrouping(["pr0", "pr1"], None, ["t0"]),
@@ -103,10 +104,10 @@ class TestGroupPRFactsByJIRA:
 
     def test_priority(self) -> None:
         df = self._make_df(
-            ([], [b"high"], []),
-            ([], [], []),
-            ([], [b"high", b"low", b"medium"], []),
-            ([], [b"low"], []),
+            ([], [b"high"], [], []),
+            ([], [], [], []),
+            ([], [b"high", b"low", b"medium"], [], []),
+            ([], [b"low"], [], []),
         )
         jira_groups = [JIRAGrouping(None, ["high"], None)]
         res = group_pr_facts_by_jira(jira_groups, df)
@@ -121,18 +122,34 @@ class TestGroupPRFactsByJIRA:
     def test_priority_single_match(self) -> None:
         jira_groups = [JIRAGrouping(None, ["high"], None)]
         df = self._make_df(
-            ([], [], []),
-            ([], [b"high"], []),
-            ([], [], []),
+            ([], [], [], []),
+            ([], [b"high"], [], []),
+            ([], [], [], []),
         )
         res = group_pr_facts_by_jira(jira_groups, df)
         assert len(res) == 1
         assert_array_equal(res[0], np.array([1]))
 
+    def test_labels(self) -> None:
+        jira_groups = [JIRAGrouping(labels=["l0"]), JIRAGrouping(labels=["l1", "l0"])]
+        df = self._make_df(
+            ([], [], [], ["l0"]),
+            ([], [b"high"], [], ["l2"]),
+            ([], [], [], ["l1"]),
+            ([], [], [], ["l1", "l2"]),
+        )
+        res = group_pr_facts_by_jira(jira_groups, df)
+        assert len(res) == 2
+        assert_array_equal(res[0], np.array([0]))
+        assert_array_equal(res[1], np.array([0, 2, 3]))
+
     def _make_df(self, *rows: tuple) -> pd.DataFrame:
-        data = [tuple(np.array(field, dtype="S") for field in row) for row in rows]
+        dtypes = ("S", "S", "S", "U")
+        data = [
+            tuple(np.array(field, dtype=dtype) for field, dtype in zip(r, dtypes)) for r in rows
+        ]
         return pd.DataFrame.from_records(
-            data, columns=[self.PROJECTS, self.PRIORITIES, self.TYPES],
+            data, columns=[self.PROJECTS, self.PRIORITIES, self.TYPES, self.LABELS],
         )
 
 
