@@ -1484,10 +1484,39 @@ class DeploymentMetricBase(MetricCalculator[T]):
             successful_sum = len(indexes)
             successful = peek.conclusions.item()[self.environment] == DeploymentConclusion.SUCCESS
             nnz_finished = nnz_finished[successful]
-            assert successful_sum == len(nnz_finished), (
-                f"some PRs deployed more than once in {self.environments[self.environment]}: "
-                f"{successful_sum} vs. {len(nnz_finished)}"
-            )
+            try:
+                assert successful_sum == len(nnz_finished), (
+                    f"some PRs deployed more than once in {self.environments[self.environment]}: "
+                    f"{successful_sum} vs. {len(nnz_finished)}"
+                )
+            except AssertionError as e:
+                log = logging.getLogger(f"{metadata.__package__}.{type(self).__name__}")
+                all_envs = np.concatenate(facts[PullRequestFacts.f.environments].values)
+                mask = (
+                    np.concatenate(facts[PullRequestFacts.f.deployment_conclusions].values)
+                    == DeploymentConclusion.SUCCESS
+                ) & (all_envs == self.environments[self.environment])
+                env_lengths = nested_lengths(facts[PullRequestFacts.f.environments].values)
+                nnz_env_mask = env_lengths > 0
+                trimmed_env_lengths = env_lengths[nnz_env_mask]
+                env_offsets = np.zeros(len(trimmed_env_lengths), dtype=int)
+                np.cumsum(trimmed_env_lengths[:-1], out=env_offsets[1:])
+                dep_counts = np.add.reduceat(mask, env_offsets)
+                bad_deps_mask = dep_counts > 1
+                mask &= np.repeat(bad_deps_mask, trimmed_env_lengths)
+                pr_node_ids = facts[PullRequestFacts.f.node_id].values[
+                    np.flatnonzero(nnz_env_mask)[np.flatnonzero(bad_deps_mask)]
+                ]
+                affected_deps = np.concatenate(facts[PullRequestFacts.f.deployments].values)[mask]
+                pos = 0
+                for pr_node_id, step in zip(pr_node_ids, dep_counts[bad_deps_mask]):
+                    log.error(
+                        "PR %d deployed in %s",
+                        pr_node_id,
+                        affected_deps[pos : pos + step].tolist(),
+                    )
+                    pos += step
+                raise e from None
             finished[indexes] = nnz_finished
         columns = columns or (
             facts[PullRequestFacts.f.merged].values,

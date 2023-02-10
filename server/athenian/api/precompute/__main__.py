@@ -142,7 +142,7 @@ def _parse_args() -> argparse.Namespace:
         "--time-from",
         type=deserialize_datetime,
         default=None,
-        help='Override the "time_from" timestamp = since when we precompute everything..',
+        help='Override the "time_from" timestamp = since when we precompute everything.',
     )
     accounts_parser.add_argument(
         "--disable-isolation",
@@ -155,12 +155,12 @@ def _parse_args() -> argparse.Namespace:
     accounts_parser.add_argument(
         "--refetch-topic",
         required=False,
-        help="PubSub topic name where we submit metadata heal requests",
+        help="PubSub topic name where we submit metadata heal requests.",
     )
 
     store_external_health_parser = subparsers.add_parser(
         "store-external-health",
-        help="Persist external account data health metrics: metadata and performance",
+        help="Persist external account data health metrics: metadata and performance.",
     )
     store_external_health_parser.add_argument(
         "--prometheus", type=str, help="Prometheus API endpoint",

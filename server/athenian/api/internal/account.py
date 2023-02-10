@@ -681,7 +681,6 @@ async def _fetch_github_installation_progress_db(
     # we don't cache this because the number of repos can dynamically change
     models = []
     for metadata_account_id, event_id in event_ids:
-        log.info("before fetch %d %s", metadata_account_id, event_id)
         rows = await mdb_conn.fetch_all(
             select(FetchProgress)
             .where(
@@ -690,7 +689,6 @@ async def _fetch_github_installation_progress_db(
             )
             .with_statement_hint("IndexOnlyScan(p nodes_fetch_progress_view)"),
         )
-        log.info("after fetch %d %s", metadata_account_id, event_id)
         if not rows:
             continue
         tables = [

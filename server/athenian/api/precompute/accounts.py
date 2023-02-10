@@ -42,6 +42,7 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.deployment import (
     hide_outlier_first_deployments,
     mine_deployments,
+    reset_broken_deployments,
 )
 from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
@@ -381,6 +382,9 @@ async def precompute_reposet(
             del ignored_first_releases, ignored_released_prs
 
         if not args.skip_deployments:
+            health_metrics.deployments.broken = await reset_broken_deployments(
+                reposet.owner_id, pdb, rdb,
+            )
             log.info("Mining deployments")
             deployment_facts = await mine_deployments(
                 repos,
@@ -815,6 +819,11 @@ async def alert_bad_health(
         msgs.append(f"repositories without default branches: `{metrics.branches.no_default}`")
     if metrics.branches.missing:
         msgs.append(f"repositories without branches: `{metrics.branches.missing}`")
+    if metrics.deployments.broken:
+        msgs.append(
+            f"fixed {metrics.deployments.broken} broken deployments; good luck with debugging "
+            "them",
+        )
     previous_done_prs = await rdb.fetch_val(
         sa.select(HealthMetric.value)
         .where(
