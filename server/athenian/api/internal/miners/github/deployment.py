@@ -150,16 +150,18 @@ class MineDeploymentsMetrics:
 
     count: int
     unresolved: int
+    broken: int
 
     @classmethod
     def empty(cls) -> "MineDeploymentsMetrics":
         """Initialize a new MineDeploymentsMetrics instance filled with zeros."""
-        return MineDeploymentsMetrics(0, 0)
+        return MineDeploymentsMetrics(0, 0, 0)
 
     def as_db(self) -> Iterator[HealthMetric]:
         """Generate HealthMetric-s from this instance."""
         yield HealthMetric(name="deployments_count", value=self.count)
         yield HealthMetric(name="deployments_unresolved", value=self.unresolved)
+        yield HealthMetric(name="deployments_broken", value=self.unresolved)
 
 
 async def mine_deployments(
@@ -629,26 +631,31 @@ async def _invalidate_precomputed_on_out_of_order_notifications(
     """
     if len(to_invalidate := _find_invalid_precomputed_deploys(notifications, missed_mask)):
         log = logging.getLogger(f"{metadata.__package__}.mine_deployments")
+        await _delete_precomputed_deployments(to_invalidate, account, pdb)
         log.warning("invalidated out-of-order deployments: %s", to_invalidate.tolist())
-        stmts = []
-        tables = (
-            GitHubCommitDeployment,
-            GitHubPullRequestDeployment,
-            GitHubReleaseDeployment,
-            GitHubDeploymentFacts,
-        )
-        for Table in tables:
-            stmts.append(
-                sa.delete(Table).where(
-                    Table.acc_id == account, Table.deployment_name.in_(to_invalidate),
-                ),
-            )
-        await gather(
-            *(pdb.execute(stmt) for stmt in stmts),
-            op="_invalidate_precomputed_on_out_of_order_notifications/sql",
-        )
-
     return to_invalidate
+
+
+async def _delete_precomputed_deployments(
+    names: Collection[str],
+    account: int,
+    pdb: Database,
+) -> None:
+    stmts = []
+    tables = (
+        GitHubCommitDeployment,
+        GitHubPullRequestDeployment,
+        GitHubReleaseDeployment,
+        GitHubDeploymentFacts,
+    )
+    for Table in tables:
+        stmts.append(
+            sa.delete(Table).where(Table.acc_id == account, Table.deployment_name.in_(names)),
+        )
+    await gather(
+        *(pdb.execute(stmt) for stmt in stmts),
+        op="_invalidate_precomputed_on_out_of_order_notifications/sql",
+    )
 
 
 def _find_invalid_precomputed_deploys(
@@ -3384,3 +3391,46 @@ def _apply_jira_to_deployment_facts(facts: pd.DataFrame, df_map: pd.DataFrame) -
     )
     df.index = facts.index
     return df
+
+
+async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -> int:
+    """
+    Detect multiple successful deployments of the same commit and invalidate those deployments.
+
+    We are still investigating all the possible cases when this situation can happen.
+    Meanwhile, the best we can do is to invalidate all the duplicates.
+    """
+    rows_envs, rows_commits = await gather(
+        rdb.fetch_all(
+            select(DeploymentNotification.name, DeploymentNotification.environment).where(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.conclusion
+                == DeploymentNotification.CONCLUSION_SUCCESS.decode(),
+            ),
+        ),
+        pdb.fetch_all(
+            select(GitHubCommitDeployment.deployment_name, GitHubCommitDeployment.commit_id).where(
+                GitHubCommitDeployment.acc_id == account,
+            ),
+        ),
+    )
+    env_map = dict(rows_envs)
+    del rows_envs
+    bad_deps = set()
+    commit_env_deps = {}
+    for row in rows_commits:
+        try:
+            key = (row[1], env_map[row[0]])
+        except KeyError:
+            bad_deps.add(row[0])
+            continue
+        if (dep := commit_env_deps.get(key)) is not None:
+            bad_deps.add(row[0])
+            bad_deps.add(dep)
+        else:
+            commit_env_deps[key] = row[0]
+    if bad_deps:
+        log = logging.getLogger(f"{metadata.__package__}.reset_broken_deployments")
+        await _delete_precomputed_deployments(bad_deps, account, pdb)
+        log.warning("invalidated broken deployments: %s", bad_deps)
+    return len(bad_deps)
