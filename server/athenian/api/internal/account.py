@@ -682,10 +682,13 @@ async def _fetch_github_installation_progress_db(
     models = []
     for metadata_account_id, event_id in event_ids:
         rows = await mdb_conn.fetch_all(
-            select(FetchProgress).where(
+            select(FetchProgress)
+            .where(
                 FetchProgress.acc_id == metadata_account_id,
                 FetchProgress.event_id == event_id,
-            ),
+            )
+            .with_statement_hint("IndexOnlyScan(p nodes_fetch_progress_view)")
+            .with_statement_hint("HashJoin(p g)"),
         )
         if not rows:
             continue
