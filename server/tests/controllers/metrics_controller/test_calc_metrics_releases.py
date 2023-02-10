@@ -400,3 +400,59 @@ class TestCalcMetricsReleases(BaseCalcMetricsReleasesTest):
             rbody = await self._request(json=body)
             assert len(rbody) == 1
             assert rbody[0]["values"][0]["values"] == [4, 4]
+
+    async def test_jiragroups_labels(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2018-01-01",
+            date_to="2018-02-01",
+            for_=[["github.com/o/r"]],
+            metrics=[ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_PRS],
+            jiragroups=[{"labels_include": ["l0"]}, {"labels_include": ["l1", "l0"]}, {}],
+        )
+
+        mk_release = partial(
+            md_factory.ReleaseFactory,
+            repository_full_name="o/r",
+            repository_node_id=99,
+            published_at=dt(2018, 1, 5),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            models = [
+                mk_release(sha="A" * 40, name="r0"),
+                mk_release(sha="B" * 40, name="r1"),
+                mk_release(sha="C" * 40, name="r2"),
+                mk_release(sha="D" * 40, name="r3"),
+                md_factory.NodeCommitFactory(node_id=101, repository_id=99, sha="A" * 40),
+                md_factory.NodeCommitFactory(node_id=102, repository_id=99, sha="B" * 40),
+                md_factory.NodeCommitFactory(node_id=103, repository_id=99, sha="C" * 40),
+                md_factory.NodeCommitFactory(node_id=104, repository_id=99, sha="D" * 40),
+                *pr_models(99, 1, 1, merge_commit_id=101),
+                *pr_models(99, 2, 2, merge_commit_id=102),
+                *pr_models(99, 3, 3, merge_commit_id=103),
+                *pr_models(99, 4, 4, merge_commit_id=104),
+                md_factory.JIRAProjectFactory(id="1", key="DD"),
+                md_factory.JIRAIssueFactory(id="1", project_id="1", labels=["l0"]),
+                md_factory.JIRAIssueFactory(id="2", project_id="1", labels=["l1"]),
+                md_factory.JIRAIssueFactory(id="3", project_id="1", labels=["l0", "l1"]),
+                md_factory.JIRAIssueFactory(id="4", project_id="1", labels=["l2"]),
+                md_factory.JIRAIssueFactory(id="5", project_id="1", labels=[]),
+                *pr_jira_issue_mappings((1, "1"), (2, "2"), (3, "3")),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            rbody = await self._request(json=body)
+            assert len(rbody) == 3
+
+            res_l0 = next(r for r in rbody if r["jira"] == {"labels_include": ["l0"]})
+            assert res_l0["values"][0]["values"] == [2, 2]
+
+            res_l1_l0 = next(r for r in rbody if r["jira"] == {"labels_include": ["l1", "l0"]})
+            assert res_l1_l0["values"][0]["values"] == [3, 3]
+
+            res_all = next(r for r in rbody if r["jira"] == {})
+            assert res_all["values"][0]["values"] == [4, 4]
