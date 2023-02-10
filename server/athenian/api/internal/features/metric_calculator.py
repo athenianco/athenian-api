@@ -1145,26 +1145,25 @@ def group_pr_facts_by_jira(
     if df.empty:
         return [np.array([], dtype=int)] * len(jira_groups)
     res = []
+    arrays_matchers: dict[str, _ArraysWhitelistMatcher] = {}  # each prop will have a wl matcher
     for jira_group in jira_groups:
         if jira_group:
             df_matches = np.zeros(len(df), dtype=np.uint8)
             required_n_matches = 0
 
             DETAILS = PR_JIRA_DETAILS_COLUMN_MAP
-            for group_props, df_values, dtype in (
-                (jira_group.projects, df.jira_projects.values, DETAILS[Issue.project_id][1]),
-                (jira_group.priorities, df.jira_priorities.values, DETAILS[Issue.priority_id][1]),
-                (jira_group.types, df.jira_types.values, DETAILS[Issue.type_id][1]),
-                (jira_group.labels, df.jira_labels.values, DETAILS[Issue.labels][1]),
+            for group_props, df_col, dtype in (
+                (jira_group.projects, "jira_projects", DETAILS[Issue.project_id][1]),
+                (jira_group.priorities, "jira_priorities", DETAILS[Issue.priority_id][1]),
+                (jira_group.types, "jira_types", DETAILS[Issue.type_id][1]),
+                (jira_group.labels, "jira_labels", DETAILS[Issue.labels][1]),
             ):
                 if group_props is not None:
+                    if (matcher := arrays_matchers.get(df_col)) is None:
+                        arrays_matchers[df_col] = matcher = _ArraysWhitelistMatcher(df[df_col])
                     required_n_matches += 1
                     filter_values = np.array(list(group_props), dtype=dtype)
-                    all_values = np.concatenate(df_values)
-                    splits = np.cumsum(np.fromiter((len(v) for v in df_values), int, len(df)))
-                    match_mask = in1d_str(all_values, filter_values)
-                    match_indexes = np.flatnonzero(match_mask)
-                    field_res = np.unique(np.searchsorted(splits, match_indexes, side="right"))
+                    field_res = matcher(filter_values)
                     df_matches[field_res] += 1
 
             group_res = np.flatnonzero(df_matches == required_n_matches)
@@ -1194,26 +1193,62 @@ def group_jira_facts_by_jira(
     if df.empty:
         return [np.array([], dtype=int)] * len(jira_groups)
     res = []
+
+    labels_matcher: _ArraysWhitelistMatcher | None = None
+
     for jira_group in jira_groups:
+        required_n_matches = 0
         if jira_group:
-            df_matches = np.full(len(df), True, dtype=bool)
-            for group_props, df_col in (
-                (jira_group.projects, Issue.project_id.name),
-                (jira_group.priorities, Issue.priority_id.name),
-                (jira_group.types, Issue.type_id.name),
+            DETAILS = PR_JIRA_DETAILS_COLUMN_MAP
+
+            matches = np.zeros(len(df), dtype=np.uint8)
+            for group_props, df_col, dtype in (
+                (jira_group.projects, Issue.project_id.name, DETAILS[Issue.project_id][1]),
+                (jira_group.priorities, Issue.priority_id.name, DETAILS[Issue.priority_id][1]),
+                (jira_group.types, Issue.type_id.name, DETAILS[Issue.type_id][1]),
+                (jira_group.labels, Issue.labels.name, DETAILS[Issue.labels][1]),
             ):
-                # lazy access the dataframe column since it could be missing
-                # when no grouping is needed for the property
                 if group_props is not None:
-                    df_values = df[df_col].values
-                    filter_values = np.array(list(group_props), dtype="S")
-                    prop_matches = in1d_str(df_values, filter_values)
-                    df_matches[~prop_matches] = False
-            group_res = np.flatnonzero(df_matches)
+                    # lazy access the dataframe column since it could be missing
+                    # when no grouping is needed for the property
+                    values = df[df_col].values
+                    required_n_matches += 1
+                    filter_values = np.array(list(group_props), dtype=dtype)
+                    if df_col == Issue.labels.name:
+                        if labels_matcher is None:
+                            labels_matcher = _ArraysWhitelistMatcher(values)
+                        matches[labels_matcher(filter_values)] += 1
+                    else:
+                        matches[in1d_str(values, filter_values)] += 1
+                group_res = np.flatnonzero(matches == required_n_matches)
         else:
             group_res = np.arange(len(df), dtype=int)
         res.append(group_res)
     return res
+
+
+class _ArraysWhitelistMatcher:
+    """Search an array of arrays to find those having a value in the whitelist.
+
+    The arrays of arrays is passed in the constructor then it can be matched against multiple
+    whitelists.
+    """
+
+    def __init__(self, arrays: npt.NDArray[np.ndarray]):
+        self._arrays = arrays
+        self._splits = None
+        self._all_values = None
+
+    def __call__(self, whitelist: np.ndarray) -> npt.NDArray[int]:
+        """Get indexes in `arrays` where the intersection with `whitelist` is not empty."""
+        if self._splits is None:
+            self._all_values = np.concatenate(self._arrays)
+            self._splits = np.cumsum(
+                np.fromiter((len(v) for v in self._arrays), int, len(self._arrays)),
+            )
+        match_mask = in1d_str(self._all_values, whitelist)
+        match_indexes = np.flatnonzero(match_mask)
+        return np.unique(np.searchsorted(self._splits, match_indexes, side="right"))
 
 
 def calculate_logical_duplication_mask(
