@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 import platform
 import re
+from signal import SIGUSR1, signal
 import socket
 import sys
+import traceback
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
 import warnings
@@ -249,6 +251,12 @@ def setup_context(log: logging.Logger) -> None:
 
     _init_sentry(log, app_env)
 
+    def handle_sigusr1(_, frame):
+        log.warning("Received SIGUSR1, printing the current call stack:")
+        log.info("\n%s", "".join(traceback.format_stack(frame)))
+
+    signal(SIGUSR1, handle_sigusr1)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _ApplicationEnvironment:
@@ -270,7 +278,7 @@ class _ApplicationEnvironment:
         username = getpass.getuser()
         hostname = socket.getfqdn()
         kernel = platform.release()
-        log.info("%s@%s [%s] -> %d", username, hostname, kernel, os.getpid())
+        log.info("%s@%s [%s] -> PID %d", username, hostname, kernel, os.getpid())
         if dev_id := os.getenv("ATHENIAN_DEV_ID"):
             log.info("Developer: %s", dev_id)
 
