@@ -523,7 +523,7 @@ class AthenianApp(especifico.AioHttpApp):
             assert not self._pdb_schema_task_box, err
             assert not self._db_futures, err
             for db in ("mdb", "sdb", "pdb", "rdb"):
-                assert db not in self.app, err
+                assert db not in self.app, f"{err}: {db}"
         except AttributeError:
             return
 
@@ -580,8 +580,9 @@ class AthenianApp(especifico.AioHttpApp):
                 await close_event.wait()
         if self._mandrill is not None:
             await self._mandrill.close()
-        for k, f in self._db_futures.items():
-            f.cancel()
+        for k in ("mdb", "sdb", "pdb", "rdb"):
+            if (f := self._db_futures.get(k)) is not None:
+                f.cancel()
             try:
                 if (db := self.app[k]) is not None:
                     await db.disconnect()
@@ -887,7 +888,7 @@ class AthenianApp(especifico.AioHttpApp):
             self._shutting_down = True
             self._set_unready()
             if not self._requests:
-                asyncio.ensure_future(self._raise_graceful_exit())
+                asyncio.create_task(self._raise_graceful_exit(), name="_raise_graceful_exit")
 
         loop = asyncio.get_event_loop()
         loop.add_signal_handler(signal.SIGINT, partial(initiate_graceful_shutdown, "SIGINT"))

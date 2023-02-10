@@ -140,6 +140,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
                     await asyncio.sleep(0.01)
                 else:
                     log.error("supervisor: child has timed out, killing")
+                    os.kill(pid, signal.SIGUSR1)
+                    time.sleep(0.2)
                     os.kill(pid, signal.SIGKILL)
             finally:
                 if status == (0, 0):
