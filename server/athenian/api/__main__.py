@@ -26,6 +26,7 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 import aiomonitor
+from aiomonitor.utils import _format_stack
 from flogging import flogging
 import jinja2
 import morcilla
@@ -252,8 +253,15 @@ def setup_context(log: logging.Logger) -> None:
     _init_sentry(log, app_env)
 
     def handle_sigusr1(_, frame):
-        log.warning("Received SIGUSR1, printing the current call stack:")
-        log.info("\n%s", "".join(traceback.format_stack(frame)))
+        stacks = [
+            _format_stack(task)
+            for task in sorted(asyncio.all_tasks(), key=lambda task: task.get_name())
+        ]
+        log.warning(
+            "Received SIGUSR1, printing the current call stack:\n%s\n%s",
+            "".join(traceback.format_stack(frame)),
+            "\n".join(stacks),
+        )
 
     signal(SIGUSR1, handle_sigusr1)
 
