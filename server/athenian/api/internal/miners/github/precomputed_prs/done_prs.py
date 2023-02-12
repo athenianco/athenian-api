@@ -1044,6 +1044,7 @@ async def delete_force_push_dropped_prs(
 
     We don't try to resolve rebased PRs here due to the intended use case.
     """
+    log = logging.getLogger(f"{metadata.__package__}.delete_force_push_dropped_prs")
     ghdprf = GitHubDonePullRequestFacts
     rows, dags = await gather(
         pdb.fetch_all(
@@ -1096,24 +1097,26 @@ async def delete_force_push_dropped_prs(
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
         dead_indexes = np.flatnonzero(accessible_hashes[found] != merge_hashes)
     else:
-        log = logging.getLogger(f"{metadata.__package__}.delete_force_push_dropped_prs")
         log.error("all these repositories have empty commit DAGs: %s", sorted(dags))
         dead_indexes = np.arange(len(merge_hashes))
     dead_pr_node_ids = [None] * len(dead_indexes)
     for i, dead_index in enumerate(dead_indexes):
         dead_pr_node_ids[i] = pr_merges[dead_index][1]
+    if len(dead_indexes) == 0:
+        return dead_pr_node_ids
     del pr_merges
+    log.info("deleting %d force push dropped PRs", len(dead_indexes))
+    batch_size = 1000
     with sentry_sdk.start_span(
         op="delete force push dropped prs", description=str(len(dead_indexes)),
     ):
-        await pdb.execute(
-            delete(ghdprf).where(
-                and_(
-                    ghdprf.pr_node_id.in_(dead_pr_node_ids),
+        for batch in range(0, len(dead_pr_node_ids) + batch_size - 1, batch_size):
+            await pdb.execute(
+                delete(ghdprf).where(
+                    ghdprf.pr_node_id.in_(dead_pr_node_ids[batch : batch + batch_size]),
                     ghdprf.release_match != ReleaseMatch.force_push_drop.name,
                 ),
-            ),
-        )
+            )
     return dead_pr_node_ids
 
 
