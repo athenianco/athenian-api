@@ -9,6 +9,8 @@ from sqlalchemy import delete, insert, select, update
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.github.branches import BranchMinerMetrics
 from athenian.api.models.metadata.github import Branch, NodeRepositoryRef
+from athenian.api.models.precomputed.models import GitHubBranches
+from tests.testutils.db import assert_existing_row
 
 
 async def test_load_branches_zero(mdb_rw, branch_miner, prefixer, meta_ids):
@@ -268,6 +270,7 @@ async def _test_load_branches_precomputed(mdb, pdb, branch_miner, prefixer, meta
     defaults.pop("src-d/юникод", None)
     assert len(branches) == 4
     await wait_deferred()
+    await assert_existing_row(pdb, GitHubBranches, repository_node_id=40550)
     branches_new, defaults_new = await branch_miner.load_branches(
         ["src-d/go-git"],
         prefixer,
@@ -342,3 +345,20 @@ async def test_load_branches_extend_precomputed(mdb_rw, pdb, branch_miner, prefi
     assert defaults["src-d/go-git"] == "master"
     assert (branches[Branch.repository_full_name.name].values == "src-d/gitbase").any()
     assert (branches[Branch.repository_full_name.name].values == "src-d/go-git").sum() == 4
+
+
+@with_defer
+async def test_load_branches_full_sync(branch_miner, prefixer, mdb, pdb, meta_ids):
+    branches, defaults = await branch_miner.load_branches(
+        ["src-d/go-git"],
+        prefixer,
+        1,
+        meta_ids,
+        mdb,
+        pdb,
+        None,
+        full_sync=True,
+    )
+    assert len(branches) == 5
+    await wait_deferred()
+    await assert_existing_row(pdb, GitHubBranches, repository_node_id=40550)

@@ -8,7 +8,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import distinct, select, union_all
+from sqlalchemy import delete, distinct, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -89,17 +89,19 @@ class BranchMiner:
         pdb: Optional[DatabaseLike],
         cache: Optional[aiomcache.Client],
         strip: bool = False,
+        full_sync: bool = False,
         metrics: Optional[BranchMinerMetrics] = None,
     ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
         :param strip: Value indicating whether the repository names are prefixed.
+        :param full_sync: Value indicating whether we load branches from scratch and overwrite pdb.
         :param metrics: Report error statistics by mutating this object.
         """
         return (
             await cls._load_branches(
-                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip, metrics,
+                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip, full_sync, metrics,
             )
         )[:-1]
 
@@ -142,6 +144,7 @@ class BranchMiner:
         pdb: Optional[Database],
         cache: Optional[aiomcache.Client],
         strip: bool,
+        full_sync: bool,
         metrics: Optional[BranchMinerMetrics],
     ) -> tuple[pd.DataFrame, dict[str, str], bool]:
         if strip and repos is not None:
@@ -152,7 +155,7 @@ class BranchMiner:
         else:
             repo_ids = None
         now = datetime.now(timezone.utc)
-        if pdb is not None:
+        if incremental := (pdb is not None and not full_sync):
             deadline = now - timedelta(hours=2)
         else:
             deadline = None
@@ -161,10 +164,10 @@ class BranchMiner:
             cls._fetch_branches_for_missing_repositories(
                 repo_ids, deadline, account, prefixer, meta_ids, mdb, pdb,
             )
-            if pdb is not None
+            if incremental
             else None,
             cls._fetch_precomputed_branches(account, repo_ids, prefixer, pdb)
-            if pdb is not None
+            if incremental
             else None,
         )
         if missed_branches is not None and not missed_branches.empty:
@@ -329,25 +332,29 @@ class BranchMiner:
     _postprocess_branches = staticmethod(_postprocess_branches)
 
     @classmethod
-    async def reset_cache(cls, account: int, cache: Optional[aiomcache.Client]) -> None:
+    async def reset_caches(
+        cls,
+        account: int,
+        pdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> None:
         """Drop the cache of load_branches()."""
         await gather(
-            *(
-                cls._load_branches.reset_cache(
-                    # cached method is unbound, add one more param for cls
-                    cls,
-                    None,
-                    None,
-                    account,
-                    (),
-                    None,
-                    None,
-                    cache,
-                    strip,
-                    None,
-                )
-                for strip in (False, True)
+            cls._load_branches.reset_cache(
+                # cached method is unbound, add one more param for cls
+                cls,
+                None,
+                None,
+                account,
+                (),
+                None,
+                None,
+                cache,
+                False,
+                False,
+                None,
             ),
+            pdb.execute(delete(GitHubBranches).where(GitHubBranches.acc_id == account)),
         )
 
     @classmethod

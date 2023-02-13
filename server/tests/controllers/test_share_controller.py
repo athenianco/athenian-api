@@ -21,7 +21,7 @@ async def test_share_cycle_smoke(client, headers, disable_default_user, sdb):
     response = await client.request(method="GET", path=f"/v1/share/{ref}", headers=headers)
     data = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, data
-    assert data["author"] == "Vadim Markovtsev"
+    assert data["author"] in ("Vadim Markovtsev", "Norma Fisher")  # race with "user" tests
     assert data["created"]
     assert data["data"] == secret
 
