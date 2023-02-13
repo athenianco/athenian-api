@@ -1,17 +1,9 @@
-from datetime import datetime, timedelta, timezone
-import logging
-import warnings
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import delete, insert, select, update
 
-from athenian.api import metadata
-from athenian.api.defer import with_defer
-from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.github import deployment_light
-from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.types import PullRequestFacts
-from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedLabel
 from athenian.api.models.state.models import (
@@ -22,11 +14,6 @@ from athenian.api.models.state.models import (
     Team,
 )
 from athenian.api.typing_utils import wraps
-
-
-@pytest.fixture(scope="function")
-def no_deprecation_warnings():
-    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
 
 @pytest.fixture(scope="function")
@@ -51,30 +38,6 @@ async def dummy_deployment_label(rdb):
                 value=["yyy"],
             ).explode(with_primary_keys=True),
         ),
-    )
-
-
-@pytest.fixture(scope="session")
-def logical_settings():
-    return LogicalRepositorySettings(
-        {
-            "src-d/go-git/alpha": {"title": ".*[Ff]ix"},
-            "src-d/go-git/beta": {"title": ".*[Aa]dd"},
-        },
-        {},
-    )
-
-
-@pytest.fixture(scope="session")
-def logical_settings_labels():
-    return LogicalRepositorySettings(
-        {
-            "src-d/go-git/alpha": {
-                "labels": ["enhancement", "performance", "plumbing", "ssh", "documentation"],
-            },
-            "src-d/go-git/beta": {"labels": ["bug", "windows"]},
-        },
-        {},
     )
 
 
@@ -152,88 +115,6 @@ def with_only_master_branch(func):
                 await mdb.execute(insert(Branch).values(branch))
 
     return wraps(wrapped_with_only_master_branch, func)
-
-
-@pytest.fixture(scope="function")
-@with_defer
-async def precomputed_deployments(
-    release_match_setting_tag_or_branch,
-    prefixer,
-    branches,
-    default_branches,
-    mdb,
-    pdb,
-    rdb,
-):
-    await _precompute_deployments(
-        release_match_setting_tag_or_branch, prefixer, branches, default_branches, mdb, pdb, rdb,
-    )
-
-
-@pytest.fixture(scope="function")
-@with_defer
-async def precomputed_sample_deployments(
-    release_match_setting_tag_or_branch,
-    prefixer,
-    branches,
-    default_branches,
-    mdb,
-    pdb,
-    rdb,
-    sample_deployments,
-):
-    await _precompute_deployments(
-        release_match_setting_tag_or_branch, prefixer, branches, default_branches, mdb, pdb, rdb,
-    )
-
-
-async def _precompute_deployments(
-    release_match_setting_tag_or_branch,
-    prefixer,
-    branches,
-    default_branches,
-    mdb,
-    pdb,
-    rdb,
-):
-    deps = await mine_deployments(
-        ["src-d/go-git"],
-        {},
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["production", "staging"],
-        [],
-        {},
-        {},
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        release_match_setting_tag_or_branch,
-        LogicalRepositorySettings.empty(),
-        branches,
-        default_branches,
-        prefixer,
-        1,
-        None,
-        (6366825,),
-        mdb,
-        pdb,
-        rdb,
-        None,
-    )
-    log = logging.getLogger(f"{metadata.__package__}.precomputed_deployments")
-    log.info("Mined %d deployments", len(deps))
-    log.info("Mined %d release deployments", sum(len(df) for df in deps["releases"].values))
-
-
-@pytest.fixture(scope="function")
-def detect_deployments(request):
-    repository_environment_threshold = deployment_light.repository_environment_threshold
-    deployment_light.repository_environment_threshold = timedelta(days=100 * 365)
-
-    def restore_repository_environment_threshold():
-        deployment_light.repository_environment_threshold = repository_environment_threshold
-
-    request.addfinalizer(restore_repository_environment_threshold)
 
 
 @pytest.fixture(scope="function")

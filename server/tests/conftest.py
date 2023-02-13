@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections import defaultdict
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
@@ -21,10 +21,10 @@ from filelock import FileLock
 import sentry_sdk
 import sqlalchemy as sa
 
-from athenian.api.aiohttp_addons import create_aiohttp_closed_event
-from athenian.api.async_utils import read_sql_query
-from athenian.api.internal.features.entries import MetricEntriesCalculator, PRFactsCalculator
-from tests.testutils.factory.miners import PullRequestFactsFactory
+# FIXME(vmarkovtsev): if you remove this, test_integrations_controller.py is going to SIGSEGV
+# The root cause is https://github.com/apache/arrow/issues/15054
+# We should be able to remove this import once pyarrow 12.0 releases a fix
+import athenian.api  # noqa: F401
 
 try:
     import nest_asyncio
@@ -69,7 +69,9 @@ from athenian.api.__main__ import (
     create_memcached,
     create_slack,
 )
+from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.application import AthenianApp
+from athenian.api.async_utils import read_sql_query
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
@@ -77,9 +79,13 @@ from athenian.api.db import Connection, Database, db_retry_intervals, measure_db
 from athenian.api.defer import with_defer
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal import account
+from athenian.api.internal.features.entries import MetricEntriesCalculator, PRFactsCalculator
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github import deployment_light
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.internal.miners.github.dag_accelerated import join_dags
+from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.precomputed_prs import (
     DonePRFactsLoader,
     MergedPRFactsLoader,
@@ -128,6 +134,7 @@ from tests.sample_db_data import (
     fill_state_session,
 )
 from tests.testutils.db import models_insert
+from tests.testutils.factory.miners import PullRequestFactsFactory
 from tests.testutils.factory.state import ReleaseSettingFactory
 
 if os.getenv("NEST_ASYNCIO"):
@@ -1189,3 +1196,101 @@ async def release_match_setting_tag_logical_db(sdb):
             match=ReleaseMatch.tag,
         ),
     )
+
+
+@pytest.fixture(scope="function")
+def no_deprecation_warnings():
+    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+
+
+@pytest.fixture(scope="session")
+def logical_settings():
+    return LogicalRepositorySettings(
+        {
+            "src-d/go-git/alpha": {"title": ".*[Ff]ix"},
+            "src-d/go-git/beta": {"title": ".*[Aa]dd"},
+        },
+        {},
+    )
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_deployments(
+    release_match_setting_tag_or_branch,
+    prefixer,
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+):
+    await _precompute_deployments(
+        release_match_setting_tag_or_branch, prefixer, branches, default_branches, mdb, pdb, rdb,
+    )
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_sample_deployments(
+    release_match_setting_tag_or_branch,
+    prefixer,
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    sample_deployments,
+):
+    await _precompute_deployments(
+        release_match_setting_tag_or_branch, prefixer, branches, default_branches, mdb, pdb, rdb,
+    )
+
+
+async def _precompute_deployments(
+    release_match_setting_tag_or_branch,
+    prefixer,
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+):
+    deps = await mine_deployments(
+        ["src-d/go-git"],
+        {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc),
+        datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        None,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    log = logging.getLogger(f"{package}.precomputed_deployments")
+    log.info("Mined %d deployments", len(deps))
+    log.info("Mined %d release deployments", sum(len(df) for df in deps["releases"].values))
+
+
+@pytest.fixture(scope="function")
+def detect_deployments(request):
+    repository_environment_threshold = deployment_light.repository_environment_threshold
+    deployment_light.repository_environment_threshold = timedelta(days=100 * 365)
+
+    def restore_repository_environment_threshold():
+        deployment_light.repository_environment_threshold = repository_environment_threshold
+
+    request.addfinalizer(restore_repository_environment_threshold)
