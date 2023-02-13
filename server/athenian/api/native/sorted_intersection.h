@@ -10,6 +10,7 @@
 #include <immintrin.h>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -37,10 +38,10 @@ typedef size_t (*intersectionfunction)(const uint32_t * restrict set1,
 
 class IntersectionFactory {
 public:
-  static std::unordered_map<std::string, intersectionfunction> intersection_schemes;
+  static std::unordered_map<std::string_view, intersectionfunction> intersection_schemes;
 
-  static std::vector<std::string> allNames() {
-    std::vector<std::string> ans;
+  static std::vector<std::string_view> allNames() {
+    std::vector<std::string_view> ans;
     for (auto i = intersection_schemes.begin(); i != intersection_schemes.end();
          ++i) {
       ans.push_back(i->first);
@@ -48,7 +49,7 @@ public:
     return ans;
   }
 
-  static std::string getName(intersectionfunction v) {
+  static std::string_view getName(intersectionfunction v) {
     for (auto i = intersection_schemes.begin(); i != intersection_schemes.end();
          ++i) {
       if (i->second == v)
@@ -1365,9 +1366,9 @@ size_t lemire_highlyscalable_intersect_SIMD(const uint32_t * restrict A, const s
   return out - initout;
 }
 
-inline std::unordered_map<std::string, intersectionfunction>
+inline std::unordered_map<std::string_view, intersectionfunction>
 initializeintersectionfactory() {
-  std::unordered_map<std::string, intersectionfunction> schemes;
+  std::unordered_map<std::string_view, intersectionfunction> schemes;
   schemes["simd"] = SIMDintersection;
   schemes["galloping"] = onesidedgallopingintersection;
   schemes["mut_part"] = mutualPartitioningIntersect;
@@ -1387,8 +1388,8 @@ initializeintersectionfactory() {
   return schemes;
 }
 
-std::unordered_map<std::string, intersectionfunction>
-    IntersectionFactory::intersection_schemes = initializeintersectionfactory();
+std::unordered_map<std::string_view, intersectionfunction>
+    IntersectionFactory::intersection_schemes(initializeintersectionfactory());
 
 } // namespace SortedIntersection
 

@@ -293,6 +293,7 @@ async def precompute_reposet(
                 mdb,
                 pdb,
                 None,
+                full_sync=True,  # we must drop all deleted branches
                 metrics=health_metrics.branches,
             ),
         )

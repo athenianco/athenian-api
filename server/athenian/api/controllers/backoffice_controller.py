@@ -268,7 +268,7 @@ async def _reset_releases(
                 GitHubReleaseFacts.repository_full_name.in_(repos),
             ),
         ),
-        BranchMiner.reset_cache(account, cache),
+        BranchMiner.reset_caches(account, pdb, cache),
     )
 
 
