@@ -111,12 +111,12 @@ class TestGroupPRFactsByJIRA:
         jira_groups = [JIRAGrouping(None, ["high"], None)]
         res = group_pr_facts_by_jira(jira_groups, df)
         assert len(res) == 1
-        assert_array_equal(res[0], np.array([0, 2]), np.array([], dtype=int))
+        assert_array_equal(res[0], np.array([0, 2]))
 
         jira_groups = [JIRAGrouping(None, ["low"], None)]
         res = group_pr_facts_by_jira(jira_groups, df)
         assert len(res) == 1
-        assert_array_equal(res[0], np.array([2, 3]), np.array([], dtype=int))
+        assert_array_equal(res[0], np.array([2, 3]))
 
     def test_priority_single_match(self) -> None:
         jira_groups = [JIRAGrouping(None, ["high"], None)]
@@ -127,7 +127,7 @@ class TestGroupPRFactsByJIRA:
         )
         res = group_pr_facts_by_jira(jira_groups, df)
         assert len(res) == 1
-        assert_array_equal(res[0], np.array([1]), np.array([], dtype=int))
+        assert_array_equal(res[0], np.array([1]))
 
     def _make_df(self, *rows: tuple) -> pd.DataFrame:
         data = [tuple(np.array(field, dtype="S") for field in row) for row in rows]
@@ -192,6 +192,20 @@ class TestGroupJIRAFactsByJIRA:
         assert_array_equal(res[3], np.array([]))
         assert_array_equal(res[4], np.array([3]))
         assert_array_equal(res[5], np.arange(8))
+
+    def test_missing_column_for_unused_field(self) -> None:
+        jira_groups = [JIRAGrouping(None, ["t0", "t1"], None)]
+
+        df = self._make_df(
+            (None, None, b"t0"),
+            (None, b"pr0", b"t1"),
+            (None, None, b"t2"),
+            (None, None, b"t0"),
+        )
+        df = df.drop(Issue.project_id.name, axis="columns")
+        res = group_jira_facts_by_jira(jira_groups, df)
+        assert len(res) == 1
+        assert_array_equal(res[0], np.array([0, 1, 3]))
 
     @classmethod
     def _make_df(cls, *rows: tuple) -> pd.DataFrame:
