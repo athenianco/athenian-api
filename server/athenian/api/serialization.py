@@ -12,6 +12,7 @@ from athenian.api import typing_utils
 
 T = typing.TypeVar("T")
 Class = typing.Type[T]
+_reliable_datetime_types = (date | datetime).__args__  # resist freezegun's monkey-patching
 
 
 class ParseError(ValueError):
@@ -39,15 +40,15 @@ def _deserialize(
         return None
 
     try:
-        if klass in (int, float, str, bool):
+        if klass is int or klass is float or klass is str or klass is bool:
             return _deserialize_primitive(data, klass)
-        elif klass in (object, dict):
+        elif klass is object or klass is dict:
             return _deserialize_object(data)
-        elif klass == date:
+        elif klass is _reliable_datetime_types[0]:
             return deserialize_date(data)
-        elif klass == datetime:
+        elif klass is _reliable_datetime_types[1]:
             return deserialize_datetime(data)
-        elif klass == timedelta:
+        elif klass is timedelta:
             return deserialize_timedelta(data)
         elif typing_utils.is_generic(klass):
             if typing_utils.is_list(klass):

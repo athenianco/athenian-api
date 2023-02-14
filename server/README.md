@@ -48,7 +48,6 @@ pytest
 * [Deployment.](DEPLOYMENT.md)
 * [State DB migration.](server/athenian/api/models/state/README.md)
 * [Precomputed DB migration.](server/athenian/api/models/precomputed/README.md)
-* [Manhole.](MANHOLE.md)
 
 Prometheus monitoring: `http://localhost:8080/status`.
 Memory usage statistics: `http://localhost:8080/memory`.

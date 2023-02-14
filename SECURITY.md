@@ -139,7 +139,7 @@ receive automated package upgrades from [dependabot](https://dependabot.com/).
 A malicious API request leads to arbitrary code execution on the server.
 
 #### Mitigation
-We have no `exec` and `eval` calls in the API except the ["manhole"](server/MANHOLE.md).
+We have no `exec` and `eval` calls in the API.
 The way Python works excludes the buffer overflow attacks.
 The API endpoints follow the strict schema and don't serve a custom query language or similar.
 

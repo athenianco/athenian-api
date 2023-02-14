@@ -1,4 +1,3 @@
-import ast
 import asyncio
 import bdb
 from collections import defaultdict
@@ -353,7 +352,6 @@ class AthenianApp(especifico.AioHttpApp):
             self.i_will_survive,
             self.with_db,
             self.postprocess_response,
-            self.manhole,
         ]
         api_arguments = {
             "title": metadata.__description__,
@@ -594,6 +592,9 @@ class AthenianApp(especifico.AioHttpApp):
             if (f := getattr(cache, "version_future", None)) is not None:
                 f.cancel()
             await cache.close()
+        if self._total_requests > 0:
+            self.log.info("served %d requests", self._total_requests)
+            self._total_requests = 0
 
     def create_app(self):
         """Override create_app to control the lower-level class."""
@@ -704,6 +705,7 @@ class AthenianApp(especifico.AioHttpApp):
         start_time = time.time()
         summary = f"{request.method} {request.path}"
         asyncio.current_task().set_name(f"shield/wait {summary}")
+        self._total_requests += 1
 
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
@@ -843,39 +845,10 @@ class AthenianApp(especifico.AioHttpApp):
                 if not self._requests and self._shutting_down:
                     asyncio.ensure_future(self._raise_graceful_exit())
 
-    @aiohttp.web.middleware
-    async def manhole(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Execute arbitrary code from memcached."""
-        if (cache := self.app[CACHE_VAR_NAME]) is not None:
-            if code := (await cache.get(b"manhole", b"")).decode():
-                _locals = locals().copy()
-                try:
-                    await eval(
-                        compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
-                        globals(),
-                        _locals,
-                    )
-                    if (response := _locals.get("response")) is not None:
-                        assert isinstance(response, aiohttp.web.Response)
-                        self.log.warning(
-                            "Manhole code hijacked the request! -> %d", response.status,
-                        )
-                        return response
-                except (ResponseError, Unauthorized) as e:
-                    self.log.warning("Manhole code hijacked the request! -> %d", e.response.status)
-                    raise e from None
-                except Exception as e:
-                    self.log.error(
-                        "Failed to execute the manhole code: %s: %s", type(e).__name__, e,
-                    )
-                    # we continue the execution
-        asyncio.current_task().set_name(handler.__qualname__)
-        with sentry_sdk.start_span(op=handler.__qualname__):
-            return await handler(request)
-
     def _setup_survival(self):
         self._shutting_down = False
         self._requests = []
+        self._total_requests = 0
         self.load = 0
 
         def initiate_graceful_shutdown(signame: str):
