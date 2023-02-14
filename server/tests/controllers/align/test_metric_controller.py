@@ -176,19 +176,19 @@ class TestTeamMetrics(BaseTeamMetricsTest):
                 "metric": "jira-resolved",
                 "value": {
                     "team": {"id": 1, "name": "T1"},
-                    "value": 738,
-                    "children": [{"team": {"id": 2, "name": "T2"}, "value": 163, "children": []}],
+                    "value": 694,
+                    "children": [{"team": {"id": 2, "name": "T2"}, "value": 162, "children": []}],
                 },
             },
             {
                 "metric": "jira-resolution-rate",
                 "value": {
                     "team": {"id": 1, "name": "T1"},
-                    "value": 0.9473684430122375,
+                    "value": 0.8908857703208923,
                     "children": [
                         {
                             "team": {"id": 2, "name": "T2"},
-                            "value": 0.8624338507652283,
+                            "value": 0.8571428656578064,
                             "children": [],
                         },
                     ],
@@ -373,7 +373,7 @@ class TestJIRAFiltering(BaseTeamMetricsTest):
             body = partial(self._body, 1, metrics, *dates)
 
             res = await self._request(json=body())
-            assert res[0]["value"]["value"] == 15
+            assert res[0]["value"]["value"] == 58  # 15 with released PRs
 
             res = await self._request(json=body(jira_priorities=["foo"]))
             assert res[0]["value"]["value"] == 0
