@@ -4,7 +4,7 @@ import abc
 import asyncio
 from collections.abc import Collection
 import dataclasses
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import logging
 from typing import Optional, Sequence
 
@@ -18,6 +18,7 @@ import sentry_sdk
 from athenian.api.async_utils import gather
 from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
 from athenian.api.internal.features.entries import PRFactsCalculator
 from athenian.api.internal.features.github.pull_request_filter import (
     PullRequestListMiner,
@@ -102,11 +103,7 @@ async def _build_filter(
     account_info: _SearchPRsAccountInfo,
     request: AthenianWebRequest,
 ) -> _SearchPRsFilter:
-    min_time = datetime.min.time()
-    time_from = datetime.combine(search_req.date_from, min_time, tzinfo=timezone.utc)
-    time_to = datetime.combine(
-        search_req.date_to + timedelta(days=1), min_time, tzinfo=timezone.utc,
-    )
+    dt_from, dt_to = closed_dates_interval_to_datetimes(search_req.date_from, search_req.date_to)
 
     async def _resolve_repos():
         if search_req.repositories is None:
@@ -153,7 +150,7 @@ async def _build_filter(
         filters = [filt.with_converted_value() for filt in filters]
 
     return _SearchPRsFilter(
-        time_from, time_to, repositories, participants, jira, search_req.stages, filters,
+        dt_from, dt_to, repositories, participants, jira, search_req.stages, filters,
     )
 
 
