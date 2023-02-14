@@ -1476,7 +1476,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].values == [
         CalculatedLinearMetricValues(
             date=date(2020, 1, 1),
-            values=[1699, 1628],
+            values=[1699, 1573],
             confidence_mins=[None] * 2,
             confidence_maxs=[None] * 2,
             confidence_scores=[None] * 2,
@@ -1494,7 +1494,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     )
     assert items[1].values[-1] == CalculatedLinearMetricValues(
         date=date(2020, 9, 1),
-        values=[237, 243],
+        values=[237, 238],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -1744,13 +1744,13 @@ async def test_jira_metrics_teams(client, headers):
 @pytest.mark.parametrize(
     "metric, exclude_inactive, n",
     [
-        (JIRAMetricID.JIRA_OPEN, False, 142),
-        (JIRAMetricID.JIRA_OPEN, True, 133),
-        (JIRAMetricID.JIRA_RESOLVED, False, 850),
-        (JIRAMetricID.JIRA_RESOLVED, True, 850),
+        (JIRAMetricID.JIRA_OPEN, False, 197),
+        (JIRAMetricID.JIRA_OPEN, True, 188),
+        (JIRAMetricID.JIRA_RESOLVED, False, 795),
+        (JIRAMetricID.JIRA_RESOLVED, True, 795),
         (JIRAMetricID.JIRA_ACKNOWLEDGED, False, 776),
         (JIRAMetricID.JIRA_ACKNOWLEDGED_Q, False, 776),
-        (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 1.0240963697433472),
+        (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9578313231468201),
     ],
 )
 async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n):

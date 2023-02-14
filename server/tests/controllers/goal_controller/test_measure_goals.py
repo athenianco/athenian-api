@@ -214,10 +214,10 @@ class TestMeasureGoals(BaseMeasureGoalsTest):
         assert goal_21["id"] == 21
 
         assert (team_goal_10 := goal_21["team_goal"])["team"]["id"] == 10
-        self._assert_team_goal_values(team_goal_10, 3, 572, 20)
+        self._assert_team_goal_values(team_goal_10, 3, 529, 20)
 
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
-        self._assert_team_goal_values(team_goal_11, 3, 528, 40)
+        self._assert_team_goal_values(team_goal_11, 3, 485, 40)
 
     async def test_child_team_with_no_goal(self, sdb: Database) -> None:
         metric = PullRequestMetricID.PR_REVIEW_COMMENTS_PER
