@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import atexit
-import dataclasses
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import getpass
 import json
 import logging
@@ -22,6 +22,7 @@ from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
 import warnings
 
+from aiohttp import web_log
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
@@ -267,7 +268,7 @@ def setup_context(log: logging.Logger) -> None:
     signal(SIGUSR1, handle_sigusr1)
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class _ApplicationEnvironment:
     commit: Optional[str]
     build_date: Optional[str]
@@ -573,6 +574,26 @@ def set_endpoint_weights(file_name: str, log: logging.Logger) -> None:
     log.info("loaded %d endpoint weights from %s", len(endpoint_weights), file_name)
 
 
+def setup_db_fetch_cache(path: str) -> None:
+    """
+    Prepare for the local DB fetch cache.
+
+    Freeze the time to avoid cache misses on queries with `datetime.now()` in arguments.
+    """
+    if not path:
+        return
+    os.makedirs(path, exist_ok=True)
+    backup = datetime | timedelta
+
+    @dataclass(frozen=True, slots=True)
+    class _datetime:
+        datetime: type
+        timedelta: type
+
+    freezegun.freeze_time(datetime.fromtimestamp(os.stat(path).st_mtime)).start()
+    web_log.datetime = _datetime(*backup.__args__)
+
+
 def entry() -> Optional[AthenianApp]:
     """Script's entry point."""
     args = parse_args()
@@ -615,10 +636,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         uvloop.install()
         asyncio.set_event_loop(loop := asyncio.new_event_loop())
     log = logging.getLogger(metadata.__package__)
-    if args.db_fetch_cache:
-        freezegun.freeze_time(
-            datetime.fromtimestamp(os.stat(args.db_fetch_cache).st_mtime),
-        ).start()
+    setup_db_fetch_cache(args.db_fetch_cache)
     setup_context(log)
     if not args.no_db_version_check and not check_schema_versions(
         args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log,
