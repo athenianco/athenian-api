@@ -28,6 +28,7 @@ import aiomcache
 import aiomonitor
 from aiomonitor.utils import _format_stack
 from flogging import flogging
+import freezegun
 import jinja2
 import morcilla
 import numpy
@@ -614,6 +615,10 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         uvloop.install()
         asyncio.set_event_loop(loop := asyncio.new_event_loop())
     log = logging.getLogger(metadata.__package__)
+    if args.db_fetch_cache:
+        freezegun.freeze_time(
+            datetime.fromtimestamp(os.stat(args.db_fetch_cache).st_mtime),
+        ).start()
     setup_context(log)
     if not args.no_db_version_check and not check_schema_versions(
         args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log,
