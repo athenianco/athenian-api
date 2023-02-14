@@ -705,7 +705,6 @@ class AthenianApp(especifico.AioHttpApp):
         start_time = time.time()
         summary = f"{request.method} {request.path}"
         asyncio.current_task().set_name(f"shield/wait {summary}")
-        self._total_requests += 1
 
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
@@ -740,6 +739,7 @@ class AthenianApp(especifico.AioHttpApp):
         else:
             load = custom_load_delta = 0
         self._requests.append(summary)
+        self._total_requests += 1
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
