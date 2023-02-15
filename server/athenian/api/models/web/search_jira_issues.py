@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Optional, Sequence
+from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_filter import JIRAFilter
@@ -29,4 +29,4 @@ class JIRAIssueDigest(Model):
 class SearchJIRAIssuesResponse(Model):
     """Result of the search for Jira issues."""
 
-    jira_issues: Sequence[JIRAIssueDigest]
+    jira_issues: list[JIRAIssueDigest]
