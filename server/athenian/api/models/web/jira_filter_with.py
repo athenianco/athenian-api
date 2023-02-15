@@ -39,7 +39,7 @@ class JIRAFilterWith(Model):
 
     def as_participants(self) -> JIRAParticipants:
         """Convert to the internal representation."""
-        result = {}
+        result: JIRAParticipants = {}
         if self.reporters:
             result[JIRAParticipationKind.REPORTER] = [*{*self.reporters}]
         if self.assignees:

@@ -32,7 +32,6 @@ from athenian.api.internal.features.histogram import HistogramParameters, Scale
 from athenian.api.internal.jira import (
     JIRAConfig,
     get_jira_installation,
-    load_mapped_jira_users,
     normalize_issue_type,
     normalize_priority,
     normalize_user_type,
@@ -59,7 +58,7 @@ from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.internal.with_ import fetch_teams_map
+from athenian.api.internal.with_ import resolve_jira_with
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import (
     AthenianIssue,
@@ -83,7 +82,6 @@ from athenian.api.models.web import (
     JIRAEpic,
     JIRAEpicChild,
     JIRAFilterReturn,
-    JIRAFilterWith,
     JIRAHistogramsRequest,
     JIRAIssue,
     JIRAIssueType,
@@ -1296,7 +1294,7 @@ async def _calc_linear_entry(
     ids = await _collect_ids(metrics_req.account, request, True)
     (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
     time_intervals, tzoffset = _request_time_intervals(metrics_req)
-    with_ = await _dereference_teams(
+    participants = await resolve_jira_with(
         metrics_req.with_, metrics_req.account, request.sdb, request.mdb, request.cache,
     )
     calculator = make_calculator(
@@ -1307,7 +1305,7 @@ async def _calc_linear_entry(
         metrics_req.metrics,
         time_intervals,
         metrics_req.quantiles or (0, 1),
-        [g.as_participants() for g in (with_ or [])],
+        participants,
         groups,
         metrics_req.group_by_jira_label,
         metrics_req.exclude_inactive,
@@ -1325,7 +1323,7 @@ async def _calc_histogram_entry(
     ids = await _collect_ids(hist_req.account, request, True)
     (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
     time_intervals, tzoffset = _request_time_intervals(hist_req)
-    with_ = await _dereference_teams(
+    participants = await resolve_jira_with(
         hist_req.with_, hist_req.account, request.sdb, request.mdb, request.cache,
     )
     label_filter = LabelFilter.from_iterables(hist_req.labels_include, hist_req.labels_exclude)
@@ -1352,7 +1350,7 @@ async def _calc_histogram_entry(
             time_intervals[0][0],
             time_intervals[0][1],
             hist_req.quantiles or (0, 1),
-            [g.as_participants() for g in (with_ or [])],
+            participants,
             label_filter,
             {normalize_priority(p) for p in (hist_req.priorities or [])},
             {normalize_issue_type(t) for t in (hist_req.types or [])},
@@ -1453,62 +1451,6 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         for gran, ts, ts_values in zip(metrics_req.granularities, time_intervals, group_values)
     ]
     return model_response(mets)
-
-
-async def _dereference_teams(
-    with_: Optional[list[JIRAFilterWith]],
-    account: int,
-    sdb: Database,
-    mdb: Database,
-    cache: Optional[aiomcache.Client],
-) -> Optional[list[JIRAFilterWith]]:
-    if not with_:
-        return with_
-    teams = set()
-    for i, group in enumerate(with_):
-        for topic in ("assignees", "reporters", "commenters"):
-            for j, dev in enumerate(getattr(group, topic, []) or []):
-                if dev is not None and dev.startswith("{"):
-                    try:
-                        if not dev.endswith("}"):
-                            raise ValueError
-                        teams.add(int(dev[1:-1]))
-                    except ValueError:
-                        raise ResponseError(
-                            InvalidRequestError(
-                                pointer=f".with[{i}].{topic}[{j}]",
-                                detail=f"Invalid team ID: {dev}",
-                            ),
-                        )
-    teams_map = await fetch_teams_map(teams, account, sdb)
-    all_team_members = set(chain.from_iterable(teams_map.values()))
-    jira_map = await load_mapped_jira_users(account, all_team_members, sdb, mdb, cache)
-    del all_team_members
-    deref = []
-    for group in with_:
-        new_group = {}
-        changed = False
-        for topic in ("assignees", "reporters", "commenters"):
-            if topic_devs := getattr(group, topic):
-                new_topic_devs = []
-                topic_changed = False
-                for dev in topic_devs:
-                    if dev is not None and dev.startswith("{"):
-                        topic_changed = True
-                        for member in teams_map[int(dev[1:-1])]:
-                            try:
-                                new_topic_devs.append(jira_map[member])
-                            except KeyError:
-                                continue
-                    else:
-                        new_topic_devs.append(dev)
-                if topic_changed:
-                    changed = True
-                    new_group[topic] = new_topic_devs
-                else:
-                    new_group[topic] = topic_devs
-        deref.append(JIRAFilterWith(**new_group) if changed else group)
-    return deref
 
 
 @expires_header(short_term_exptime)
