@@ -3400,6 +3400,7 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
     We are still investigating all the possible cases when this situation can happen.
     Meanwhile, the best we can do is to invalidate all the duplicates.
     """
+    log = logging.getLogger(f"{metadata.__package__}.reset_broken_deployments")
     rows_envs, rows_commits = await gather(
         rdb.fetch_all(
             select(DeploymentNotification.name, DeploymentNotification.environment).where(
@@ -3409,9 +3410,11 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
             ),
         ),
         pdb.fetch_all(
-            select(GitHubCommitDeployment.deployment_name, GitHubCommitDeployment.commit_id).where(
-                GitHubCommitDeployment.acc_id == account,
-            ),
+            select(
+                GitHubCommitDeployment.deployment_name,
+                GitHubCommitDeployment.repository_full_name,
+                GitHubCommitDeployment.commit_id,
+            ).where(GitHubCommitDeployment.acc_id == account),
         ),
     )
     env_map = dict(rows_envs)
@@ -3420,7 +3423,7 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
     commit_env_deps = {}
     for row in rows_commits:
         try:
-            key = (row[1], env_map[row[0]])
+            key = f"{env_map[row[0]]}/{row[1]}/{row[2]}"
         except KeyError:
             bad_deps.add(row[0])
             continue
@@ -3430,7 +3433,8 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
         else:
             commit_env_deps[key] = row[0]
     if bad_deps:
-        log = logging.getLogger(f"{metadata.__package__}.reset_broken_deployments")
         await _delete_precomputed_deployments(bad_deps, account, pdb)
-        log.warning("invalidated broken deployments: %s", bad_deps)
+        log.warning("invalidated %d broken deployments: %.1000s", len(bad_deps), bad_deps)
+    else:
+        log.info("scanned %d commits, found no deployment duplicates 🎉", len(rows_commits))
     return len(bad_deps)
