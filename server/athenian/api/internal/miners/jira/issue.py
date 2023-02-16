@@ -300,6 +300,7 @@ async def fetch_jira_issues(
     extra_columns: Iterable[InstrumentedAttribute] = (),
     adjust_timestamps_using_prs=True,
     on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]] = None,
+    status_categories: Collection[str] | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, Any]:
     """
     Load JIRA issues following the specified filters.
@@ -317,6 +318,8 @@ async def fetch_jira_issues(
     :param adjust_timestamps_using_prs: Value indicating whether we must populate the columns \
                                         which depend on the mapped pull requests.
     :param on_raw_fetch_complete: Execute arbitrary code upon fetching the raw list of issues.
+    :param status_categories: If present issues must be in one of these status categories
+         (allowed values in `JIRAStatusCategory` web model)
     """
     result = await _fetch_jira_issues(
         time_from,
@@ -338,6 +341,7 @@ async def fetch_jira_issues(
         extra_columns,
         adjust_timestamps_using_prs,
         on_raw_fetch_complete,
+        status_categories,
     )
     if result[1] is _NoResult:
         return result[0]
@@ -359,7 +363,7 @@ def _postprocess_fetch_jira_issues(
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, jira_filter, exclude_inactive, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
+    key=lambda time_from, time_to, jira_filter, exclude_inactive, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, status_categories=None, **kwargs: (  # noqa
         time_from.timestamp() if time_from else "-",
         time_to.timestamp() if time_to else "-",
         jira_filter,
@@ -371,6 +375,7 @@ def _postprocess_fetch_jira_issues(
         ",".join(c.name for c in kwargs.get("extra_columns", ())),
         release_settings,
         logical_settings,
+        None if status_categories is None else ",".join(sorted(status_categories)),
     ),
     postprocess=_postprocess_fetch_jira_issues,
 )
@@ -394,6 +399,7 @@ async def _fetch_jira_issues(
     extra_columns: Iterable[InstrumentedAttribute],
     adjust_timestamps_using_prs: bool,
     on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]],
+    status_categories: Collection[str] | None = None,
 ) -> tuple[pd.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
@@ -419,6 +425,7 @@ async def _fetch_jira_issues(
         nested_assignees,
         mdb,
         cache,
+        status_categories=status_categories,
     )
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
@@ -655,6 +662,7 @@ async def query_jira_raw(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     distinct: bool = False,
+    status_categories: Collection[str] | None = None,
 ) -> pd.DataFrame:
     """
     Fetch arbitrary columns from Issue or any joined tables according to the filters.
@@ -692,6 +700,9 @@ async def query_jira_raw(
     elif len(jira_filter.epics):
         epic = aliased(Issue, name="epic")
         and_filters.append(epic.key.in_(jira_filter.epics))
+    if status_categories:
+        and_filters.append(Status.category_name.in_(status_categories))
+
     or_filters = []
     if jira_filter.labels:
         components = await _load_components(jira_filter.labels, jira_filter.account, mdb, cache)
