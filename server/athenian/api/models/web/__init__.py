@@ -178,7 +178,7 @@ from athenian.api.models.web.jira_metrics_request import (
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
-from athenian.api.models.web.jira_status import JIRAStatus
+from athenian.api.models.web.jira_status import JIRAStatus, JIRAStatusCategory
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
