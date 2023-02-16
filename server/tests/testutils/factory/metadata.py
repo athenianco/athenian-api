@@ -28,6 +28,7 @@ from athenian.api.models.metadata.jira import (
     Priority,
     Progress,
     Project,
+    Status,
     User as JIRAUser,
 )
 
@@ -333,6 +334,16 @@ class JIRAPriorityFactory(SQLAlchemyModelFactory):
     name = factory.LazyAttribute(lambda issue: f"PRIORITY-{issue.id}")
     rank = 1
     status_color = "#ffffff"
+
+
+class StatusFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Status
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    name = "doing"
+    category_name = "In Progress"
 
 
 class JIRAProgressFactory(SQLAlchemyModelFactory):

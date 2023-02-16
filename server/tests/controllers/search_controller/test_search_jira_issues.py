@@ -2,11 +2,11 @@ from datetime import date
 from typing import Any, Sequence
 
 from athenian.api.db import Database
-from athenian.api.models.web import SearchJIRAIssuesRequest
+from athenian.api.models.web import JIRAStatusCategory, SearchJIRAIssuesRequest
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory, state as st_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
-from tests.testutils.factory.wizards import jira_issue_models
+from tests.testutils.factory.wizards import jira_issue_models, pr_jira_issue_mappings, pr_models
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -176,3 +176,45 @@ class TestSearchJIRAIssuesFiltering(BaseSearchJIRAIssuesTest):
         body["with"]["assignees"] = ["{3}"]
         res = await self._fetch_ids(json=body)
         assert len(res) == 53
+
+    async def test_stages(self, sdb: Database, mdb_rw: Database) -> None:
+        issue_kwargs = {"created": dt(2016, 1, 1), "project_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.StatusFactory(id="10", category_name="To Do"),
+            md_factory.StatusFactory(id="11", category_name="In Progress"),
+            md_factory.StatusFactory(id="12", category_name="Done"),
+            *jira_issue_models("1", key="P1-1", **issue_kwargs, status_id="10"),
+            *jira_issue_models("2", key="P1-2", **issue_kwargs, status_id="10"),
+            *jira_issue_models("3", key="P1-3", **issue_kwargs, status_id="11"),
+            *jira_issue_models(
+                "4", key="P1-4", **issue_kwargs, status_id="12", resolved=dt(2016, 2, 1),
+            ),
+            *jira_issue_models(
+                "5", key="P1-5", **issue_kwargs, status_id="12", resolved=dt(2016, 2, 1),
+            ),
+        ]
+
+        body = self._body()
+
+        IN_PROGRESS = JIRAStatusCategory.IN_PROGRESS.value
+        DONE = JIRAStatusCategory.DONE.value
+        TO_DO = JIRAStatusCategory.TO_DO.value
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            ids = sorted(await self._fetch_ids(json=body))
+            assert ids == ["P1-1", "P1-2", "P1-3", "P1-4", "P1-5"]
+
+            body["filter"] = {"status_categories": [DONE]}
+            ids = sorted(await self._fetch_ids(json=body))
+            assert ids == ["P1-4", "P1-5"]
+
+            body["filter"] = {"status_categories": [IN_PROGRESS, TO_DO]}
+            ids = sorted(await self._fetch_ids(json=body))
+            assert ids == ["P1-1", "P1-2", "P1-3"]
+
+            body["filter"] = {"status_categories": [IN_PROGRESS, DONE]}
+            ids = sorted(await self._fetch_ids(json=body))
+            assert ids == ["P1-3", "P1-4", "P1-5"]
