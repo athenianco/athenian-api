@@ -44,7 +44,7 @@ from athenian.api.internal.miners.github.deployment import (
     mine_deployments,
     reset_broken_deployments,
 )
-from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
+from athenian.api.internal.miners.github.precomputed_prs import detect_force_push_dropped_prs
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_mine import (
     discover_first_outlier_releases,
@@ -341,7 +341,7 @@ async def precompute_reposet(
         if not args.skip_prs:
             if reposet.precomputed:
                 log.info("Scanning for force push dropped PRs")
-                await delete_force_push_dropped_prs(
+                await detect_force_push_dropped_prs(
                     repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
                 )
             log.info("Extracting PR facts")

@@ -1,6 +1,6 @@
 from athenian.api.internal.miners.github.precomputed_prs.done_prs import (
     DonePRFactsLoader,
-    delete_force_push_dropped_prs,
+    detect_force_push_dropped_prs,
     store_precomputed_done_facts,
 )
 from athenian.api.internal.miners.github.precomputed_prs.merged_prs import (

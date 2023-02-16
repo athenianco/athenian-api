@@ -9,12 +9,13 @@ import pytest
 from sqlalchemy import and_, select, update
 
 from athenian.api.async_utils import read_sql_query
+from athenian.api.db import is_postgresql
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.pull_request_filter import _fetch_pull_requests
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.precomputed_prs import (
-    delete_force_push_dropped_prs,
+    detect_force_push_dropped_prs,
     discover_inactive_merged_unreleased_prs,
     store_merged_unreleased_pull_request_facts,
     store_open_pull_request_facts,
@@ -2171,14 +2172,25 @@ async def test_rescan_prs_mark_force_push_dropped(
         1,
         pdb,
     )
-    release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
+    release_match = await pdb.fetch_val(select(GitHubDonePullRequestFacts.release_match))
     assert release_match == "branch|master"
-    node_ids = await delete_force_push_dropped_prs(
+    node_ids = await detect_force_push_dropped_prs(
         ["src-d/go-git"], branches, 1, (6366825,), mdb, pdb, None,
     )
     assert list(node_ids) == [163437]
-    release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
-    assert release_match is None
+    release_match = await pdb.fetch_val(
+        select(GitHubDonePullRequestFacts.release_match).where(
+            GitHubDonePullRequestFacts.pr_node_id == 163437,
+        ),
+    )
+    assert release_match == ReleaseMatch.force_push_drop.name
+    if await is_postgresql(pdb):
+        data = await pdb.fetch_val(
+            select(GitHubDonePullRequestFacts.data).where(
+                GitHubDonePullRequestFacts.pr_node_id == 163437,
+            ),
+        )
+        assert PullRequestFacts(data).force_push_dropped
 
 
 async def test_load_precomputed_done_facts_ids(

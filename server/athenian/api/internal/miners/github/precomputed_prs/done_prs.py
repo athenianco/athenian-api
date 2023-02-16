@@ -10,15 +10,28 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, delete, exists, false, join, not_, or_, select, true, union_all
+from sqlalchemy import (
+    and_,
+    exists,
+    false,
+    func,
+    join,
+    not_,
+    or_,
+    select,
+    text,
+    true,
+    union_all,
+    update,
+)
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement, Select
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.db import Database, dialect_specific_insert
+from athenian.api.db import Database, dialect_specific_insert, is_postgresql
 from athenian.api.internal.logical_accelerated import mark_logical_repos_in_list
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
@@ -196,7 +209,7 @@ class DonePRFactsLoader:
         """
         ghdprf = GitHubDonePullRequestFacts
         result, _ = await cls._load_precomputed_done_filters(
-            [ghdprf.data, ghdprf.releaser, *extra],
+            [ghdprf.data, ghdprf.release_match, ghdprf.releaser, *extra],
             None,
             None,
             repos,
@@ -211,11 +224,13 @@ class DonePRFactsLoader:
         )
         raw = {}
         user_node_to_login_get = prefixer.user_node_to_login.get
+        data_name = ghdprf.data.name
+        releaser_name = ghdprf.releaser.name
         for (node_id, repo), row in result.items():
             result[(node_id, repo)] = PullRequestFacts(
-                data=row[ghdprf.data.name],
+                data=row[data_name],
                 node_id=node_id,
-                releaser=user_node_to_login_get(row[ghdprf.releaser.name]),
+                releaser=user_node_to_login_get(row[releaser_name]),
             )
             raw[node_id] = row
         return result, raw
@@ -347,11 +362,19 @@ class DonePRFactsLoader:
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         user_node_to_login_get = prefixer.user_node_to_login.get
+        data_name = ghprt.data.name
+        pr_node_id_name = ghprt.pr_node_id.name
+        repository_full_name_name = ghprt.repository_full_name.name
+        release_match_name = ghprt.release_match.name
+        author_name = ghprt.author.name
+        merger_name = ghprt.merger.name
+        releaser_name = ghprt.releaser.name
+        _done_pr_facts_from_row = cls._done_pr_facts_from_row
         for row in rows:
-            repo = row[ghprt.repository_full_name.name]
+            repo = row[repository_full_name_name]
             dump = triage_by_release_match(
                 repo,
-                row[ghprt.release_match.name],
+                row[release_match_name],
                 release_settings,
                 default_branches,
                 result,
@@ -359,8 +382,15 @@ class DonePRFactsLoader:
             )
             if dump is None:
                 continue
-            dump[(row[ghprt.pr_node_id.name], repo)] = cls._done_pr_facts_from_row(
-                row, user_node_to_login_get,
+            dump[(row[pr_node_id_name], repo)] = _done_pr_facts_from_row(
+                row,
+                user_node_to_login_get,
+                data_name,
+                pr_node_id_name,
+                repository_full_name_name,
+                author_name,
+                merger_name,
+                releaser_name,
             )
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
@@ -411,18 +441,26 @@ class DonePRFactsLoader:
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         user_node_to_login_get = prefixer.user_node_to_login.get
+        data_name = ghprt.data.name
+        pr_node_id_name = ghprt.pr_node_id.name
+        repository_full_name_name = ghprt.repository_full_name.name
+        release_match_name = ghprt.release_match.name
+        author_name = ghprt.author.name
+        merger_name = ghprt.merger.name
+        releaser_name = ghprt.releaser.name
+        _done_pr_facts_from_row = cls._done_pr_facts_from_row
         for row in rows:
-            repo = row[ghprt.repository_full_name.name]
+            repo = row[repository_full_name_name]
             if not panic_on_missing_repositories and repo not in release_settings.native:
                 log.warning(
                     "Discarding PR %s because repository %s is missing",
-                    row[ghprt.pr_node_id.name],
+                    row[pr_node_id_name],
                     repo,
                 )
                 continue
             dump = triage_by_release_match(
                 repo,
-                row[ghprt.release_match.name],
+                row[release_match_name],
                 release_settings,
                 default_branches,
                 result,
@@ -430,8 +468,15 @@ class DonePRFactsLoader:
             )
             if dump is None:
                 continue
-            dump[(row[ghprt.pr_node_id.name], repo)] = cls._done_pr_facts_from_row(
-                row, user_node_to_login_get,
+            dump[(row[pr_node_id_name], repo)] = _done_pr_facts_from_row(
+                row,
+                user_node_to_login_get,
+                data_name,
+                pr_node_id_name,
+                repository_full_name_name,
+                author_name,
+                merger_name,
+                releaser_name,
             )
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
@@ -710,8 +755,8 @@ class DonePRFactsLoader:
         or_items = or_items()
         selected = sorted(selected, key=lambda i: i.key)
         if postgres:
-            return [select(selected).where(and_(item, *filters)) for item in or_items], date_range
-        return [select(selected).where(and_(or_(*or_items), *filters))], date_range
+            return [select(*selected).where(item, *filters) for item in or_items], date_range
+        return [select(*selected).where(or_(*or_items), *filters)], date_range
 
     @classmethod
     async def _compose_query_filters_deployed(
@@ -908,15 +953,20 @@ class DonePRFactsLoader:
         cls,
         row: Mapping[str, Any],
         user_node_to_login_get: Callable[[int], str],
+        data_name: str,
+        pr_node_id_name: str,
+        repository_full_name_name: str,
+        author_name: str,
+        merger_name: str,
+        releaser_name: str,
     ) -> PullRequestFacts:
-        ghdprf = GitHubDonePullRequestFacts
         return PullRequestFacts(
-            data=row[ghdprf.data.name],
-            node_id=row[ghdprf.pr_node_id.name],
-            repository_full_name=row[ghdprf.repository_full_name.name],
-            author=user_node_to_login_get(row[ghdprf.author.name], ""),
-            merger=user_node_to_login_get(row[ghdprf.merger.name], ""),
-            releaser=user_node_to_login_get(row[ghdprf.releaser.name], ""),
+            data=row[data_name],
+            node_id=row[pr_node_id_name],
+            repository_full_name=row[repository_full_name_name],
+            author=user_node_to_login_get(row[author_name], ""),
+            merger=user_node_to_login_get(row[merger_name], ""),
+            releaser=user_node_to_login_get(row[releaser_name], ""),
         )
 
 
@@ -1029,7 +1079,7 @@ async def store_precomputed_done_facts(
 
 
 @sentry_span
-async def delete_force_push_dropped_prs(
+async def detect_force_push_dropped_prs(
     repos: Iterable[str],
     branches: pd.DataFrame,
     account: int,
@@ -1044,10 +1094,10 @@ async def delete_force_push_dropped_prs(
 
     We don't try to resolve rebased PRs here due to the intended use case.
     """
-    log = logging.getLogger(f"{metadata.__package__}.delete_force_push_dropped_prs")
+    log = logging.getLogger(f"{metadata.__package__}.detect_force_push_dropped_prs")
     ghdprf = GitHubDonePullRequestFacts
-    rows, dags = await gather(
-        pdb.fetch_all(
+    prs_df, dags = await gather(
+        read_sql_query(
             select(ghdprf.pr_node_id).where(
                 ghdprf.acc_id == account,
                 ghdprf.format_version
@@ -1055,16 +1105,18 @@ async def delete_force_push_dropped_prs(
                 ghdprf.release_match.like("%|%"),
                 ghdprf.repository_full_name.in_(repos),
             ),
+            pdb,
+            [ghdprf.pr_node_id],
         ),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
         op="fetch prs + branches + dags",
     )
-    pr_node_ids = [r[0] for r in rows]
-    del rows
+    pr_node_ids = prs_df[ghdprf.pr_node_id.name].values
+    del prs_df
     node_commit = aliased(NodeCommit, name="c")
     node_pr = aliased(NodePullRequest, name="pr")
     pr_merges, dags = await gather(
-        mdb.fetch_all(
+        read_sql_query(
             select(node_commit.sha, node_pr.node_id)
             .select_from(
                 join(
@@ -1081,6 +1133,8 @@ async def delete_force_push_dropped_prs(
             .with_statement_hint("Leading(((*VALUES* pr) c))")
             .with_statement_hint(f"Rows(*VALUES* pr #{len(pr_node_ids)})")
             .with_statement_hint(f"Rows(*VALUES* pr c #{len(pr_node_ids)})"),
+            mdb,
+            [node_commit.sha, node_pr.node_id],
         ),
         fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
@@ -1089,32 +1143,52 @@ async def delete_force_push_dropped_prs(
     )
     del pr_node_ids
     if dags:
-        accessible_hashes = np.sort(np.concatenate([dag[1][0] for dag in dags.values()]))
+        accessible_hashes = np.unique(np.concatenate([dag[1][0] for dag in dags.values()]))
     else:
         accessible_hashes = np.array([], dtype="S40")
-    merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))
+    merge_hashes = pr_merges[node_commit.sha.name].values
     if len(accessible_hashes) > 0:
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
         dead_indexes = np.flatnonzero(accessible_hashes[found] != merge_hashes)
     else:
         log.error("all these repositories have empty commit DAGs: %s", sorted(dags))
         dead_indexes = np.arange(len(merge_hashes))
-    dead_pr_node_ids = [None] * len(dead_indexes)
-    for i, dead_index in enumerate(dead_indexes):
-        dead_pr_node_ids[i] = pr_merges[dead_index][1]
+    dead_pr_node_ids = pr_merges[node_pr.node_id.name].values[dead_indexes]
     if len(dead_indexes) == 0:
         return dead_pr_node_ids
     del pr_merges
-    log.info("deleting %d force push dropped PRs", len(dead_indexes))
+    log.info("updating %d force push dropped PRs", len(dead_indexes))
     batch_size = 1000
+    now = datetime.now(timezone.utc)
+    if await is_postgresql(pdb):
+        patch_expr = func.overlay(
+            ghdprf.data,
+            text("PLACING"),
+            b"\x01",
+            text("FROM"),
+            PullRequestFacts.dtype.fields[PullRequestFacts.f.force_push_dropped][1] + 1,
+        )
+        patch_expr.clauses.operator = None
+        data_patch = {ghdprf.data: patch_expr}
+    else:
+        # SQLite cannot patch nor concatenate blobs
+        data_patch = {}
     with sentry_sdk.start_span(
         op="delete force push dropped prs", description=str(len(dead_indexes)),
     ):
         for batch in range(0, len(dead_pr_node_ids) + batch_size - 1, batch_size):
             await pdb.execute(
-                delete(ghdprf).where(
+                update(ghdprf)
+                .where(
                     ghdprf.pr_node_id.in_(dead_pr_node_ids[batch : batch + batch_size]),
                     ghdprf.release_match != ReleaseMatch.force_push_drop.name,
+                )
+                .values(
+                    {
+                        ghdprf.updated_at: now,
+                        ghdprf.release_match: ReleaseMatch.force_push_drop.name,
+                        **data_patch,
+                    },
                 ),
             )
     return dead_pr_node_ids
