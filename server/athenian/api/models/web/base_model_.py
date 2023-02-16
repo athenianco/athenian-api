@@ -22,7 +22,6 @@ class Slots(ABCMeta):
                 default_values.update(base.default_values)
             except AttributeError:
                 pass
-
             try:
                 attribute_types.update(base.attribute_types)
                 attribute_map.update(base.attribute_map)
@@ -30,7 +29,6 @@ class Slots(ABCMeta):
                 continue
         try:
             attribute_types.update(dikt["attribute_types"])
-            attribute_map.update(dikt["attribute_map"])
         except KeyError:
             for k, v in dikt.get("__annotations__", {}).items():
                 try:
@@ -45,6 +43,11 @@ class Slots(ABCMeta):
                     attribute_types[k], attribute_map[k] = v
                 else:
                     attribute_types[k] = v
+
+        try:
+            attribute_map.update(dikt["attribute_map"])
+        except KeyError:
+            pass
         try:
             default_values.update(dikt["default_values"])
         except KeyError:

@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain, repeat
 import logging
-from typing import Any, Collection, Mapping, Optional, Type, Union
+from typing import Any, Collection, Mapping, Optional
 
 from aiohttp import web
 import aiomcache
@@ -36,7 +36,6 @@ from athenian.api.internal.jira import (
     normalize_issue_type,
     normalize_priority,
     normalize_user_type,
-    resolve_projects,
 )
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -112,7 +111,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
     (
         meta_ids,
-        jira_ids,
+        jira_conf,
         branches,
         default_branches,
         release_settings,
@@ -122,15 +121,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         filt.account,
         request,
         JIRAFilterReturn.ISSUE_BODIES in return_ or JIRAFilterReturn.EPICS in return_,
-        request.sdb,
-        request.mdb,
-        request.pdb,
-        request.cache,
     )
     if filt.projects is not None:
-        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
-        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
-        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
+        projects = jira_conf.project_ids_map(filt.projects)
+        jira_conf = JIRAConfig(jira_conf.acc_id, projects, jira_conf.epics)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(
@@ -159,7 +153,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ) = await gather(
         _epic_flow(
             return_,
-            jira_ids,
+            jira_conf,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -180,7 +174,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         _issue_flow(
             return_,
             filt.account,
-            jira_ids,
+            jira_conf,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -1252,10 +1246,6 @@ async def _collect_ids(
     account: int,
     request: AthenianWebRequest,
     with_branches_and_settings: bool,
-    sdb: Database,
-    mdb: Database,
-    pdb: Database,
-    cache: Optional[aiomcache.Client],
 ) -> tuple[
     tuple[int, ...],
     JIRAConfig,
@@ -1265,6 +1255,7 @@ async def _collect_ids(
     Optional[LogicalRepositorySettings],
     Prefixer,
 ]:
+    sdb, mdb, pdb, cache = request.sdb, request.mdb, request.pdb, request.cache
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
     prefixer = await Prefixer.load(meta_ids, mdb, cache)
     repos, jira_ids = await gather(
@@ -1298,74 +1289,56 @@ async def _collect_ids(
     )
 
 
-async def _calc_jira_entry(
+async def _calc_linear_entry(
     request: AthenianWebRequest,
-    body: dict,
-    model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
-) -> Union[
-    tuple[
-        JIRAMetricsRequest,
-        list[list[datetime]],
-        timedelta,
-        np.ndarray,
-        np.ndarray,
-    ],
-    tuple[
-        JIRAHistogramsRequest,
-        dict[HistogramParameters, list[str]],
-        np.ndarray,
-    ],
-]:
-    filt = model_from_body(model, body)
-    (
-        meta_ids,
-        jira_ids,
-        _,
-        default_branches,
+    metrics_req: JIRAMetricsRequest,
+) -> tuple[list[list[datetime]], timedelta, np.ndarray, np.ndarray]:
+    ids = await _collect_ids(metrics_req.account, request, True)
+    (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
+    time_intervals, tzoffset = _request_time_intervals(metrics_req)
+    with_ = await _dereference_teams(
+        metrics_req.with_, metrics_req.account, request.sdb, request.mdb, request.cache,
+    )
+    calculator = make_calculator(
+        metrics_req.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
+    )
+    groups = _jira_metrics_request_read_groups(metrics_req, jira_conf)
+    metric_values, split_labels = await calculator.calc_jira_metrics_line_github(
+        metrics_req.metrics,
+        time_intervals,
+        metrics_req.quantiles or (0, 1),
+        [g.as_participants() for g in (with_ or [])],
+        groups,
+        metrics_req.group_by_jira_label,
+        metrics_req.exclude_inactive,
         release_settings,
         logical_settings,
-        _,
-    ) = await _collect_ids(
-        filt.account, request, True, request.sdb, request.mdb, request.pdb, request.cache,
+        default_branches,
     )
-    if filt.projects is not None:
-        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
-        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
-        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
-    time_intervals, tzoffset = split_to_time_intervals(
-        filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone,
-    )
-    with_ = await _dereference_teams(
-        filt.with_, filt.account, request.sdb, request.mdb, request.cache,
-    )
-    label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
-    calculator = make_calculator(
-        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
-    )
-    if issubclass(model, JIRAMetricsRequest):
-        group = JIRAFilter.from_jira_config(jira_ids).replace(
-            labels=label_filter,
-            custom_projects=filt.projects is not None,
-            priorities=frozenset([normalize_priority(p) for p in (filt.priorities or [])]),
-            issue_types=frozenset([normalize_issue_type(t) for t in (filt.types or [])]),
-            epics=frozenset([s.upper() for s in (filt.epics or [])]),
-        )
+    return time_intervals, tzoffset, metric_values, split_labels
 
-        metric_values, split_labels = await calculator.calc_jira_metrics_line_github(
-            filt.metrics,
-            time_intervals,
-            filt.quantiles or (0, 1),
-            [g.as_participants() for g in (with_ or [])],
-            [group],
-            filt.group_by_jira_label,
-            filt.exclude_inactive,
-            release_settings,
-            logical_settings,
-            default_branches,
-        )
-        return filt, time_intervals, tzoffset, metric_values, split_labels
+
+async def _calc_histogram_entry(
+    request: AthenianWebRequest,
+    hist_req: JIRAHistogramsRequest,
+) -> tuple[dict[HistogramParameters, list[str]], np.ndarray]:
+    ids = await _collect_ids(hist_req.account, request, True)
+    (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
+    time_intervals, tzoffset = _request_time_intervals(hist_req)
+    with_ = await _dereference_teams(
+        hist_req.with_, hist_req.account, request.sdb, request.mdb, request.cache,
+    )
+    label_filter = LabelFilter.from_iterables(hist_req.labels_include, hist_req.labels_exclude)
+    calculator = make_calculator(
+        hist_req.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
+    )
     defs = defaultdict(list)
-    for h in filt.histograms or []:
+
+    if hist_req.projects is not None:
+        projects = jira_conf.project_ids_map(hist_req.projects)
+        jira_conf = JIRAConfig(jira_conf.acc_id, projects, jira_conf.epics)
+
+    for h in hist_req.histograms or []:
         defs[
             HistogramParameters(
                 scale=Scale[h.scale.upper()] if h.scale is not None else None,
@@ -1378,58 +1351,107 @@ async def _calc_jira_entry(
             defs,
             time_intervals[0][0],
             time_intervals[0][1],
-            filt.quantiles or (0, 1),
+            hist_req.quantiles or (0, 1),
             [g.as_participants() for g in (with_ or [])],
             label_filter,
-            {normalize_priority(p) for p in (filt.priorities or [])},
-            {normalize_issue_type(t) for t in (filt.types or [])},
-            filt.epics or [],
-            filt.exclude_inactive,
+            {normalize_priority(p) for p in (hist_req.priorities or [])},
+            {normalize_issue_type(t) for t in (hist_req.types or [])},
+            hist_req.epics or [],
+            hist_req.exclude_inactive,
             release_settings,
             logical_settings,
             default_branches,
-            jira_ids,
+            jira_conf,
         )
     except UnsupportedMetricError as e:
         raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
-    return filt, defs, histograms
+    return defs, histograms
+
+
+def _request_time_intervals(
+    req: JIRAMetricsRequest | JIRAHistogramsRequest,
+) -> tuple[list[list[datetime]], timedelta]:
+    granularities = req.granularities if isinstance(req, JIRAMetricsRequest) else ["all"]
+    return split_to_time_intervals(req.date_from, req.date_to, granularities, req.timezone)
+
+
+def _jira_metrics_request_read_groups(
+    request: JIRAMetricsRequest,
+    jira_conf: JIRAConfig,
+) -> list[JIRAFilter]:
+    if request.for_:
+        # this incompatibilty is not expressed by the spec and must be checked manually
+        not_compatible_fields = (
+            "priorities",
+            "types",
+            "projects",
+            "labels_include",
+            "labels_exclude",
+            "group_by_jira_label",
+        )
+        if not_compatible := [f for f in not_compatible_fields if getattr(request, f)]:
+            fields_repr = ",".join(f"`{f}`" for f in not_compatible)
+            msg = f"`for` cannot be used with {fields_repr}"
+            raise ResponseError(InvalidRequestError(pointer=".for", detail=msg))
+        return [
+            JIRAFilter.from_web(group, jira_conf) if group
+            # we don't want JIRAFilter.empty() for empty groups like when using JIRAFilter for PRs
+            # we want a JIRAFilter with a valid account, see calc_jira_metrics_line_github
+            else JIRAFilter.from_jira_config(jira_conf)
+            for group in request.for_
+        ]
+    else:
+        group = JIRAFilter.from_jira_config(jira_conf).replace(
+            labels=LabelFilter.from_iterables(request.labels_include, request.labels_exclude),
+            priorities=frozenset([normalize_priority(p) for p in (request.priorities or [])]),
+            issue_types=frozenset([normalize_issue_type(t) for t in (request.types or [])]),
+            epics=frozenset([s.upper() for s in (request.epics or [])]),
+            custom_projects=False,
+        )
+        if request.projects is not None:
+            projects = jira_conf.project_ids_map(request.projects)
+            group = group.replace(projects=frozenset(projects), custom_projects=True)
+
+        return [group]
 
 
 @expires_header(short_term_exptime)
 @weight(5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    filt, time_intervals, tzoffset, metric_values, split_labels = await _calc_jira_entry(
-        request, body, JIRAMetricsRequest,
+    metrics_req = model_from_body(JIRAMetricsRequest, body)
+    time_intervals, tzoffset, metric_values, split_labels = await _calc_linear_entry(
+        request, metrics_req,
     )
-    mets = list(
-        chain.from_iterable(
-            (
-                CalculatedJIRAMetricValues(
-                    granularity=granularity,
-                    with_=with_group,
-                    jira_label=label,
-                    values=[
-                        CalculatedLinearMetricValues(
-                            date=(dt - tzoffset).date(),
-                            values=[v.value for v in vals],
-                            confidence_mins=[v.confidence_min for v in vals],
-                            confidence_maxs=[v.confidence_max for v in vals],
-                            confidence_scores=[v.confidence_score() for v in vals],
-                        )
-                        for dt, vals in zip(ts, ts_values)
-                    ],
+
+    # response different depending on usage of groups vs group_by_jira_label
+    if metrics_req.for_:
+        res_groups = metrics_req.for_
+        split_labels = np.full(len(metrics_req.for_), None)
+    else:
+        res_groups = [None] * len(split_labels)
+
+    mets = [
+        CalculatedJIRAMetricValues(
+            granularity=gran,
+            with_=with_group,
+            jira_label=label,
+            for_=res_group,
+            values=[
+                CalculatedLinearMetricValues(
+                    date=(dt - tzoffset).date(),
+                    values=[v.value for v in vals],
+                    confidence_mins=[v.confidence_min for v in vals],
+                    confidence_maxs=[v.confidence_max for v in vals],
+                    confidence_scores=[v.confidence_score() for v in vals],
                 )
-                for label, group_metric_values in zip(split_labels, label_metric_values)
-                for granularity, ts, ts_values in zip(
-                    filt.granularities,
-                    time_intervals,
-                    group_metric_values,
-                )
-            )
-            for with_group, label_metric_values in zip(filt.with_ or [None], metric_values)
-        ),
-    )
+                for dt, vals in zip(ts, ts_values)
+            ],
+        )
+        for with_group, label_values in zip(metrics_req.with_ or [None], metric_values)
+        for label, res_group, group_values in zip(split_labels, res_groups, label_values)
+        for gran, ts, ts_values in zip(metrics_req.granularities, time_intervals, group_values)
+    ]
     return model_response(mets)
 
 
@@ -1493,10 +1515,11 @@ async def _dereference_teams(
 @weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, defs, histograms = await _calc_jira_entry(request, body, JIRAHistogramsRequest)
+    hist_req = model_from_body(JIRAHistogramsRequest, body)
+    defs, histograms = await _calc_histogram_entry(request, hist_req)
     result = []
     for metrics, def_hists in zip(defs.values(), histograms):
-        for with_, with_hists in zip(filt.with_ or [None], def_hists):
+        for with_, with_hists in zip(hist_req.with_ or [None], def_hists):
             for metric, histogram in zip(metrics, with_hists[0][0]):
                 result.append(
                     CalculatedJIRAHistogram(

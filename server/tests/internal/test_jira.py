@@ -69,7 +69,11 @@ class TestGetJIRAIDOrNone:
 class TestJIRAConfig:
     def test_translate_project_keys(self) -> None:
         jira_config = JIRAConfig(1, {"id1": "k1", "id2": "k2"}, {})
-        assert jira_config.translate_project_keys(["k1", "k3", "k2"]) == ["id1", "id2"]
+        assert jira_config.translate_project_keys(["k1", "k3", "k2"]) == frozenset(["id1", "id2"])
+
+    def test_project_ids_map(self) -> None:
+        jira_config = JIRAConfig(1, {"id1": "k1", "id2": "k2", "id3": "k3"}, {})
+        assert jira_config.project_ids_map(["k1", "k4", "k2"]) == {"id1": "k1", "id2": "k2"}
 
 
 class TestJIRAEntitiesMapper:
