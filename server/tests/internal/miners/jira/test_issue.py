@@ -1,12 +1,11 @@
 import dataclasses
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas._testing import assert_frame_equal
-from sqlalchemy import insert
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
@@ -35,11 +34,16 @@ from athenian.api.internal.settings import (
     ReleaseSettings,
 )
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
-from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.common import (
+    DEFAULT_ACCOUNT_ID,
+    DEFAULT_JIRA_ACCOUNT_ID,
+    DEFAULT_MD_ACCOUNT_ID,
+)
+from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory
 from tests.testutils.factory.wizards import pr_jira_issue_mappings
+from tests.testutils.time import dt
 
 
 class TestFetchJIRAIssues:
@@ -75,25 +79,16 @@ class TestFetchJIRAIssues:
             0,
         )
         await wait_deferred()
-        args = [
-            time_from,
-            time_to,
-            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
-            False,
-            [],
-            [],
-            [],
-            False,
-            default_branches,
-            release_match_setting_tag,
-            LogicalRepositorySettings.empty(),
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            cache,
-        ]
-        issues = await fetch_jira_issues(*args)
+        kwargs = self._kwargs(
+            time_from=time_from,
+            time_to=time_to,
+            default_branches=default_branches,
+            release_settings=release_match_setting_tag,
+            mdb=mdb,
+            pdb=pdb,
+            cache=cache,
+        )
+        issues = await fetch_jira_issues(**kwargs)
 
         assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55  # 56 without cleaning
         assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 54  # 55 without cleaning
@@ -103,65 +98,38 @@ class TestFetchJIRAIssues:
         ).all()
 
         await wait_deferred()
-        args[-3] = args[-2] = None
-        cached_issues = await fetch_jira_issues(*args)
+        kwargs["mdb"] = kwargs["pdb"] = None
+        cached_issues = await fetch_jira_issues(**kwargs)
         assert_frame_equal(issues, cached_issues)
-        args[-7] = ReleaseSettings({})
-        args[-3] = mdb
-        args[-2] = pdb
-        ghdprf = GitHubDonePullRequestFacts
-        await pdb.execute(
-            insert(ghdprf).values(
-                {
-                    ghdprf.acc_id: 1,
-                    ghdprf.pr_node_id: 163250,
-                    ghdprf.repository_full_name: "src-d/go-git",
-                    ghdprf.release_match: "branch|master",
-                    ghdprf.pr_done_at: datetime(2018, 7, 17, tzinfo=timezone.utc),
-                    ghdprf.pr_created_at: datetime(2018, 5, 17, tzinfo=timezone.utc),
-                    ghdprf.number: 1,
-                    ghdprf.updated_at: datetime.now(timezone.utc),
-                    ghdprf.format_version: ghdprf.__table__.columns[
-                        ghdprf.format_version.key
-                    ].default.arg,
-                    ghdprf.data: b"test",
-                },
+        kwargs["release_settings"] = ReleaseSettings({})
+        kwargs["mdb"] = mdb
+        kwargs["pdb"] = pdb
+        await models_insert(
+            pdb,
+            GitHubDonePullRequestFactsFactory(
+                pr_node_id=163250,
+                repository_full_name="src-d/go-git",
+                pr_done_at=dt(2018, 7, 17),
+                pr_created_at=dt(2018, 5, 17),
+                number=1,
             ),
         )
-        issues = await fetch_jira_issues(*args)
+        issues = await fetch_jira_issues(**kwargs)
         assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55
         assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 55
 
     @with_defer
-    async def test_no_times(
-        self,
-        mdb,
-        pdb,
-        default_branches,
-        release_match_setting_tag,
-        cache,
-    ):
-        args = [
-            None,
-            None,
-            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
-            False,
-            [],
-            [],
-            [],
-            False,
-            default_branches,
-            release_match_setting_tag,
-            LogicalRepositorySettings.empty(),
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            cache,
-        ]
-        issues = await fetch_jira_issues(*args)
+    async def test_no_times(self, mdb, pdb, default_branches, release_match_setting_tag, cache):
+        kwargs = self._kwargs(
+            default_branches=default_branches,
+            release_settings=release_match_setting_tag,
+            mdb=mdb,
+            pdb=pdb,
+            cache=cache,
+        )
+        issues = await fetch_jira_issues(**kwargs)
         await wait_deferred()
-        cached_issues = await fetch_jira_issues(*args)
+        cached_issues = await fetch_jira_issues(**kwargs)
         assert_frame_equal(issues, cached_issues)
 
     @with_defer
@@ -173,29 +141,38 @@ class TestFetchJIRAIssues:
         release_match_setting_tag,
         cache,
     ):
-        args = [
-            None,
-            None,
-            JIRAFilter.empty().replace(account=1, projects=["10003", "10009"]),
-            False,
-            [],
-            ["vadim markovtsev", None],
-            [],
-            False,
-            default_branches,
-            release_match_setting_tag,
-            LogicalRepositorySettings.empty(),
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            cache,
-        ]
-        issues = await fetch_jira_issues(*args)
+        kwargs = self._kwargs(
+            assignees=["vadim markovtsev", None],
+            default_branches=default_branches,
+            release_settings=release_match_setting_tag,
+            mdb=mdb,
+            pdb=pdb,
+            cache=cache,
+        )
+        issues = await fetch_jira_issues(**kwargs)
         assert len(issues) == 716  # 730 without cleaning
         await wait_deferred()
-        cached_issues = await fetch_jira_issues(*args)
+        cached_issues = await fetch_jira_issues(**kwargs)
         assert_frame_equal(issues, cached_issues)
+
+    @classmethod
+    def _kwargs(cls, **extra) -> dict[str, Any]:
+        return {
+            "time_from": None,
+            "time_to": None,
+            "jira_filter": JIRAFilter.empty().replace(
+                account=DEFAULT_JIRA_ACCOUNT_ID, projects=["10003", "10009"],
+            ),
+            "exclude_inactive": False,
+            "reporters": [],
+            "assignees": [],
+            "commenters": [],
+            "nested_assignees": False,
+            "logical_settings": LogicalRepositorySettings.empty(),
+            "account": DEFAULT_ACCOUNT_ID,
+            "meta_ids": (DEFAULT_MD_ACCOUNT_ID,),
+            **extra,
+        }
 
 
 class TestFetchReleasedPRs:
