@@ -12,6 +12,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import (
     and_,
+    delete,
     exists,
     false,
     func,
@@ -1096,12 +1097,12 @@ async def detect_force_push_dropped_prs(
     """
     log = logging.getLogger(f"{metadata.__package__}.detect_force_push_dropped_prs")
     ghdprf = GitHubDonePullRequestFacts
+    format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
     prs_df, dags = await gather(
         read_sql_query(
             select(ghdprf.pr_node_id).where(
                 ghdprf.acc_id == account,
-                ghdprf.format_version
-                == ghdprf.__table__.columns[ghdprf.format_version.key].default.arg,
+                ghdprf.format_version == format_version,
                 ghdprf.release_match.like("%|%"),
                 ghdprf.repository_full_name.in_(repos),
             ),
@@ -1158,8 +1159,6 @@ async def detect_force_push_dropped_prs(
         return dead_pr_node_ids
     del pr_merges
     log.info("updating %d force push dropped PRs", len(dead_indexes))
-    batch_size = 1000
-    now = datetime.now(timezone.utc)
     if await is_postgresql(pdb):
         patch_expr = func.overlay(
             ghdprf.data,
@@ -1173,24 +1172,46 @@ async def detect_force_push_dropped_prs(
     else:
         # SQLite cannot patch nor concatenate blobs
         data_patch = {}
+    ghdprf2 = aliased(GitHubDonePullRequestFacts, name="alive_ghdprf")
+    batch_size = 1000
+    now = datetime.now(timezone.utc)
     with sentry_sdk.start_span(
-        op="delete force push dropped prs", description=str(len(dead_indexes)),
+        op="update force push dropped prs", description=str(len(dead_indexes)),
     ):
         for batch in range(0, len(dead_pr_node_ids) + batch_size - 1, batch_size):
-            await pdb.execute(
-                update(ghdprf)
-                .where(
-                    ghdprf.pr_node_id.in_(dead_pr_node_ids[batch : batch + batch_size]),
-                    ghdprf.release_match != ReleaseMatch.force_push_drop.name,
-                )
-                .values(
-                    {
-                        ghdprf.updated_at: now,
-                        ghdprf.release_match: ReleaseMatch.force_push_drop.name,
-                        **data_patch,
-                    },
-                ),
-            )
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute(
+                        delete(ghdprf).where(
+                            ghdprf.acc_id == account,
+                            ghdprf.format_version == format_version,
+                            ghdprf.pr_node_id.in_(dead_pr_node_ids[batch : batch + batch_size]),
+                            ghdprf.release_match == ReleaseMatch.force_push_drop.name,
+                            exists().where(
+                                ghdprf2.acc_id == ghdprf.acc_id,
+                                ghdprf2.format_version == ghdprf.format_version,
+                                ghdprf2.pr_node_id == ghdprf.pr_node_id,
+                                ghdprf2.release_match.like("%|%"),
+                            ),
+                        ),
+                    )
+                    await pdb_conn.execute(
+                        update(ghdprf)
+                        .where(
+                            ghdprf.acc_id == account,
+                            ghdprf.format_version == format_version,
+                            ghdprf.pr_node_id.in_(dead_pr_node_ids[batch : batch + batch_size]),
+                            ghdprf.release_match != ReleaseMatch.force_push_drop.name,
+                        )
+                        .values(
+                            {
+                                ghdprf.updated_at: now,
+                                ghdprf.release_match: ReleaseMatch.force_push_drop.name,
+                                **data_patch,
+                            },
+                        ),
+                    )
+
     return dead_pr_node_ids
 
 
