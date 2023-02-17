@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import delete, func, insert, select
 
+from athenian.api.async_utils import gather
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.jira import JIRAConfig
@@ -50,7 +51,7 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from tests.conftest import get_default_branches, get_release_match_setting_tag
-from tests.testutils.db import assert_missing_row, count, models_insert
+from tests.testutils.db import assert_existing_row, assert_missing_row, count, models_insert
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.persistentdata import (
     DeployedComponentFactory,
@@ -5397,31 +5398,56 @@ class TestHideOutlierFirstDeployments:
 
 
 async def test_reset_broken_deployments_dupe(precomputed_deployments, pdb, rdb):  # noqa: F811
-    await rdb.execute(
-        insert(DeploymentNotification).values(
-            account_id=1,
-            name="xxx",
-            conclusion=DeploymentNotification.CONCLUSION_SUCCESS.decode(),
-            environment="production",
-            started_at=datetime(2023, 1, 12, tzinfo=timezone.utc),
-            finished_at=datetime(2023, 1, 12, 0, 10, tzinfo=timezone.utc),
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+    await gather(
+        rdb.execute(
+            insert(DeploymentNotification).values(
+                account_id=1,
+                name="xxx",
+                conclusion=DeploymentNotification.CONCLUSION_SUCCESS.decode(),
+                environment="production",
+                started_at=datetime(2023, 1, 12, tzinfo=timezone.utc),
+                finished_at=datetime(2023, 1, 12, 0, 10, tzinfo=timezone.utc),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ),
         ),
-    )
-    await pdb.execute(
-        insert(GitHubCommitDeployment).values(
-            {
-                GitHubCommitDeployment.acc_id: 1,
-                GitHubCommitDeployment.repository_full_name: "src-d/go-git",
-                GitHubCommitDeployment.commit_id: 2755079,
-                GitHubCommitDeployment.deployment_name: "xxx",
-            },
+        rdb.execute(
+            insert(DeploymentNotification).values(
+                account_id=1,
+                name="yyy",
+                conclusion=DeploymentNotification.CONCLUSION_FAILURE.decode(),
+                environment="production",
+                started_at=datetime(2023, 1, 11, tzinfo=timezone.utc),
+                finished_at=datetime(2023, 1, 11, 0, 10, tzinfo=timezone.utc),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ),
+        ),
+        pdb.execute(
+            insert(GitHubCommitDeployment).values(
+                {
+                    GitHubCommitDeployment.acc_id: 1,
+                    GitHubCommitDeployment.repository_full_name: "src-d/go-git",
+                    GitHubCommitDeployment.commit_id: 2755079,
+                    GitHubCommitDeployment.deployment_name: "xxx",
+                },
+            ),
+        ),
+        pdb.execute(
+            insert(GitHubCommitDeployment).values(
+                {
+                    GitHubCommitDeployment.acc_id: 1,
+                    GitHubCommitDeployment.repository_full_name: "src-d/go-git",
+                    GitHubCommitDeployment.commit_id: 2755079,
+                    GitHubCommitDeployment.deployment_name: "yyy",
+                },
+            ),
         ),
     )
     assert await reset_broken_deployments(1, pdb, rdb) == 2
     for name in ("xxx", "Dummy deployment"):
         await assert_missing_row(pdb, GitHubCommitDeployment, deployment_name=name)
+    await assert_existing_row(pdb, GitHubCommitDeployment, deployment_name="yyy")
 
 
 async def test_reset_broken_deployments_wtf(pdb, rdb):

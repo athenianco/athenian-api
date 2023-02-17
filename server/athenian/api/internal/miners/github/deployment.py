@@ -3401,12 +3401,19 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
     Meanwhile, the best we can do is to invalidate all the duplicates.
     """
     log = logging.getLogger(f"{metadata.__package__}.reset_broken_deployments")
-    rows_envs, rows_commits = await gather(
+    rows_envs, rows_unsuccessful, rows_commits = await gather(
         rdb.fetch_all(
             select(DeploymentNotification.name, DeploymentNotification.environment).where(
                 DeploymentNotification.account_id == account,
                 DeploymentNotification.conclusion
                 == DeploymentNotification.CONCLUSION_SUCCESS.decode(),
+            ),
+        ),
+        rdb.fetch_all(
+            select(DeploymentNotification.name).where(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.conclusion
+                != DeploymentNotification.CONCLUSION_SUCCESS.decode(),
             ),
         ),
         pdb.fetch_all(
@@ -3419,19 +3426,23 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
     )
     env_map = dict(rows_envs)
     del rows_envs
+    unsuccessful = {r[0] for r in rows_unsuccessful}
+    del rows_unsuccessful
     bad_deps = set()
     commit_env_deps = {}
     for row in rows_commits:
+        dep = row[0]
         try:
-            key = f"{env_map[row[0]]}/{row[1]}/{row[2]}"
+            key = f"{env_map[dep]}/{row[1]}/{row[2]}"
         except KeyError:
-            bad_deps.add(row[0])
+            if dep not in unsuccessful:
+                bad_deps.add(dep)
             continue
-        if (dep := commit_env_deps.get(key)) is not None:
-            bad_deps.add(row[0])
+        if (other_dep := commit_env_deps.get(key)) is not None:
+            bad_deps.add(other_dep)
             bad_deps.add(dep)
         else:
-            commit_env_deps[key] = row[0]
+            commit_env_deps[key] = dep
     if bad_deps:
         await _delete_precomputed_deployments(bad_deps, account, pdb)
         log.warning("invalidated %d broken deployments: %.1000s", len(bad_deps), bad_deps)
