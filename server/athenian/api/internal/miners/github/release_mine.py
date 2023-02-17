@@ -47,7 +47,10 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     searchsorted_inrange,
 )
 from athenian.api.internal.miners.github.deployment_light import load_included_deployments
-from athenian.api.internal.miners.github.label import find_left_prs_by_labels
+from athenian.api.internal.miners.github.label import (
+    fetch_labels_to_filter,
+    find_left_prs_by_labels,
+)
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_releases import (
     compose_release_match,
@@ -372,9 +375,26 @@ async def _mine_releases(
     # uncomment this line to compute releases from scratch:
     # precomputed_facts = {}
     if with_extended_pr_details or labels:
-        all_pr_node_ids = [
-            f["prs_" + PullRequest.node_id.name] for f in precomputed_facts.values()
-        ]
+        pr_node_ids, _ = ReleaseFacts.vectorize_field(
+            precomputed_facts.values(), "prs_" + PullRequest.node_id.name,
+        )
+        if labels:
+            precomputed_pr_labels_task = asyncio.create_task(
+                fetch_labels_to_filter(pr_node_ids, meta_ids, mdb),
+                name=f"fetch precomputed released PR labels({len(pr_node_ids)})",
+            )
+        else:
+            precomputed_pr_labels_task = None
+        if with_extended_pr_details:
+            precomputed_pr_details_task = asyncio.create_task(
+                _load_extended_pr_details(pr_node_ids, meta_ids, mdb),
+                name=f"fetch precomputed released PR details({len(pr_node_ids)})",
+            )
+        else:
+            precomputed_pr_details_task = None
+        del pr_node_ids
+    else:
+        precomputed_pr_labels_task = precomputed_pr_details_task = None
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     unfiltered_precomputed_facts = precomputed_facts
     if jira:
@@ -388,7 +408,7 @@ async def _mine_releases(
         )
     else:
         precomputed_jira_entities_task = None
-    new_jira_entities_coro = None
+    new_pr_labels_coro = new_pr_details_coro = new_jira_entities_coro = None
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases_in_time_range, precomputed_facts, prefixer, True,
     )
@@ -605,8 +625,10 @@ async def _mine_releases(
         original_prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         prs_authors, prs_authors_nz = _null_to_zero_int(prs_df, PullRequest.user_node_id.name)
         prs_node_ids = prs_df[PullRequest.node_id.name].values
-        if with_extended_pr_details or labels:
-            all_pr_node_ids.append(prs_node_ids)
+        if labels:
+            new_pr_labels_coro = fetch_labels_to_filter(prs_node_ids, meta_ids, mdb)
+        if with_extended_pr_details:
+            new_pr_details_coro = _load_extended_pr_details(prs_node_ids, meta_ids, mdb)
         if with_jira != JIRAEntityToFetch.NOTHING:
             new_jira_entities_coro = PullRequestJiraMapper.load(
                 prs_node_ids, with_jira, meta_ids, mdb,
@@ -767,7 +789,16 @@ async def _mine_releases(
         log.info("mined %d new releases", len(data))
         return data
 
-    tasks = [precomputed_jira_entities_task, new_jira_entities_coro, deployments_task, main_flow()]
+    tasks = [
+        precomputed_pr_labels_task,
+        precomputed_pr_details_task,
+        new_pr_labels_coro,
+        new_pr_details_coro,
+        precomputed_jira_entities_task,
+        new_jira_entities_coro,
+        deployments_task,
+        main_flow(),
+    ]
     if with_avatars:
         all_authors = np.unique(
             np.concatenate(
@@ -803,50 +834,13 @@ async def _mine_releases(
         )
     else:
         tasks.insert(0, None)
-    if (with_extended_pr_details or labels) and all_pr_node_ids:
-        all_pr_node_ids = np.concatenate(all_pr_node_ids)
-    if with_extended_pr_details:
-        tasks.insert(
-            0,
-            read_sql_query(
-                select(NodePullRequest.id, NodePullRequest.title, NodePullRequest.created_at)
-                .where(
-                    NodePullRequest.acc_id.in_(meta_ids),
-                    NodePullRequest.id.in_any_values(all_pr_node_ids),
-                )
-                .order_by(NodePullRequest.id),
-                mdb,
-                [NodePullRequest.id, NodePullRequest.title, NodePullRequest.created_at],
-            ),
-        )
-    else:
-        tasks.insert(0, None)
-    if labels:
-        query = (
-            select(
-                PullRequestLabel.pull_request_node_id,
-                func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-            ).where(
-                PullRequestLabel.acc_id.in_(meta_ids),
-                PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids),
-            )
-        ).with_statement_hint("Leading(*VALUES* prl label repo)")
-        tasks.insert(
-            0,
-            read_sql_query(
-                query,
-                mdb,
-                [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
-                index=PullRequestLabel.pull_request_node_id.name,
-            ),
-        )
-    else:
-        tasks.insert(0, None)
     mentioned_authors = set(mentioned_authors)
     (
-        labels_result,
-        pr_extended_details_result,
         avatars_result,
+        precomputed_labels_result,
+        precomputed_pr_extended_details_result,
+        new_labels_result,
+        new_pr_extended_details_result,
         _,
         new_pr_jira_map,
         _,
@@ -872,25 +866,28 @@ async def _mine_releases(
     if participants:
         result = _filter_by_participants(result, participants)
     if labels:
+        if precomputed_labels_result is None:
+            labels_result = new_labels_result
+        elif new_labels_result is None:
+            labels_result = precomputed_labels_result
+        else:
+            labels_result = pd.concat([precomputed_labels_result, new_labels_result])
         result = _filter_by_labels(result, labels_result, labels)
     if with_extended_pr_details:
-        with sentry_sdk.start_span(op="mine_releases/install extended PRs to facts"):
-            pr_extended_node_ids = pr_extended_details_result[NodePullRequest.id.name].values
-            pr_extended_titles = pr_extended_details_result[NodePullRequest.title.name].values
-            pr_extended_createds = pr_extended_details_result[
-                NodePullRequest.created_at.name
-            ].values
-            pr_node_id_name = PullRequest.node_id.name
-            pr_title_name = PullRequest.title.name
-            pr_created_at_name = PullRequest.created_at.name
-            for facts in result:
-                node_ids = facts["prs_" + pr_node_id_name]
-                indexes = searchsorted_inrange(pr_extended_node_ids, node_ids)
-                none_mask = pr_extended_node_ids[indexes] != node_ids
-                facts["prs_" + pr_title_name] = titles = pr_extended_titles[indexes]
-                facts["prs_" + pr_created_at_name] = createds = pr_extended_createds[indexes]
-                titles[none_mask] = None
-                createds[none_mask] = None
+        presorted = True
+        if precomputed_pr_extended_details_result is None:
+            pr_extended_details_result = new_pr_extended_details_result
+        elif new_pr_extended_details_result is None:
+            pr_extended_details_result = precomputed_pr_extended_details_result
+        else:
+            presorted = False
+            pr_extended_details_result = pd.concat(
+                [precomputed_pr_extended_details_result, new_pr_extended_details_result],
+                ignore_index=True,
+            )
+        _enrich_release_facts_with_extended_pr_details(
+            pr_extended_details_result, result, presorted,
+        )
     with sentry_sdk.start_span(op="mine_releases/install jira to facts"):
         empty_jira = LoadedJIRAReleaseDetails.empty()
         for facts in result:
@@ -1405,6 +1402,51 @@ async def _load_rebased_prs(
         df.disable_consolidate()
         df = df.take(order)
     return df, prs_commit_ids
+
+
+async def _load_extended_pr_details(
+    prs: Collection[int],
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> pd.DataFrame:
+    cols = [NodePullRequest.id, NodePullRequest.title, NodePullRequest.created_at]
+    query = (
+        select(*cols)
+        .where(
+            NodePullRequest.acc_id.in_(meta_ids),
+            NodePullRequest.id.in_any_values(prs),
+        )
+        .order_by(NodePullRequest.id)
+        .with_statement_hint(f"Rows({NodePullRequest.__tablename__} *VALUES* #{len(prs)})")
+    )
+    return await read_sql_query(query, mdb, cols)
+
+
+@sentry_span
+def _enrich_release_facts_with_extended_pr_details(
+    pr_extended_details: pd.DataFrame,
+    facts: Iterable[ReleaseFacts],
+    presorted: bool,
+) -> None:
+    pr_extended_node_ids = pr_extended_details[NodePullRequest.id.name].values
+    pr_extended_titles = pr_extended_details[NodePullRequest.title.name].values
+    pr_extended_createds = pr_extended_details[NodePullRequest.created_at.name].values
+    if not presorted:
+        order = np.argsort(pr_extended_node_ids)
+        pr_extended_node_ids = pr_extended_node_ids[order]
+        pr_extended_titles = pr_extended_titles[order]
+        pr_extended_createds = pr_extended_createds[order]
+    pr_node_id_name = PullRequest.node_id.name
+    pr_title_name = PullRequest.title.name
+    pr_created_at_name = PullRequest.created_at.name
+    for f in facts:
+        node_ids = f["prs_" + pr_node_id_name]
+        indexes = searchsorted_inrange(pr_extended_node_ids, node_ids)
+        none_mask = pr_extended_node_ids[indexes] != node_ids
+        f["prs_" + pr_title_name] = titles = pr_extended_titles[indexes]
+        f["prs_" + pr_created_at_name] = createds = pr_extended_createds[indexes]
+        titles[none_mask] = None
+        createds[none_mask] = None
 
 
 @sentry_span
