@@ -6,7 +6,7 @@ from typing import Sequence
 from freezegun import freeze_time
 import pandas as pd
 import pytest
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, insert, literal, select, update
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.db import is_postgresql
@@ -2174,10 +2174,20 @@ async def test_rescan_prs_mark_force_push_dropped(
     )
     release_match = await pdb.fetch_val(select(GitHubDonePullRequestFacts.release_match))
     assert release_match == "branch|master"
+    columns = list(GitHubDonePullRequestFacts.__table__.columns)
+    columns[columns.index(GitHubDonePullRequestFacts.release_match)] = literal(
+        ReleaseMatch.force_push_drop.name,
+    ).label(GitHubDonePullRequestFacts.release_match.name)
+    await pdb.execute(
+        insert(GitHubDonePullRequestFacts).from_select(
+            GitHubDonePullRequestFacts.__table__.columns, select(columns),
+        ),
+    )
     node_ids = await detect_force_push_dropped_prs(
         ["src-d/go-git"], branches, 1, (6366825,), mdb, pdb, None,
     )
     assert list(node_ids) == [163437]
+    assert await pdb.fetch_val(select(func.count(GitHubDonePullRequestFacts.pr_node_id))) == 1
     release_match = await pdb.fetch_val(
         select(GitHubDonePullRequestFacts.release_match).where(
             GitHubDonePullRequestFacts.pr_node_id == 163437,
