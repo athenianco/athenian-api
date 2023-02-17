@@ -76,17 +76,30 @@ async def fetch_labels_to_filter(
 
     :return: DataFrame, the index is PR node IDs and the only column is lowercase label names.
     """
+    in_values = len(prs) > 100
     lcols = [
         PullRequestLabel.pull_request_node_id,
         func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
     ]
-    return await read_sql_query(
-        select(*lcols)
-        .where(
-            PullRequestLabel.acc_id.in_(meta_ids),
-            PullRequestLabel.pull_request_node_id.in_(prs),
+    query = select(*lcols).where(
+        PullRequestLabel.acc_id.in_(meta_ids),
+        PullRequestLabel.pull_request_node_id.in_any_values(prs)
+        if in_values
+        else PullRequestLabel.pull_request_node_id.in_(prs),
+    )
+    if in_values:
+        # fmt: off
+        query = (
+            query
+            .with_statement_hint("Leading(*VALUES* prl label)")
+            .with_statement_hint("Rows(*VALUES* prl label *100)")
         )
-        .with_statement_hint(f"Rows(prl label #{len(prs)})"),
+        # fmt: on
+    else:
+        query = query.with_statement_hint(f"Rows(prl label #{len(prs) // 10})")
+
+    return await read_sql_query(
+        query,
         mdb,
         lcols,
         index=PullRequestLabel.pull_request_node_id.name,
@@ -111,7 +124,7 @@ def find_left_prs_by_labels(
     if labels.include:
         singles, multiples = LabelFilter.split(labels.include)
         left_include = df_labels_index.take(
-            np.nonzero(np.in1d(df_labels_names, singles))[0],
+            np.flatnonzero(np.in1d(df_labels_names, singles)),
         ).unique()
         for group in multiples:
             passed = df_labels_index
