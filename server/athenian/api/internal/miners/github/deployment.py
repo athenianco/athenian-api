@@ -1393,9 +1393,9 @@ async def _generate_deployment_facts(
             for i, v in enumerate(releases[GitHubReleaseDeployment.deployment_name.name].values):
                 if not isinstance(v, str):
                     log.error(
-                        "non-string release name: %s %s",
+                        "non-string deployment name: %s %s",
                         v,
-                        releases[GitHubReleaseDeployment.deployment_name.name].iloc[i],
+                        releases.iloc[i],
                     )
             raise e from None
         release_order = np.argsort(release_index)
