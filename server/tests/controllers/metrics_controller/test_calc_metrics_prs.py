@@ -1,6 +1,8 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from typing import Any
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -42,6 +44,8 @@ class BaseCalcMetricsPRsTest(Requester):
         kwargs.setdefault("account", DEFAULT_ACCOUNT_ID)
         kwargs.setdefault("exclude_inactive", False)
         kwargs.setdefault("granularities", ["all"])
+        kwargs.setdefault("date_from", "2022-02-01")
+        kwargs.setdefault("date_to", "2022-03-01")
 
         if "for" not in kwargs and "for_" in kwargs:
             kwargs["for"] = kwargs.pop("for_")
@@ -1226,10 +1230,7 @@ class TestJIRAGroups(BaseCalcMetricsPRsTest):
             {"projects": ["PRJ"]},
         ]
         body = self._body(
-            date_from="2022-02-01",
-            date_to="2022-03-01",
             for_=[{"repositories": ["github.com/o/r"], "jiragroups": jiragroups}],
-            granularities=["all"],
             metrics=[PullRequestMetricID.PR_ALL_COUNT],
         )
         async with DBCleaner(mdb_rw) as mdb_cleaner:
@@ -1268,6 +1269,125 @@ class TestJIRAGroups(BaseCalcMetricsPRsTest):
                 r for r in calcs if r["for"]["jira"] == {"labels_include": ["l0", "l1"]}
             )
             assert res_l0l1["values"][0]["values"][0] == 3
+
+    @with_defer
+    async def test_components_as_labels_unfresh_mode(
+        self,
+        sdb: Database,
+        mdb_rw: Database,
+    ) -> None:
+        body = self._body(
+            for_=[{"repositories": ["github.com/o/r"]}],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+        )
+        IssueF = partial(md_factory.JIRAIssueFactory, project_id="1")
+        mappings = [(11, "1"), (12, "2"), (13, "3"), (14, "4"), (15, "5"), (16, "6"), (16, "7")]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {"repository_full_name": "o/r", "created_at": dt(2022, 2, 3)}
+            models = [
+                *pr_models(99, 11, 1, **pr_kwargs),
+                *pr_models(99, 12, 2, **pr_kwargs),
+                *pr_models(99, 13, 3, **pr_kwargs),
+                *pr_models(99, 14, 4, **pr_kwargs),
+                *pr_models(99, 15, 5, **pr_kwargs),
+                *pr_models(99, 16, 6, **pr_kwargs),
+                md_factory.JIRAProjectFactory(id="1", key="PRJ"),
+                md_factory.JIRAComponentFactory(id="0", name="c0"),
+                md_factory.JIRAComponentFactory(id="1", name="c1"),
+                IssueF(id="1", labels=["l0"], components=["0"]),
+                IssueF(id="2", labels=["l1"], components=["1"]),
+                IssueF(id="3", labels=["l0", "l1"], components=["0", "1"]),
+                IssueF(id="4", labels=["l1"], components=["0"]),
+                IssueF(id="5", labels=["l0"], components=["1"]),
+                IssueF(id="6", labels=["l1"], components=["1"]),
+                IssueF(id="7", labels=["l0"], components=["0", "1"]),
+                *pr_jira_issue_mappings(*mappings),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            jiragroups = [
+                {"labels_include": ["l0"]},
+                {"labels_include": ["c0"]},
+                {"labels_include": ["c1"]},
+                {"labels_include": ["l0", "c1"]},
+            ]
+            body["for"][0]["jiragroups"] = jiragroups
+            # make a first request to fill pdb
+            await self._request(json=body)
+            await wait_deferred()
+
+            with mock.patch("athenian.api.internal.features.entries.unfresh_prs_threshold", -1):
+                res = await self._request(json=body)
+            assert len(calcs := res["calculated"]) == 4
+            res_l0 = next(r for r in calcs if r["for"]["jira"] == jiragroups[0])
+            assert res_l0["values"][0]["values"][0] == 4
+            res_c0 = next(r for r in calcs if r["for"]["jira"] == jiragroups[1])
+            assert res_c0["values"][0]["values"][0] == 4
+            res_c1 = next(r for r in calcs if r["for"]["jira"] == jiragroups[2])
+            assert res_c1["values"][0]["values"][0] == 4
+            res_l0c1 = next(r for r in calcs if r["for"]["jira"] == jiragroups[3])
+            assert res_l0c1["values"][0]["values"][0] == 5
+
+    @with_defer
+    async def test_components_as_labels_precomputed(self, sdb: Database, mdb_rw: Database) -> None:
+        jiragroups = [
+            {"labels_include": ["c0"]},
+            {"labels_include": ["c1"]},
+            {"labels_include": ["c0", "c1"]},
+        ]
+
+        body = self._body(
+            for_=[{"repositories": ["github.com/o/r"], "jiragroups": jiragroups}],
+            metrics=[PullRequestMetricID.PR_ALL_COUNT],
+        )
+        IssueF = partial(md_factory.JIRAIssueFactory, project_id="1")
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            pr_kwargs = {
+                "repository_full_name": "o/r",
+                "created_at": dt(2022, 2, 3),
+                "closed_at": dt(2022, 2, 4),
+                "closed": True,
+            }
+            models = [
+                *pr_models(99, 11, 1, **pr_kwargs),
+                *pr_models(99, 12, 2, **pr_kwargs),
+                *pr_models(99, 13, 3, **pr_kwargs),
+                *pr_models(99, 14, 4, **pr_kwargs),
+                md_factory.JIRAProjectFactory(id="1", key="PRJ"),
+                md_factory.JIRAComponentFactory(id="0", name="c0"),
+                md_factory.JIRAComponentFactory(id="1", name="c1"),
+                IssueF(id="1", components=["1"], labels=["l0"]),
+                IssueF(id="2", components=["1"]),
+                IssueF(id="3", components=["0", "1"]),
+                IssueF(id="4"),
+                *pr_jira_issue_mappings((11, "1"), (12, "2"), (13, "3"), (14, "4")),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            # make a first request to fill pdb
+            res = await self._request(json=body)
+            assert len(calcs := res["calculated"]) == 3
+            res_c0 = next(r for r in calcs if r["for"]["jira"] == jiragroups[0])
+            assert res_c0["values"][0]["values"][0] == 1
+
+            await wait_deferred()
+
+            res = await self._request(json=body)
+            assert len(calcs := res["calculated"]) == 3
+            res_c0 = next(r for r in calcs if r["for"]["jira"] == jiragroups[0])
+            assert res_c0["values"][0]["values"][0] == 1
+            res_c1 = next(r for r in calcs if r["for"]["jira"] == jiragroups[1])
+            assert res_c1["values"][0]["values"][0] == 3
+            res_c0c1 = next(r for r in calcs if r["for"]["jira"] == jiragroups[2])
+            assert res_c0c1["values"][0]["values"][0] == 3
 
     @pytest.mark.app_validate_responses(False)
     async def test_with_fixture(self) -> None:
