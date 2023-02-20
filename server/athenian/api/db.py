@@ -501,9 +501,9 @@ def column_values_condition(
 
     Return the condition and the planner hints to apply to the query.
     """
+    cond = column.progressive_in(values)
     if len(values) > 100:
-        cond = column.in_any_values(values)
-        hints = (f"Rows({column.table.name} *VALUES* #{len(values)})",)
-        return cond, hints
+        hints: tuple[str] = (f"Rows({column.table.name} *VALUES* #{len(values)})",)
     else:
-        return column.in_(values), ()
+        hints = ()
+    return cond, hints

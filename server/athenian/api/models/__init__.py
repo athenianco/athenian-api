@@ -1,3 +1,4 @@
+from collections.abc import Sized
 from importlib import import_module
 import logging
 import os
@@ -146,8 +147,16 @@ def _notin_any_values(self: ColumnOperators, other: Iterable):
     return self.notin_(other, any_=True)
 
 
+def _progressive_in(self: ColumnOperators, other: Sized, threshold: int = 100):
+    if len(other) > threshold:
+        return self.in_any_values(other)
+    else:
+        return self.in_(other)
+
+
 ColumnOperators.in_any_values = _in_any_values
 ColumnOperators.notin_any_values = _notin_any_values
+ColumnOperators.progressive_in = _progressive_in
 
 
 flogging.trailing_dot_exceptions.add("alembic.runtime.migration")
