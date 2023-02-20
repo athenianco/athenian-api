@@ -1169,6 +1169,43 @@ async def fetch_jira_issues_by_prs(
     return await read_sql_query(query, mdb, selected)
 
 
+@sentry_span
+async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -> None:
+    """Import the components names as labels in the issues dataframe.
+
+    The `issues` dataframe must have `acc_id` and `components` (with components ids) columns.
+
+    """
+    components = (
+        issues[[Issue.acc_id.name, Issue.components.name]]
+        .groupby(Issue.acc_id.name, sort=False)
+        .aggregate(lambda s: set(flatten(s)))
+    )
+    conditions = (
+        sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
+        for acc, vals in zip(components.index.values, components[Issue.components.name].values)
+    )
+    rows = await mdb.fetch_all(
+        sql.select(Component.acc_id, Component.id, func.lower(Component.name)).where(
+            sql.or_(*conditions),
+        ),
+    )
+    cmap: dict[int, dict[str, str]] = {}
+    for r in rows:
+        cmap.setdefault(r[0], {})[r[1]] = r[2]
+    labels_col = issues[Issue.labels.name].values
+    for i, (acc_id, row_labels, row_components) in enumerate(
+        zip(issues[Issue.acc_id.name].values, labels_col, issues[Issue.components.name].values),
+    ):
+        if row_labels is None:
+            labels_col[i] = row_labels = []
+        else:
+            for j, s in enumerate(row_labels):
+                row_labels[j] = s.lower()
+        if row_components is not None:
+            row_labels.extend(cmap[acc_id][c] for c in row_components)
+
+
 participant_columns = (
     func.lower(Issue.reporter_display_name).label("reporter"),
     func.lower(Issue.assignee_display_name).label("assignee"),
