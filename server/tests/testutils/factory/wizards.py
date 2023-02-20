@@ -82,6 +82,7 @@ def pr_models(
     review_submit: datetime | None = None,
     commits: Collection[datetime] = (),
     merge_commit_id: int | None = None,
+    closed_at: datetime | None = None,
     **kwargs: Any,
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid pull request.
@@ -98,6 +99,9 @@ def pr_models(
         pr_kwargs["title"] = title
     if merge_commit_id is not None:
         pr_kwargs["merge_commit_id"] = merge_commit_id
+    if closed_at is not None:
+        pr_kwargs["closed_at"] = closed_at
+        kwargs.setdefault("closed", True)
 
     models = [
         md_factory.PullRequestFactory(repository_node_id=repo_id, **pr_kwargs, **kwargs),

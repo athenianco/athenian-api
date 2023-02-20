@@ -9,6 +9,7 @@ from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Seq
 import aiomcache
 import numpy as np
 import pandas as pd
+from pandas.core.common import flatten
 import sentry_sdk
 from sqlalchemy import BigInteger, func, sql
 from sqlalchemy.orm import aliased
@@ -953,6 +954,9 @@ class PullRequestJiraMapper:
         nprji = NodePullRequestJiraIssues
         node_id_cond, _ = column_values_condition(nprji.node_id, prs)
         columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
+        if Issue.labels in columns:
+            # import_components_as_labels needs acc_id and components
+            columns.extend([Issue.acc_id, Issue.components])
         df = await read_sql_query(
             sql.select(*columns)
             .select_from(
@@ -967,6 +971,8 @@ class PullRequestJiraMapper:
             columns,
             index=nprji.node_id.name,
         )
+        if Issue.labels in columns:
+            await import_components_as_labels(df, mdb)
         res: dict[int, LoadedJIRADetails] = {}
         cls.append_from_df(res, df)
         return res
