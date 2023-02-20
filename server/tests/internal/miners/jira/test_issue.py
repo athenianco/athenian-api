@@ -435,6 +435,31 @@ class TestPullRequestJiraMapper:
             assert_array_equal(prs[(13, "r")].jira.labels, np.array(["l0"]))
             assert_array_equal(prs[(14, "r")].jira.labels, np.array(["l0", "l0", "l1"]))
 
+    async def test_components_as_labels(self, mdb_rw: Database, sdb: Database) -> None:
+        models = [
+            *pr_jira_issue_mappings((10, "20"), (10, "21"), (11, "21"), (12, "22"), (13, "23")),
+            md_factory.JIRAComponentFactory(id="0", name="c0"),
+            md_factory.JIRAComponentFactory(id="1", name="c1"),
+            md_factory.JIRAIssueFactory(id="20", labels=["l0"], components=["1", "0"]),
+            md_factory.JIRAIssueFactory(id="21", labels=["l0", "l1"]),
+            md_factory.JIRAIssueFactory(id="22", labels=[], components=["1"]),
+            md_factory.JIRAIssueFactory(id="23", labels=[], components=["0"]),
+        ]
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            prs = {k: PullRequestFacts(b"") for k in ((10, "r"), (11, "r"), (12, "r"), (13, "r"))}
+            await PullRequestJiraMapper.load_and_apply_to_pr_facts(
+                prs, JIRAEntityToFetch.EVERYTHING(), (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+            )
+            assert_array_equal(
+                np.sort(prs[(10, "r")].jira.labels), np.array(["c0", "c1", "l0", "l0", "l1"]),
+            )
+            assert_array_equal(np.sort(prs[(11, "r")].jira.labels), np.array(["l0", "l1"]))
+            assert_array_equal(prs[(12, "r")].jira.labels, np.array(["c1"]))
+            assert_array_equal(prs[(13, "r")].jira.labels, np.array(["c0"]))
+
     async def test_load_only_issues(self, mdb_rw: Database, sdb: Database) -> None:
         models = [
             *pr_jira_issue_mappings((10, "20"), (10, "21"), (11, "22"), (12, "20"), (13, "20")),
