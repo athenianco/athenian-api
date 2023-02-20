@@ -8,8 +8,8 @@ site.ENABLE_USER_SITE = True  # workaround https://github.com/pypa/pip/issues/79
 # The following import has to stay after imports from `setuptools`:
 # - https://stackoverflow.com/questions/21594925/
 #     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
-from Cython.Build import cythonize  # noqa: I100, E402
-import numpy as np  # noqa: I100, E402
+from Cython.Build import cythonize  # noqa: E402
+import numpy as np  # noqa: E402
 from setuptools import find_packages, setup  # noqa: E402
 
 project_root = Path(__file__).parent
@@ -30,8 +30,8 @@ setup(
     license="Proprietary",
     author="Athenian",
     author_email="vadim@athenian.co",
-    url="https://github.com/athenian/athenian-api",
-    download_url="https://github.com/athenian/athenian-api",
+    url="https://github.com/athenianco/athenian-api",
+    download_url="https://github.com/athenianco/athenian-api",
     packages=find_packages(exclude=["tests"]),
     ext_modules=cythonize(
         [
@@ -71,7 +71,7 @@ setup(
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
 )

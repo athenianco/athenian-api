@@ -191,7 +191,8 @@ async def _match_rebased_prs_from_scratch(
 ) -> pd.DataFrame:
     tasks = []
     batch_size = 100_000
-    for p in range(0, len(commit_ids if commit_ids is not None else commit_shas), batch_size):
+    workload = len(commit_ids if commit_ids is not None else commit_shas)
+    for p in range(0, workload, batch_size):
         batch = slice(p * batch_size, (p + 1) * batch_size)
         tasks.append(
             read_sql_query(
@@ -231,7 +232,9 @@ async def _match_rebased_prs_from_scratch(
                 ],
             ),
         )
-    searched_commits = await gather(*tasks, op="_match_rebased_prs_from_scratch/searched_commits")
+    searched_commits = await gather(
+        *tasks, op=f"_match_rebased_prs_from_scratch/searched_commits({workload})",
+    )
     del commit_ids
     del commit_shas
     if len(searched_commits) == 1:
@@ -253,7 +256,6 @@ async def _match_rebased_prs_from_scratch(
         ),
     )
     if len(repo_matched) == 0:
-        add_pdb_misses(pdb, "rebased_prs", 0)
         return pd.DataFrame()
 
     if len(repo_matched) < len(searched_commits):
@@ -357,41 +359,35 @@ async def _match_rebased_prs_from_scratch(
         rough_matches = rough_matches[0]
     else:
         rough_matches = pd.concat(rough_matches, ignore_index=True)
-    if rough_matches.empty:
-        add_pdb_misses(pdb, "rebased_prs", 0)
-        return pd.DataFrame()
-    matched_pr_node_ids = []
     matched_commits = []
-    searched_commit_ids = searched_commits[NodeCommit.node_id.name].values
-    searched_committed_ats = searched_commits[NodeCommit.committed_date.name].values
-    for pr_node_id, pr_number, merge_commit_id, merged_at, repo_id, message in zip(
-        rough_matches[NodePullRequest.node_id.name].values,
-        rough_matches[NodePullRequest.number.name].values,
-        rough_matches[NodePullRequest.merge_commit_id.name].values,
-        rough_matches[NodePullRequest.merged_at.name].values,
-        rough_matches[NodePullRequest.repository_id.name].values,
-        rough_matches[NodeCommit.message.name].values,
-    ):
-        if not (f"#{pr_number}" in message or jira_key_re.search(message)):
-            # last resort: there are possible merge commits which changed the message
-            message = f"Merge pull request #{pr_number} from "
-            lookup_map = message_pr_merge_map
-        else:
-            lookup_map = message_commit_map
-        if indexes := lookup_map[repo_id][message]:
-            if (searched_commit_ids[indexes] != merge_commit_id).all():
-                indexes = np.array(indexes)[
-                    searched_committed_ats[indexes]
-                    > (pd.Timestamp(merged_at) - timedelta(seconds=10)).to_numpy()
-                ]
-                matched_commits.extend(indexes)
-                matched_pr_node_ids.extend(pr_node_id for _ in indexes)
-    if not matched_commits:
-        add_pdb_misses(pdb, "rebased_prs", 0)
-        return pd.DataFrame()
+    if not rough_matches.empty:
+        matched_pr_node_ids = []
+        searched_commit_ids = searched_commits[NodeCommit.node_id.name].values
+        searched_committed_ats = searched_commits[NodeCommit.committed_date.name].values
+        for pr_node_id, pr_number, merge_commit_id, merged_at, repo_id, message in zip(
+            rough_matches[NodePullRequest.node_id.name].values,
+            rough_matches[NodePullRequest.number.name].values,
+            rough_matches[NodePullRequest.merge_commit_id.name].values,
+            rough_matches[NodePullRequest.merged_at.name].values,
+            rough_matches[NodePullRequest.repository_id.name].values,
+            rough_matches[NodeCommit.message.name].values,
+        ):
+            if not (f"#{pr_number}" in message or jira_key_re.search(message)):
+                # last resort: there are possible merge commits which changed the message
+                message = f"Merge pull request #{pr_number} from "
+                lookup_map = message_pr_merge_map
+            else:
+                lookup_map = message_commit_map
+            if indexes := lookup_map[repo_id][message]:
+                if (searched_commit_ids[indexes] != merge_commit_id).all():
+                    indexes = np.array(indexes)[
+                        searched_committed_ats[indexes]
+                        > (pd.Timestamp(merged_at) - timedelta(seconds=10)).to_numpy()
+                    ]
+                    matched_commits.extend(indexes)
+                    matched_pr_node_ids.extend(pr_node_id for _ in indexes)
     unmatched_mask = np.ones(len(searched_commits), dtype=bool)
-    if matched_commits:
-        unmatched_mask[matched_commits] = False
+    unmatched_mask[matched_commits] = False
     await defer(
         _store_rebase_checked_commits(
             searched_commits[NodeCommit.node_id.name].values[unmatched_mask],
@@ -401,6 +397,8 @@ async def _match_rebased_prs_from_scratch(
         ),
         "_store_rebase_checked_commits",
     )
+    if not matched_commits:
+        return pd.DataFrame()
     extra_rebased_prs = searched_commits[
         [
             c.name

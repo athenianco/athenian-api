@@ -35,6 +35,7 @@ from athenian.api.models.state.models import (
     AccountFeature,
     Feature,
     God,
+    MappedJIRAIdentity,
     RepositorySet,
     UserAccount,
 )
@@ -159,6 +160,7 @@ async def _reset_jira_account(
     await gather(
         get_jira_id.reset_cache(account, sdb, cache),
         fetch_jira_installation_progress.reset_cache(account, sdb, mdb, cache),
+        sdb.execute(delete(MappedJIRAIdentity).where(MappedJIRAIdentity.account_id == account)),
     )
 
 
