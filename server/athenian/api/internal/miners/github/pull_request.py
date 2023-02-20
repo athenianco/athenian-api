@@ -12,7 +12,6 @@ import aiomcache
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from pandas.core.common import flatten
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import BigInteger, sql
@@ -75,7 +74,10 @@ from athenian.api.internal.miners.github.release_match import (
     ReleaseToPullRequestMapper,
 )
 from athenian.api.internal.miners.github.released_pr import matched_by_column
-from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
+from athenian.api.internal.miners.jira.issue import (
+    generate_jira_prs_query,
+    import_components_as_labels,
+)
 from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
     PR_JIRA_DETAILS_COLUMN_MAP,
@@ -108,7 +110,7 @@ from athenian.api.models.metadata.github import (
     PullRequestReviewRequest,
     Release,
 )
-from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import (
     GitHubPullRequestCheckRuns,
@@ -1176,41 +1178,7 @@ class PullRequestMiner:
             if df.empty:
                 df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
                 return df
-            components = (
-                df[[Issue.acc_id.name, Issue.components.name]]
-                .groupby(Issue.acc_id.name, sort=False)
-                .aggregate(lambda s: set(flatten(s)))
-            )
-            rows = await mdb.fetch_all(
-                sql.select(Component.acc_id, Component.id, Component.name).where(
-                    sql.or_(
-                        *(
-                            sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
-                            for acc, vals in zip(
-                                components.index.values, components[Issue.components.name].values,
-                            )
-                        ),
-                    ),
-                ),
-            )
-            cmap = {}
-            for r in rows:
-                cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
-            labels_col = df[Issue.labels.name].values
-            for i, (acc_id, row_labels, row_components) in enumerate(
-                zip(
-                    df[Issue.acc_id.name].values,
-                    labels_col,
-                    df[Issue.components.name].values,
-                ),
-            ):
-                if row_labels is None:
-                    labels_col[i] = row_labels = []
-                else:
-                    for j, s in enumerate(row_labels):
-                        row_labels[j] = s.lower()
-                if row_components is not None:
-                    row_labels.extend(cmap[acc_id][c] for c in row_components)
+            await import_components_as_labels(df, mdb)
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
