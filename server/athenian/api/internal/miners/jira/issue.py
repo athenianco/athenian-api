@@ -19,7 +19,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, Row, column_values_condition
+from athenian.api.db import Database, DatabaseLike, Row
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
@@ -952,7 +952,6 @@ class PullRequestJiraMapper:
     ) -> dict[int, LoadedJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
-        node_id_cond, _ = column_values_condition(nprji.node_id, prs)
         columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
         if Issue.labels in columns:
             # import_components_as_labels needs acc_id and components
@@ -966,7 +965,7 @@ class PullRequestJiraMapper:
                     sql.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
                 ),
             )
-            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
+            .where(nprji.node_id.progressive_in(prs), nprji.node_acc.in_(meta_ids)),
             mdb,
             columns,
             index=nprji.node_id.name,
