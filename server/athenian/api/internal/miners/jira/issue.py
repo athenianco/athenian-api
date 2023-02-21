@@ -435,6 +435,7 @@ async def _fetch_jira_issues(
     if issues.empty or not adjust_timestamps_using_prs:
         _fill_issues_with_empty_prs_info(issues)
     else:
+        assert default_branches is not None
         await _fill_issues_with_mapped_prs_info(
             issues,
             default_branches,
