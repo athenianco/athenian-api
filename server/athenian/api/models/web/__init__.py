@@ -238,6 +238,7 @@ from athenian.api.models.web.search_jira_issues import (
 from athenian.api.models.web.search_prs import (
     FilterOperator,
     OrderByDirection,
+    OrderByExpression,
     PullRequestDigest,
     SearchPullRequestsFilter,
     SearchPullRequestsOrderByExpression,

@@ -16,6 +16,11 @@ import pandas as pd
 import sentry_sdk
 
 from athenian.api.async_utils import gather
+from athenian.api.controllers.search_controller.common import (
+    OrderBy,
+    OrderByMetrics,
+    build_metrics_calculator_ensemble,
+)
 from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
@@ -29,7 +34,6 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     PullRequestMetricCalculatorEnsemble,
     metric_calculators as pr_metric_calculators,
 )
-from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
 from athenian.api.internal.jira import get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots
@@ -43,7 +47,7 @@ from athenian.api.internal.with_ import resolve_withgroups
 from athenian.api.models.metadata.github import NodePullRequest
 from athenian.api.models.web import (
     FilterOperator,
-    OrderByDirection,
+    OrderByExpression,
     PullRequestDigest,
     SearchPullRequestsFilter,
     SearchPullRequestsOrderByExpression,
@@ -234,7 +238,7 @@ async def _search_pr_digests(
     if search_filter.stages is not None:
         pr_facts = _apply_stages_filter(pr_facts, search_filter.stages)
 
-    unchecked_calc_ens = _build_metrics_calc_ensemble(pr_facts, search_filter, order_by)
+    unchecked_calc_ens = _build_pr_metrics_calculator(pr_facts, search_filter, order_by)
 
     keep_mask = _apply_extra_filters(
         pr_facts, search_filter.extra_filters or (), unchecked_calc_ens,
@@ -291,28 +295,17 @@ def _align_pr_numbers_to_ids(df: pd.DataFrame, node_ids: npt.NDArray[int]) -> np
     return map_array_values(node_ids, db_node_ids, db_numbers, 0)
 
 
-def _build_metrics_calc_ensemble(
+def _build_pr_metrics_calculator(
     pr_facts: pd.DataFrame,
     search_filter: _SearchPRsFilter,
     order_by: Sequence[SearchPullRequestsOrderByExpression],
 ) -> PullRequestMetricCalculatorEnsemble | None:
-    # search the needed metrics in order by expressions and extra filters
     metrics = {expr.field for expr in order_by if expr.field in pr_metric_calculators}
     if filters := search_filter.extra_filters:
         metrics |= {f.field for f in filters if f.field in pr_metric_calculators}
-
-    if not metrics:
-        return None
-    min_times, max_times = (
-        np.array([t.replace(tzinfo=None)], dtype="datetime64[ns]")
-        for t in (search_filter.time_from, search_filter.time_to)
-    )
-    calc_ensemble = PullRequestMetricCalculatorEnsemble(
-        *metrics, quantiles=(0, 1), quantile_stride=DEFAULT_QUANTILE_STRIDE,
-    )
-    groups = np.full((1, len(pr_facts)), True, bool)
-    calc_ensemble(pr_facts, min_times, max_times, groups)
-    return calc_ensemble
+    time_from, time_to = search_filter.time_from, search_filter.time_to
+    CalculatorCls = PullRequestMetricCalculatorEnsemble
+    return build_metrics_calculator_ensemble(pr_facts, metrics, time_from, time_to, CalculatorCls)
 
 
 def _apply_stages_filter(pr_facts: pd.DataFrame, stages: Collection[str]) -> pd.DataFrame:
@@ -401,16 +394,16 @@ def _apply_order_by(
         return pr_facts
 
     ordered_indexes = np.arange(len(pr_facts))
-    order_by_metrics: Optional[_OrderByMetrics] = None
-    order_by_stage_timings: Optional[_OrderByStageTimings] = None
-    order_by_traits: Optional[_OrderByTraits] = None
+    order_by_metrics: _OrderByPRMetrics | None = None
+    order_by_stage_timings: _OrderByStageTimings | None = None
+    order_by_traits: _OrderByTraits | None = None
 
     for expr in reversed(order_by):
-        orderer: _OrderBy
-        if expr.field in _OrderByMetrics.FIELDS:
+        orderer: OrderBy
+        if expr.field in _OrderByPRMetrics.FIELDS:
             if order_by_metrics is None:
                 assert unchecked_metric_calc is not None
-                order_by_metrics = _OrderByMetrics(unchecked_metric_calc)
+                order_by_metrics = _OrderByPRMetrics(unchecked_metric_calc)
             orderer = order_by_metrics
         elif expr.field in _OrderByStageTimings.FIELDS:
             if order_by_stage_timings is None:
@@ -430,88 +423,13 @@ def _apply_order_by(
     return pr_facts.take(kept_positions)
 
 
-class _OrderBy(metaclass=abc.ABCMeta):
-    """Handles the order by expressions."""
-
-    @abc.abstractmethod
-    def apply_expression(
-        self,
-        expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDArray[int],
-    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
-        """Parse an expression and return a tuple with ordered indexes and discard indexes.
-
-        `current_indexes` is the current order of the pull request facts.
-        returned `discard` is an array with the indexes of element in `pr_facts` to
-        drop from end result due to expression.
-
-        """
-
-    @classmethod
-    def _ordered_indexes(
-        cls,
-        expr: SearchPullRequestsOrderByExpression,
-        ordered_indexes: npt.NDArray[int],
-        values: npt.NDArray,
-        nulls: npt.NDArray[int],
-    ) -> npt.NDArray[int]:
-        notnulls_values = values[~nulls]
-        if expr.direction == OrderByDirection.DESCENDING.value:
-            notnulls_values = cls._negate_values(notnulls_values)
-
-        indexes_notnull = ordered_indexes[~nulls][np.argsort(notnulls_values, kind="stable")]
-
-        res_parts = [indexes_notnull, ordered_indexes[nulls]]
-        if expr.nulls_first:
-            res_parts = res_parts[::-1]
-        result = np.concatenate(res_parts)
-        return result
-
-    @classmethod
-    def _discard_mask(
-        cls,
-        expr: SearchPullRequestsOrderByExpression,
-        nulls: npt.NDArray[int],
-    ) -> npt.NDArray[int]:
-        if len(nulls) and expr.exclude_nulls:
-            return np.flatnonzero(nulls)
-        else:
-            return np.array([], dtype=int)
-
-    @classmethod
-    def _negate_values(cls, values: npt.NDArray) -> npt.NDArray:
-        return -values
-
-
-class _OrderByMetrics(_OrderBy):
-    """Handles order by pull request metric values.
-
-    Expressions about a metric field can be fed into this object with `apply_expression`.
-    """
+class _OrderByPRMetrics(OrderByMetrics):
+    """Handles order by pull request metric values."""
 
     FIELDS = pr_metric_calculators
 
-    def __init__(self, calc_ensemble: PullRequestMetricCalculatorEnsemble):
-        self._calc_ensemble = calc_ensemble
 
-    def apply_expression(
-        self,
-        expr: SearchPullRequestsOrderByExpression,
-        current_indexes: npt.NDArray[int],
-    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
-        calc = self._calc_ensemble[expr.field][0]
-        values = calc.peek[0][current_indexes]
-
-        if calc.has_nan:
-            nulls = values != values
-        else:
-            nulls = values == calc.nan
-        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
-        discard = self._discard_mask(expr, nulls)
-        return ordered_indexes, discard
-
-
-class _OrderByStageTimings(_OrderBy):
+class _OrderByStageTimings(OrderBy):
     """Handles order by pull request stage timing."""
 
     FIELDS = [f.value for f in SearchPullRequestsOrderByStageTiming]
@@ -531,7 +449,7 @@ class _OrderByStageTimings(_OrderBy):
     def build(
         cls,
         pr_facts: pd.DataFrame,
-        order_by: Sequence[SearchPullRequestsOrderByExpression],
+        order_by: Sequence[OrderByExpression],
     ) -> _OrderByStageTimings:
         fields = [expr.field for expr in order_by if expr.field in cls.FIELDS]
         assert fields
@@ -550,7 +468,7 @@ class _OrderByStageTimings(_OrderBy):
 
     def apply_expression(
         self,
-        expr: SearchPullRequestsOrderByExpression,
+        expr: OrderByExpression,
         current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray, npt.NDArray[int]]:
         if expr.field == SearchPullRequestsOrderByStageTiming.PR_TOTAL_STAGE_TIMING.value:
@@ -570,7 +488,7 @@ class _OrderByStageTimings(_OrderBy):
         return ordered_indexes, discard
 
 
-class _OrderByTraits(_OrderBy):
+class _OrderByTraits(OrderBy):
     FIELDS = [f.value for f in SearchPullRequestsOrderByPRTrait]
 
     def __init__(self, pr_facts: pd.DataFrame):
@@ -578,16 +496,16 @@ class _OrderByTraits(_OrderBy):
 
     def apply_expression(
         self,
-        expr: SearchPullRequestsOrderByExpression,
+        expr: OrderByExpression,
         current_indexes: npt.NDArray[int],
-    ) -> tuple[npt.NDArray, npt.NDArray[int]]:
+    ) -> tuple[npt.NDArray[int], npt.NDArray[int]]:
         values = self._get_values(expr).copy()[current_indexes]
         nulls = values != values
         discard = self._discard_mask(expr, nulls)
         ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
         return ordered_indexes, discard
 
-    def _get_values(self, expr: SearchPullRequestsOrderByExpression) -> npt.NDArray[np.datetime64]:
+    def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchPullRequestsOrderByPRTrait.WORK_BEGAN.value:
             return self._pr_facts[PullRequestFacts.f.work_began].values
         if expr.field == SearchPullRequestsOrderByPRTrait.FIRST_REVIEW_REQUEST.value:
