@@ -35,7 +35,11 @@ from athenian.api.unordered_unique import in1d_str, unordered_unique
 @cached(
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda names, logical_settings, **_: (",".join(sorted(names)), logical_settings),
+    key=lambda account, names, logical_settings, **_: (
+        account,
+        ",".join(sorted(names)),
+        logical_settings,
+    ),
     exptime=middle_term_exptime,
     refresh_on_access=True,
 )
@@ -56,6 +60,8 @@ async def load_included_deployments(
 
     :return: Mapping from deployment name to the corresponding details.
     """
+    if not len(names):
+        return {}
     notifications, components, labels = await gather(
         read_sql_query(
             select(DeploymentNotification).where(
