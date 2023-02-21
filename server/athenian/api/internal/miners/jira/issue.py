@@ -1112,7 +1112,7 @@ def resolve_work_began_and_resolved(
 
 
 @sentry_span
-async def fetch_jira_issues_by_keys(
+async def fetch_jira_issues_rows_by_keys(
     keys: Collection[str],
     jira_ids: JIRAConfig,
     mdb: DatabaseLike,
@@ -1133,10 +1133,7 @@ async def fetch_jira_issues_by_keys(
             sql.outerjoin(
                 regiss,
                 epiciss,
-                sql.and_(
-                    epiciss.id == regiss.epic_id,
-                    epiciss.acc_id == regiss.acc_id,
-                ),
+                sql.and_(epiciss.id == regiss.epic_id, epiciss.acc_id == regiss.acc_id),
             ),
         )
         .where(

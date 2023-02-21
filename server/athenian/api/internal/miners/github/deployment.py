@@ -89,8 +89,8 @@ from athenian.api.internal.miners.github.release_mine import (
     mine_releases_by_ids,
 )
 from athenian.api.internal.miners.jira.issue import (
-    fetch_jira_issues_by_keys,
     fetch_jira_issues_by_prs,
+    fetch_jira_issues_rows_by_keys,
     generate_jira_prs_query,
 )
 from athenian.api.internal.miners.participation import (
@@ -3122,7 +3122,7 @@ async def load_jira_issues_for_deployments(
     unique_jira_keys = unordered_unique(
         np.concatenate(deployments[DeploymentFacts.f.jira_ids].values),
     )
-    rows = await fetch_jira_issues_by_keys(unique_jira_keys, jira_ids, mdb)
+    rows = await fetch_jira_issues_rows_by_keys(unique_jira_keys, jira_ids, mdb)
     return {row["id"]: PullRequestJIRAIssueItem(**row) for row in rows}
 
 
