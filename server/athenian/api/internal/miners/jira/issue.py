@@ -397,8 +397,6 @@ async def _fetch_jira_issues(
 ) -> tuple[pd.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
-    resolved_colname = AthenianIssue.resolved.name
-    created_colname = Issue.created.name
     issues = await query_jira_raw(
         [
             Issue.id,
@@ -435,15 +433,35 @@ async def _fetch_jira_issues(
     else:
         on_raw_fetch_complete_task = _NoResult.stub()
     if issues.empty or not adjust_timestamps_using_prs:
-        for col in (
-            ISSUE_PRS_BEGAN,
-            ISSUE_PRS_RELEASED,
-            ISSUE_PRS_COUNT,
-            ISSUE_PR_IDS,
-            resolved_colname,
-        ):
-            issues[col] = [None] * len(issues)
-        return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+        _fill_issues_with_empty_prs_info(issues)
+    else:
+        await _fill_issues_with_mapped_prs_info(
+            issues,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            jira_filter.account,
+            pdb,
+            mdb,
+        )
+    return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+
+
+async def _fill_issues_with_mapped_prs_info(
+    issues: pd.DataFrame,
+    default_branches: dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: tuple[int, ...],
+    jira_account: int,
+    pdb: DatabaseLike,
+    mdb: DatabaseLike,
+) -> None:
+    log = logging.getLogger("%s.jira" % metadata.__package__)
+
     if len(issues) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
     else:
@@ -479,7 +497,7 @@ async def _fetch_jira_issues(
             ),
         )
         .where(
-            NodePullRequestJiraIssues.jira_acc == jira_filter.account,
+            NodePullRequestJiraIssues.jira_acc == jira_account,
             NodePullRequestJiraIssues.node_acc.in_(meta_ids),
             jira_id_cond,
         )
@@ -571,14 +589,26 @@ async def _fetch_jira_issues(
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
     issues[ISSUE_PR_IDS] = issue_prs
-    issues[resolved_colname] = issues[resolved_colname].astype(issues[created_colname].dtype)
-    if (negative := issues[resolved_colname].values < issues[created_colname].values).any():
+    ISSUE_RESOLVED = AthenianIssue.resolved.name
+    ISSUE_CREATED = Issue.created.name
+
+    if (negative := issues[ISSUE_RESOLVED].values < issues[ISSUE_CREATED].values).any():
         log.error(
             "JIRA issues have resolved < created: %s",
             issues.index.values[negative].tolist(),
         )
-        issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
-    return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+        issues[ISSUE_RESOLVED].values[negative] = issues[ISSUE_CREATED].values[negative]
+
+
+def _fill_issues_with_empty_prs_info(issues: pd.DataFrame) -> None:
+    for col in (
+        ISSUE_PRS_BEGAN,
+        ISSUE_PRS_RELEASED,
+        ISSUE_PRS_COUNT,
+        ISSUE_PR_IDS,
+        AthenianIssue.resolved.name,
+    ):
+        issues[col] = [None] * len(issues)
 
 
 @sentry_span
@@ -754,34 +784,22 @@ async def query_jira_raw(
                 sql.outerjoin(
                     seed,
                     epics_major,
-                    sql.and_(
-                        Issue.epic_id == epics_major.id,
-                        Issue.acc_id == epics_major.acc_id,
-                    ),
+                    sql.and_(Issue.epic_id == epics_major.id, Issue.acc_id == epics_major.acc_id),
                 ),
                 epics_self,
-                sql.and_(
-                    Issue.id == epics_self.id,
-                    Issue.acc_id == epics_self.acc_id,
-                ),
+                sql.and_(Issue.id == epics_self.id, Issue.acc_id == epics_self.acc_id),
             )
         elif len(jira_filter.epics):
             seed = sql.join(
                 seed,
                 epic,
-                sql.and_(
-                    Issue.epic_id == epic.id,
-                    Issue.acc_id == epic.acc_id,
-                ),
+                sql.and_(Issue.epic_id == epic.id, Issue.acc_id == epic.acc_id),
             )
         return sql.select(*columns).select_from(
             sql.outerjoin(
                 seed,
                 AthenianIssue,
-                sql.and_(
-                    Issue.acc_id == AthenianIssue.acc_id,
-                    Issue.id == AthenianIssue.id,
-                ),
+                sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
             ),
         )
 
