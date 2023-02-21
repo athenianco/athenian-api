@@ -1157,7 +1157,7 @@ async def _fetch_priorities(
     acc_id: int,
     return_: set[str],
     mdb: Database,
-) -> Optional[list[JIRAPriority]]:
+) -> list[JIRAPriority] | None:
     if JIRAFilterReturn.PRIORITIES not in return_ or len(priorities) == 0:
         return []
     rows = await mdb.fetch_all(
