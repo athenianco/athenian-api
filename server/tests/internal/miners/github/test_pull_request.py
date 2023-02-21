@@ -8,6 +8,7 @@ from typing import Any, Dict
 from unittest import mock
 
 import numpy as np
+from numpy import typing as npt
 from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
@@ -16,8 +17,9 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.async_utils import read_sql_query
+from athenian.api.controllers.search_controller.search_prs import _align_pr_numbers_to_ids
 import athenian.api.db
-from athenian.api.db import Database
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.defer import launch_defer, wait_deferred, with_defer, with_explicit_defer
 from athenian.api.internal.jira import get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -2200,6 +2202,14 @@ class TestPullRequestMinerMine:
             fetch_prs_wrapper.assert_called_once()
 
 
+async def fetch_prs_numbers_e2e(
+    node_ids: npt.NDArray[int],
+    meta_ids: tuple[int, ...],
+    mdb: DatabaseLike,
+) -> npt.NDArray[int]:
+    return _align_pr_numbers_to_ids(await fetch_prs_numbers(node_ids, meta_ids, mdb), node_ids)
+
+
 class TestFetchPRsNumbers:
     async def test_single_meta_acc_id(self, mdb_rw: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
@@ -2211,13 +2221,13 @@ class TestFetchPRsNumbers:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            prs_numbers = await fetch_prs_numbers(np.array([30, 31, 32, 33]), (3,), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(np.array([30, 31, 32, 33]), (3,), mdb_rw)
             assert_array_equal(prs_numbers, np.array([100, 101, 102, 0]))
 
-            prs_numbers = await fetch_prs_numbers(np.array([30, 33, 31]), (3,), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(np.array([30, 33, 31]), (3,), mdb_rw)
             assert_array_equal(prs_numbers, np.array([100, 0, 101]))
 
-            prs_numbers = await fetch_prs_numbers(np.array([33, 35, 30]), (3,), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(np.array([33, 35, 30]), (3,), mdb_rw)
             assert_array_equal(prs_numbers, np.array([0, 0, 100]))
 
     async def test_multiple_meta_acc_ids(self, mdb_rw: Database) -> None:
@@ -2231,10 +2241,10 @@ class TestFetchPRsNumbers:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            prs_numbers = await fetch_prs_numbers(np.array([30, 31, 32, 33]), (3, 4), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(np.array([30, 31, 32, 33]), (3, 4), mdb_rw)
             assert_array_equal(prs_numbers, np.array([1, 2, 1, 3]))
 
-            prs_numbers = await fetch_prs_numbers(np.array([30, 31, 32, 35]), (3, 4), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(np.array([30, 31, 32, 35]), (3, 4), mdb_rw)
             assert_array_equal(prs_numbers, np.array([1, 2, 1, 0]))
 
     async def test_a_whole_lot_of_node_ids(self, mdb_rw: Database) -> None:
@@ -2248,7 +2258,9 @@ class TestFetchPRsNumbers:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            prs_numbers = await fetch_prs_numbers(np.array(list(range(1, 111))), (3, 4), mdb_rw)
+            prs_numbers = await fetch_prs_numbers_e2e(
+                np.array(list(range(1, 111))), (3, 4), mdb_rw,
+            )
             assert_array_equal(prs_numbers[:105], np.arange(1, 106) + 100)
             assert_array_equal(prs_numbers[105:], np.zeros(5))
 
@@ -2268,11 +2280,13 @@ class TestFetchPRsNumbers:
             # DB will often return rows ordered by node_id anyway, mock is needed to have
             # a true chaotic order
             with self._shuffle_read_sql_query_result():
-                prs_numbers = await fetch_prs_numbers(np.array([23, 25, 19, 21, 22]), (3,), mdb_rw)
+                prs_numbers = await fetch_prs_numbers_e2e(
+                    np.array([23, 25, 19, 21, 22]), (3,), mdb_rw,
+                )
             assert_array_equal(prs_numbers, np.array([4, 6, 0, 5, 1]))
 
     async def test_no_pr_found_pr_order_noise_meta_acc_id(self, mdb_rw: Database) -> None:
-        prs_numbers = await fetch_prs_numbers(np.array([22, 23]), (3,), mdb_rw)
+        prs_numbers = await fetch_prs_numbers_e2e(np.array([22, 23]), (3,), mdb_rw)
         assert_array_equal(prs_numbers, np.array([0, 0]))
 
     @contextlib.contextmanager

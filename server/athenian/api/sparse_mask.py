@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy import typing as npt
 
-from athenian.api.sorted_intersection import sorted_intersect1d, sum_repeated_with_step
+from athenian.api.sorted_ops import sorted_intersect1d, sum_repeated_with_step
 
 
 @dataclass(frozen=True, slots=True)
