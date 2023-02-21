@@ -52,7 +52,7 @@ from athenian.api.internal.miners.github.release_mine import (
 )
 from athenian.api.internal.miners.github.repository import mine_repositories
 from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
-from athenian.api.internal.miners.jira.issue import fetch_jira_issues_by_keys
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues_rows_by_keys
 from athenian.api.internal.miners.participation import (
     PRParticipants,
     PRParticipationKind,
@@ -716,7 +716,7 @@ async def _load_jira_issues_for_releases(
     if releases.empty or jira_ids is None:
         return {}
     issue_keys = unordered_unique(np.concatenate(releases["jira_ids"].values))
-    rows = await fetch_jira_issues_by_keys(issue_keys, jira_ids, mdb)
+    rows = await fetch_jira_issues_rows_by_keys(issue_keys, jira_ids, mdb)
     issues = {row["id"]: LinkedJIRAIssue(**row) for row in rows}
     return issues
 
