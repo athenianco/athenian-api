@@ -956,7 +956,8 @@ class PullRequestJiraMapper:
         if Issue.labels in columns:
             # import_components_as_labels needs acc_id and components
             columns.extend([Issue.acc_id, Issue.components])
-        df = await read_sql_query(
+
+        stmt = (
             sql.select(*columns)
             .select_from(
                 sql.outerjoin(
@@ -965,11 +966,13 @@ class PullRequestJiraMapper:
                     sql.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
                 ),
             )
-            .where(nprji.node_id.progressive_in(prs), nprji.node_acc.in_(meta_ids)),
-            mdb,
-            columns,
-            index=nprji.node_id.name,
+            .where(nprji.node_id.progressive_in(prs), nprji.node_acc.in_(meta_ids))
+            .with_statement_hint(f"Rows({nprji.__tablename__} *VALUES* {len(prs) // 2})")
+            .with_statement_hint(
+                f"Leading((({nprji.__tablename__} *VALUES*) {Issue.__tablename__}))",
+            )
         )
+        df = await read_sql_query(stmt, mdb, columns, index=nprji.node_id.name)
         if Issue.labels in columns:
             await import_components_as_labels(df, mdb)
         res: dict[int, LoadedJIRADetails] = {}
