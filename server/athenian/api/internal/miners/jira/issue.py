@@ -1120,7 +1120,6 @@ async def fetch_jira_issues_rows_by_keys(
     """Load brief information about JIRA issues mapped to the given issue keys."""
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Issue, name="epic")
-    in_any_values = len(keys) > 100
     query = (
         sql.select(
             regiss.key.label("id"),
@@ -1138,13 +1137,13 @@ async def fetch_jira_issues_rows_by_keys(
         )
         .where(
             regiss.acc_id == jira_ids[0],
-            regiss.key.in_any_values(keys) if in_any_values else regiss.key.in_(keys),
+            regiss.key.progressive_in(keys),
             regiss.project_id.in_(jira_ids[1]),
             regiss.is_deleted.is_(False),
         )
     )
-    if in_any_values:
-        (
+    if len(keys) > 100:
+        query = (
             query.with_statement_hint("Leading(((regular *VALUES*) epic))")
             .with_statement_hint(f"Rows(*VALUES* regular #{len(keys)})")
             .with_statement_hint(f"Rows(*VALUES* regular epic #{len(keys)})")
