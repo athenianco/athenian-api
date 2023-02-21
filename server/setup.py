@@ -46,7 +46,7 @@ setup(
                 code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",  # noqa
                 code_root / "internal" / "features" / "github" / "pull_request_filter_accelerated.pyx",  # noqa
                 code_root / "internal" / "logical_accelerated.pyx",
-                code_root / "sorted_intersection.pyx",
+                code_root / "sorted_ops.pyx",
                 code_root / "object_arrays.pyx",
                 code_root / "unordered_unique.pyx",
                 code_root / "pandas_io.pyx",

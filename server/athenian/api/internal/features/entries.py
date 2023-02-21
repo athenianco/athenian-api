@@ -142,6 +142,7 @@ from athenian.api.models.metadata.github import (
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.sorted_ops import sorted_union1d
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -1885,6 +1886,7 @@ class PRFactsCalculator:
         with_jira: JIRAEntityToFetch | int,
         branches: Optional[pd.DataFrame] = None,
         default_branches: Optional[dict[str, str]] = None,
+        on_prs_known: Optional[Callable[[Collection[int]], Any]] = None,
         metrics: Optional[MinePullRequestMetrics] = None,
     ) -> pd.DataFrame:
         """
@@ -1894,9 +1896,11 @@ class PRFactsCalculator:
         :param fresh: If the number of done PRs for the time period and filters exceeds \
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
         :param with_jira: JIRA information to load for each PR.
+        :param on_prs_known: Callback that we invoke as soon as we define the list of PR node IDs \
+                             of the facts.
         :return: PullRequestFacts packed in a Pandas DataFrame.
         """
-        df, *_ = await self._call_cached(
+        df, *_ = await self._call_pr_facts_calculator_cached(
             time_from,
             time_to,
             repositories,
@@ -1910,8 +1914,9 @@ class PRFactsCalculator:
             prefixer,
             fresh,
             with_jira,
-            branches=branches,
-            default_branches=default_branches,
+            branches,
+            default_branches,
+            on_prs_known,
         )
         if df.empty:
             df = pd.DataFrame(columns=PullRequestFacts.f)
@@ -1939,7 +1944,7 @@ class PRFactsCalculator:
         postprocess=_postprocess_cached_facts,
         cache=lambda self, **_: self._cache,
     )
-    async def _call_cached(
+    async def _call_pr_facts_calculator_cached(
         self,
         time_from: datetime,
         time_to: datetime,
@@ -1956,6 +1961,7 @@ class PRFactsCalculator:
         with_jira: JIRAEntityToFetch | int,
         branches: Optional[pd.DataFrame],
         default_branches: Optional[dict[str, str]],
+        on_prs_known: Optional[Callable[[Collection[int]], Any]],
     ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
@@ -1999,9 +2005,13 @@ class PRFactsCalculator:
         (precomputed_facts, ambiguous), *blacklist = await gather(
             *precomputed_tasks, op="precomputed_tasks",
         )
-        precomputed_node_ids = {node_id for node_id, _ in precomputed_facts}
+        precomputed_node_ids = np.unique(
+            np.fromiter(
+                (node_id for node_id, _ in precomputed_facts), int, len(precomputed_facts),
+            ),
+        )
         if blacklist:
-            blacklist = (blacklist[0][0] | precomputed_node_ids, blacklist[0][1])
+            blacklist = (sorted_union1d(blacklist[0][0], precomputed_node_ids), blacklist[0][1])
         else:
             blacklist = (precomputed_node_ids, ambiguous)
         add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
@@ -2040,6 +2050,8 @@ class PRFactsCalculator:
                 self._pdb,
                 self._rdb,
                 self._cache,
+                on_prs_known=on_prs_known,
+                done_node_ids=precomputed_node_ids,
             )
             return df_from_structs(facts.values()), with_jira
 
@@ -2109,6 +2121,12 @@ class PRFactsCalculator:
         else:
             miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
 
+        if on_prs_known is not None:
+            on_prs_known(
+                sorted_union1d(
+                    precomputed_node_ids, np.unique(miner.dfs.prs.index.get_level_values(0)),
+                ),
+            )
         new_deps = miner.dfs.deployments.copy()
 
         # used later to retrieve jira mapping for mined prs

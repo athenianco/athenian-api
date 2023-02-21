@@ -8,6 +8,7 @@ from typing import Any, Callable, Collection, Iterable, KeysView, Mapping, Optio
 import aiomcache
 import morcilla
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import (
@@ -91,7 +92,7 @@ class DonePRFactsLoader:
         release_settings: ReleaseSettings,
         account: int,
         pdb: morcilla.Database,
-    ) -> tuple[set[int], dict[str, list[int]]]:
+    ) -> tuple[npt.NDArray[int], dict[str, list[int]]]:
         """
         Load the set of done PR identifiers and specifically ambiguous PR node IDs.
 
@@ -99,7 +100,7 @@ class DonePRFactsLoader:
 
         Note: we don't include the deployed PRs!
 
-        :return: 1. Done PR node IDs. \
+        :return: 1. Done PR node IDs, unique sorted. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
@@ -126,7 +127,10 @@ class DonePRFactsLoader:
                 continue
             dump[(row[pr_node_id_col], row[repository_full_name_col])] = row
         result, ambiguous = cls._post_process_ambiguous_done_prs(result, ambiguous)
-        return {node_id for node_id, _ in result}, ambiguous
+        return (
+            np.unique(np.fromiter((node_id for node_id, _ in result), int, len(result))),
+            ambiguous,
+        )
 
     @classmethod
     @sentry_span

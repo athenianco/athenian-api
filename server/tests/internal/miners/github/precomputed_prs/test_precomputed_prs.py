@@ -870,7 +870,7 @@ async def test_load_precomputed_done_candidates_smoke(
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb,
     )
-    assert loaded_prs == {prs[0].pr[PullRequest.node_id.name]}
+    assert loaded_prs.tolist() == [prs[0].pr[PullRequest.node_id.name]]
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_from, ["src-d/go-git"], default_branches, settings, 1, pdb,
     )

@@ -3,10 +3,23 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
-from typing import Dict, KeysView, List, Optional, Set, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Dict,
+    KeysView,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import aiomcache
 import numpy as np
+from numpy import typing as npt
 import pandas as pd
 
 from athenian.api import metadata
@@ -73,10 +86,12 @@ class UnfreshPullRequestFactsFetcher:
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
+        on_prs_known: Optional[Callable[[Collection[int]], Any]] = None,
+        done_node_ids: Optional[npt.NDArray[int]] = None,
     ) -> PullRequestFactsMap:
         """
         Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
-        the most up to date information from mdb.
+        the most up-to-date information from mdb.
 
         The major complexity here is to comply to all the filters.
 
@@ -91,7 +106,10 @@ class UnfreshPullRequestFactsFetcher:
                 ),
                 name="append_pr_jira_mapping/done",
             )
-        done_node_ids = {node_id for node_id, _ in done_facts}
+        if done_node_ids is None:
+            done_node_ids = np.unique(
+                np.fromiter((node_id for node_id, _ in done_facts), int, len(done_facts)),
+            )
         done_deployments_task = asyncio.create_task(
             miner.fetch_pr_deployments(done_node_ids, account, pdb, rdb),
             name="fetch_pr_deployments/done",
@@ -192,6 +210,8 @@ class UnfreshPullRequestFactsFetcher:
         )
         assert with_labels == (unreleased_labels is not None)
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
+        if on_prs_known is not None:
+            on_prs_known(np.concatenate([done_node_ids, unique_unreleased_pr_node_ids]))
         unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
         open_pr_authors = dict(
             zip(

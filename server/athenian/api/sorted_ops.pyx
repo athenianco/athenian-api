@@ -7,6 +7,7 @@ from cpython cimport Py_INCREF, PyObject
 from libc.stdint cimport int64_t, uint32_t
 from numpy cimport (
     NPY_ARRAY_C_CONTIGUOUS,
+    NPY_INT64,
     NPY_UINT,
     PyArray_DATA,
     PyArray_DescrFromType,
@@ -155,3 +156,76 @@ def sum_repeated_with_step(ndarray arr not None, long repeats, long step) -> nda
     Py_INCREF(arr_dtype)
     sum_repeated_with_step_avx2(src_data, src_len, repeats, step, <int64_t *> PyArray_DATA(output))
     return output
+
+
+def sorted_union1d(ndarray arr1 not None, ndarray arr2 not None) -> ndarray:
+    assert PyArray_NDIM(arr1) == 1
+    assert PyArray_NDIM(arr2) == 1
+
+    cdef:
+        npy_intp len1 = PyArray_DIM(arr1, 0)
+        npy_intp len2 = PyArray_DIM(arr2, 0)
+
+    if len1 == 0:
+        return arr2
+    elif len2 == 0:
+        return arr1
+
+    assert PyArray_IS_C_CONTIGUOUS(arr1)
+    assert PyArray_DESCR(<PyObject *> arr1).kind == b"i"
+    assert PyArray_IS_C_CONTIGUOUS(arr2)
+    assert PyArray_DESCR(<PyObject *> arr2).kind == b"i"
+
+    cdef:
+        int64_t *arr1_data = <int64_t *> PyArray_DATA(arr1)
+        int64_t *arr2_data = <int64_t *> PyArray_DATA(arr2)
+        npy_intp out_len = len1 + len2, pos1 = 0, pos2 = 0
+        int64_t head1, head2
+        ndarray output
+        dtype i64dtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_INT64))
+        int64_t *output_data
+
+    output = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> i64dtype,
+        1,
+        &out_len,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(i64dtype)
+    output_data = <int64_t *> PyArray_DATA(output)
+
+    head1 = arr1_data[0]
+    head2 = arr2_data[0]
+    out_len = 0
+    while pos1 < len1 and pos2 < len2:
+        if head1 < head2:
+            output_data[out_len] = head1
+            pos1 += 1
+            head1 = arr1_data[pos1]
+        elif head1 > head2:
+            output_data[out_len] = head2
+            pos2 += 1
+            head2 = arr2_data[pos2]
+        else:
+            output_data[out_len] = head1
+            pos1 += 1
+            head1 = arr1_data[pos1]
+            pos2 += 1
+            head2 = arr2_data[pos2]
+        out_len += 1
+    if pos1 == len1:
+        while pos2 < len2:
+            output_data[out_len] = arr2_data[pos2]
+            pos2 += 1
+            out_len += 1
+    else:
+        while pos1 < len1:
+            output_data[out_len] = arr1_data[pos1]
+            pos1 += 1
+            out_len += 1
+
+    return output[:out_len]

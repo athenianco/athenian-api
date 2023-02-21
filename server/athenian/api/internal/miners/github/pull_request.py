@@ -115,7 +115,6 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-from athenian.api.unordered_unique import map_array_values
 from athenian.precomputer.db.models import GitHubRebasedPullRequest
 
 
@@ -2703,29 +2702,36 @@ class PullRequestMiner:
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-        pr_blacklist: Optional[list[int]] = None,
+        pr_blacklist: Optional[Collection[int]] = None,
         fetch_branch_dags_task: Optional[asyncio.Task] = None,
     ) -> pd.DataFrame:
         """Load PRs which were deployed between `time_from` and `time_to` and merged before \
         `time_from`."""
         assert (updated_min is None) == (updated_max is None)
         ghprd = GitHubPullRequestDeployment
-        precursor_prs = await pdb.fetch_all(
+        precursor_prs = await read_sql_query(
             sql.select(sql.distinct(ghprd.pull_request_id)).where(
                 ghprd.acc_id == account,
                 ghprd.repository_full_name.in_(repositories),
                 ghprd.finished_at.between(time_from, time_to),
             ),
+            pdb,
+            [ghprd.pull_request_id],
         )
-        precursor_prs = {r[0] for r in precursor_prs}
-        if pr_blacklist:
+        if isinstance(pr_blacklist, np.ndarray):
+            precursor_prs = precursor_prs[ghprd.pull_request_id.name].values
+        else:
+            precursor_prs = set(precursor_prs[ghprd.pull_request_id.name].values)
+        if pr_blacklist is not None and len(pr_blacklist):
             if isinstance(pr_blacklist, dict):
                 precursor_prs -= pr_blacklist.keys()
             elif isinstance(pr_blacklist, set):
                 precursor_prs -= pr_blacklist
+            elif isinstance(pr_blacklist, np.ndarray):
+                precursor_prs = np.setdiff1d(precursor_prs, pr_blacklist, assume_unique=True)
             else:
                 precursor_prs -= set(pr_blacklist)
-        if not precursor_prs:
+        if len(precursor_prs) == 0:
             return pd.DataFrame()
         prs, *_ = await cls.fetch_prs(
             None,
@@ -3182,13 +3188,8 @@ async def fetch_prs_numbers(
     node_ids: npt.NDArray[int],
     meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
-) -> npt.NDArray[int]:
-    """Given an array of PR node identifiers return an array with their PR numbers.
-
-    The result array will have the same length of input array: unmatched PR will
-    have `0` as number in the result.
-    """
-    selects = []
+) -> pd.DataFrame:
+    """Given an array of PR node IDs fetch a dataframe that maps their IDs to PR numbers."""
     node_id_cond, hints = column_values_condition(NodePullRequest.node_id, node_ids)
     columns = [NodePullRequest.node_id, NodePullRequest.number]
     selects = [
@@ -3200,15 +3201,4 @@ async def fetch_prs_numbers(
     for hint in hints:
         stmt = stmt.with_statement_hint(hint)
 
-    db_df = await read_sql_query(stmt, mdb, columns)
-
-    if not len(db_df):
-        return np.zeros(len(node_ids), dtype=int)
-
-    unsorted_db_node_ids = db_df[NodePullRequest.node_id.name].values
-    db_node_ids_sorted_indexes = np.argsort(unsorted_db_node_ids)
-
-    db_node_ids = unsorted_db_node_ids[db_node_ids_sorted_indexes]
-    db_numbers = db_df[NodePullRequest.number.name].values[db_node_ids_sorted_indexes]
-
-    return map_array_values(node_ids, db_node_ids, db_numbers, 0)
+    return await read_sql_query(stmt, mdb, columns)

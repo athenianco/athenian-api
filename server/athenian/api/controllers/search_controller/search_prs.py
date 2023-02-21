@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import asyncio
 from collections.abc import Collection
 import dataclasses
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,7 @@ from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_withgroups
+from athenian.api.models.metadata.github import NodePullRequest
 from athenian.api.models.web import (
     FilterOperator,
     OrderByDirection,
@@ -52,6 +54,7 @@ from athenian.api.models.web import (
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import map_array_values
 
 log = logging.getLogger(__name__)
 
@@ -202,6 +205,15 @@ async def _search_pr_digests(
     else:
         repos = {rname.unprefixed for rname in search_filter.repositories}
 
+    pr_numbers_task = None
+
+    def schedule_fetch_pr_numbers(node_ids: Collection[int]) -> None:
+        nonlocal pr_numbers_task
+        pr_numbers_task = asyncio.create_task(
+            fetch_prs_numbers(node_ids, account_info.meta_ids, mdb),
+            name=f"_search_pr_digests/fetch_prs_numbers({len(node_ids)})",
+        )
+
     calc = PRFactsCalculator(
         account_info.account, account_info.meta_ids, mdb, pdb, rdb, cache=cache,
     )
@@ -219,6 +231,7 @@ async def _search_pr_digests(
         prefixer=account_info.prefixer,
         fresh=False,
         with_jira=JIRAEntityToFetch.NOTHING,
+        on_prs_known=schedule_fetch_pr_numbers,
     )
 
     if search_filter.stages is not None:
@@ -235,8 +248,9 @@ async def _search_pr_digests(
     else:
         pr_facts = pr_facts.take(np.flatnonzero(keep_mask))
 
-    prs_numbers = await fetch_prs_numbers(
-        pr_facts[PullRequestFacts.f.node_id].values, account_info.meta_ids, mdb,
+    assert isinstance(pr_numbers_task, asyncio.Task)
+    prs_numbers = _align_pr_numbers_to_ids(
+        await pr_numbers_task, pr_facts[PullRequestFacts.f.node_id].values,
     )
     known_mask = prs_numbers != 0
 
@@ -260,6 +274,24 @@ async def _search_pr_digests(
             ",".join(map(str, unknown_prs)),
         )
     return pr_digests
+
+
+def _align_pr_numbers_to_ids(df: pd.DataFrame, node_ids: npt.NDArray[int]) -> npt.NDArray[int]:
+    """Project each PR node ID to PR number mapped in `df`.
+
+    The result array will have the same length of input array: unmatched PR will
+    have `0` as number in the result.
+    """
+    if not len(df):
+        return np.zeros(len(node_ids), dtype=int)
+
+    unsorted_db_node_ids = df[NodePullRequest.node_id.name].values
+    db_node_ids_sorted_indexes = np.argsort(unsorted_db_node_ids)
+
+    db_node_ids = unsorted_db_node_ids[db_node_ids_sorted_indexes]
+    db_numbers = df[NodePullRequest.number.name].values[db_node_ids_sorted_indexes]
+
+    return map_array_values(node_ids, db_node_ids, db_numbers, 0)
 
 
 def _build_metrics_calc_ensemble(
