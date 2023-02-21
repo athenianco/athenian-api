@@ -18,10 +18,10 @@ from athenian.api.internal.miners.github.developer import (
 )
 from athenian.api.internal.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import (
+    NodePullRequestReview,
+    NodePullRequestReviewComment,
     PullRequest,
     PullRequestComment,
-    PullRequestReview,
-    PullRequestReviewComment,
     PushCommit,
     Release,
 )
@@ -207,7 +207,7 @@ class RegularPRCommentsCounter(DeveloperTopicCounter):
 class ReviewPRCommentsCounter(DeveloperTopicCounter):
     """Calculate "dev-review-pr-comments" metric."""
 
-    timestamp_column = PullRequestReviewComment.created_at.name
+    timestamp_column = NodePullRequestReviewComment.created_at.name
 
 
 @register_metric(DeveloperTopic.pr_comments)
@@ -232,11 +232,11 @@ class PRReviewedCounter(SumMetricCalculator[int]):
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[PullRequestReview.submitted_at.name].values
+        column = facts[NodePullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         duplicated = facts.duplicated(
             [
-                PullRequestReview.pull_request_node_id.name,
+                NodePullRequestReview.pull_request_node_id.name,
                 developer_identity_column,
             ],
         ).values
@@ -249,7 +249,7 @@ class PRReviewedCounter(SumMetricCalculator[int]):
 class ReviewsCounter(DeveloperTopicCounter):
     """Calculate "dev-reviews" metric."""
 
-    timestamp_column = PullRequestReview.submitted_at.name
+    timestamp_column = NodePullRequestReview.submitted_at.name
 
 
 class ReviewStatesCounter(SumMetricCalculator[int]):
@@ -267,9 +267,9 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[PullRequestReview.submitted_at.name].values
+        column = facts[NodePullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
-        wrong_state = facts[PullRequestReview.state.name].values != self.state.value
+        wrong_state = facts[NodePullRequestReview.state.name].values != self.state.value
         column_in_range[np.broadcast_to(wrong_state[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result

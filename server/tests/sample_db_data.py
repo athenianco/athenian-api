@@ -20,6 +20,8 @@ from athenian.api.models.metadata.github import (
     CheckRunByPR,
     NodeCommit,
     NodePullRequest,
+    NodePullRequestReview,
+    NodePullRequestReviewComment,
     PullRequest,
     PushCommit,
     SchemaMigration,
@@ -167,6 +169,30 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     del kwargs["pull_request_created_at"]
                     del kwargs["pull_request_closed_at"]
                     session.add(CheckRunByPR(**kwargs))
+                elif table == "github.api_pull_request_reviews":
+                    session.add(
+                        NodePullRequestReview(
+                            graph_id=kwargs["node_id"],
+                            acc_id=kwargs["acc_id"],
+                            author_id=kwargs["user_node_id"],
+                            repository_id=kwargs["repository_node_id"],
+                            submitted_at=kwargs["submitted_at"],
+                            state=kwargs["state"],
+                            pull_request_id=kwargs["pull_request_node_id"],
+                        ),
+                    )
+                elif table == "github.api_pull_request_review_comments":
+                    session.add(
+                        NodePullRequestReviewComment(
+                            graph_id=kwargs["node_id"],
+                            acc_id=kwargs["acc_id"],
+                            author_id=kwargs["user_node_id"],
+                            repository_id=kwargs["repository_node_id"],
+                            created_at=kwargs["created_at"],
+                            updated_at=kwargs["updated_at"],
+                            pull_request_id=kwargs["pull_request_node_id"],
+                        ),
+                    )
     session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs
