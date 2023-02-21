@@ -152,13 +152,13 @@ unfresh_branches_threshold = 1000
 
 
 def _postprocess_cached_facts(
-    result: tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch | int],
+    result: tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch | int, bool],
     with_jira: JIRAEntityToFetch | int,
     **_,
-) -> tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch]:
+) -> tuple[dict[str, list[PullRequestFacts]], JIRAEntityToFetch | int, bool]:
     if (with_jira & result[1]) != with_jira:
         raise CancelCache()
-    return result
+    return (*result[:-1], False)
 
 
 T = TypeVar("T")
@@ -1900,7 +1900,7 @@ class PRFactsCalculator:
                              of the facts.
         :return: PullRequestFacts packed in a Pandas DataFrame.
         """
-        df, *_ = await self._call_pr_facts_calculator_cached(
+        df, *_, from_scratch = await self._call_pr_facts_calculator_cached(
             time_from,
             time_to,
             repositories,
@@ -1920,6 +1920,8 @@ class PRFactsCalculator:
         )
         if df.empty:
             df = pd.DataFrame(columns=PullRequestFacts.f)
+        if on_prs_known is not None and not from_scratch:
+            on_prs_known(df[PullRequestFacts.f.node_id].values)
         if metrics is not None:
             self._set_count_metrics(df, metrics)
         return df
@@ -1962,7 +1964,7 @@ class PRFactsCalculator:
         branches: Optional[pd.DataFrame],
         default_branches: Optional[dict[str, str]],
         on_prs_known: Optional[Callable[[Collection[int]], Any]],
-    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int]:
+    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int, bool]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self._branch_miner.load_branches(
@@ -2053,7 +2055,7 @@ class PRFactsCalculator:
                 on_prs_known=on_prs_known,
                 done_node_ids=precomputed_node_ids,
             )
-            return df_from_structs(facts.values()), with_jira
+            return df_from_structs(facts.values()), with_jira, True
 
         if with_jira:
             # schedule loading the PR->JIRA mapping
@@ -2241,7 +2243,7 @@ class PRFactsCalculator:
         all_facts_df = df_from_structs(
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts),
         )
-        return all_facts_df, with_jira
+        return all_facts_df, with_jira, True
 
     @staticmethod
     def _set_count_metrics(facts: pd.DataFrame, metrics: MinePullRequestMetrics) -> None:
