@@ -1,13 +1,25 @@
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
+from typing import Sequence
 
 from aiohttp import web
 import aiomcache
+import numpy as np
+import pandas as pd
 
 from athenian.api.async_utils import gather
+from athenian.api.controllers.search_controller.common import (
+    OrderBy,
+    OrderByMetrics,
+    build_metrics_calculator_ensemble,
+)
 from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import ParticipantsMerge
+from athenian.api.internal.features.jira.issue_metrics import (
+    JIRAMetricCalculatorEnsemble,
+    metric_calculators as jira_metric_calculators,
+)
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -19,11 +31,13 @@ from athenian.api.internal.with_ import resolve_jira_with
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import (
     JIRAIssueDigest,
+    SearchJIRAIssuesOrderByExpression,
     SearchJIRAIssuesRequest,
     SearchJIRAIssuesResponse,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
+from athenian.api.tracing import sentry_span
 
 
 async def search_jira_issues(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -32,7 +46,9 @@ async def search_jira_issues(request: AthenianWebRequest, body: dict) -> web.Res
     account_info = await _AccountInfo.from_request(search_request.account, request)
     connectors = _Connectors(request.sdb, request.mdb, request.pdb, request.cache)
     search_filter = await _SearchFilter.build(search_request, account_info, connectors)
-    digests = await _search_jira_issue_digests(search_filter, account_info, connectors)
+    digests = await _search_jira_issue_digests(
+        search_filter, search_request.order_by or (), account_info, connectors,
+    )
     return model_response(SearchJIRAIssuesResponse(jira_issues=digests))
 
 
@@ -111,6 +127,7 @@ class _SearchFilter:
 
 async def _search_jira_issue_digests(
     search_filter: _SearchFilter,
+    order_by: Sequence[SearchJIRAIssuesOrderByExpression],
     acc_info: _AccountInfo,
     conns: _Connectors,
 ) -> list[JIRAIssueDigest]:
@@ -134,5 +151,56 @@ async def _search_jira_issue_digests(
         conns.cache,
         extra_columns=[Issue.key],
     )
+    if order_by:
+        unchecked_calc_ens = _build_pr_metrics_calculator(issues, search_filter, order_by)
+        issues = _apply_order_by(issues, order_by, unchecked_calc_ens)
 
     return [JIRAIssueDigest(id=issue_key) for issue_key in issues[Issue.key.name].values]
+
+
+def _build_pr_metrics_calculator(
+    issues: pd.DataFrame,
+    search_filter: _SearchFilter,
+    order_by: Sequence[SearchJIRAIssuesOrderByExpression],
+) -> JIRAMetricCalculatorEnsemble | None:
+    metrics = {expr.field for expr in order_by if expr.field in jira_metric_calculators}
+    time_from, time_to = search_filter.time_from, search_filter.time_to
+    CalculatorCls = JIRAMetricCalculatorEnsemble
+    return build_metrics_calculator_ensemble(issues, metrics, time_from, time_to, CalculatorCls)
+
+
+@sentry_span
+def _apply_order_by(
+    issues: pd.DataFrame,
+    order_by: Sequence[SearchJIRAIssuesOrderByExpression],
+    unchecked_metric_calc: JIRAMetricCalculatorEnsemble | None,
+) -> pd.DataFrame:
+    assert order_by
+    if not len(issues):
+        return issues
+
+    keep_mask = np.full((len(issues),), True, bool)
+    ordered_indexes = np.arange(len(issues))
+    order_by_metrics: _OrderByJIRAMetrics | None = None
+
+    for expr in reversed(order_by):
+        orderer: OrderBy
+        if expr.field in _OrderByJIRAMetrics.FIELDS:
+            if order_by_metrics is None:
+                assert unchecked_metric_calc is not None
+                order_by_metrics = _OrderByJIRAMetrics(unchecked_metric_calc)
+            orderer = order_by_metrics
+        else:
+            raise ValueError(f"Invalid order by field {expr.field}")
+
+        ordered_indexes, discard = orderer.apply_expression(expr, ordered_indexes)
+        keep_mask[discard] = False
+
+    kept_positions = ordered_indexes[np.flatnonzero(keep_mask[ordered_indexes])]
+    return issues.take(kept_positions)
+
+
+class _OrderByJIRAMetrics(OrderByMetrics):
+    """Handles order by jira metric values."""
+
+    FIELDS = jira_metric_calculators
