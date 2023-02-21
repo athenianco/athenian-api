@@ -169,6 +169,22 @@ class PullRequestReviewComment(
     __tablename__ = "api_pull_request_review_comments"
 
 
+class NodePullRequestReviewComment(
+    Base,
+    GitHubSchemaMixin,
+    IDMixinNode,
+    UpdatedMixin,
+):
+    __tablename__ = "node_pullrequestreviewcomment"
+
+    author_id = Column(BigInteger, info={"reset_nulls": True})
+    user_node_id = synonym("author_id")
+    repository_id = Column(BigInteger, nullable=False)
+    repository_node_id = synonym("repository_id")
+    pull_request_id = Column(BigInteger, nullable=False)
+    pull_request_node_id = synonym("pull_request_id")
+
+
 class PullRequestCommit(
     Base,
     GitHubSchemaMixin,
@@ -222,6 +238,24 @@ class PullRequestReview(
     state = Column(Text, nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = synonym("submitted_at")
+
+
+class NodePullRequestReview(
+    Base,
+    GitHubSchemaMixin,
+    IDMixinNode,
+):
+    __tablename__ = "node_pullrequestreview"
+
+    state = Column(Text, nullable=False)
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    created_at = synonym("submitted_at")
+    author_id = Column(BigInteger, info={"reset_nulls": True})
+    user_node_id = synonym("author_id")
+    repository_id = Column(BigInteger, nullable=False)
+    repository_node_id = synonym("repository_id")
+    pull_request_id = Column(BigInteger, nullable=False)
+    pull_request_node_id = synonym("pull_request_id")
 
 
 class PullRequestReviewRequest(

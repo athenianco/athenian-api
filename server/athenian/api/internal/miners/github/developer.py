@@ -20,10 +20,10 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import (
     NodePullRequest,
+    NodePullRequestReview,
+    NodePullRequestReviewComment,
     PullRequestComment,
     PullRequestLabel,
-    PullRequestReview,
-    PullRequestReviewComment,
     PushCommit,
     Release,
     Repository,
@@ -346,21 +346,24 @@ async def _mine_reviews(
     cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
     selected = [
-        PullRequestReview.user_node_id.label(developer_identity_column),
-        PullRequestReview.repository_node_id.label(developer_repository_column),
-        PullRequestReview.pull_request_node_id,
-        PullRequestReview.submitted_at,
-        PullRequestReview.state,
+        NodePullRequestReview.user_node_id.label(developer_identity_column),
+        NodePullRequestReview.repository_node_id.label(developer_repository_column),
+        NodePullRequestReview.pull_request_node_id,
+        NodePullRequestReview.submitted_at,
+        NodePullRequestReview.state,
     ]
     filters = [
-        PullRequestReview.acc_id.in_(meta_ids),
-        PullRequestReview.submitted_at.between(time_from, time_to),
-        PullRequestReview.user_node_id.in_(dev_ids),
-        PullRequestReview.repository_node_id.in_(repo_ids),
+        NodePullRequestReview.acc_id.in_(meta_ids),
+        NodePullRequestReview.submitted_at.between(time_from, time_to),
+        NodePullRequestReview.user_node_id.in_(dev_ids),
+        NodePullRequestReview.repository_node_id.in_(repo_ids),
     ]
     if labels:
         _filter_by_labels(
-            PullRequestReview.acc_id, PullRequestReview.pull_request_node_id, labels, filters,
+            NodePullRequestReview.acc_id,
+            NodePullRequestReview.pull_request_node_id,
+            labels,
+            filters,
         )
         if jira:
             query = await generate_jira_prs_query(
@@ -370,8 +373,8 @@ async def _mine_reviews(
                 mdb,
                 cache,
                 columns=selected,
-                seed=PullRequestReview,
-                on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id),
+                seed=NodePullRequestReview,
+                on=(NodePullRequestReview.pull_request_node_id, NodePullRequestReview.acc_id),
             )
         else:
             query = select(*selected).where(*filters)
@@ -383,8 +386,8 @@ async def _mine_reviews(
             mdb,
             cache,
             columns=selected,
-            seed=PullRequestReview,
-            on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id),
+            seed=NodePullRequestReview,
+            on=(NodePullRequestReview.pull_request_node_id, NodePullRequestReview.acc_id),
         )
     else:
         query = select(*selected).where(*filters)
@@ -392,7 +395,7 @@ async def _mine_reviews(
 
 
 async def _mine_pr_comments(
-    model: Union[Type[PullRequestComment], Type[PullRequestReviewComment]],
+    model: Union[Type[PullRequestComment], Type[NodePullRequestReviewComment]],
     repo_ids: np.ndarray,
     repo_names: np.ndarray,
     dev_ids: np.ndarray,
@@ -463,7 +466,7 @@ async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
 
 @sentry_span
 async def _mine_pr_comments_review(*args, **kwargs) -> pd.DataFrame:
-    return await _mine_pr_comments(PullRequestReviewComment, *args, **kwargs)
+    return await _mine_pr_comments(NodePullRequestReviewComment, *args, **kwargs)
 
 
 developer_repository_column = "repository"
