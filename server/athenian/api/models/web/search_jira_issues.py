@@ -4,6 +4,11 @@ from typing import Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
+from athenian.api.models.web.search_prs import OrderByExpression
+
+
+class SearchJIRAIssuesOrderByExpression(OrderByExpression):
+    """An expression based on a field used to sort jira issues."""
 
 
 class SearchJIRAIssuesRequest(Model):
@@ -14,6 +19,7 @@ class SearchJIRAIssuesRequest(Model):
     date_to: Optional[date]
     filter: Optional[JIRAFilter]
     with_: Optional[JIRAFilterWith]
+    order_by: Optional[list[SearchJIRAIssuesOrderByExpression]]
 
     attribute_map = {
         "with_": "with",
