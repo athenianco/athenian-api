@@ -1109,7 +1109,7 @@ class PullRequestMiner:
             _issue = aliased(Issue, name="i")
             _issue_epic = aliased(Issue, name="e")
             selected = [
-                PullRequest.node_id,
+                NodePullRequest.node_id.label(PullRequest.node_id.name),
                 _issue.key,
                 _issue.title,
                 _issue.type,
@@ -1143,7 +1143,7 @@ class PullRequestMiner:
                 sql.select(selected)
                 .select_from(
                     sql.join(
-                        PullRequest,
+                        NodePullRequest,
                         sql.join(
                             _map,
                             sql.join(
@@ -1158,15 +1158,15 @@ class PullRequestMiner:
                             sql.and_(_map.jira_id == _issue.id, _map.jira_acc == _issue.acc_id),
                         ),
                         sql.and_(
-                            PullRequest.node_id == _map.node_id,
-                            PullRequest.acc_id == _map.node_acc,
+                            NodePullRequest.node_id == _map.node_id,
+                            NodePullRequest.acc_id == _map.node_acc,
                         ),
                     ),
                 )
                 .where(
-                    PullRequest.acc_id.in_(meta_ids),
+                    NodePullRequest.acc_id.in_(meta_ids),
                     _issue.is_deleted.is_(False),
-                    PullRequest.node_id.in_(node_ids),
+                    NodePullRequest.node_id.in_(node_ids),
                 ),
                 mdb,
                 columns=selected,
