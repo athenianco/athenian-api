@@ -423,7 +423,11 @@ class BranchMiner:
             # fmt: off
             query = (
                 query
-                .with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
+                .with_statement_hint(
+                    "IndexScan(c github_node_commit_committed_date)"
+                    if repos is None else
+                    "IndexOnlyScan(c github_node_commit_check_runs)",
+                )
                 .with_statement_hint("Leading((((((c ref) rr) repo) n1) n2))")
             )
             # fmt: on
