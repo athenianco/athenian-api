@@ -27,7 +27,6 @@ from athenian.api.db import (
     DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
-    column_values_condition,
     dialect_specific_insert,
 )
 from athenian.api.defer import AllEvents, defer
@@ -3159,15 +3158,16 @@ async def fetch_prs_numbers(
     mdb: DatabaseLike,
 ) -> pd.DataFrame:
     """Given an array of PR node IDs fetch a dataframe that maps their IDs to PR numbers."""
-    node_id_cond, hints = column_values_condition(NodePullRequest.node_id, node_ids)
+    node_id_cond = NodePullRequest.node_id.progressive_in(node_ids)
     columns = [NodePullRequest.node_id, NodePullRequest.number]
     selects = [
         sa.select(*columns).where(NodePullRequest.acc_id == meta_id, node_id_cond)
         for meta_id in meta_ids
     ]
-    stmt = selects[0] if len(selects) == 1 else sa.union_all(*selects)
 
-    for hint in hints:
+    stmt = selects[0] if len(selects) == 1 else sa.union_all(*selects)
+    if len(node_ids) > 100:
+        hint = f"Rows({NodePullRequest.__tablename__} *VALUES* #{len(node_ids)})"
         stmt = stmt.with_statement_hint(hint)
 
     return await read_sql_query(stmt, mdb, columns)
