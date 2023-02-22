@@ -177,6 +177,7 @@ class MetricCalculator(Generic[T], ABC):
         if self.is_pure_dependency:
             return
         assert peek.shape == (len(min_times), len(facts)), (peek.shape, type(self))
+        groups_mask = SparseMask.from_dense(groups_mask)
         if has_quantiles:
             discard_mask = self._calculate_discard_mask(peek, quantiles_mounted_at, groups_mask)
         if quantiles_mounted_at is not None:
@@ -184,21 +185,17 @@ class MetricCalculator(Generic[T], ABC):
         notnull = SparseMask.from_dense(self._find_notnull(peek))[None, :].repeat(
             len(groups_mask), 0,
         )
-        group_sample_mask = SparseMask.from_dense(groups_mask)[:, None, :].repeat(
-            notnull.shape[1], 1,
-        )
+        group_sample_mask = groups_mask[:, None, :].repeat(notnull.shape[1], 1)
         self._grouped_notnull = group_sample_mask = group_sample_mask & notnull
         del notnull
         if has_quantiles:
             group_sample_mask = group_sample_mask.copy()
-            discard_mask = SparseMask.from_dense(discard_mask)[:, None, :].repeat(
-                group_sample_mask.shape[1], axis=1,
-            )
+            discard_mask = discard_mask[:, None, :].repeat(group_sample_mask.shape[1], axis=1)
             self._grouped_sample_mask = group_sample_mask = group_sample_mask - discard_mask
             del discard_mask
         else:
             self._grouped_sample_mask = self._grouped_notnull
-        sample_group_levels = np.unravel_index(group_sample_mask.indexes, group_sample_mask.shape)
+        sample_group_levels = group_sample_mask.unravel()
         flat_samples = peek.astype(self.dtype, copy=False)[sample_group_levels[1:]]
         del sample_group_levels
         self._split_samples(flat_samples, group_sample_mask)
@@ -309,21 +306,19 @@ class MetricCalculator(Generic[T], ABC):
         self,
         peek: np.ndarray,
         quantiles_mounted_at: int,
-        groups_mask: np.ndarray,
-    ) -> np.ndarray:
-        qnotnull = self._find_notnull(peek[quantiles_mounted_at:])
+        groups_mask: SparseMask,
+    ) -> SparseMask:
         if peek.dtype != object:
             dtype = peek.dtype
         else:
             dtype = self.dtype
-        qnotnull = np.broadcast_to(qnotnull[None, :], (len(groups_mask), *qnotnull.shape))
-        group_sample_mask = qnotnull & groups_mask[:, None, :]
-        flat_samples = (
-            np.broadcast_to(peek[None, quantiles_mounted_at:], qnotnull.shape)[group_sample_mask]
-            .astype(dtype, copy=False)
-            .ravel()
-        )
-        group_sample_lengths = np.sum(group_sample_mask, axis=-1, dtype=np.uint32)
+        qnotnull = self._find_notnull(peek[quantiles_mounted_at:])
+        qnotnull = SparseMask.from_dense(qnotnull)[None, :].repeat(len(groups_mask), 0)
+        group_sample_mask = qnotnull & groups_mask[:, None, :].repeat(qnotnull.shape[1], 1)
+        flat_samples = np.broadcast_to(
+            peek.astype(dtype, copy=False)[None, quantiles_mounted_at:], qnotnull.shape,
+        )[group_sample_mask.unravel()].ravel()
+        group_sample_lengths = group_sample_mask.sum_last_axis()
         if self.has_nan:
             max_len = group_sample_lengths.max()
             if max_len == 0:
@@ -362,15 +357,21 @@ class MetricCalculator(Generic[T], ABC):
                     pos += slen
         cut_values = cut_values.reshape((*group_sample_lengths.shape, 2))
         grouped_qpeek = np.broadcast_to(peek[None, quantiles_mounted_at:], qnotnull.shape)
-        group_qmask = np.broadcast_to(groups_mask[:, None, :], grouped_qpeek.shape)
+        group_qmask = groups_mask[:, None, :].repeat(grouped_qpeek.shape[1], 1)
+        group_qmask_unravel = group_qmask.unravel()
+        grouped_qpeek_nnz = grouped_qpeek[group_qmask_unravel]
+        # fmt: off
         if self._quantiles[0] > 0:
-            discard_left_mask = np.less(
-                grouped_qpeek, cut_values[:, :, 0][:, :, None], where=group_qmask,
+            left_mask = grouped_qpeek_nnz < cut_values[:, :, 0][group_qmask_unravel[:-1]]
+            discard_left_mask = SparseMask(
+                group_qmask.indexes[left_mask], group_qmask.shape,
             ).any(axis=1)
         if self._quantiles[1] < 1:
-            discard_right_mask = np.greater(
-                grouped_qpeek, cut_values[:, :, 1][:, :, None], where=group_qmask,
+            right_mask = grouped_qpeek_nnz > cut_values[:, :, 1][group_qmask_unravel[:-1]]
+            discard_right_mask = SparseMask(
+                group_qmask.indexes[right_mask], group_qmask.shape,
             ).any(axis=1)
+        # fmt: on
         if self._quantiles[0] == 0:
             discard_mask = discard_right_mask
         elif self._quantiles[1] == 1:

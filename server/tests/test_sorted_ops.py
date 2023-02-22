@@ -15,8 +15,9 @@ from athenian.api.sorted_ops import sorted_union1d
         ([1, 3], [1, 2], [1, 2, 3]),
     ],
 )
-def test_sorted_union1d_general(arr1, arr2, result):
+@pytest.mark.parametrize("dtype", [int, np.uint32])
+def test_sorted_union1d_general(arr1, arr2, result, dtype):
     assert_array_equal(
-        sorted_union1d(np.asarray(arr1, dtype=int), np.asarray(arr2, dtype=int)),
-        np.asarray(result, dtype=int),
+        sorted_union1d(np.asarray(arr1, dtype=dtype), np.asarray(arr2, dtype=dtype)),
+        np.asarray(result, dtype=dtype),
     )

@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
 from numpy import typing as npt
 
-from athenian.api.sorted_ops import sorted_intersect1d, sum_repeated_with_step
+from athenian.api.sorted_ops import sorted_intersect1d, sorted_union1d, sum_repeated_with_step
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,10 @@ class SparseMask:
         """Clone the mask."""
         return SparseMask(self.indexes.copy(), self.shape)
 
+    def __len__(self) -> int:
+        """Support len()."""
+        return self.shape[0]
+
     def __getitem__(self, shape_slices: tuple[slice | None]) -> "SparseMask":
         """Insert new axes into the shape."""
         resolved_shape = []
@@ -54,7 +59,9 @@ class SparseMask:
         if not isinstance(other, SparseMask):
             raise TypeError("Both masks are required to be sparse")
         if self.shape != other.shape:
-            raise ValueError("Both mask must be of the same shape")
+            raise ValueError(
+                "Both mask must be of the same shape: %s vs. %s", self.shape, other.shape,
+            )
         if len(self.indexes) == 0 or len(other.indexes) == 0:
             return SparseMask.empty(*self.shape)
         max_index = max(self.indexes[-1], other.indexes[-1])
@@ -88,7 +95,7 @@ class SparseMask:
             raise TypeError("Both masks are required to be sparse")
         if self.shape != other.shape:
             raise ValueError("Both mask must be of the same shape")
-        return SparseMask(np.union1d(self.indexes, other.indexes), self.shape)
+        return SparseMask(sorted_union1d(self.indexes, other.indexes), self.shape)
 
     def __sub__(self, other: "SparseMask") -> "SparseMask":
         """Calculate the difference with `other`."""
@@ -130,3 +137,16 @@ class SparseMask:
             new_indexes = np.ravel_multi_index(new_indexes_by_dim, new_shape)
             new_indexes.sort()  # maintain the order
         return SparseMask(new_indexes, new_shape)
+
+    def unravel(self) -> tuple[npt.NDArray[int]]:
+        """Convert flat indexes into a tuple of coordinate arrays."""
+        return np.unravel_index(self.indexes, self.shape)
+
+    def any(self, axis=None) -> Union[bool, "SparseMask"]:
+        """Calculate the same as `np.ndarray.any()` but sparse-ly."""  # noqa: D402
+        if axis is None:
+            return len(self.indexes) > 0
+        levels, shape = self.unravel(), self.shape
+        levels = levels[:axis] + levels[axis + 1 :]
+        shape = shape[:axis] + shape[axis + 1 :]
+        return SparseMask(np.unique(np.ravel_multi_index(levels, shape)), shape)
