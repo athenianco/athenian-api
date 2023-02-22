@@ -40,6 +40,7 @@ from athenian.api.internal.miners.github.check_run import (
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 from athenian.api.object_arrays import objects_to_pyunicode_bytes
+from athenian.api.sparse_mask import SparseMask
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -409,14 +410,14 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
         """Completely ignore the default boilerplate and calculate metrics from scratch."""
         structs = self._calcs[0].peek
         elapsed = structs["elapsed"]
-        meaningful_groups_mask = (
-            groups_mask & (structs["size"] > 0).any(axis=0)[None, :] & (elapsed == elapsed)
+        meaningful_groups_mask = SparseMask.from_dense(
+            groups_mask & (structs["size"] > 0).any(axis=0)[None, :] & (elapsed == elapsed),
         )
         if self._quantiles != (0, 1):
             discard_mask = self._calculate_discard_mask(
                 elapsed, quantiles_mounted_at, meaningful_groups_mask,
             )
-            meaningful_groups_mask[discard_mask] = False
+            meaningful_groups_mask -= discard_mask
             min_times = min_times[:quantiles_mounted_at]
             # max_times = max_times[:quantiles_mounted_at]
             elapsed = elapsed[:quantiles_mounted_at]
@@ -425,7 +426,7 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
         repos = facts[CheckRun.repository_node_id.name].values
         repos_sizes = np.char.add(int_to_str(repos), np.char.add(b"|", sizes))
         self._metrics = metrics = []
-        for group_mask in meaningful_groups_mask:
+        for group_mask in meaningful_groups_mask.dense():
             group_repos_sizes = repos_sizes[:, group_mask]
             group_elapsed = elapsed[:, group_mask]
             vocabulary, mapped_indexes = np.unique(group_repos_sizes, return_inverse=True)
@@ -874,8 +875,8 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
         self,
         peek: np.ndarray,
         quantiles_mounted_at: int,
-        groups_mask: np.ndarray,
-    ) -> np.ndarray:
+        groups_mask: SparseMask,
+    ) -> SparseMask:
         return super()._calculate_discard_mask(peek["duration"], quantiles_mounted_at, groups_mask)
 
 
