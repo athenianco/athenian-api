@@ -795,6 +795,7 @@ async def query_jira_raw(
         return (
             q.with_statement_hint("Leading(((athenian_issue issue) (s c)))")
             .with_statement_hint("Rows(athenian_issue issue *1000)")
+            .with_statement_hint("HashJoin(athenian_issue issue)")
             .with_statement_hint("Rows(s c *200)")
         )
 
