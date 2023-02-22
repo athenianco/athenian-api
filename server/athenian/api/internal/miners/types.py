@@ -26,6 +26,7 @@ class JIRAEntityToFetch(IntEnum):
     PROJECTS = 1 << 1
     PRIORITIES = 1 << 2
     TYPES = 1 << 3
+    LABELS = 1 << 4
 
     @classmethod
     def EVERYTHING(cls) -> int:
@@ -47,6 +48,8 @@ class JIRAEntityToFetch(IntEnum):
             result.append(Issue.priority_id)
         if value & cls.TYPES:
             result.append(Issue.type_id)
+        if value & cls.LABELS:
+            result.append(Issue.labels)
         return result
 
 
@@ -215,6 +218,7 @@ class LoadedJIRADetails:
     projects: npt.NDArray[bytes]
     priorities: npt.NDArray[bytes]
     types: npt.NDArray[bytes]
+    labels: npt.NDArray[object]
 
     @classmethod
     def _fields(cls) -> dict[str, Any]:
@@ -239,6 +243,7 @@ PR_JIRA_DETAILS_COLUMN_MAP = {
     Issue.project_id: (LoadedJIRADetails.projects.__name__, Issue.project_id.info["dtype"]),
     Issue.priority_id: (LoadedJIRADetails.priorities.__name__, Issue.priority_id.info["dtype"]),
     Issue.type_id: (LoadedJIRADetails.types.__name__, Issue.type_id.info["dtype"]),
+    Issue.labels: (LoadedJIRADetails.labels.__name__, "U"),
 }
 
 
@@ -299,6 +304,7 @@ class PullRequestFacts:
         JIRA_PROJECTS = "jira_projects"
         JIRA_PRIORITIES = "jira_priorities"
         JIRA_TYPES = "jira_types"
+        JIRA_LABELS = "jira_labels"
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""

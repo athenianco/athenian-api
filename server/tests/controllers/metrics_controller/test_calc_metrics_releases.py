@@ -8,7 +8,7 @@ from athenian.api.models.web import CalculatedReleaseMetric, ReleaseMetricID
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
-from tests.testutils.factory.wizards import insert_repo, pr_models
+from tests.testutils.factory.wizards import insert_repo, pr_jira_issue_mappings, pr_models
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -365,9 +365,7 @@ class TestCalcMetricsReleases(Requester):
                 md_factory.JIRAIssueTypeFactory(id="b", name="bug"),
                 md_factory.JIRAIssueFactory(id="20", project_id="1", type_id="t", type="task"),
                 md_factory.JIRAIssueFactory(id="30", project_id="1", type_id="b", type="bug"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="30"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=3, jira_id="20"),
+                *pr_jira_issue_mappings((1, "20"), (2, "30"), (3, "20")),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)

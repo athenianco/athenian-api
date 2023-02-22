@@ -12,7 +12,6 @@ import aiomcache
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from pandas.core.common import flatten
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import BigInteger, sql
@@ -28,7 +27,6 @@ from athenian.api.db import (
     DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
-    column_values_condition,
     dialect_specific_insert,
 )
 from athenian.api.defer import AllEvents, defer
@@ -75,9 +73,13 @@ from athenian.api.internal.miners.github.release_match import (
     ReleaseToPullRequestMapper,
 )
 from athenian.api.internal.miners.github.released_pr import matched_by_column
-from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
+from athenian.api.internal.miners.jira.issue import (
+    generate_jira_prs_query,
+    import_components_as_labels,
+)
 from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
+    PR_JIRA_DETAILS_COLUMN_MAP,
     DeploymentConclusion,
     JIRAEntityToFetch,
     LoadedJIRADetails,
@@ -107,7 +109,7 @@ from athenian.api.models.metadata.github import (
     PullRequestReviewRequest,
     Release,
 )
-from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import (
     GitHubPullRequestCheckRuns,
@@ -1174,41 +1176,7 @@ class PullRequestMiner:
             if df.empty:
                 df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
                 return df
-            components = (
-                df[[Issue.acc_id.name, Issue.components.name]]
-                .groupby(Issue.acc_id.name, sort=False)
-                .aggregate(lambda s: set(flatten(s)))
-            )
-            rows = await mdb.fetch_all(
-                sql.select(Component.acc_id, Component.id, Component.name).where(
-                    sql.or_(
-                        *(
-                            sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
-                            for acc, vals in zip(
-                                components.index.values, components[Issue.components.name].values,
-                            )
-                        ),
-                    ),
-                ),
-            )
-            cmap = {}
-            for r in rows:
-                cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
-            labels_col = df[Issue.labels.name].values
-            for i, (acc_id, row_labels, row_components) in enumerate(
-                zip(
-                    df[Issue.acc_id.name].values,
-                    labels_col,
-                    df[Issue.components.name].values,
-                ),
-            ):
-                if row_labels is None:
-                    labels_col[i] = row_labels = []
-                else:
-                    for j, s in enumerate(row_labels):
-                        row_labels[j] = s.lower()
-                if row_components is not None:
-                    row_labels.extend(cmap[acc_id][c] for c in row_components)
+            await import_components_as_labels(df, mdb)
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
@@ -3096,17 +3064,17 @@ class PullRequestFactsMiner:
             jira_details = LoadedJIRADetails.empty()
         else:
             jira_fields = {"ids": pr.jiras.index.values}
-            for field, col in (
-                (LoadedJIRADetails.projects, Issue.project_id),
-                (LoadedJIRADetails.priorities, Issue.priority_id),
-                (LoadedJIRADetails.types, Issue.type_id),
-            ):
-                field_name = field.__name__
-                col_name = col.name
+            for col, (field_name, dtype) in PR_JIRA_DETAILS_COLUMN_MAP.items():
+                if col is Issue.key:
+                    continue
                 try:
-                    jira_fields[field_name] = pr.jiras[col_name].values
+                    value = pr.jiras[col.name].values
                 except KeyError:
-                    jira_fields[field_name] = np.array([], dtype="S")
+                    jira_fields[field_name] = np.array([], dtype=dtype)
+                else:
+                    if col is Issue.labels:
+                        value = np.concatenate(value, dtype=dtype, casting="unsafe")
+                    jira_fields[field_name] = value
             jira_details = LoadedJIRADetails(**jira_fields)
 
         facts = PullRequestFacts.from_fields(
@@ -3190,15 +3158,16 @@ async def fetch_prs_numbers(
     mdb: DatabaseLike,
 ) -> pd.DataFrame:
     """Given an array of PR node IDs fetch a dataframe that maps their IDs to PR numbers."""
-    node_id_cond, hints = column_values_condition(NodePullRequest.node_id, node_ids)
+    node_id_cond = NodePullRequest.node_id.progressive_in(node_ids)
     columns = [NodePullRequest.node_id, NodePullRequest.number]
     selects = [
         sa.select(*columns).where(NodePullRequest.acc_id == meta_id, node_id_cond)
         for meta_id in meta_ids
     ]
-    stmt = selects[0] if len(selects) == 1 else sa.union_all(*selects)
 
-    for hint in hints:
+    stmt = selects[0] if len(selects) == 1 else sa.union_all(*selects)
+    if len(node_ids) > 100:
+        hint = f"Rows({NodePullRequest.__tablename__} *VALUES* #{len(node_ids)})"
         stmt = stmt.with_statement_hint(hint)
 
     return await read_sql_query(stmt, mdb, columns)

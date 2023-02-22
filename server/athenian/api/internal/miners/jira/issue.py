@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Type
+from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Sequence, Type
 
 import aiomcache
 import numpy as np
 import pandas as pd
+from pandas.core.common import flatten
 import sentry_sdk
 from sqlalchemy import BigInteger, func, sql
 from sqlalchemy.orm import aliased
@@ -951,12 +952,12 @@ class PullRequestJiraMapper:
     ) -> dict[int, LoadedJIRADetails]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
-        if len(prs) >= 100:
-            node_id_cond = nprji.node_id.in_any_values(prs)
-        else:
-            node_id_cond = nprji.node_id.in_(prs)
         columns = [nprji.node_id, *JIRAEntityToFetch.to_columns(entities)]
-        df = await read_sql_query(
+        if Issue.labels in columns:
+            # import_components_as_labels needs acc_id and components
+            columns.extend([Issue.acc_id, Issue.components])
+
+        stmt = (
             sql.select(*columns)
             .select_from(
                 sql.outerjoin(
@@ -965,11 +966,15 @@ class PullRequestJiraMapper:
                     sql.and_(nprji.jira_acc == Issue.acc_id, nprji.jira_id == Issue.id),
                 ),
             )
-            .where(node_id_cond, nprji.node_acc.in_(meta_ids)),
-            mdb,
-            columns,
-            index=nprji.node_id.name,
+            .where(nprji.node_id.progressive_in(prs), nprji.node_acc.in_(meta_ids))
+            .with_statement_hint(f"Rows({nprji.__tablename__} *VALUES* {len(prs) // 2})")
+            .with_statement_hint(
+                f"Leading((({nprji.__tablename__} *VALUES*) {Issue.__tablename__}))",
+            )
         )
+        df = await read_sql_query(stmt, mdb, columns, index=nprji.node_id.name)
+        if Issue.labels in columns:
+            await import_components_as_labels(df, mdb)
         res: dict[int, LoadedJIRADetails] = {}
         cls.append_from_df(res, df)
         return res
@@ -999,8 +1004,13 @@ class PullRequestJiraMapper:
             pos += group_count
             # we can deduplicate. shall we? must benchmark the profit.
             existing[pr_id] = LoadedJIRADetails(
+                # labels are handled differently since they are already an array for each issue
                 **{
-                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: df[c.name].values[indexes]
+                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: _concatenate_or_first(
+                        df[c.name].values[indexes],
+                    )
+                    if c is Issue.labels
+                    else df[c.name].values[indexes]
                     for c in payload_columns
                 },
                 **empty_cols,
@@ -1039,6 +1049,10 @@ class PullRequestJiraMapper:
         empty_jira = LoadedJIRADetails.empty()
         for f in facts.values():
             f.jira = empty_jira
+
+
+def _concatenate_or_first(arrays: Sequence[np.ndarray]) -> np.ndarray:
+    return arrays[0] if len(arrays) == 1 else np.concatenate(arrays)
 
 
 def resolve_work_began_and_resolved(
@@ -1161,6 +1175,43 @@ async def fetch_jira_issues_by_prs(
             .with_statement_hint(f"Rows(m *VALUES* regular #{len(pr_nodes)})")
         )
     return await read_sql_query(query, mdb, selected)
+
+
+@sentry_span
+async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -> None:
+    """Import the components names as labels in the issues dataframe.
+
+    The `issues` dataframe must have `acc_id` and `components` (with components ids) columns.
+
+    """
+    components = (
+        issues[[Issue.acc_id.name, Issue.components.name]]
+        .groupby(Issue.acc_id.name, sort=False)
+        .aggregate(lambda s: set(flatten(s)))
+    )
+    conditions = (
+        sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
+        for acc, vals in zip(components.index.values, components[Issue.components.name].values)
+    )
+    rows = await mdb.fetch_all(
+        sql.select(Component.acc_id, Component.id, func.lower(Component.name)).where(
+            sql.or_(*conditions),
+        ),
+    )
+    cmap: dict[int, dict[str, str]] = {}
+    for r in rows:
+        cmap.setdefault(r[0], {})[r[1]] = r[2]
+    labels_col = issues[Issue.labels.name].values
+    for i, (acc_id, row_labels, row_components) in enumerate(
+        zip(issues[Issue.acc_id.name].values, labels_col, issues[Issue.components.name].values),
+    ):
+        if row_labels is None:
+            labels_col[i] = row_labels = []
+        else:
+            for j, s in enumerate(row_labels):
+                row_labels[j] = s.lower()
+        if row_components is not None:
+            row_labels.extend(cmap[acc_id][c] for c in row_components)
 
 
 participant_columns = (

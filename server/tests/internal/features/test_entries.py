@@ -42,7 +42,12 @@ from tests.conftest import build_fake_cache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
-from tests.testutils.factory.wizards import insert_repo, jira_issue_models, pr_models
+from tests.testutils.factory.wizards import (
+    insert_repo,
+    jira_issue_models,
+    pr_jira_issue_mappings,
+    pr_models,
+)
 from tests.testutils.time import dt
 
 
@@ -110,8 +115,7 @@ class TestPRFactsCalculator:
                 md_factory.JIRAIssueFactory(
                     id="21", key="I2", project_id="P1", type_id="T2", priority_id=None,
                 ),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="21"),
+                *pr_jira_issue_mappings((162990, "20"), (162990, "21")),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
@@ -147,9 +151,7 @@ class TestPRFactsCalculator:
             models = [
                 md_factory.JIRAIssueFactory(id="20", key="1"),
                 md_factory.JIRAIssueFactory(id="21", key="2"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162990, jira_id="21"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=163027, jira_id="20"),
+                *pr_jira_issue_mappings((162990, "20"), (162990, "21"), (163027, "20")),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
@@ -766,9 +768,7 @@ class TestCalcReleaseMetricsLineGithub:
                 md_factory.JIRAIssueFactory(
                     id="21", priority_id="id_p1", project_id="1", priority_name="P1",
                 ),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=3, jira_id="21"),
+                *pr_jira_issue_mappings((1, "20"), (2, "20"), (3, "21")),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)

@@ -22,6 +22,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import (
     AthenianIssue,
+    Component,
     Issue,
     IssueType,
     Priority,
@@ -301,6 +302,15 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
         # adding athenian_epic_id attr is required since explode_model() doesn't
         # work with aliased columns, i.e. epic_id = Column("athenian_epic_id", Text)
         obj.athenian_epic_id = obj.epic_id
+
+
+class JIRAComponentFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Component
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    name = factory.LazyAttribute(lambda c: f"component-{c.id}")
 
 
 class JIRAUserFactory(SQLAlchemyModelFactory):

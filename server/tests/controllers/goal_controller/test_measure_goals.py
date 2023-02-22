@@ -33,7 +33,12 @@ from tests.testutils.factory.state import (
     TeamGoalFactory,
     UserAccountFactory,
 )
-from tests.testutils.factory.wizards import insert_logical_repo, insert_repo, pr_models
+from tests.testutils.factory.wizards import (
+    insert_logical_repo,
+    insert_repo,
+    pr_jira_issue_mappings,
+    pr_models,
+)
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -770,9 +775,7 @@ class TestMeasureGoalsJIRAFiltering(BaseMeasureGoalsTest):
                 md_factory.JIRAPriorityFactory(id="101", name="P1"),
                 md_factory.JIRAIssueTypeFactory(id="100", name="T0"),
                 md_factory.JIRAIssueTypeFactory(id="101", name="T1"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="20"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162901, jira_id="21"),
-                md_factory.NodePullRequestJiraIssuesFactory(node_id=162908, jira_id="22"),
+                *pr_jira_issue_mappings((162901, "20"), (162901, "21"), (162908, "22")),
                 *[
                     md_factory.JIRAIssueFactory(
                         id=id_,
