@@ -19,7 +19,7 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType
-from athenian.api.models.web import JIRAIssue, PullRequest as WebPullRequest
+from athenian.api.models.web import JIRAIssue as WebJIRAIssue, PullRequest as WebPullRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.tracing import sentry_span
 
@@ -84,7 +84,7 @@ def build_issue_web_models(
     issues: pd.DataFrame,
     prs: dict[str, WebPullRequest],
     issue_types: list[Row],
-) -> list[JIRAIssue]:
+) -> list[WebJIRAIssue]:
     """Build the Jira issues web models from an issues dataframe."""
     models = []
     now = np.datetime64(datetime.utcnow())
@@ -152,7 +152,7 @@ def build_issue_web_models(
             else:
                 lead_time = None
         models.append(
-            JIRAIssue(
+            WebJIRAIssue(
                 id=issue_key,
                 title=issue_title,
                 created=issue_created,
