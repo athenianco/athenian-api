@@ -1170,6 +1170,25 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
     }
 
 
+async def test_empty_granularities(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["github.com/src-d/go-git"], "pushers": ["github.com/mcuadros"]},
+        ],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    assert response.status == 400
+    res = await response.json()
+    assert "granularities" in res["detail"]
+
+
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_deployment_metrics_smoke(client, headers, sample_deployments):
