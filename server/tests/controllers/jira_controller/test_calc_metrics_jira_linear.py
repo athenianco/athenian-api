@@ -43,6 +43,19 @@ class BaseCalcMetricsJiraLinearTest(Requester):
         return kwargs
 
 
+class TestCalcMetricsJiraLinearErrors(BaseCalcMetricsJiraLinearTest):
+    async def test_empty_granularities(self) -> None:
+        body = self._body(
+            date_from="2020-09-01",
+            date_to="2020-10-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            granularities=[],
+        )
+        res = await self._request(json=body, assert_status=400)
+        assert isinstance(res, dict)
+        assert "granularities" in res["detail"]
+
+
 class TestCalcMetricsJiraLinear(BaseCalcMetricsJiraLinearTest):
     @pytest.mark.parametrize("exclude_inactive", [False, True])
     async def test_smoke(self, exclude_inactive):
