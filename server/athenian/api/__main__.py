@@ -645,7 +645,7 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
     patch_pandas()
     set_endpoint_weights(args.weights, log)
     pgdb_opts = {
-        "pgbouncer_transaction": args.pgbouncer_transaction,
+        "pgbouncer_statement": args.pgbouncer_transaction,
         "local_cache": args.db_fetch_cache,
     }
     app = AthenianApp(
