@@ -481,7 +481,7 @@ async def app(
         validate_responses = True
     else:
         validate_responses = validate_responses_mark.args[0]
-    pgdb_opts = {"pgbouncer_transaction": True}
+    pgdb_opts = {"pgbouncer_statement": True}
 
     app = AthenianApp(
         mdb_conn=metadata_db,
@@ -660,7 +660,7 @@ def precomputed_db(worker_id) -> str:
 
 
 async def connect_to_db(addr, event_loop, request):
-    opts = {"pgbouncer_transaction": True} if addr.startswith("postgresql") else {}
+    opts = {"pgbouncer_statement": True} if addr.startswith("postgresql") else {}
     db = measure_db_overhead_and_retry(Database(addr, **opts), None, None)
     try:
         await db.connect()
