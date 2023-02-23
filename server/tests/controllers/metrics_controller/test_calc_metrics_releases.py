@@ -13,7 +13,7 @@ from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
 
-class TestCalcMetricsReleases(Requester):
+class BaseCalcMetricsReleasesTest(Requester):
     async def _request(self, *, assert_status=200, **kwargs) -> dict | list:
         response = await self.client.request(
             method="POST", path="/v1/metrics/releases", headers=self.headers, **kwargs,
@@ -31,6 +31,22 @@ class TestCalcMetricsReleases(Requester):
             kwargs["with"] = kwargs.pop("with_")
         return kwargs
 
+
+class TestCalcMetricsReleasesErrors(BaseCalcMetricsReleasesTest):
+    async def test_empty_granularities(self):
+        body = self._body(
+            date_from="2018-01-12",
+            date_to="2020-03-01",
+            for_=[["{1}"]],
+            jira={"epics": []},
+            metrics=list(ReleaseMetricID),
+            granularities=[],
+        )
+        res = await self._request(json=body, assert_status=400)
+        assert "granularities" in res["detail"]
+
+
+class TestCalcMetricsReleases(BaseCalcMetricsReleasesTest):
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     async def test_smoke(self, no_jira):
