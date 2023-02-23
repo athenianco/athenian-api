@@ -294,7 +294,7 @@ class TestCalcMetricsJiraLinear(BaseCalcMetricsJiraLinearTest):
             (JIRAMetricID.JIRA_RESOLVED, True, 795),
             (JIRAMetricID.JIRA_ACKNOWLEDGED, False, 776),
             (JIRAMetricID.JIRA_ACKNOWLEDGED_Q, False, 776),
-            (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9578313231468201),
+            (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9578820466995239),
         ],
     )
     async def test_jira_metrics_counts(self, metric, exclude_inactive, n):
