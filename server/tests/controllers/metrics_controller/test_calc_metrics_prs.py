@@ -1535,3 +1535,15 @@ class TestCalcMetricsPRsErrors(BaseCalcMetricsPRsTest):
         res = await self._request(assert_status=400, json=body)
         assert "jiragroups" in res["detail"]
         assert "jira" in res["detail"]
+
+    @pytest.mark.app_validate_responses(False)
+    async def test_empty_granularities(self) -> None:
+        body = self._body(
+            date_from="2020-01-01",
+            date_to="2020-01-16",
+            for_=[{"repositories": ["github.com/src-d/go-git"]}],
+            granularities=[],
+            metrics=[PullRequestMetricID.PR_REVIEW_TIME],
+        )
+        res = await self._request(json=body, assert_status=400)
+        assert "granularities" in res["detail"]
