@@ -140,14 +140,12 @@ def jira_issue_models(
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid jira issue."""
 
+    work_began = kwargs.pop("work_began", None)
     issue = md_factory.JIRAIssueFactory(id=id, **kwargs)
-    athenian_extra_kwargs = {}
-    if resolved is not None:
-        athenian_extra_kwargs["resolved"] = resolved
-
-    athenian_issue = md_factory.JIRAAthenianIssueFactory(
-        id=id, updated=issue.updated, **athenian_extra_kwargs,
-    )
+    athenian_kwargs = {"updated": issue.updated, "resolved": resolved}
+    if work_began is not None:
+        athenian_kwargs["work_began"] = work_began
+    athenian_issue = md_factory.JIRAAthenianIssueFactory(id=id, **athenian_kwargs)
     return [issue, athenian_issue]
 
 

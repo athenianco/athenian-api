@@ -25,6 +25,7 @@ from athenian.api.controllers.jira_controller.common import (
     build_issue_web_models,
     collect_account_info,
 )
+from athenian.api.controllers.jira_controller.get_jira_issues import get_jira_issues
 from athenian.api.db import Database
 from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
