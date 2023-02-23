@@ -135,5 +135,5 @@ class PrecomputeContext:
 
 def _pgbouncer_kwarg(conn_str: str, value: bool) -> dict:
     if conn_str.startswith("postgresql"):
-        return {"pgbouncer_transaction": value}
+        return {"pgbouncer_statement": value}
     return {}
