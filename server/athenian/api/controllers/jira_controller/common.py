@@ -1,23 +1,42 @@
+import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
+from typing import Sequence
 
+import aiomcache
 import numpy as np
 import pandas as pd
+import sqlalchemy as sa
 
-from athenian.api.async_utils import gather
-from athenian.api.db import Row
+from athenian.api import metadata
+from athenian.api.async_utils import gather, list_with_yield, read_sql_query
+from athenian.api.controllers.filter_controller import web_pr_from_struct
+from athenian.api.db import Database, Row
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.features.github.pull_request_filter import (
+    PullRequestListMiner,
+    fetch_pr_deployments,
+    unwrap_pull_requests,
+)
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation
+from athenian.api.internal.logical_repos import drop_logical_repo
+from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
     ISSUE_PRS_BEGAN,
     ISSUE_PRS_RELEASED,
     resolve_work_began_and_resolved,
 )
+from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
+from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType
 from athenian.api.models.web import JIRAIssue as WebJIRAIssue, PullRequest as WebPullRequest
 from athenian.api.request import AthenianWebRequest
@@ -174,3 +193,164 @@ def build_issue_web_models(
             ),
         )
     return models
+
+
+@sentry_span
+async def fetch_issues_prs(
+    pr_ids: Sequence[int],
+    account_info: AccountInfo,
+    sdb: Database,
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
+    cache: aiomcache.Client | None,
+) -> tuple[dict[str, WebPullRequest], dict[str, Deployment]]:
+    """Fetch the PRs associated with the issues and the related deployments."""
+    log = logging.getLogger(f"{metadata.__package__}.fetch_issues_prs")
+
+    async def fetch_prs_and_dependent_tasks():
+        prs_df = await read_sql_query(
+            sa.select(PullRequest)
+            .where(
+                PullRequest.acc_id.in_(account_info.meta_ids),
+                PullRequest.node_id.in_(pr_ids),
+            )
+            .order_by(PullRequest.node_id.name),
+            mdb,
+            PullRequest,
+            index=PullRequest.node_id.name,
+        )
+        PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
+        closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
+        check_runs_task = asyncio.create_task(
+            PullRequestMiner.fetch_pr_check_runs(
+                prs_df.index.values[closed_pr_mask],
+                prs_df.index.values[~closed_pr_mask],
+                account_info.account,
+                account_info.meta_ids,
+                mdb,
+                pdb,
+                cache,
+            ),
+            name=f"_issue_flow/fetch_issues_prs/fetch_pr_check_runs({len(prs_df)})",
+        )
+        merged_pr_ids = prs_df.index.values[prs_df[PullRequest.merged_at.name].notnull().values]
+        deployments_task = asyncio.create_task(
+            fetch_pr_deployments(
+                merged_pr_ids,
+                account_info.logical_settings,
+                account_info.prefixer,
+                account_info.account,
+                account_info.meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+            ),
+            name=f"_issue_flow/fetch_issues_prs/fetch_pr_deployments({len(merged_pr_ids)})",
+        )
+        return prs_df, check_runs_task, deployments_task
+
+    (
+        (prs_df, check_runs_task, deployments_task),
+        (facts, ambiguous),
+        account_bots,
+    ) = await gather(
+        fetch_prs_and_dependent_tasks(),
+        DonePRFactsLoader.load_precomputed_done_facts_ids(
+            pr_ids,
+            account_info.default_branches,
+            account_info.release_settings,
+            account_info.prefixer,
+            account_info.account,
+            pdb,
+            panic_on_missing_repositories=False,
+        ),
+        bots(account_info.account, account_info.meta_ids, mdb, sdb, cache),
+    )
+    assert account_info.release_settings is not None
+    existing_mask = (
+        prs_df[PullRequest.repository_full_name.name]
+        .isin(account_info.release_settings.native)
+        .values
+    )
+    if not existing_mask.all():
+        prs_df = prs_df.take(np.flatnonzero(existing_mask))
+    found_repos_arr = prs_df[PullRequest.repository_full_name.name].unique()
+    found_repos_set = set(found_repos_arr)
+    if ambiguous.keys() - found_repos_set:
+        # there are archived or disabled repos
+        ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos_set}
+
+    branches = account_info.branches
+    assert branches is not None
+    related_branches = branches.take(
+        np.flatnonzero(
+            np.in1d(
+                branches[Branch.repository_full_name.name].values.astype("U"),
+                found_repos_arr.astype("U"),
+            ),
+        ),
+    )
+    (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
+        unwrap_pull_requests(
+            prs_df,
+            facts,
+            ambiguous,
+            check_runs_task,
+            deployments_task,
+            JIRAEntityToFetch.NOTHING,
+            related_branches,
+            account_info.default_branches,
+            account_bots,
+            account_info.release_settings,
+            account_info.logical_settings,
+            account_info.prefixer,
+            account_info.account,
+            account_info.meta_ids,
+            mdb,
+            pdb,
+            rdb,
+            cache,
+        ),
+        fetch_repository_environments(
+            prs_df[PullRequest.repository_full_name.name].unique(),
+            None,
+            account_info.prefixer,
+            account_info.account,
+            rdb,
+            cache,
+        ),
+    )
+
+    miner = PullRequestListMiner(
+        mined_prs,
+        dfs,
+        facts,
+        set(),
+        set(),
+        datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime.now(timezone.utc),
+        False,
+        repo_envs,
+    )
+    pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
+    if missing_repo_indexes := [
+        i
+        for i, pr in enumerate(pr_list_items)
+        if drop_logical_repo(pr.repository) not in account_info.prefixer.repo_name_to_prefixed_name
+    ]:
+        log.error(
+            "Discarded %d PRs because their repositories are gone: %s",
+            len(missing_repo_indexes),
+            {pr_list_items[i].repository for i in missing_repo_indexes},
+        )
+        for i in reversed(missing_repo_indexes):
+            pr_list_items.pop(i)
+    deployments = await deployments_task
+    prs = dict(
+        web_pr_from_struct(
+            pr_list_items, account_info.prefixer, log, lambda w, pr: (pr.node_id, w),
+        ),
+    )
+    return prs, deployments
