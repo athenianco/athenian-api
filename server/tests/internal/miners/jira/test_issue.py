@@ -9,6 +9,7 @@ from pandas._testing import assert_frame_equal
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.precomputed_prs import store_precomputed_done_facts
 from athenian.api.internal.miners.github.released_pr import matched_by_column
@@ -18,6 +19,7 @@ from athenian.api.internal.miners.jira.issue import (
     PullRequestJiraMapper,
     _fetch_released_prs,
     fetch_jira_issues,
+    fetch_jira_issues_by_keys,
     generate_jira_prs_query,
 )
 from athenian.api.internal.miners.types import (
@@ -197,6 +199,34 @@ class TestFetchJIRAIssues:
             "assignees": [],
             "commenters": [],
             "nested_assignees": False,
+            "logical_settings": LogicalRepositorySettings.empty(),
+            "account": DEFAULT_ACCOUNT_ID,
+            "meta_ids": (DEFAULT_MD_ACCOUNT_ID,),
+            "cache": None,
+            **extra,
+        }
+
+
+class TestFetchJIRAIssuesByKeys:
+    async def test_base(self, mdb, pdb, default_branches, release_match_setting_tag) -> None:
+        kwargs = self._kwargs(
+            keys=["DEV-90", "DEV-69", "DEV-729", "DEV-1012"],
+            default_branches=default_branches,
+            release_settings=release_match_setting_tag,
+            mdb=mdb,
+            pdb=pdb,
+        )
+        issues = await fetch_jira_issues_by_keys(**kwargs)
+        issues.sort_values("key", inplace=True)  # no order is guaranteed
+        assert list(issues.key) == ["DEV-1012", "DEV-69", "DEV-729", "DEV-90"]
+        assert list(issues.index) == [b"12465", b"10101", b"12110", b"10308"]
+
+    @classmethod
+    def _kwargs(cls, **extra) -> dict[str, Any]:
+        return {
+            "jira_config": JIRAConfig(
+                DEFAULT_JIRA_ACCOUNT_ID, projects={"10003": "", "10009": ""}, epics={},
+            ),
             "logical_settings": LogicalRepositorySettings.empty(),
             "account": DEFAULT_ACCOUNT_ID,
             "meta_ids": (DEFAULT_MD_ACCOUNT_ID,),
