@@ -185,11 +185,11 @@ class TestTeamMetrics(BaseTeamMetricsTest):
                 "metric": "jira-resolution-rate",
                 "value": {
                     "team": {"id": 1, "name": "T1"},
-                    "value": 0.8908857703208923,
+                    "value": 0.8910256624221802,
                     "children": [
                         {
                             "team": {"id": 2, "name": "T2"},
-                            "value": 0.8571428656578064,
+                            "value": 0.8578947186470032,
                             "children": [],
                         },
                     ],

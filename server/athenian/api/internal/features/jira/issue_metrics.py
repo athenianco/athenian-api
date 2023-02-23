@@ -239,6 +239,7 @@ class ResolutionRateCalculator(RatioCalculator):
     """Calculate JIRA issues flow ratio = raised / resolved."""
 
     deps = (ResolvedCounter, RaisedCounter)
+    value_offset = 1
 
 
 @register_metric(JIRAMetricID.JIRA_LIFE_TIME)
