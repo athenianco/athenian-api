@@ -1628,3 +1628,20 @@ async def test_deployment_metrics_team(client, headers, sample_deployments, samp
             ],
         },
     ]
+
+
+async def test_deployment_metrics_empty_granularities(client, headers, sample_deployments):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{}],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
+        "granularities": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+    )
+    assert response.status == 400
+    res = await response.json()
+    assert "granularities" in res["detail"]
