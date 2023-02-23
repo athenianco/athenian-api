@@ -38,7 +38,14 @@ from athenian.api.models.metadata.github import (
     NodeRepository,
     PullRequest,
 )
-from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
+from athenian.api.models.metadata.jira import (
+    AthenianIssue,
+    Component,
+    EmptyTextArray,
+    Epic,
+    Issue,
+    Status,
+)
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
@@ -1218,5 +1225,5 @@ async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -
 participant_columns = (
     func.lower(Issue.reporter_display_name).label("reporter"),
     func.lower(Issue.assignee_display_name).label("assignee"),
-    Issue.commenters_display_names.label("commenters"),
+    func.coalesce(Issue.commenters_display_names, EmptyTextArray()).label("commenters"),
 )

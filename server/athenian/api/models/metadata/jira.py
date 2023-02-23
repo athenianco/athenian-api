@@ -12,8 +12,10 @@ from sqlalchemy import (
     cast,
 )
 from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import column_property
+from sqlalchemy.sql.elements import TextClause
 
 
 class AccountIDMixin:
@@ -23,6 +25,29 @@ class AccountIDMixin:
 Base = declarative_base(cls=AccountIDMixin)
 Base.__table_args__ = {"schema": "jira"}
 HSTORE = postgresql.HSTORE().with_variant(JSON(), sqlite.dialect.name)
+TextArray = postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name)
+
+
+class EmptyTextArray(TextClause):
+    """Empty text array literal, cross-dialect."""
+
+    inherit_cache = False
+
+    def __init__(self):
+        """Initialize a new empty text array literal."""
+        super().__init__("")
+
+
+@compiles(EmptyTextArray, "sqlite")
+def visit_empty_text_array_sqlite(element, compiler, **kw):
+    """Return an empty text array literal for sqlite."""
+    return "'[]'"
+
+
+@compiles(EmptyTextArray, "postgresql")
+def visit_empty_text_array_postgresql(element, compiler, **kw):
+    """Return an empty text array literal for postgresql."""
+    return "'{}'::text[]"
 
 
 class Epic(Base):
@@ -47,10 +72,8 @@ class Issue(Base):
     type_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     status = Column(Text)
     status_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
-    labels = Column(
-        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name), nullable=False,
-    )
-    components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+    labels = Column(TextArray, nullable=False)
+    components = Column(TextArray)
     epic_id = Column("athenian_epic_id", Text, info={"dtype": "S12", "reset_nulls": True})
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
@@ -60,9 +83,7 @@ class Issue(Base):
     assignee_id = Column(Text)
     assignee_display_name = Column(Text)
     commenters_ids = Column(postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
-    commenters_display_names = Column(
-        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
-    )
+    commenters_display_names = Column(TextArray)
     comments_count = Column(Integer, nullable=False)
     priority_id = Column(Text, nullable=True, info={"dtype": "S8", "reset_nulls": True})
     priority_name = Column(Text, nullable=True)
