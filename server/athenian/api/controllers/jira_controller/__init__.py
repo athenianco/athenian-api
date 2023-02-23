@@ -20,7 +20,11 @@ from athenian.api.async_utils import gather, list_with_yield, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
-from athenian.api.controllers.jira_controller.common import AccountInfo, collect_account_info
+from athenian.api.controllers.jira_controller.common import (
+    AccountInfo,
+    build_issue_web_models,
+    collect_account_info,
+)
 from athenian.api.db import Database
 from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
@@ -32,7 +36,6 @@ from athenian.api.internal.features.github.pull_request_filter import (
 from athenian.api.internal.features.histogram import HistogramParameters, Scale
 from athenian.api.internal.jira import (
     JIRAConfig,
-    get_jira_installation,
     normalize_issue_type,
     normalize_priority,
     normalize_user_type,
@@ -996,14 +999,8 @@ async def _issue_flow(
         )
     else:
         issue_types = []
-    # fmt: off
-    issue_type_names = {
-        (row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode()):
-            row[IssueType.name.name]
-        for row in issue_types
-    }
-    # fmt: on
-    issue_types = [
+
+    web_issue_types = [
         JIRAIssueType(
             name=row[IssueType.name.name],
             image=row[IssueType.icon_url.name],
@@ -1041,89 +1038,10 @@ async def _issue_flow(
 
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        issue_models = []
-        now = np.datetime64(datetime.utcnow())
-        for (
-            issue_key,
-            issue_title,
-            issue_created,
-            issue_updated,
-            issue_prs_began,
-            issue_work_began,
-            issue_prs_released,
-            issue_resolved,
-            issue_reporter,
-            issue_assignee,
-            issue_priority,
-            issue_status,
-            issue_prs,
-            issue_type,
-            issue_project,
-            issue_comments,
-            issue_url,
-            issue_story_points,
-        ) in zip(
-            *(
-                issues[column].values
-                for column in (
-                    Issue.key.name,
-                    Issue.title.name,
-                    Issue.created.name,
-                    AthenianIssue.updated.name,
-                    ISSUE_PRS_BEGAN,
-                    AthenianIssue.work_began.name,
-                    ISSUE_PRS_RELEASED,
-                    AthenianIssue.resolved.name,
-                    Issue.reporter_display_name.name,
-                    Issue.assignee_display_name.name,
-                    Issue.priority_name.name,
-                    Issue.status.name,
-                    ISSUE_PR_IDS,
-                    Issue.type_id.name,
-                    Issue.project_id.name,
-                    Issue.comments_count.name,
-                    Issue.url.name,
-                    Issue.story_points.name,
-                )
-            ),
-        ):
-            work_began, resolved = resolve_work_began_and_resolved(
-                issue_work_began, issue_prs_began, issue_resolved, issue_prs_released,
-            )
-            if resolved:
-                lead_time = resolved - work_began
-                life_time = resolved - issue_created
-            else:
-                life_time = now - issue_created
-                if work_began:
-                    lead_time = now - work_began
-                else:
-                    lead_time = None
-            issue_models.append(
-                JIRAIssue(
-                    id=issue_key,
-                    title=issue_title,
-                    created=issue_created,
-                    updated=issue_updated,
-                    work_began=work_began,
-                    resolved=resolved,
-                    lead_time=lead_time,
-                    life_time=life_time,
-                    reporter=issue_reporter,
-                    assignee=issue_assignee,
-                    comments=issue_comments,
-                    priority=issue_priority,
-                    status=issue_status,
-                    project=issue_project.decode(),
-                    type=issue_type_names[(issue_project, issue_type)],
-                    prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
-                    url=issue_url,
-                    story_points=issue_story_points,
-                ),
-            )
+        issue_models = build_issue_web_models(issues, prs, issue_types)
     else:
         issue_models = []
-    return issue_models, labels, users, issue_types, priorities, statuses, deps
+    return issue_models, labels, users, web_issue_types, priorities, statuses, deps
 
 
 @sentry_span
