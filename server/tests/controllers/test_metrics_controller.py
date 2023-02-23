@@ -717,6 +717,23 @@ async def test_developer_metrics_order(client, headers):
     assert [m[0].values for m in result.calculated[0].values] == [[8], [14]]
 
 
+async def test_no_granularities(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-07-12",
+        "date_to": "2018-09-15",
+        "granularities": [],
+        "for": [{"repositories": ["{1}"], "developers": ["github.com/mcuadros"]}],
+        "metrics": [DeveloperMetricID.ACTIVE],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    res = await response.json()
+    assert response.status == 400
+    assert "granularities" in res["detail"]
+
+
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_code_check_metrics_smoke(client, headers):
