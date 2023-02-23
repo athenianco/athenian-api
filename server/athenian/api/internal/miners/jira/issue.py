@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, func, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -448,6 +449,48 @@ async def _fetch_jira_issues(
             mdb,
         )
     return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+
+
+@sentry_span
+async def fetch_jira_issues_by_keys(
+    keys: Sequence[str],
+    jira_config: JIRAConfig,
+    default_branches: dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Iterable[InstrumentedAttribute] = (),
+) -> pd.DataFrame:
+    """Load JIRA issues based on their key. Result dataframe order is undetermined."""
+    columns = [
+        Issue.id,
+        Issue.created,
+        AthenianIssue.updated,
+        AthenianIssue.work_began,
+        AthenianIssue.resolved,
+        Status.category_name,
+        *extra_columns,
+    ]
+    issues = await _query_jira_raw_by_keys(keys, columns, jira_config, mdb, cache)
+    if issues.empty:
+        _fill_issues_with_empty_prs_info(issues)
+    else:
+        await _fill_issues_with_mapped_prs_info(
+            issues,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            jira_config.acc_id,
+            pdb,
+            mdb,
+        )
+    return issues
 
 
 async def _fill_issues_with_mapped_prs_info(
@@ -905,6 +948,36 @@ async def query_jira_raw(
     df.disable_consolidate()
     df = df.take(np.flatnonzero(passed))
     return df
+
+
+@sentry_span
+async def _query_jira_raw_by_keys(
+    keys: Sequence[str],
+    columns: list[InstrumentedAttribute],
+    jira_config: JIRAConfig,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> pd.DataFrame:
+    where = [
+        Issue.acc_id == jira_config.acc_id,
+        Issue.project_id.in_(jira_config.projects),
+        Issue.is_deleted.is_(False),
+        Issue.key.progressive_in(keys),
+    ]
+    issue_status_join = sa.outerjoin(
+        Issue,
+        Status,
+        sql.and_(Issue.status_id == Status.id, Issue.acc_id == Status.acc_id),
+    )
+    issue_athenian_issue_join = sa.outerjoin(
+        issue_status_join,
+        AthenianIssue,
+        sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
+    )
+    stmt = sa.select(*columns).select_from(issue_athenian_issue_join).where(*where)
+    stmt = stmt.with_statement_hint(f"Leading({Issue.__tablename__}, *VALUES*)")
+    issues = await read_sql_query(stmt, mdb, columns, index=Issue.id.name)
+    return _validate_and_clean_issues(issues, jira_config.acc_id)
 
 
 def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
