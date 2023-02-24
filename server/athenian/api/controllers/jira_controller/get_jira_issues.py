@@ -4,13 +4,19 @@ import pandas as pd
 import sqlalchemy as sa
 
 from athenian.api.controllers.jira_controller.common import (
+    AccountInfo,
     build_issue_web_models,
     collect_account_info,
+    fetch_issues_prs,
 )
 from athenian.api.db import Database
-from athenian.api.internal.miners.jira.issue import fetch_jira_issues_by_keys
+from athenian.api.internal.miners.jira.issue import ISSUE_PR_IDS, fetch_jira_issues_by_keys
 from athenian.api.models.metadata.jira import Issue, IssueType
-from athenian.api.models.web import GetJIRAIssuesRequest, GetJIRAIssuesResponse
+from athenian.api.models.web import (
+    GetJIRAIssuesRequest,
+    GetJIRAIssuesResponse,
+    PullRequest as WebPullRequest,
+)
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
 
@@ -47,13 +53,14 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         extra_columns=extra_columns,
     )
     if issues.empty:
-        models = []
-    else:
-        issue_type_names = await _get_issue_type_names_mapping(
-            issues, account_info.jira_conf.acc_id, request.mdb,
-        )
-        issues = _sort_issues(issues, issues_req.issues)
-        models = build_issue_web_models(issues, {}, issue_type_names)
+        return model_response(GetJIRAIssuesResponse(issues=[]))
+
+    issue_type_names = await _get_issue_type_names_mapping(
+        issues, account_info.jira_conf.acc_id, request.mdb,
+    )
+    prs = await _fetch_prs(issues, account_info, request)
+    issues = _sort_issues(issues, issues_req.issues)
+    models = build_issue_web_models(issues, prs, issue_type_names)
     return model_response(GetJIRAIssuesResponse(issues=models))
 
 
@@ -82,6 +89,18 @@ async def _get_issue_type_names_mapping(
     ]
 
     return await mdb.fetch_all(sa.union_all(*queries))
+
+
+async def _fetch_prs(
+    issues: pd.DataFrame,
+    account_info: AccountInfo,
+    req: AthenianWebRequest,
+) -> dict[str, WebPullRequest]:
+    ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
+    prs, _ = await fetch_issues_prs(
+        ids, account_info, req.sdb, req.mdb, req.pdb, req.rdb, req.cache,
+    )
+    return prs
 
 
 def _sort_issues(issues: pd.DataFrame, request_keys: list[str]) -> pd.DataFrame:
