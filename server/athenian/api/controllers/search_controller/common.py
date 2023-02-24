@@ -102,7 +102,7 @@ class OrderByValues(OrderBy):
         current_indexes: npt.NDArray[int],
     ) -> tuple[npt.NDArray[int], npt.NDArray[int]]:
         """Apply the order by expression."""
-        values = self._get_values(expr).copy()[current_indexes]
+        values = self._get_values(expr)[current_indexes]
         nulls = values != values
         discard = self._discard_mask(expr, nulls)
         ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
