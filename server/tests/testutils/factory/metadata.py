@@ -10,6 +10,7 @@ from athenian.api.models.metadata.github import (
     NodeCommit,
     NodePullRequest,
     NodePullRequestJiraIssues,
+    NodeRepository,
     PullRequest,
     PullRequestCommit,
     PullRequestReview,
@@ -197,6 +198,17 @@ class NodePullRequestFactory(SQLAlchemyModelFactory):
     repository_id = 1
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
     updated_at = factory.LazyAttribute(lambda pr: pr.created_at + timedelta(days=2))
+
+
+class NodeRepositoryFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = NodeRepository
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    name_with_owner = factory.LazyAttribute(lambda repo: f"org/repo-{repo.node_id}")
+    url = factory.LazyAttribute(lambda repo: f"https://github.com/{repo.full_name}")
+    name = factory.LazyAttribute(lambda repo: f"org/repo-{repo.node_id}")
 
 
 class BotFactory(SQLAlchemyModelFactory):

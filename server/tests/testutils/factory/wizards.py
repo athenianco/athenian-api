@@ -29,9 +29,17 @@ async def insert_repo(
     await models_insert(
         sdb, ReleaseSettingFactory(repo_id=repository.node_id, match=ReleaseMatch.tag),
     )
+    repository_node = md_factory.NodeRepositoryFactory(
+        name=repository.full_name.split("/", 1)[1],
+        name_with_owner=repository.full_name,
+        url=repository.html_url,
+        node_id=repository.node_id,
+    )
+
     await _add_repo_to_reposet(repository.node_id, "", sdb)
     md_models = [
         repository,
+        repository_node,
         # AccountRepository rows are needed to pass GitHubAccessChecker
         md_factory.AccountRepositoryFactory(
             repo_full_name=repository.full_name, repo_graph_id=repository.node_id,
