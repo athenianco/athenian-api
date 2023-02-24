@@ -21,6 +21,8 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     fetch_jira_issues_by_keys,
     generate_jira_prs_query,
+    resolve_resolved,
+    resolve_work_began,
 )
 from athenian.api.internal.miners.types import (
     JIRAEntityToFetch,
@@ -205,6 +207,27 @@ class TestFetchJIRAIssues:
             "cache": None,
             **extra,
         }
+
+
+class TestResolveWorkBegan:
+    def test_smoke(self) -> None:
+        work_began = np.array([1, 2, None, 5], dtype="datetime64[s]")
+        prs_began = np.array([2, 1, 4, None], dtype="datetime64[s]")
+        res = resolve_work_began(work_began, prs_began)
+        expected = np.array([1, 1, None, 5], dtype="datetime64[s]")
+        assert_array_equal(res, expected)
+
+
+class TestResolveResolved:
+    def test_smoke(self) -> None:
+        issue_resolved = np.array([2, None, 1, 1, 1, 2], dtype="datetime64[s]")
+        prs_began = np.array([1, None, None, 1, None, None], dtype="datetime64[s]")
+        prs_released = np.array([1, None, None, 2, None, None], dtype="datetime64[s]")
+
+        res = resolve_resolved(issue_resolved, prs_began, prs_released)
+        expected = np.array([2, None, 1, 2, 1, 2], dtype="datetime64[s]")
+
+        assert_array_equal(res, expected)
 
 
 class TestFetchJIRAIssuesByKeys:

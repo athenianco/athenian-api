@@ -30,7 +30,8 @@ from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
     ISSUE_PRS_BEGAN,
     ISSUE_PRS_RELEASED,
-    resolve_work_began_and_resolved,
+    resolve_resolved,
+    resolve_work_began,
 )
 from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
 from athenian.api.internal.prefixer import Prefixer
@@ -114,15 +115,17 @@ def build_issue_web_models(
         for r in issue_types
     }
 
+    prs_began = issues[ISSUE_PRS_BEGAN].values
+    issues_work_began = resolve_work_began(issues[AthenianIssue.work_began.name].values, prs_began)
+    issues_resolved = resolve_resolved(
+        issues[AthenianIssue.resolved.name].values, prs_began, issues[ISSUE_PRS_RELEASED].values,
+    )
+
     for (
         issue_key,
         issue_title,
         issue_created,
         issue_updated,
-        issue_prs_began,
-        issue_work_began,
-        issue_prs_released,
-        issue_resolved,
         issue_reporter,
         issue_assignee,
         issue_priority,
@@ -133,6 +136,8 @@ def build_issue_web_models(
         issue_comments,
         issue_url,
         issue_story_points,
+        work_began,
+        resolved,
     ) in zip(
         *(
             issues[column].values
@@ -141,10 +146,6 @@ def build_issue_web_models(
                 Issue.title.name,
                 Issue.created.name,
                 AthenianIssue.updated.name,
-                ISSUE_PRS_BEGAN,
-                AthenianIssue.work_began.name,
-                ISSUE_PRS_RELEASED,
-                AthenianIssue.resolved.name,
                 Issue.reporter_display_name.name,
                 Issue.assignee_display_name.name,
                 Issue.priority_name.name,
@@ -157,10 +158,11 @@ def build_issue_web_models(
                 Issue.story_points.name,
             )
         ),
+        issues_work_began,
+        issues_resolved,
     ):
-        work_began, resolved = resolve_work_began_and_resolved(
-            issue_work_began, issue_prs_began, issue_resolved, issue_prs_released,
-        )
+        work_began = work_began if work_began == work_began else None
+        resolved = resolved if resolved == resolved else None
         if resolved:
             lead_time = resolved - work_began
             life_time = resolved - issue_created

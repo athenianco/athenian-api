@@ -1155,29 +1155,43 @@ class PullRequestJiraMapper:
             f.jira = empty_jira
 
 
-def resolve_work_began_and_resolved(
-    issue_work_began: Optional[np.datetime64],
-    prs_began: Optional[np.datetime64],
-    issue_resolved: Optional[np.datetime64],
-    prs_released: Optional[np.datetime64],
-) -> tuple[Optional[np.datetime64], Optional[np.datetime64]]:
-    """Compute the final timestamps of when the work started on the issue, and when the issue \
-    became fully resolved."""
-    if issue_work_began != issue_work_began or issue_work_began is None:
-        return None, None
-    if prs_began != prs_began or prs_began is None:
-        return (
-            issue_work_began,
-            issue_resolved
-            if (issue_resolved == issue_resolved and issue_resolved is not None)
-            else None,
-        )
-    work_began = min(prs_began, issue_work_began)
-    if (prs_released != prs_released or prs_released is None) or (
-        issue_resolved != issue_resolved or issue_resolved is None
-    ):
-        return work_began, None
-    return work_began, max(issue_resolved, prs_released)
+def resolve_work_began(work_began: np.ndarray, prs_began: np.ndarray) -> np.ndarray:
+    """Compute the final timestamp when the work started on the issues.
+
+    `work_began` are the `AthenianIssue.work_began` values
+    `prs_began` are the ISSUE_PRS_BEGAN computed fields of the issues.
+    """
+    res = np.full(len(work_began), np.datetime64("NaT"), dtype=work_began.dtype)
+    has_work_began = work_began == work_began
+    res[has_work_began] = np.fmin(work_began[has_work_began], prs_began[has_work_began])
+    return res
+
+
+def resolve_resolved(
+    issue_resolved: np.ndarray,
+    prs_began: np.ndarray,
+    prs_released: np.ndarray,
+) -> np.ndarray:
+    """Compute the final timestamp when the issue became fully resolved.
+
+    `issue_resolved` are the `AthenianIssue.resolved` values
+    `prs_began` are the ISSUE_PRS_BEGAN computed fields of the issues.
+    `prs_released` are the ISSUE_PRS_RELEASED fields of the issues.
+
+    """
+    res = np.empty(len(issue_resolved), dtype=issue_resolved.dtype)
+    has_issue_resolved = issue_resolved == issue_resolved
+    has_prs = prs_began == prs_began
+    resolved_w_pr = has_issue_resolved & has_prs
+    # not fmax, issues with unreleased PRs are unresolved
+    res[resolved_w_pr] = np.maximum(issue_resolved[resolved_w_pr], prs_released[resolved_w_pr])
+
+    resolved_no_prs = has_issue_resolved & ~has_prs
+    res[resolved_no_prs] = issue_resolved[resolved_no_prs]
+
+    res[~has_issue_resolved] = np.datetime64("NaT")
+
+    return res
 
 
 @sentry_span

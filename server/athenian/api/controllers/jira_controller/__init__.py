@@ -53,7 +53,8 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     participant_columns,
     query_jira_raw,
-    resolve_work_began_and_resolved,
+    resolve_resolved,
+    resolve_work_began,
 )
 from athenian.api.internal.miners.types import Deployment
 from athenian.api.internal.prefixer import Prefixer
@@ -296,6 +297,15 @@ async def _epic_flow(
         children_by_type = defaultdict(list)
         epics_by_type = defaultdict(list)
         now = np.datetime64(datetime.utcnow())
+
+        epics_work_began = resolve_work_began(
+            epics_df[AthenianIssue.work_began.name].values, epics_df[ISSUE_PRS_BEGAN].values,
+        )
+        epics_resolved = resolve_resolved(
+            epics_df[AthenianIssue.resolved.name].values,
+            epics_df[ISSUE_PRS_BEGAN].values,
+            epics_df[ISSUE_PRS_RELEASED].values,
+        )
         for (
             epic_id,
             project_id,
@@ -303,10 +313,6 @@ async def _epic_flow(
             epic_title,
             epic_created,
             epic_updated,
-            epic_prs_began,
-            epic_work_began,
-            epic_prs_released,
-            epic_resolved,
             epic_reporter,
             epic_assignee,
             epic_priority,
@@ -316,6 +322,8 @@ async def _epic_flow(
             epic_comments,
             epic_url,
             epic_story_points,
+            work_began,
+            resolved,
         ) in zip(
             epics_df.index.values,
             *(
@@ -326,10 +334,6 @@ async def _epic_flow(
                     Issue.title.name,
                     Issue.created.name,
                     AthenianIssue.updated.name,
-                    ISSUE_PRS_BEGAN,
-                    AthenianIssue.work_began.name,
-                    ISSUE_PRS_RELEASED,
-                    AthenianIssue.resolved.name,
                     Issue.reporter_display_name.name,
                     Issue.assignee_display_name.name,
                     Issue.priority_name.name,
@@ -341,10 +345,11 @@ async def _epic_flow(
                     Issue.story_points.name,
                 )
             ),
+            epics_work_began,
+            epics_resolved,
         ):
-            work_began, resolved = resolve_work_began_and_resolved(
-                epic_work_began, epic_prs_began, epic_resolved, epic_prs_released,
-            )
+            work_began = work_began if work_began == work_began else None
+            resolved = resolved if resolved == resolved else None
             epics.append(
                 epic := JIRAEpic(
                     id=epic_key,
@@ -371,16 +376,23 @@ async def _epic_flow(
             children_indexes = epic_children_map.get(epic_id, [])
             project_type_ids = issue_type_ids.setdefault(project_id, set())
             project_type_ids.add(epic_type)
+
+            children_work_began = resolve_work_began(
+                children_columns[AthenianIssue.work_began.name][children_indexes],
+                children_columns[ISSUE_PRS_BEGAN][children_indexes],
+            )
+            children_resolved = resolve_resolved(
+                children_columns[AthenianIssue.resolved.name][children_indexes],
+                children_columns[ISSUE_PRS_BEGAN][children_indexes],
+                children_columns[ISSUE_PRS_RELEASED][children_indexes],
+            )
+
             for (
                 child_id,
                 child_key,
                 child_title,
                 child_created,
                 child_updated,
-                child_prs_began,
-                child_work_began,
-                child_prs_released,
-                child_resolved,
                 child_comments,
                 child_reporter,
                 child_assignee,
@@ -390,6 +402,8 @@ async def _epic_flow(
                 child_type,
                 child_url,
                 child_story_points,
+                work_began,
+                resolved,
             ) in zip(
                 *(
                     children_columns[column][children_indexes]
@@ -399,10 +413,6 @@ async def _epic_flow(
                         Issue.title.name,
                         Issue.created.name,
                         AthenianIssue.updated.name,
-                        ISSUE_PRS_BEGAN,
-                        AthenianIssue.work_began.name,
-                        ISSUE_PRS_RELEASED,
-                        AthenianIssue.resolved.name,
                         Issue.comments_count.name,
                         Issue.reporter_display_name.name,
                         Issue.assignee_display_name.name,
@@ -414,11 +424,12 @@ async def _epic_flow(
                         Issue.story_points.name,
                     )
                 ),
+                children_work_began,
+                children_resolved,
             ):  # noqa(E123)
                 epic.prs += child_prs
-                work_began, resolved = resolve_work_began_and_resolved(
-                    child_work_began, child_prs_began, child_resolved, child_prs_released,
-                )
+                work_began = work_began if work_began == work_began else None
+                resolved = resolved if resolved == resolved else None
                 if work_began is not None:
                     epic.work_began = min(epic.work_began or work_began, work_began)
                 if resolved is not None:
