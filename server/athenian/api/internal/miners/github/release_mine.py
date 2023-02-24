@@ -13,7 +13,7 @@ import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import and_, func, join, select, union_all
+from sqlalchemy import and_, func, join, select, true as sql_true, union_all
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
@@ -65,6 +65,7 @@ from athenian.api.internal.miners.github.release_load import (
     MineReleaseMetrics,
     ReleaseLoader,
     group_repos_by_release_match,
+    match_groups_to_conditions,
 )
 from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.internal.miners.github.released_pr import matched_by_column
@@ -2076,16 +2077,14 @@ async def _load_release_deployments(
     return depmap, deployments
 
 
-def discover_first_outlier_releases(
-    releases: pd.DataFrame,
-    threshold_factor=100,
-) -> tuple[pd.DataFrame, dict[str, Sequence[int]]]:
+def discover_first_outlier_releases(releases: pd.DataFrame, threshold_factor=100) -> pd.DataFrame:
     """
     Apply heuristics to find first releases that should be hidden from the metrics.
 
     :param releases: Releases in the format of `mine_releases()`.
     :param threshold_factor: We consider the first release as an outlier if it's age is bigger \
                              than the median age of the others multiplied by this number.
+    :return: load_releases()-like dataframe with found outlier releases.
     """
     oldest_release_by_repo = {}
     indexes_by_repo = defaultdict(list)
@@ -2103,28 +2102,28 @@ def discover_first_outlier_releases(
         if min_ts >= ts:
             oldest_release_by_repo[repo] = i, ts
     outlier_releases = []
-    prs = {}
     age_col = releases[ReleaseFacts.f.age].values
-    pr_node_ids_col = releases["prs_" + PullRequest.node_id.name].values
+    must_update_values = []
     for repo, (i, _) in oldest_release_by_repo.items():
-        if len(pr_node_ids := pr_node_ids_col[i]) == 0:
-            continue
         ages = np.array([age_col[j] for j in indexes_by_repo[repo] if j != i])
         if len(ages) < 2 or age_col[i] < np.median(ages) * threshold_factor:
             continue
         release = releases.iloc[i].copy()
+        must_update = False
         for key, val in release.items():
             if key.startswith("prs_"):
                 if val is not None:
+                    must_update |= len(val) > 0
                     release[key] = val[:0]
+        must_update_values.append(must_update)
         outlier_releases.append(release)
-        prs[repo] = pr_node_ids
-    return pd.DataFrame(outlier_releases), prs
+    df = pd.DataFrame(outlier_releases)
+    df["must_update"] = must_update_values
+    return df
 
 
 async def hide_first_releases(
     releases: pd.DataFrame,
-    prs: dict[str, Sequence[int]],
     default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
@@ -2134,20 +2133,17 @@ async def hide_first_releases(
     Hide the specified releases from calculating the metrics.
 
     :param releases: First releases detected by `discover_first_outlier_releases()`.
-    :param prs: Pull requests belonging to the first releases.
     """
     if releases.empty:
         return
     log = logging.getLogger(f"{metadata.__package__}.hide_first_releases")
-    logged_releases = dict(
-        zip(
-            releases[ReleaseFacts.f.repository_full_name].values,
-            releases[ReleaseFacts.f.url].values,
-        ),
+    log.info(
+        "processing %d first releases: %s",
+        len(releases),
+        releases[ReleaseFacts.f.url].values.tolist(),
     )
-    log.info("hiding %d first releases: %s", len(logged_releases), logged_releases)
 
-    async def set_pr_release_ignored(repo: str, node_ids: np.ndarray):
+    async def set_pr_release_ignored() -> None:
         ghdprf = GitHubDonePullRequestFacts
         format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
         if pdb.url.dialect == "sqlite":
@@ -2166,27 +2162,62 @@ async def hide_first_releases(
                 ghdprf.merger,
                 ghdprf.releaser,
             ]
+            byte_cond = sql_true()
         else:
             extra_cols = [ghdprf.pr_created_at, ghdprf.number]
-        rows = await pdb.fetch_all(
-            select(ghdprf.pr_node_id, ghdprf.release_match, ghdprf.data, *extra_cols).where(
+            byte_cond = (
+                func.get_byte(
+                    ghdprf.data,
+                    PullRequestFacts.dtype.fields[PullRequestFacts.f.release_ignored][1],
+                )
+                == 0
+            )
+
+        match_groups, _ = group_repos_by_release_match(
+            releases[ReleaseFacts.f.repository_full_name].unique(),
+            default_branches,
+            release_settings,
+        )
+        or_conditions, _ = match_groups_to_conditions(match_groups, ghdprf)
+        release_repo_values = releases[ReleaseFacts.f.repository_full_name].values
+        release_node_id_values = releases[ReleaseFacts.f.node_id].values
+
+        queries = [
+            select(
+                ghdprf.pr_node_id,
+                ghdprf.repository_full_name,
+                ghdprf.release_match,
+                ghdprf.data,
+                *extra_cols,
+            ).where(
                 ghdprf.acc_id == account,
                 ghdprf.format_version == format_version,
-                ghdprf.repository_full_name == repo,
-                ghdprf.pr_node_id.in_(node_ids),
-            ),
-        )
+                ghdprf.release_match == release_match_cond[ghdprf.release_match.name],
+                ghdprf.release_node_id.in_(
+                    release_node_id_values[
+                        np.in1d(
+                            release_repo_values,
+                            release_match_cond[ghdprf.repository_full_name.name],
+                        )
+                    ],
+                ),
+                byte_cond,
+            )
+            for release_match_cond in or_conditions
+        ]
+        if len(queries) == 1:
+            query = queries[0]
+        else:
+            query = union_all(*queries)
+
+        if not (rows := await pdb.fetch_all(query)):
+            return
+
+        log.info("setting %d PRs as release ignored", len(rows))
         updates = []
         now = datetime.now(timezone.utc)
         for row in rows:
             args = dict(PullRequestFacts(row[ghdprf.data.name]))
-            if args[PullRequestFacts.f.merged] is None:
-                log.error(
-                    "Attempted to ignore release of an unmerged PR %s#%d",
-                    repo,
-                    row[ghdprf.number.name],
-                )
-                continue
             args[PullRequestFacts.f.release_ignored] = True
             args[PullRequestFacts.f.released] = None
             updates.append(
@@ -2194,7 +2225,7 @@ async def hide_first_releases(
                     ghdprf.acc_id.name: account,
                     ghdprf.format_version.name: format_version,
                     ghdprf.release_match.name: row[ghdprf.release_match.name],
-                    ghdprf.repository_full_name.name: repo,
+                    ghdprf.repository_full_name.name: row[ghdprf.repository_full_name.name],
                     ghdprf.pr_node_id.name: row[ghdprf.pr_node_id.name],
                     ghdprf.data.name: PullRequestFacts.from_fields(**args).data,
                     ghdprf.updated_at.name: now,
@@ -2228,12 +2259,14 @@ async def hide_first_releases(
     )
 
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
-        keys = releases.columns
+        keys = releases.columns.tolist()
+        must_update_col = keys.index("must_update")
         await gather(
             store_precomputed_release_facts(
                 [
                     ReleaseFacts.from_fields(**dict(zip(keys, row)))
                     for row in zip(*(releases[k].values for k in keys))
+                    if row[must_update_col]
                 ],
                 default_branches,
                 release_settings,
@@ -2241,11 +2274,8 @@ async def hide_first_releases(
                 pdb,
                 on_conflict_replace=True,
             ),
-            *(set_pr_release_ignored(repo, node_ids) for repo, node_ids in prs.items()),
-            op=(
-                f"override_first_releases/update({len(releases)} + "
-                f"{len(prs)}/{sum(len(n) for n in prs.values())})"
-            ),
+            set_pr_release_ignored(),
+            op=f"override_first_releases/update({len(releases)}",
         )
 
 
@@ -2258,10 +2288,8 @@ async def override_first_releases(
     threshold_factor=100,
 ) -> int:
     """Exclude outlier first releases from calculating PR and release metrics."""
-    first_releases, prs = discover_first_outlier_releases(releases, threshold_factor)
-    await hide_first_releases(
-        first_releases, prs, default_branches, release_settings, account, pdb,
-    )
+    first_releases = discover_first_outlier_releases(releases, threshold_factor)
+    await hide_first_releases(first_releases, default_branches, release_settings, account, pdb)
     return len(first_releases)
 
 

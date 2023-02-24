@@ -142,7 +142,7 @@ def compose_release_match(match: ReleaseMatch, value: str) -> str:
 
 @sentry_span
 async def store_precomputed_release_facts(
-    releases: list[ReleaseFacts],
+    releases: Iterable[ReleaseFacts],
     default_branches: dict[str, str],
     settings: ReleaseSettings,
     account: int,
@@ -179,10 +179,13 @@ async def store_precomputed_release_facts(
             .create_defaults()
             .explode(with_primary_keys=True),
         )
+    if not values:
+        return
+    log = logging.getLogger(f"{metadata.__package__}.store_precomputed_release_facts")
     if skipped:
-        log = logging.getLogger(f"{metadata.__package__}.store_precomputed_release_facts")
-        log.warning("Ignored mined releases: %s", dict(skipped))
+        log.warning("ignored mined releases: %s", dict(skipped))
 
+    log.info("storing %d release facts", len(values))
     sql = (await dialect_specific_insert(pdb))(GitHubReleaseFacts)
     if on_conflict_replace:
         sql = sql.on_conflict_do_update(
