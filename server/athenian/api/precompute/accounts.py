@@ -324,12 +324,9 @@ async def precompute_reposet(
                 refetcher=refetcher,
             )
             if (releases_count := len(releases)) > 0:
-                ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(
-                    releases,
-                )
+                ignored_first_releases = discover_first_outlier_releases(releases)
             else:
                 ignored_first_releases = pd.DataFrame()
-                ignored_released_prs = {}
             del releases
             _release_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings, matches,
@@ -337,7 +334,6 @@ async def precompute_reposet(
         else:
             _release_settings = release_settings
             ignored_first_releases = pd.DataFrame()
-            ignored_released_prs = {}
         if not args.skip_prs:
             if reposet.precomputed:
                 log.info("Scanning for force push dropped PRs")
@@ -376,13 +372,12 @@ async def precompute_reposet(
             if (ignored_releases_count := len(ignored_first_releases)) > 0:
                 await hide_first_releases(
                     ignored_first_releases,
-                    ignored_released_prs,
                     default_branches,
                     release_settings,
                     reposet.owner_id,
                     pdb,
                 )
-            del ignored_first_releases, ignored_released_prs
+            del ignored_first_releases
 
         if not args.skip_deployments:
             health_metrics.deployments.broken = await reset_broken_deployments(
