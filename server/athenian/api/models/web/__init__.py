@@ -235,6 +235,7 @@ from athenian.api.models.web.reset_target import ResetTarget
 from athenian.api.models.web.search_jira_issues import (
     JIRAIssueDigest,
     SearchJIRAIssuesOrderByExpression,
+    SearchJIRAIssuesOrderByIssueTrait,
     SearchJIRAIssuesRequest,
     SearchJIRAIssuesResponse,
 )

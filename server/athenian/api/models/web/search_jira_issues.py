@@ -1,4 +1,5 @@
 from datetime import date
+from enum import Enum
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -36,3 +37,10 @@ class SearchJIRAIssuesResponse(Model):
     """Result of the search for Jira issues."""
 
     jira_issues: list[JIRAIssueDigest]
+
+
+class SearchJIRAIssuesOrderByIssueTrait(Enum):
+    """A trait of the Jira issue usable as ordering field in /search/jira_issues."""
+
+    CREATED = "created"
+    WORK_BEGAN = "work_began"
