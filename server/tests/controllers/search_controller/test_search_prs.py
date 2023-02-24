@@ -2,11 +2,13 @@ from datetime import date
 from functools import partial
 from operator import itemgetter
 from typing import Any, Sequence
+from unittest import mock
 
 import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import (
     FilterOperator,
@@ -17,6 +19,7 @@ from athenian.api.models.web import (
     SearchPullRequestsOrderByStageTiming as StageTiming,
     SearchPullRequestsRequest,
 )
+from tests.conftest import FakeCache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
@@ -84,10 +87,26 @@ class TestSearchPRsError(BaseSearchPRsTest):
 
 
 class TestSearchPRs(BaseSearchPRsTest):
-    async def test_smoke(self, sdb: Database) -> None:
+    async def test_smoke(self) -> None:
         body = self._body()
         res = await self.post_json(json=body)
         assert len(res["pull_requests"]) == 7
+
+    async def test_with_cache(self, client_cache: FakeCache) -> None:
+        body = self._body()
+
+        with mock.patch.object(
+            DonePRFactsLoader,
+            "load_precomputed_done_facts_filters",
+            wraps=DonePRFactsLoader.load_precomputed_done_facts_filters,
+        ) as load_done_wrapper:
+            res = await self.post_json(json=body)
+            assert len(res["pull_requests"]) == 7
+            assert load_done_wrapper.call_count == 1
+
+            res = await self.post_json(json=body)
+            assert len(res["pull_requests"]) == 7
+            assert load_done_wrapper.call_count == 1  # cache hit, DonePRFactsLoader not called
 
     async def test_repositories(self, sdb: Database, mdb_rw: Database) -> None:
         times = {"created_at": dt(2019, 11, 15), "updated_at": dt(2019, 11, 20)}
