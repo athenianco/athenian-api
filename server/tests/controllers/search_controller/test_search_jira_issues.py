@@ -6,12 +6,18 @@ from athenian.api.models.web import (
     JIRAMetricID,
     JIRAStatusCategory,
     OrderByDirection,
+    SearchJIRAIssuesOrderByIssueTrait,
     SearchJIRAIssuesRequest,
 )
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory, state as st_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
-from tests.testutils.factory.wizards import jira_issue_models
+from tests.testutils.factory.wizards import (
+    insert_repo,
+    jira_issue_models,
+    pr_jira_issue_mappings,
+    pr_models,
+)
 from tests.testutils.requester import Requester
 from tests.testutils.time import dt
 
@@ -226,7 +232,7 @@ class TestSearchJIRAIssuesFiltering(BaseSearchJIRAIssuesTest):
 
 
 class TestSearchJIRAIssuesOrderBy(BaseSearchJIRAIssuesTest):
-    async def test_life_time(self, sdb, mdb_rw: Database) -> None:
+    async def test_life_time(self, mdb_rw: Database) -> None:
         issue_kwargs = {"created": dt(2016, 1, 1), "project_id": "1"}
         mdb_models = [
             md_factory.JIRAProjectFactory(id="1", key="P"),
@@ -259,3 +265,72 @@ class TestSearchJIRAIssuesOrderBy(BaseSearchJIRAIssuesTest):
             body["order_by"] = [{"field": metric, "direction": OrderByDirection.DESCENDING.value}]
             ids = await self._fetch_ids(json=body)
             assert ids == ("P-4", "P-1", "P-3", "P-2")
+
+
+class TestSearchJIRAIssuesOrderByTrait(BaseSearchJIRAIssuesTest):
+    async def test_created(self, mdb_rw: Database) -> None:
+        issue_kwargs = {"project_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            *jira_issue_models("1", key="P-1", **issue_kwargs, created=dt(2016, 1, 2)),
+            *jira_issue_models("2", key="P-2", **issue_kwargs, created=dt(2016, 1, 4)),
+            *jira_issue_models("3", key="P-3", **issue_kwargs, created=dt(2016, 1, 3)),
+            *jira_issue_models("4", key="P-4", **issue_kwargs, created=dt(2016, 1, 1)),
+        ]
+
+        field = SearchJIRAIssuesOrderByIssueTrait.CREATED.value
+        body = self._body()
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body["order_by"] = [{"field": field}]
+            ids = await self._fetch_ids(json=body)
+            assert ids == ("P-4", "P-1", "P-3", "P-2")
+
+            body["order_by"] = [{"field": field, "direction": OrderByDirection.DESCENDING.value}]
+            ids = await self._fetch_ids(json=body)
+            assert ids == ("P-2", "P-3", "P-1", "P-4")
+
+    async def test_work_began(self, sdb: Database, mdb_rw: Database) -> None:
+        issue_kwargs = {"project_id": "1", "created": dt(2016, 1, 2)}
+        pr_kwargs = {"repository_full_name": "o/r"}
+        mdb_models = [
+            *pr_models(99, 4, 4, **pr_kwargs, created_at=dt(2016, 1, 2)),
+            *pr_models(99, 5, 5, **pr_kwargs, created_at=dt(2016, 1, 8)),
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            *jira_issue_models("1", key="P-1", **issue_kwargs, work_began=dt(2016, 1, 4)),
+            *jira_issue_models("2", key="P-2", **issue_kwargs, work_began=None),
+            *jira_issue_models("3", key="P-3", **issue_kwargs, work_began=dt(2016, 1, 5)),
+            *jira_issue_models("4", key="P-4", **issue_kwargs, work_began=dt(2016, 1, 7)),
+            *jira_issue_models("5", key="P-5", **issue_kwargs, work_began=dt(2016, 1, 6)),
+            *pr_jira_issue_mappings((4, "4"), (5, "5")),
+        ]
+
+        field = SearchJIRAIssuesOrderByIssueTrait.WORK_BEGAN.value
+        body = self._body()
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body["order_by"] = [{"field": field}]
+            ids = await self._fetch_ids(json=body)
+            # for P-4 PR is created before issue work_began, using that as work_began
+            # for P-5 PR is created after, using issue work_began
+            assert ids == ("P-4", "P-1", "P-3", "P-5")
+
+            body["order_by"] = [{"field": field, "exclude_nulls": False}]
+            ids = await self._fetch_ids(json=body)
+            assert ids == ("P-4", "P-1", "P-3", "P-5", "P-2")
+
+            body["order_by"] = [{"field": field, "exclude_nulls": False, "nulls_first": True}]
+            ids = await self._fetch_ids(json=body)
+            assert ids == ("P-2", "P-4", "P-1", "P-3", "P-5")
+
+            body["order_by"] = [{"field": field, "direction": OrderByDirection.DESCENDING.value}]
+            ids = await self._fetch_ids(json=body)
+            assert ids == ("P-5", "P-3", "P-1", "P-4")
