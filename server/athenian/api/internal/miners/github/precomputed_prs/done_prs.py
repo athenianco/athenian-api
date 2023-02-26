@@ -521,6 +521,7 @@ class DonePRFactsLoader:
         assert time_to.tzinfo is not None
         assert prs.index.nlevels == 2
         ghprt = GitHubDonePullRequestFacts
+        pr_node_ids = prs.index.get_level_values(0).values
         query = select(
             ghprt.pr_node_id,
             ghprt.pr_done_at,
@@ -531,10 +532,13 @@ class DonePRFactsLoader:
             ghprt.release_match,
         ).where(
             ghprt.acc_id == account,
-            ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
-            ghprt.repository_full_name.in_(prs.index.get_level_values(1).unique()),
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.releaser.isnot(None),
             ghprt.pr_done_at < time_to,
+            ghprt.repository_full_name.in_(prs.index.get_level_values(1).unique()),
+            ghprt.pr_node_id.in_(pr_node_ids)
+            if len(pr_node_ids) < 500
+            else ghprt.pr_node_id.in_any_values(pr_node_ids),
         )
         with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
             rows = await pdb.fetch_all(query)
@@ -543,26 +547,40 @@ class DonePRFactsLoader:
         force_push_dropped = set()
         user_node_to_login_get = prefixer.user_node_to_login.get
         alternative_matched = []
+        repository_full_name_col = ghprt.repository_full_name.name
+        pr_node_id_col = ghprt.pr_node_id.name
+        release_match_col = ghprt.release_match.name
+        pr_done_at_col = ghprt.pr_done_at.name
+        releaser_col = ghprt.releaser.name
+        release_url_col = ghprt.release_url.name
+        release_node_id_col = ghprt.release_node_id.name
+        force_push_drop_name = ReleaseMatch.force_push_drop.name
+        force_push_drop_match = ReleaseMatch.force_push_drop
+        event_name = ReleaseMatch.event.name
+        event_match = ReleaseMatch.event
         for row in rows:
-            repo = row[ghprt.repository_full_name.name]
-            node_id = row[ghprt.pr_node_id.name]
-            release_match = row[ghprt.release_match.name]
-            author_node_id = row[ghprt.releaser.name]
-            if release_match in (ReleaseMatch.force_push_drop.name, ReleaseMatch.event.name):
-                if release_match == ReleaseMatch.force_push_drop.name:
+            repo = row[repository_full_name_col]
+            node_id = row[pr_node_id_col]
+            release_match = row[release_match_col]
+            author_node_id = row[releaser_col]
+            if release_match == force_push_drop_name or release_match == event_name:
+                if release_match == force_push_drop_name:
                     if node_id in force_push_dropped:
                         continue
                     force_push_dropped.add(node_id)
+                    release_match = force_push_drop_match
+                else:
+                    release_match = event_match
                 records.append(
                     (
                         node_id,
-                        row[ghprt.pr_done_at.name].replace(tzinfo=utc),
+                        row[pr_done_at_col].replace(tzinfo=utc),
                         user_node_to_login_get(author_node_id),
                         author_node_id,
-                        row[ghprt.release_url.name],
-                        row[ghprt.release_node_id.name],
-                        row[ghprt.repository_full_name.name],
-                        ReleaseMatch[release_match],
+                        row[release_url_col],
+                        row[release_node_id_col],
+                        row[repository_full_name_col],
+                        release_match,
                     ),
                 )
                 continue
@@ -580,12 +598,12 @@ class DonePRFactsLoader:
             records.append(
                 (
                     node_id,
-                    row[ghprt.pr_done_at.name].replace(tzinfo=utc),
+                    row[pr_done_at_col].replace(tzinfo=utc),
                     user_node_to_login_get(author_node_id),
                     author_node_id,
-                    row[ghprt.release_url.name],
-                    row[ghprt.release_node_id.name],
-                    row[ghprt.repository_full_name.name],
+                    row[release_url_col],
+                    row[release_node_id_col],
+                    row[repository_full_name_col],
                     release_setting.match,
                 ),
             )
