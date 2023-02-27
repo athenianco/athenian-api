@@ -28,7 +28,7 @@ from athenian.api.models.web import (
     InvalidRequestError,
     PullRequestMetricID,
 )
-from athenian.api.request import AthenianWebRequest
+from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 
@@ -49,11 +49,7 @@ async def delete_goal(request: AthenianWebRequest, id: int) -> web.Response:
 @disable_default_user
 async def create_goal(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a new goal."""
-    try:
-        create_request = GoalCreateRequest.from_dict(body)
-    except ValueError as e:
-        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
-
+    create_request = model_from_body(GoalCreateRequest, body)
     creation_info = await _parse_create_request(request, create_request)
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -65,11 +61,7 @@ async def create_goal(request: AthenianWebRequest, body: dict) -> web.Response:
 @disable_default_user
 async def update_goal(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
     """Update an existing goal."""
-    try:
-        update_req = GoalUpdateRequest.from_dict(body)
-    except ValueError as e:
-        raise ResponseError(InvalidRequestError.from_validation_error(e)) from e
-
+    update_req = model_from_body(GoalUpdateRequest, body)
     async with request.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             account = await fetch_goal_account(id, sdb_conn)
