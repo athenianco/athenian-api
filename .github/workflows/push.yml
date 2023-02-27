@@ -37,6 +37,55 @@ jobs:
       - id: skip
         if: "github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]' && steps.membership.outputs.isTeamMember == 'false'"
         run: echo "skip=true" >> $GITHUB_OUTPUT
+  check_self_hosted:
+    name: Check self-hosted
+    runs-on: ubuntu-22.04
+    needs: check_membership
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+      if: "github.event_name != 'pull_request_target' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
+      with:
+        token: ${{ secrets.GKWILLIE_TOKEN }}
+        submodules: false
+    - name: script
+      env:
+        GOOGLE_ZONE: us-east1-c
+      run: |
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+        make gcloud-login
+
+        is_stopping=true
+        for i in $(seq 1 10)
+        do
+          if [ "$(gcloud compute instances list --filter="(labels.purpose=ci) AND (labels.environment=gha) AND (zone:(${GOOGLE_ZONE})) AND (status=STOPPING)" --format="[no-heading](name)" --verbosity error | wc -l)" = "0" ]
+          then
+            echo "no instances stopping"
+            is_stopping=false
+            break
+          else
+            echo "some instances stopping, waiting"
+            sleep 15
+          fi
+        done
+
+        if [ "$is_stopping" == "true" ]
+        then
+          echo "some instances are still in the stopping state"
+          exit 1
+        fi
+
+        echo "starting stopped instances"
+        instances=($(gcloud compute instances list --filter="(labels.purpose=ci) AND (labels.environment=gha) AND (zone:(${GOOGLE_ZONE})) AND (status=TERMINATED)" --format="[no-heading](name)" --verbosity error))
+        for i in "${instances[@]}"
+        do
+           echo "bringing up $i"
+           gcloud compute instances start $i --zone $GOOGLE_ZONE --user-output-enabled=false
+           # the service should be started automatically
+        done
+
+        echo "done"
   static_checks:
     name: Static checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
@@ -203,9 +252,10 @@ jobs:
         athenian/api/models/state/check_sdb_migrations.sh
   test:
     name: Test suite
-    needs: check_membership
+    needs: check_self_hosted
     if: "(!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push') && needs.check_membership.outputs.skip != 'true'"
-    runs-on: gitrunners-ubuntu-2204-x64-32vcpu
+    runs-on:
+      labels: gce-c2d-highcpu-32
       # yes, we over-commit threads to cores x2
       # labels: ubuntu-latest-32-cores
     concurrency:
@@ -263,9 +313,10 @@ jobs:
         submodules: recursive
     - name: Set up Python 3.11
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.11
+        architecture: 'x64'
     - name: cache pip
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       uses: actions/cache@v3.2.5
@@ -455,9 +506,10 @@ jobs:
         submodules: recursive
     - name: Set up Python 3.11
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.11
+        architecture: 'x64'
     - name: cache pip
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       uses: actions/cache@v3.2.5

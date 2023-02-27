@@ -1,0 +1,53 @@
+name: Stop self-hosted runners
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  stop-self-hosted-runners:
+    name: Stop self-hosted runners
+    runs-on: ubuntu-22.04
+    steps:
+      - name: actions/checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GKWILLIE_TOKEN }}
+          submodules: false
+      - name: Stop
+        env:
+          GOOGLE_ZONE: us-east1-c
+        run: |
+          GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+          GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+          make gcloud-login
+          
+          echo "stopping the running instances"
+          instances=($(gcloud compute instances list --filter="(labels.purpose=ci) AND (labels.environment=gha) AND (zone:(${GOOGLE_ZONE})) AND (status=RUNNING)" --format="[no-heading](name)" --verbosity error))
+          for i in "${instances[@]}"
+          do
+            echo "considering $i"
+            logs=$(gcloud compute ssh ubuntu@$i --zone $GOOGLE_ZONE -- 'actions-runner/get-logs.sh "2 hours ago"')
+            if [[ $logs =~ "-- No entries --" ]]; then
+              echo "no activities spotted"
+              echo "stopping $i"
+              gcloud compute instances stop $i --zone $GOOGLE_ZONE --user-output-enabled=false
+            else
+              echo "$logs"
+              echo "some activities detected, skipping the stop"
+            fi
+          done  
+          echo "done"
+      - name: Notify Sentry on failure
+        if: ${{ failure() }}
+        run: |
+          set -x
+          docker pull getsentry/sentry-cli
+          docker run \
+            -e SENTRY_DSN=${{ secrets.SENTRY_DSN }} \
+            --rm -v $(pwd):/work getsentry/sentry-cli send-event \
+            -m "Stop self-hosted runners" \
+            -t job:stop-self-hosted-runners \
+            -t url:https://github.com/${{github.repository}}/actions/runs/${{github.run_id}} \
+            -E olek -f $(date +%s%N)

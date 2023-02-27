@@ -22,6 +22,9 @@ See [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 See [`SECURITY.md`](SECURITY.md).
 
+### Self-hosted runners
+See [this](https://github.com/athenianco/infrastructure/blob/master/other/docs/self-hosted-runners-api.md).
+
 ### License
 
 Proprietary until further notice.
