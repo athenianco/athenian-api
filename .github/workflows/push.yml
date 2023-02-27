@@ -4,6 +4,7 @@ on:
   push:
     branches:
     - master
+    - self-hosted-runner
   pull_request_target:
 
 env:
@@ -205,7 +206,7 @@ jobs:
     name: Test suite
     needs: check_membership
     if: "(!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push') && needs.check_membership.outputs.skip != 'true'"
-    runs-on: gitrunners-ubuntu-2204-x64-32vcpu
+    runs-on: gce-c2d-highcpu-32
       # yes, we over-commit threads to cores x2
       # labels: ubuntu-latest-32-cores
     concurrency:
@@ -266,6 +267,9 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.11
+        architecture: "x64"
+        env:
+          AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
     - name: cache pip
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       uses: actions/cache@v3.2.5
@@ -388,6 +392,196 @@ jobs:
       name: codecov
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+  test-removeme:
+    name: Test suite 1
+    if: "github.event_name == 'push'"
+    runs-on: gce-c2d-highcpu-32
+      # yes, we over-commit threads to cores x2
+    # labels: ubuntu-latest-32-cores
+    concurrency:
+      group: auth0-${{ github.actor }}-${{ github.head_ref || github.run_id }}-${{ matrix.db }}-main
+      cancel-in-progress: true
+    strategy:
+      matrix:
+        db: [sqlite, postgres]
+      fail-fast: false
+    services:
+      memcached:
+        image: bitnami/memcached:latest
+        ports:
+          - 11211:11211
+        env:
+          MEMCACHED_EXTRA_FLAGS: -m 128 -I 64m
+      postgres:
+        image: bitnami/postgresql:13
+        env:
+          POSTGRESQL_USERNAME: postgres
+          POSTGRESQL_PASSWORD: postgres
+          POSTGRESQL_DATABASE: postgres
+          POSTGRESQL_EXTRA_FLAGS: "-c max_connections=1024 -c shared_buffers=1GB -c fsync=off"
+        ports:
+          - 5432:5432
+    env:
+      SDB: sqlite:///tests/sdb-master.sqlite
+      MDB: sqlite:///tests/mdb-master.sqlite
+      PDB: sqlite:///tests/pdb-master.sqlite
+      RDB: sqlite:///tests/rdb-master.sqlite
+    steps:
+      - uses: actions-ecosystem/action-get-merged-pull-request@v1
+        id: get-merged-pull-request
+        with:
+          github_token: ${{ github.token }}
+      - uses: tspascoal/get-user-teams-membership@v1
+        id: membership
+        if: "github.actor != 'dependabot[bot]'"
+        with:
+          username: ${{ github.actor }}
+          team: 'team'
+          GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
+      - name: actions/checkout
+        uses: actions/checkout@v3
+        if: "github.event_name == 'push'"
+        with:
+          token: ${{ secrets.GKWILLIE_TOKEN }}
+          submodules: recursive
+      - name: actions/checkout
+        uses: actions/checkout@v3
+        if: "github.event_name == 'push'"
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          token: ${{ secrets.GKWILLIE_TOKEN }}
+          submodules: recursive
+      - name: Set up Python 3.11
+        if: "github.event_name == 'push'"
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+          architecture: "x64"
+          env:
+            AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
+      - name: cache pip
+        if: "github.event_name == 'push'"
+        uses: actions/cache@v3.2.5
+        with:
+          path: ${{ env.PIP_CACHE }}
+          key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
+          restore-keys: ubuntu-22.04-3.11-pip-main-
+      - name: chown /usr/local
+        if: "github.event_name == 'push'"
+        run: sudo chown $(whoami) /usr/local/lib /usr/local/include
+      - name: cache libs
+        if: "github.event_name == 'push'"
+        id: cache-native-libs
+        uses: actions/cache@v3.2.5
+        with:
+          path: |
+            /usr/local/lib/libsentry.so*
+            /usr/local/lib/libmimalloc.so*
+            /usr/local/include/mimalloc.h
+            /usr/local/include/sentry.h
+          key: ubuntu-22.04-native-libs-${{ hashFiles('.git/modules/server/athenian/api/sentry_native/refs/heads/master', '.git/modules/server/athenian/api/mimalloc/refs/heads/dev') }}
+      - name: build-native-libs
+        if: "steps.cache-native-libs.outputs.cache-hit != 'true' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        run: |
+          set -x
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-gnutls-dev
+          make install-native
+      - name: godotenv
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        run: |
+          set -x
+          echo "a"
+          if [ ! -e $HOME/.local/bin/godotenv ]; then \
+            mkdir -p $HOME/.local/bin && ls $HOME/.local/bin && \
+            wget -O - https://github.com/athenianco/godotenv/releases/download/1.3.0-secure/godotenv.gz | gzip -d >$HOME/.local/bin/godotenv && \
+            chmod +x $HOME/.local/bin/godotenv; \
+          fi
+      - name: pip
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        run: |
+          set -x
+          rm -rf server/athenian/api/sentry_native/*
+          python3 -m pip install --user --upgrade setuptools pip
+          sudo apt-get remove -y python3-setuptools
+          sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
+          python3 -m pip install --user -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
+          python3 -m pip install --user --no-deps -e server/
+          patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: setup postgres
+        if: "matrix.db == 'postgres' && (!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        env:
+          PGPASSWORD: postgres
+          SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s?min_size=2&max_size=3
+          MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s?min_size=2&max_size=8
+          PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=6
+          RDB: postgresql://postgres:postgres@0.0.0.0:5432/persistentdata_%s?min_size=1&max_size=4
+        run: |
+          set -x
+          while ! psql -c "show max_connections" -U postgres -h 0.0.0.0 -p 5432; do sleep 1; done
+          for db in state metadata precomputed persistentdata; do
+            for i in $(seq 0 63); do
+              psql -c "create database ${db}_gw$i template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+            done
+            psql -c "create database ${db}_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+          done
+          echo "SDB=$SDB" >> $GITHUB_ENV
+          echo "MDB=$MDB" >> $GITHUB_ENV
+          echo "PDB=$PDB" >> $GITHUB_ENV
+          echo "RDB=$RDB" >> $GITHUB_ENV
+          echo "OVERRIDE_SDB=$SDB" >> $GITHUB_ENV
+          echo "OVERRIDE_MDB=$MDB" >> $GITHUB_ENV
+          echo "OVERRIDE_PDB=$PDB" >> $GITHUB_ENV
+          echo "OVERRIDE_RDB=$RDB" >> $GITHUB_ENV
+      - name: setup Google KMS
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        run: |
+          echo '${{ secrets.GOOGLE_KMS_SERVICE_ACCOUNT_B64 }}' | base64 -d > google_service.json
+          echo "GOOGLE_KMS_SERVICE_ACCOUNT_JSON=`pwd`/google_service.json" >> $GITHUB_ENV
+      - name: setup env
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        working-directory: server
+        run: |
+          echo 'AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}' >>.env
+          echo 'AUTH0_CLIENT_ID=${{ secrets.AUTH0_CLIENT_ID }}' >>.env
+          echo 'AUTH0_CLIENT_SECRET=${{ secrets.AUTH0_CLIENT_SECRET }}' >>.env
+          echo 'AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}' >>.env
+          echo 'GOOGLE_KMS_KEYNAME=${{ secrets.GOOGLE_KMS_KEYNAME }}' >>.env
+          echo 'GOOGLE_KMS_KEYRING=${{ secrets.GOOGLE_KMS_KEYRING }}' >>.env
+          echo 'GOOGLE_KMS_PROJECT=${{ secrets.GOOGLE_PROJECT }}' >>.env
+          echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}' >>.env
+          echo 'SENTRY_ORG=${{ secrets.SENTRY_ORG }}' >>.env
+          echo 'SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >>.env
+          echo 'SENTRY_KEY=${{ secrets.SENTRY_KEY }}' >>.env
+          echo 'MANDRILL_API_KEY=${{ secrets.MANDRILL_API_KEY }}' >>.env
+          echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
+          echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+          echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
+          echo 'SLACK_HEALTH_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+          echo 'SLACK_PERFORMANCE_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+      - name: test suite
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        working-directory: server
+        run: |
+          set -x
+          if [ ${{ matrix.db }} = "sqlite" ]; then
+            export SLACK_API_TOKEN=xxx
+            export MANDRILL_API_KEY=
+          fi
+          # update "setup postgres" above if you change the number of workers (-n)
+          godotenv -s pytest -n 64 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300 --ignore tests/controllers/test_user_controller.py
+      - name: clear env
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        working-directory: server
+        run: |
+          set -x
+          rm .env
+      - uses: codecov/codecov-action@v1
+        if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name == 'push')"
+        name: codecov
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
   test-extra:
     name: Additional tests
     needs: check_membership
@@ -458,6 +652,9 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.11
+        architecture: "x64"
+        env:
+          AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
     - name: cache pip
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       uses: actions/cache@v3.2.5
