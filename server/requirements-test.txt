@@ -5,7 +5,7 @@ pytest-aiohttp==1.0.4
 pytest-cov==4.0.0
 pytest-benchmark==4.0.0
 pytest-rerunfailures==11.1.1
-pytest-xdist==3.1.0
+pytest-xdist==3.2.0
 pytest-timeout==2.1.0
 pytest-sentry==0.1.16
 filelock==3.9.0
