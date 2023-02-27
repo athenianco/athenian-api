@@ -15,7 +15,7 @@ from sqlalchemy import any_, create_engine, text
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import Values, operators
 from sqlalchemy.sql.compiler import OPERATORS
-from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping
+from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping, TextClause
 from sqlalchemy.sql.operators import ColumnOperators, in_op, not_in_op
 
 from athenian.api.models.sql_builders import in_any_values_inline, in_inline
@@ -102,6 +102,15 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
             except (ValueError, NotImplementedError):
                 if is_array:
                     binary.right.value = values.tolist()
+        if isinstance(binary.right, Grouping) and getattr(
+            (ungrouped := binary.right.element), "_bindparams", False,
+        ):
+            # SQLAlchemy contains a dump regexp that finds bind parameters inside strings
+            assert isinstance(ungrouped, TextClause)
+            ungrouped._bindparams = {}
+            ungrouped.text = TextClause._bind_params_regex.sub(
+                lambda m: r"\:" + m.group(1), ungrouped.text,
+            )
         return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
 

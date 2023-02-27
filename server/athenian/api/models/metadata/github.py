@@ -52,17 +52,21 @@ class BodyMixin:
     body = Column(Text)
 
 
+def _return_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class UpdatedMixin:
     created_at = Column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=_return_now,
         server_default=func.now(),
     )
     updated_at = Column(
         TIMESTAMP(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=_return_now,
         server_default=func.now(),
     )
 
