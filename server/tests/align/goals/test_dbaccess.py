@@ -10,6 +10,7 @@ from athenian.api.align.exceptions import (
     GoalMutationError,
     GoalNotFoundError,
     GoalTemplateNotFoundError,
+    TeamGoalNotFoundError,
 )
 from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
@@ -26,6 +27,7 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_templates_from_db,
     insert_goal_template,
     replace_team_goals,
+    unassign_team_from_goal,
     update_goal,
     update_goal_template_in_db,
 )
@@ -462,3 +464,45 @@ class TestConvertMetricParamsDatatypes:
 
         assert res == {"threshold": timedelta(seconds=100)}
         assert res is not metric_params
+
+
+class TestUnassignTeamFromGoal:
+    async def test_assignment_not_existing(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=1), TeamFactory(id=9), TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        params = ((1, 2, 9), (1, 1, 10), (2, 1, 9))
+        for account_id, goal_id, team in params:
+            async with transaction_conn(sdb) as sdb_conn:
+                with pytest.raises(TeamGoalNotFoundError):
+                    await unassign_team_from_goal(account_id, goal_id, team, sdb_conn)
+
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9),
+            TeamGoalFactory(goal_id=1, team_id=8),
+            TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal(1, 1, 8, sdb_conn)
+
+        assert goal_still_exists
+        await assert_existing_row(sdb, Goal, id=1, account_id=1)
+        await assert_existing_row(sdb, TeamGoal, team_id=9, goal_id=1)
+        await assert_missing_row(sdb, TeamGoal, team_id=8, goal_id=1)
+
+    async def test_last_team_unassigned(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=1), TeamFactory(id=9), TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal(1, 1, 9, sdb_conn)
+
+        assert not goal_still_exists
+        await assert_missing_row(sdb, Goal, id=1)
