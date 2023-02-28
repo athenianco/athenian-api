@@ -172,6 +172,8 @@ async def _record_pending_fetch_metrics(
     mdb: Database,
     rdb: Database,
 ) -> None:
+    # FIXME(vmarkovtsev): move this measurement to the CC
+    return
     log = logging.getLogger(f"{metadata.__package__}._record_pending_fetch_metrics")
     inserted = []
     now = datetime.now(timezone.utc)
