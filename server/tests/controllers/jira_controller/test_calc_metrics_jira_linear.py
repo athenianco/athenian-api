@@ -674,6 +674,89 @@ class TestGroups(BaseCalcMetricsJiraLinearTest):
             res_all = next(r for r in res if r["for"] == {})
             assert res_all["values"][0]["values"] == [3]
 
+    async def test_labels(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2012-05-01",
+            date_to="2012-06-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[
+                {"labels_include": ["l0"]},
+                {"labels_include": ["l1"]},
+                {"labels_include": ["l0", "l1"]},
+                {"projects": ["PJ1"]},
+            ],
+        )
+
+        issue_kwargs = {"created": dt(2012, 5, 1), "project_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+            *jira_issue_models("1", labels=["l0"], **issue_kwargs),
+            *jira_issue_models("2", labels=["l1"], **issue_kwargs),
+            *jira_issue_models("3", labels=["l2", "l1"], **issue_kwargs),
+            *jira_issue_models("4", labels=["l2", "l0"], **issue_kwargs),
+            *jira_issue_models("5", labels=[], **issue_kwargs),
+            *jira_issue_models("6", labels=["l3", "l2"], **issue_kwargs),
+            *jira_issue_models("7", labels=["l3", "l2", "l1"], **issue_kwargs),
+            *jira_issue_models("8", labels=["l0", "l1"], **issue_kwargs),
+            *jira_issue_models("9", labels=["l3", "l0"], **issue_kwargs),
+            *jira_issue_models("10", labels=["l3", "l1"], **issue_kwargs),
+            # out of interval
+            *jira_issue_models("11", labels=["l3", "l0"], created=dt(2012, 7, 1), project_id="1"),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self._request(json=body)
+        res = sorted(res, key=lambda r: body["for"].index(r["for"]))
+
+        assert res[0]["for"] == {"labels_include": ["l0"]}
+        assert res[0]["values"][0]["values"] == [4]
+
+        assert res[1]["for"] == {"labels_include": ["l1"]}
+        assert res[1]["values"][0]["values"] == [5]
+
+        assert res[2]["for"] == {"labels_include": ["l0", "l1"]}
+        assert res[2]["values"][0]["values"] == [8]
+
+        assert res[3]["for"] == {"projects": ["PJ1"]}
+        assert res[3]["values"][0]["values"] == [10]
+
+    async def test_components_as_labels(self, sdb: Database, mdb_rw: Database) -> None:
+        body = self._body(
+            date_from="2012-05-01",
+            date_to="2012-06-20",
+            metrics=[JIRAMetricID.JIRA_RAISED],
+            for_=[
+                {"labels_include": ["c0"]},
+                {"labels_include": ["c1"]},
+            ],
+        )
+
+        issue_kwargs = {"created": dt(2012, 5, 1), "project_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="PJ1"),
+            md_factory.JIRAComponentFactory(id="0", name="c0"),
+            md_factory.JIRAComponentFactory(id="1", name="c1"),
+            *jira_issue_models("1", components=["0"], **issue_kwargs),
+            *jira_issue_models("2", components=["0", "1"], **issue_kwargs),
+            *jira_issue_models("3", components=["1"], **issue_kwargs),
+            *jira_issue_models("4", components=["1"], **issue_kwargs),
+            *jira_issue_models("5", **issue_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self._request(json=body)
+        res_c0 = next(r for r in res if r["for"] == {"labels_include": ["c0"]})
+        assert res_c0["values"][0]["values"] == [2]
+
+        res_c1 = next(r for r in res if r["for"] == {"labels_include": ["c1"]})
+        assert res_c1["values"][0]["values"] == [3]
+
 
 class TestGroupsErrors(BaseCalcMetricsJiraLinearTest):
     async def test_both_groups_and_filters(self) -> None:

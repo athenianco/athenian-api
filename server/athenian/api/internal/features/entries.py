@@ -119,6 +119,7 @@ from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.jira.issue import (
     PullRequestJiraMapper,
     fetch_jira_issues,
+    import_components_as_labels,
     participant_columns,
 )
 from athenian.api.internal.miners.participation import (
@@ -1251,20 +1252,23 @@ class MetricEntriesCalculator:
         assert len(groups)
         assert len(all_accounts := {g.account for g in groups}) == 1 and all_accounts.pop()
 
-        jira_entities = _get_jira_entities_to_fetch(groups, ())
-        extra_columns = JIRAEntityToFetch.to_columns(jira_entities)
+        extra_columns = []
         if len(participants) > 1:
             extra_columns.extend(participant_columns)
 
         label_splitter = IssuesLabelSplitter(split_by_label, groups[0].labels)
         if split_by_label:
             assert len(groups) == 1
-            if Issue.labels not in extra_columns:
-                extra_columns.append(Issue.labels)
+            extra_columns.append(Issue.labels)
             jira_filter_grouper = label_splitter
         elif len(groups) == 1:
             jira_filter_grouper = _global_grouper
         else:
+            jira_entities = _get_jira_entities_to_fetch(groups, ())
+            extra_columns.extend(JIRAEntityToFetch.to_columns(jira_entities))
+            if Issue.labels in extra_columns:
+                # for import_components_as_labels
+                extra_columns.extend([Issue.acc_id, Issue.components])
             filters_to_grouping = await _JIRAFilterToGroupingConverter.build(
                 groups, self._account, self._mdb, self._cache,
             )
@@ -1289,6 +1293,12 @@ class MetricEntriesCalculator:
             self._cache,
             extra_columns=extra_columns,
         )
+
+        # do not consider components as labels when split_by_label to keep historical behavior
+        if not split_by_label and Issue.labels in extra_columns:
+            # pandas warning during groupby without this, doesn't like the bytes index
+            issues.reset_index(drop=True, inplace=True)
+            await import_components_as_labels(issues, self._mdb)
         calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
 
         groupers = partial(split_issues_by_participants, participants), jira_filter_grouper
