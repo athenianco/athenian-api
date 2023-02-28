@@ -26,12 +26,13 @@ from athenian.api.align.goals.dbaccess import (
     insert_goal_template,
     replace_team_goals,
     unassign_team_from_goal,
+    unassign_team_from_goal_recursive,
     update_goal,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
-from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
+from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from tests.testutils.db import (
     SKIP_MODEL_FIELD,
     assert_existing_row,
@@ -486,3 +487,45 @@ class TestUnassignTeamFromGoal:
 
         assert not goal_still_exists
         await assert_missing_row(sdb, Goal, id=1)
+
+
+class TestUnassignTeamFromGoalRecursive:
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            TeamFactory(id=11, parent_id=9),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [8, 9, 10, 11]],
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal_recursive(1, 1, 9, sdb_conn)
+
+        assert goal_still_exists
+        await assert_existing_row(sdb, Goal, id=1, account_id=1)
+        for t in (9, 10, 11):
+            await assert_missing_row(sdb, TeamGoal, team_id=t, goal_id=1)
+        await assert_existing_row(sdb, TeamGoal, goal_id=1, team_id=8)
+        await assert_existing_row(sdb, Team, id=9)
+
+    async def test_last_team_unassigned(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [9, 10]],
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal_recursive(1, 1, 9, sdb_conn)
+
+        assert not goal_still_exists
+        await assert_missing_row(sdb, Goal, id=1, account_id=1)
+        for t in (9, 10):
+            await assert_missing_row(sdb, TeamGoal, team_id=t, goal_id=1)
+        await assert_existing_row(sdb, Team, id=9)

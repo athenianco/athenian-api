@@ -25,6 +25,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     is_postgresql,
 )
+from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.serialization import deserialize_timedelta
 from athenian.api.tracing import sentry_span
@@ -385,6 +386,27 @@ async def unassign_team_from_goal(
     delete_stmt = sa.delete(TeamGoal).where(TeamGoal.goal_id == goal_id, TeamGoal.team_id == team)
     await sdb_conn.execute(delete_stmt)
 
+    return not await _delete_goal_if_empty(account, goal_id, sdb_conn)
+
+
+async def unassign_team_from_goal_recursive(
+    account: int,
+    goal_id: int,
+    team: int,
+    sdb_conn: Connection,
+) -> bool:
+    """Unassign a team and all its descendants from a goal.
+
+    Delete the goal if the last assigned team was removed this way.
+    Return True if the goal still exists after the operation.
+
+    """
+    teams = await fetch_teams_recursively(account, sdb_conn, root_team_ids=[team])
+    team_ids = [t[Team.id.name] for t in teams]
+    delete_stmt = sa.delete(TeamGoal).where(
+        TeamGoal.goal_id == goal_id, TeamGoal.team_id.in_(team_ids),
+    )
+    await sdb_conn.execute(delete_stmt)
     return not await _delete_goal_if_empty(account, goal_id, sdb_conn)
 
 
