@@ -11,7 +11,7 @@ from typing import Any, Iterator, Optional, Sequence
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.align.goals.dbaccess import delete_empty_goals
+from athenian.api.align.goals.empty_goals import delete_empty_goals
 from athenian.api.db import Connection, Database, DatabaseLike, Row, is_postgresql
 from athenian.api.internal.team import get_root_team
 from athenian.api.internal.team_meta import (
