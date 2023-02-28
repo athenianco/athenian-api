@@ -1,27 +1,18 @@
 from collections import defaultdict
-from typing import (
-    Any,
-    Callable,
-    Collection,
-    Dict,
-    Iterable,
-    KeysView,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Union,
-)
+from itertools import chain
+from typing import Any, Callable, Collection, Iterable, KeysView, Mapping, Optional, Sequence
 
+import aiomcache
 import numpy as np
 
-from athenian.api.db import DatabaseLike
+from athenian.api.db import Database, DatabaseLike
+from athenian.api.internal.jira import load_mapped_jira_users
+from athenian.api.internal.miners.participation import JIRAParticipants
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.user import MANNEQUIN_PREFIX
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import InvalidRequestError, NotFoundError
+from athenian.api.models.web import InvalidRequestError, JIRAFilterWith, NotFoundError
 from athenian.api.response import ResponseError
 
 
@@ -35,7 +26,7 @@ async def resolve_withgroups(
     prefixer: Prefixer,
     sdb: DatabaseLike,
     group_type: Callable = lambda i: i,
-) -> List[Dict[Any, Collection[int]]]:
+) -> list[dict[Any, Collection[int]]]:
     """
     Load IDs or normalize logins of one or more groups of participants.
 
@@ -49,7 +40,7 @@ async def resolve_withgroups(
     """
     if model_withgroups is None:
         return []
-    teams: Set[int] = set()
+    teams: set[int] = set()
     for with_ in model_withgroups:
         for k, people in (with_ or {}).items():
             scan_for_teams(people, teams, f"{position}.{k}")
@@ -70,7 +61,7 @@ async def resolve_withgroups(
     return result
 
 
-def scan_for_teams(people: Optional[List[str]], teams: Set[int], pointer: str) -> None:
+def scan_for_teams(people: Optional[list[str]], teams: set[int], pointer: str) -> None:
     """Extract and validate all the team mentions."""
     for j, person in enumerate(people or []):
         if not person.startswith("{"):
@@ -92,7 +83,7 @@ async def fetch_teams_map(
     teams: Collection[int],
     account: int,
     sdb: DatabaseLike,
-) -> Dict[int, List[int]]:
+) -> dict[int, list[int]]:
     """Load the mapping from team ID to member IDs."""
     if not teams:
         return {}
@@ -110,12 +101,12 @@ async def fetch_teams_map(
     return teams_map
 
 
-def flatten_teams(team_rows: Sequence[Mapping[Union[int, str], Any]]) -> Dict[int, List[int]]:
+def flatten_teams(team_rows: Sequence[Mapping[int | str, Any]]) -> dict[int, list[int]]:
     """Union all the child teams with each root team.
 
     `team_rows` must be breadth first sorted.
     """
-    teams_map: Dict[int, Set[int]] = defaultdict(set)
+    teams_map: dict[int, set[int]] = defaultdict(set)
     # iter children before parents
     for row in reversed(team_rows):
         members, parent_id, team_id = (
@@ -133,13 +124,13 @@ def flatten_teams(team_rows: Sequence[Mapping[Union[int, str], Any]]) -> Dict[in
 
 def compile_developers(
     developers: Optional[Iterable[str]],
-    teams: Dict[int, List[int]],
+    teams: dict[int, list[int]],
     prefix: Optional[str],
     dereference: bool,
     prefixer: Prefixer,
     pointer: str,
     unique: bool = True,
-) -> Union[Sequence[str], Sequence[int]]:
+) -> Sequence[str] | Sequence[int]:
     """
     Produce the final list of participants with resolved teams.
 
@@ -194,3 +185,65 @@ def compile_developers(
     if unique:
         return np.unique(devs)
     return devs
+
+
+async def resolve_jira_with(
+    with_: list[JIRAFilterWith] | None,
+    account: int,
+    sdb: Database,
+    mdb: Database,
+    cache: aiomcache.Client | None,
+) -> list[JIRAParticipants]:
+    """Resolve the `JIRAFilterWith` received from outside in JIRAParticipants objects.
+
+    Teams are dereferenced.
+
+    """
+    if not with_:
+        return []
+    teams = set()
+    for i, group in enumerate(with_):
+        for topic in ("assignees", "reporters", "commenters"):
+            for j, dev in enumerate(getattr(group, topic, []) or []):
+                if dev is not None and dev.startswith("{"):
+                    try:
+                        if not dev.endswith("}"):
+                            raise ValueError
+                        teams.add(int(dev[1:-1]))
+                    except ValueError:
+                        raise ResponseError(
+                            InvalidRequestError(
+                                pointer=f".with[{i}].{topic}[{j}]",
+                                detail=f"Invalid team ID: {dev}",
+                            ),
+                        )
+    teams_map = await fetch_teams_map(teams, account, sdb)
+    all_team_members = set(chain.from_iterable(teams_map.values()))
+    jira_map = await load_mapped_jira_users(account, all_team_members, sdb, mdb, cache)
+    del all_team_members
+    deref = []
+    for group in with_:
+        new_group = {}
+        changed = False
+        for topic in ("assignees", "reporters", "commenters"):
+            if topic_devs := getattr(group, topic):
+                new_topic_devs = []
+                topic_changed = False
+                for dev in topic_devs:
+                    if dev is not None and dev.startswith("{"):
+                        topic_changed = True
+                        for member in teams_map[int(dev[1:-1])]:
+                            try:
+                                new_topic_devs.append(jira_map[member])
+                            except KeyError:
+                                continue
+                    else:
+                        new_topic_devs.append(dev)
+                if topic_changed:
+                    changed = True
+                    new_group[topic] = new_topic_devs
+                else:
+                    new_group[topic] = topic_devs
+        deref.append(JIRAFilterWith(**new_group) if changed else group)
+    return [w.as_participants() for w in deref]
+    return deref
