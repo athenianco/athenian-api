@@ -338,7 +338,7 @@ async def _load_mapped_jira_users(
 ) -> dict[int, str]:
     tasks = [
         sdb.fetch_all(
-            select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id]).where(
+            select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
                 and_(
                     MappedJIRAIdentity.account_id == account,
                     MappedJIRAIdentity.github_user_id.in_(github_user_ids),
@@ -427,7 +427,7 @@ async def _match_jira_identities(
         log.warning("JIRA fetch progress is not 100%%: %d < %d", current, total)
         return None
     existing_mapping = await sdb.fetch_all(
-        select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id]).where(
+        select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
             MappedJIRAIdentity.account_id == account,
         ),
     )

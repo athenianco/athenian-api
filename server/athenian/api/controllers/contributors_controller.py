@@ -1,5 +1,5 @@
 from aiohttp import web
-from sqlalchemy import and_, select
+import sqlalchemy as sa
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
@@ -26,8 +26,8 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
     """
     async with request.sdb.connection() as sdb_conn:
         account_id = await sdb_conn.fetch_val(
-            select([UserAccount.account_id]).where(
-                and_(UserAccount.user_id == request.uid, UserAccount.account_id == id),
+            sa.select(UserAccount.account_id).where(
+                UserAccount.user_id == request.uid, UserAccount.account_id == id,
             ),
         )
         if account_id is None:

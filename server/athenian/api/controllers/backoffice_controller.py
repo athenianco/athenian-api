@@ -84,7 +84,7 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
             is None
         ):
             raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
-        god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
+        god = await conn.fetch_one(select(God).where(God.user_id == user_id))
         god = God(**god).refresh()
         god.mapped_id = id or None
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
@@ -482,9 +482,7 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                             detail='Parameters must be {"enabled": true|false, ...}',
                         ),
                     )
-                fid = await conn.fetch_val(
-                    select([Feature.id]).where(Feature.name == feature.name),
-                )
+                fid = await conn.fetch_val(select(Feature.id).where(Feature.name == feature.name))
                 if fid is None:
                     raise ResponseError(
                         InvalidRequestError(

@@ -6,7 +6,7 @@ from typing import Optional, Sequence, Type
 from aiohttp import web
 import aiomcache
 from asyncpg import UniqueViolationError
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.async_utils import gather
@@ -52,8 +52,8 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     account = body.account
     async with request.sdb.connection() as sdb_conn:
         dupe_id = await sdb_conn.fetch_val(
-            select([RepositorySet.id]).where(
-                and_(RepositorySet.owner_id == account, RepositorySet.name == body.name),
+            select(RepositorySet.id).where(
+                RepositorySet.owner_id == account, RepositorySet.name == body.name,
             ),
         )
         if dupe_id is not None:

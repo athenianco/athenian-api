@@ -380,7 +380,7 @@ async def _validate_goal_creation_info(
     """Execute validation on GoalCreationInfo using the DB."""
     # check that all team exist and belong to the right account
     team_ids = {team_goal.team_id for team_goal in creation_info.team_goals}
-    teams_stmt = sa.select([Team.id]).where(
+    teams_stmt = sa.select(Team.id).where(
         sa.and_(Team.id.in_(team_ids), Team.owner_id == creation_info.goal.account_id),
     )
     existing_team_ids_rows = await sdb_conn.fetch_all(teams_stmt)
@@ -426,14 +426,14 @@ async def _validate_team_goal_assignments(
     sdb_conn: Connection,
 ) -> None:
     goal_exists = await sdb_conn.fetch_val(
-        sa.select([1]).where(sa.and_(Goal.account_id == account_id, Goal.id == goal_id)),
+        sa.select(1).where(sa.and_(Goal.account_id == account_id, Goal.id == goal_id)),
     )
     if not goal_exists:
         raise GoalMutationError(
             f"Goal {goal_id} doesn't exist or access denied", HTTPStatus.NOT_FOUND,
         )
 
-    teams_stmt = sa.select([Team.id]).where(
+    teams_stmt = sa.select(Team.id).where(
         sa.and_(Team.id.in_(a.team_id for a in assignments), Team.owner_id == account_id),
     )
     found_teams = {r[0] for r in await sdb_conn.fetch_all(teams_stmt)}

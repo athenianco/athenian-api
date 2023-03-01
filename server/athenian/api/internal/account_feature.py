@@ -3,7 +3,6 @@ from datetime import timezone
 import json
 
 import sqlalchemy as sa
-from sqlalchemy import select
 
 from athenian.api.async_utils import gather
 from athenian.api.db import DatabaseLike
@@ -38,13 +37,13 @@ async def get_account_features(account: int, sdb: DatabaseLike) -> list[ProductF
 
     async def fetch_features():
         account_features = await sdb.fetch_all(
-            select(AccountFeature.feature_id, AccountFeature.parameters).where(
+            sa.select(AccountFeature.feature_id, AccountFeature.parameters).where(
                 AccountFeature.account_id == account, AccountFeature.enabled,
             ),
         )
         account_features = {row[0]: row[1] for row in account_features}
         features = await sdb.fetch_all(
-            select(Feature.id, Feature.name, Feature.default_parameters).where(
+            sa.select(Feature.id, Feature.name, Feature.default_parameters).where(
                 Feature.id.in_(account_features),
                 Feature.component == FeatureComponent.webapp,
                 Feature.enabled,
@@ -54,7 +53,9 @@ async def get_account_features(account: int, sdb: DatabaseLike) -> list[ProductF
         return account_features, features
 
     async def fetch_expires_at():
-        expires_at = await sdb.fetch_val(select([Account.expires_at]).where(Account.id == account))
+        expires_at = await sdb.fetch_val(
+            sa.select(Account.expires_at).where(Account.id == account),
+        )
         if sdb.url.dialect == "sqlite":
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         return expires_at

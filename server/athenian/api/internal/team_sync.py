@@ -110,7 +110,7 @@ class _MetaTeams:
             MetadataOrganization.acc_id.in_(meta_ids),
         )
         columns = (MetadataTeam.name, MetadataTeam.id, MetadataTeam.parent_team_id)
-        query = sa.select(columns).where(
+        query = sa.select(*columns).where(
             MetadataTeam.acc_id.in_(meta_ids), MetadataTeam.organization_id.in_(meta_orgs_query),
         )
         return cls(await mdb.fetch_all(query), meta_ids, mdb)

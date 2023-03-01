@@ -46,7 +46,7 @@ def _encode_share_id(obj_id: int, auth: Auth0) -> str:
 @sentry_span
 async def _fetch_user_accounts(uids: Sequence[str], sdb: DatabaseLike) -> Tuple[Set[int]]:
     rows = await sdb.fetch_all(
-        select([UserAccount.user_id, UserAccount.account_id]).where(UserAccount.user_id.in_(uids)),
+        select(UserAccount.user_id, UserAccount.account_id).where(UserAccount.user_id.in_(uids)),
     )
     accs = defaultdict(list)
     for row in rows:
@@ -66,7 +66,7 @@ async def get_share(request: AthenianWebRequest, id: str) -> aiohttp.web.Respons
             raise ValueError
     except Exception:
         raise ResponseError(BadRequestError("Invalid share identifier")) from None
-    obj = await sdb.fetch_one(select([Share]).where(Share.id == obj_id))
+    obj = await sdb.fetch_one(select(Share).where(Share.id == obj_id))
     msg_404 = "Share does not exist or access denied"
     if obj is None:
         raise ResponseError(NotFoundError(msg_404))

@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from aiohttp import web
 from asyncpg import UniqueViolationError
 import morcilla.core
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
 from athenian.api.internal.account import get_user_account_status_from_request
@@ -120,8 +120,8 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as conn:
         await get_user_account_status_from_request(request, id)
         rows = await conn.fetch_all(
-            select([UserToken.id, UserToken.name, UserToken.last_used_at]).where(
-                and_(UserToken.user_id == request.uid, UserToken.account_id == id),
+            select(UserToken.id, UserToken.name, UserToken.last_used_at).where(
+                UserToken.user_id == request.uid, UserToken.account_id == id,
             ),
         )
         model = []
@@ -142,7 +142,7 @@ async def _check_token_access(
     id: int,
     conn: morcilla.core.Connection,
 ) -> None:
-    token = await conn.fetch_one(select([UserToken]).where(UserToken.id == id))
+    token = await conn.fetch_one(select(UserToken).where(UserToken.id == id))
     if token is None:
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))
     try:

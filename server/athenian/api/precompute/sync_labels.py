@@ -21,7 +21,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     """Update the labels in the precomputed PRs."""
     log, sdb, mdb, pdb = context.log, context.sdb, context.mdb, context.pdb
     all_prs = await read_sql_query(
-        select([NodePullRequest.id, NodePullRequest.acc_id]),
+        select(NodePullRequest.id, NodePullRequest.acc_id),
         mdb,
         [NodePullRequest.id, NodePullRequest.acc_id],
     )

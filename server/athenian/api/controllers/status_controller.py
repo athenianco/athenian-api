@@ -29,7 +29,7 @@ from athenian.api.response import ResponseError, model_response
     deserialize=lambda b: b.decode(),
 )
 async def _get_metadata_version(mdb: morcilla.Database, cache: Optional[aiomcache.Client]) -> str:
-    return str(await mdb.fetch_val(select([metadata.SchemaMigration.version])))
+    return str(await mdb.fetch_val(select(metadata.SchemaMigration.version)))
 
 
 async def get_versions(request: AthenianWebRequest) -> web.Response:
