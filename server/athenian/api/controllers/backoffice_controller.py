@@ -15,6 +15,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.internal.account import (
+    get_account_organizations,
     get_installation_event_ids,
     get_metadata_account_ids,
     get_user_account_status,
@@ -178,6 +179,7 @@ async def _reset_metadata_account(
     await gather(
         get_metadata_account_ids.reset_cache(account, sdb, cache),
         get_installation_event_ids.reset_cache(account, sdb, mdb, cache),
+        get_account_organizations(account, sdb, mdb, cache),
     )
 
 
