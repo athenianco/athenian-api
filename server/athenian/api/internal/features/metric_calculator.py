@@ -1294,7 +1294,7 @@ def calculate_logical_duplication_mask(
             child_key = (child_releases, child_deployments)
             groups[child_key].append(child)
         for group in groups.values():
-            mask[np.in1d(repos_column, np.array(group, dtype="S"))] = counter
+            mask[in1d_str(repos_column, np.array(group, dtype="S"))] = counter
             counter += 1
     return mask
 
