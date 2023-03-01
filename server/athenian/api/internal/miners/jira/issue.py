@@ -692,6 +692,9 @@ async def query_jira_raw(
     elif len(jira_filter.epics):
         epic = aliased(Issue, name="epic")
         and_filters.append(epic.key.in_(jira_filter.epics))
+    if jira_filter.status_categories:
+        and_filters.append(Status.category_name.in_(jira_filter.status_categories))
+
     or_filters = []
     if jira_filter.labels:
         components = await _load_components(jira_filter.labels, jira_filter.account, mdb, cache)
