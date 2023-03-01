@@ -15,7 +15,7 @@ from athenian.api.internal.jira import (
     normalize_issue_type,
     normalize_priority,
 )
-from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.reposet import resolve_repos_with_request
 from athenian.api.internal.team import fetch_teams_recursively, get_team_from_db
 from athenian.api.internal.team_metrics import (
@@ -153,14 +153,11 @@ def _parse_jira_filter(
             jira_projects = frozenset(jira_config.projects)
             custom_projects = False
         return JIRAFilter(
-            jira_config.acc_id,
-            jira_projects,
-            LabelFilter.empty(),
-            frozenset(),
-            frozenset(jira_issue_types or ()),
-            frozenset(jira_priorities or ()),
-            custom_projects,
-            False,
+            account=jira_config.acc_id,
+            projects=jira_projects,
+            issue_types=frozenset(jira_issue_types or ()),
+            priorities=frozenset(jira_priorities or ()),
+            custom_projects=custom_projects,
         )
     else:
         return JIRAFilter.empty()

@@ -102,6 +102,7 @@ class JIRAFilter:
     epics: frozenset[str] | bool = frozenset()
     issue_types: frozenset[str] = frozenset()
     priorities: frozenset[str] = frozenset()
+    status_categories: frozenset[str] = frozenset()
     custom_projects: bool = True  # PRs must be mapped to any issue in `projects`
     unmapped: bool = False  # select everything but the mapped PRs
 
@@ -114,7 +115,9 @@ class JIRAFilter:
     def empty(cls) -> JIRAFilter:
         """Initialize an empty JIRAFilter."""
         emptyset: frozenset[str] = frozenset()
-        return cls(0, emptyset, LabelFilter.empty(), emptyset, emptyset, emptyset, False, False)
+        return cls(
+            0, emptyset, LabelFilter.empty(), emptyset, emptyset, emptyset, emptyset, False, False,
+        )
 
     def is_complex(self) -> bool:
         """Return value indicating whether this filter can potentially narrow the scope much."""
@@ -123,6 +126,7 @@ class JIRAFilter:
             or bool(self.epics)
             or bool(self.issue_types)
             or bool(self.priorities)
+            or bool(self.status_categories)
         )
 
     def __bool__(self) -> bool:
@@ -133,6 +137,7 @@ class JIRAFilter:
                 self.epics,
                 self.issue_types,
                 self.priorities,
+                self.status_categories,
                 self.unmapped,
                 self.custom_projects,
             ],
@@ -173,6 +178,7 @@ class JIRAFilter:
             epics,
             _join_filter_sets(*(f.issue_types for f in filters)),
             _join_filter_sets(*(f.priorities for f in filters)),
+            _join_filter_sets(*(f.status_categories for f in filters)),
             all(f.custom_projects for f in filters),
             all_unmapped[0],
         )
@@ -187,23 +193,25 @@ class JIRAFilter:
             return "[%s, unmapped=True]" % self.account
 
         projects = sorted(self.projects) if self.custom_projects else ["<all>"]
-        return "[%s, %s, %s, %s, %s, projects=%s]" % (
+        return "[%s, %s, %s, %s, %s, %s, projects=%s]" % (
             self.account,
             self.labels,
             self.epics if isinstance(self.epics, bool) else sorted(self.epics),
             sorted(self.issue_types),
             sorted(self.priorities),
+            sorted(self.status_categories),
             projects,
         )
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return "JIRAFilter(%r, %r, %r, %r, %r, %r, %r)" % (
+        return "JIRAFilter(%r, %r, %r, %r, %r, %r, %r, %r)" % (
             self.account,
             self.labels,
             self.epics,
             self.issue_types,
             self.priorities,
+            self.status_categories,
             self.custom_projects,
             self.unmapped,
         )
@@ -226,12 +234,17 @@ class JIRAFilter:
             assert not isinstance(other.epics, bool)
             if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
                 return False
-        if self.issue_types and (  # noqa: PIE801
+        if self.issue_types and (
             not other.issue_types or not self.issue_types.issuperset(other.issue_types)
         ):
             return False
-        if self.priorities and (  # noqa: PIE801
+        if self.priorities and (
             not other.priorities or not self.priorities.issuperset(other.priorities)
+        ):
+            return False
+        if self.status_categories and (  # noqa: PIE801
+            not other.status_categories
+            or not self.status_categories.issuperset(other.status_categories)
         ):
             return False
         return True
@@ -253,6 +266,7 @@ class JIRAFilter:
             epics=frozenset([s.upper() for s in (model.epics or [])]),
             issue_types=frozenset([normalize_issue_type(s) for s in (model.issue_types or [])]),
             priorities=frozenset([normalize_priority(p) for p in model.priorities or []]),
+            status_categories=frozenset(),
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )

@@ -288,14 +288,7 @@ class TestGenerateJIRAPRsQuery:
             await models_insert(mdb_rw, *models)
 
             jira_filter = JIRAFilter(
-                1,
-                frozenset(("1",)),
-                LabelFilter.empty(),
-                frozenset(),
-                frozenset(),
-                {"pr1", "pr2"},
-                False,
-                False,
+                1, frozenset(("1",)), priorities=frozenset(("pr1", "pr2")), custom_projects=False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1, 1, 2]
@@ -321,7 +314,7 @@ class TestGenerateJIRAPRsQuery:
             await models_insert(mdb_rw, *models)
 
             jira_filter = JIRAFilter(
-                1, ("P1",), LabelFilter.empty(), frozenset(), frozenset(), {"pr1"}, False, False,
+                1, frozenset(("P1",)), priorities=(("pr1",)), custom_projects=False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1]

@@ -1280,14 +1280,10 @@ async def test_pr_facts_calculator_jira(
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 235
     args[5] = JIRAFilter(
-        1,
-        frozenset(("10003", "10009")),
-        LabelFilter({"performance", "task"}, set()),
-        frozenset(),
-        frozenset(),
-        frozenset(),
-        False,
-        0,
+        account=1,
+        projects=frozenset(("10003", "10009")),
+        labels=LabelFilter({"performance", "task"}, frozenset()),
+        custom_projects=False,
     )
     facts = await pr_facts_calculator(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 16

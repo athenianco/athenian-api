@@ -15,7 +15,7 @@ from athenian.api.align.goals.dbaccess import (
 from athenian.api.db import Row
 from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
-from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import dereference_db_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings
@@ -289,14 +289,11 @@ class GoalToServe:
                     jira_projects = frozenset(jira_config.projects)
                     custom_projects = False
                 jira_filter = JIRAFilter(
-                    jira_config.acc_id,
-                    jira_projects,
-                    LabelFilter.empty(),
-                    frozenset(),
-                    frozenset(jira_issue_types or ()),
-                    frozenset(jira_priorities or ()),
-                    custom_projects,
-                    False,
+                    account=jira_config.acc_id,
+                    projects=jira_projects,
+                    issue_types=frozenset(jira_issue_types or ()),
+                    priorities=frozenset(jira_priorities or ()),
+                    custom_projects=custom_projects,
                 )
             else:
                 jira_filter = JIRAFilter.empty()

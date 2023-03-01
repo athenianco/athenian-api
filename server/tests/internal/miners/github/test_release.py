@@ -1691,14 +1691,10 @@ class TestMineReleases:
         time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
         time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
         jira_filter = JIRAFilter(
-            1,
-            ("10003", "10009"),
-            LabelFilter({"bug", "onboarding", "performance"}, set()),
-            set(),
-            set(),
-            set(),
-            False,
-            False,
+            account=1,
+            projects=frozenset(("10003", "10009")),
+            labels=LabelFilter({"bug", "onboarding", "performance"}, set()),
+            custom_projects=False,
         )
         kwargs = self._kwargs(
             time_from=time_from,
@@ -1731,14 +1727,10 @@ class TestMineReleases:
         assert len(releases) == 22
 
         jira_filter = JIRAFilter(
-            1,
-            ("10003", "10009"),
-            LabelFilter({"bug", "onboarding", "performance"}, set()),
-            set(),
-            set(),
-            set(),
-            False,
-            False,
+            account=1,
+            projects=frozenset(("10003", "10009")),
+            labels=LabelFilter({"bug", "onboarding", "performance"}, set()),
+            custom_projects=False,
         )
         kwargs = self._kwargs(
             time_from=time_from,
@@ -1769,7 +1761,10 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         jira_filter = JIRAFilter(
-            1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
+            account=1,
+            projects=frozenset(("10003", "10009")),
+            custom_projects=False,
+            unmapped=True,
         )
         kwargs = self._kwargs(
             time_from=time_from,
@@ -1801,14 +1796,10 @@ class TestMineReleases:
         time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
         repo = "src-d/go-git/alpha"
         jira_filter = JIRAFilter(
-            1,
-            ("10003", "10009"),
-            LabelFilter({"bug", "onboarding", "performance"}, set()),
-            set(),
-            set(),
-            set(),
-            False,
-            False,
+            account=1,
+            projects=frozenset(("10003", "10009")),
+            labels=LabelFilter(frozenset(["bug", "onboarding", "performance"]), frozenset()),
+            custom_projects=False,
         )
         kwargs = self._kwargs(
             repos=[repo],
@@ -1841,7 +1832,7 @@ class TestMineReleases:
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 22
         kwargs["jira"] = JIRAFilter(
-            1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
+            1, frozenset(("10003", "10009")), custom_projects=False, unmapped=True,
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 12

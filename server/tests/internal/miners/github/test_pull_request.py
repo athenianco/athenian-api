@@ -1636,11 +1636,7 @@ async def test_pr_miner_jira_filter(
             1,
             frozenset(("10003", "10009")),
             LabelFilter(frozenset(("performance",)), set()),
-            frozenset(),
-            frozenset(),
-            frozenset(),
-            False,
-            False,
+            custom_projects=False,
         ),
         False,
         branches,
@@ -1688,13 +1684,17 @@ async def test_pr_miner_jira_filter(
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
     assert {821, 833, 846, 861} == numbers
     args[7] = JIRAFilter(
-        1, ("10003", "10009"), LabelFilter.empty(), set(), {"bug"}, set(), False, False,
+        1, frozenset(("10003", "10009")), issue_types=frozenset(["bug"]), custom_projects=False,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
     assert {800, 769, 896, 762, 807, 778, 855, 816, 754, 724, 790, 759, 792, 794, 795} == numbers
     args[7] = JIRAFilter(
-        1, ("10003", "10009"), LabelFilter({"api"}, set()), set(), {"task"}, set(), False, False,
+        1,
+        frozenset(("10003", "10009")),
+        LabelFilter(frozenset(["api"]), frozenset()),
+        issue_types=frozenset(["task"]),
+        custom_projects=False,
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
@@ -1729,9 +1729,7 @@ async def test_pr_miner_jira_filter(
         846,
         861,
     } == numbers
-    args[7] = JIRAFilter(
-        1, ("10003", "10009"), LabelFilter.empty(), set(), set(), set(), False, True,
-    )
+    args[7] = JIRAFilter(1, ("10003", "10009"), custom_projects=False, unmapped=True)
     miner, _, _, _ = await pr_miner.mine(*args)
     numbers = {pr.pr[PullRequest.number.name] for pr in miner}
     assert len(numbers) == 266
@@ -1867,12 +1865,10 @@ async def test_pr_miner_jira_cache(
     args[7] = JIRAFilter(
         1,
         ("10003", "10009"),
-        LabelFilter({"enhancement"}, set()),
-        {"DEV-149"},
-        {"task"},
-        set(),
-        False,
-        False,
+        LabelFilter(frozenset(["enhancement"]), frozenset()),
+        epics=frozenset(["DEV-149"]),
+        issue_types=frozenset(["task"]),
+        custom_projects=False,
     )
     args[-4] = args[-3] = args[-2] = None
     miner, _, _, _ = await pr_miner.mine(*args)
@@ -1882,15 +1878,8 @@ async def test_pr_miner_jira_cache(
         assert "enhancement" in pr.jiras["labels"].iloc[0]
         assert pr.jiras["epic"].iloc[0] == "DEV-149"
         assert pr.jiras[Issue.type.name].iloc[0] == "task"
-    args[7] = JIRAFilter(
-        1,
-        ("10003", "10009"),
-        LabelFilter({"enhancement,performance"}, set()),
-        {"DEV-149"},
-        {"task"},
-        set(),
-        False,
-        False,
+    args[7] = args[7].replace(
+        labels=LabelFilter(frozenset(["enhancement,performance"]), frozenset()),
     )
     miner, _, _, _ = await pr_miner.mine(*args)
     assert len(miner) == 0
