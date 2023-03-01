@@ -1,6 +1,5 @@
-import dataclasses
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Self
 
 from aiohttp import web
 import aiomcache
@@ -37,7 +36,7 @@ async def search_jira_issues(request: AthenianWebRequest, body: dict) -> web.Res
     return model_response(SearchJIRAIssuesResponse(jira_issues=digests))
 
 
-@dataclasses.dataclass
+@dataclass
 class _Connectors:
     sdb: Database
     mdb: Database
@@ -45,7 +44,7 @@ class _Connectors:
     cache: aiomcache.Client | None
 
 
-@dataclasses.dataclass
+@dataclass
 class _AccountInfo:
     account: int
     meta_ids: tuple[int, ...]
@@ -55,7 +54,7 @@ class _AccountInfo:
     default_branches: dict[str, str]
 
     @classmethod
-    async def from_request(cls, account: int, request: AthenianWebRequest) -> Self:
+    async def from_request(cls, account: int, request: AthenianWebRequest) -> "_AccountInfo":
         sdb, pdb, mdb, cache = request.sdb, request.pdb, request.mdb, request.cache
         meta_ids = await get_metadata_account_ids(account, sdb, cache)
         prefixer = await Prefixer.load(meta_ids, mdb, cache)
@@ -74,7 +73,7 @@ class _AccountInfo:
         )
 
 
-@dataclasses.dataclass
+@dataclass
 class _SearchFilter:
     time_from: datetime | None
     time_to: datetime | None
@@ -87,7 +86,7 @@ class _SearchFilter:
         search_req: SearchJIRAIssuesRequest,
         acc_info: _AccountInfo,
         conns: _Connectors,
-    ) -> Self:
+    ) -> "_SearchFilter":
         time_from = time_to = None
         if from_ := search_req.date_from:
             time_from = datetime.combine(from_, time.min, tzinfo=timezone.utc)
