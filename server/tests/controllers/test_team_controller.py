@@ -88,7 +88,7 @@ class TestCreateTeam(Requester):
         response = await self._request(body, 200)
         assert len(await sdb.fetch_all(select(Team))) == 2
         eng_team_id = (await response.json())["id"]
-        team = await sdb.fetch_one(select([Team]).where(Team.id == eng_team_id))
+        team = await sdb.fetch_one(select(Team).where(Team.id == eng_team_id))
         _test_same_team(
             team,
             {
@@ -356,7 +356,7 @@ class TestResyncTeams(Requester):
         await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
         body = await self._request(1)
         teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
-        actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+        actual_teams = await sdb.fetch_all(select(Team).where(Team.owner_id == 1))
         assert len(teams) == len(actual_teams)
 
         assert {
@@ -394,7 +394,7 @@ class TestResyncTeams(Requester):
         teams = {t["id"] for t in body}
         assert len(teams) == 8
         assert 5 not in teams
-        actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+        actual_teams = await sdb.fetch_all(select(Team).where(Team.owner_id == 1))
         assert len(actual_teams) == 8
         assert 5 not in {r[Team.id.name] for r in actual_teams}
 
@@ -455,7 +455,7 @@ class TestUpdateTeam(Requester):
         body = TeamUpdateRequest(name="Dream", members=["github.com/warenlg"], parent=10).to_dict()
 
         await self._request(11, body, 200)
-        team = await sdb.fetch_one(select([Team]).where(Team.id == 11))
+        team = await sdb.fetch_one(select(Team).where(Team.id == 11))
         assert team[Team.name.name] == "Dream"
         assert team[Team.members.name] == [29]
         assert team[Team.parent_id.name] == 10
@@ -551,7 +551,7 @@ class TestUpdateTeam(Requester):
             name="Engineering", members=["github.com/se7entyse7en"], parent=None,
         ).to_dict()
         await self._request(1, body, 200)
-        team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
+        team = await sdb.fetch_one(select(Team).where(Team.id == 1))
         assert team[Team.name.name] == "Engineering"
 
     async def test_set_root_parent_forbidden(self, sdb, disable_default_user):

@@ -1966,7 +1966,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer, meta_i
     ]
     prs, xdags, _ = await pr_miner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
-    pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
+    pdb_dag = DAG(await pdb.fetch_val(select(GitHubCommitHistory.dag)))
     dag = await fetch_dag(meta_ids, mdb, branches[Branch.commit_id.name].tolist())
     assert not (set(dag["src-d/go-git"][1][0]) - set(pdb_dag.hashes))
     assert np.in1d(xdags["src-d/go-git"][1][0], pdb_dag["hashes"]).all()

@@ -11,6 +11,7 @@ from alembic.migration import MigrationContext
 from flogging import flogging
 from mako.template import Template
 import numpy as np
+import sqlalchemy as sa
 from sqlalchemy import any_, create_engine, text
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import Values, operators
@@ -197,9 +198,10 @@ def check_collation(conn_str: str) -> None:
     engine = create_engine(conn_str.split("?", 1)[0])
     if engine.dialect.name != "postgresql":
         return
-    collation = engine.scalar(
-        "select datcollate from pg_database where datname='%s';" % engine.url.database,
-    )
+    with engine.connect() as conn:
+        collation = conn.scalar(
+            sa.text(f"select datcollate from pg_database where datname='{engine.url.database}';"),
+        )
     if collation.lower() != "c.utf-8":
         raise DBSchemaMismatchError(
             "%s collation: required: C.UTF-8 connected: %s" % (conn_str, collation),

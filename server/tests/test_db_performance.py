@@ -19,23 +19,19 @@ def _benchmark(conn: PostgresConnection) -> None:
     pr_node_ids = [1102354] * 1000
     conn._compile(
         select(
-            [
-                NodePullRequest.id,
-                NodePullRequest.author_id,
-                NodePullRequest.merged,
-                NodePullRequest.created_at,
-                NodePullRequest.closed_at,
-            ],
+            NodePullRequest.id,
+            NodePullRequest.author_id,
+            NodePullRequest.merged,
+            NodePullRequest.created_at,
+            NodePullRequest.closed_at,
         ).where(
             and_(NodePullRequest.acc_id.in_([1]), NodePullRequest.id.in_any_values(pr_node_ids)),
         ),
     )
     conn._compile(
         select(
-            [
-                NodePullRequestCommit.pull_request_id,
-                func.count(NodePullRequestCommit.commit_id).label("count"),
-            ],
+            NodePullRequestCommit.pull_request_id,
+            func.count(NodePullRequestCommit.commit_id).label("count"),
         )
         .where(
             and_(
@@ -65,4 +61,4 @@ def _benchmark(conn: PostgresConnection) -> None:
             func.lower(PullRequestLabel.name).in_(["one", "two", "three"]),
         ),
     ]
-    conn._compile(select([PullRequest]).where(and_(*filters)))
+    conn._compile(select(PullRequest).where(and_(*filters)))

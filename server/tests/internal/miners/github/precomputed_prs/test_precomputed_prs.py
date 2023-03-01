@@ -6,7 +6,7 @@ from typing import Sequence
 from freezegun import freeze_time
 import pandas as pd
 import pytest
-from sqlalchemy import and_, func, insert, literal, select, update
+from sqlalchemy import func, insert, literal, select, update
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.db import is_postgresql
@@ -1184,8 +1184,8 @@ async def test_discover_update_unreleased_prs_smoke(
     prefixer,
 ):
     prs = await read_sql_query(
-        select([PullRequest]).where(
-            and_(PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None)),
+        select(PullRequest).where(
+            PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None),
         ),
         mdb,
         PullRequest,
@@ -1377,8 +1377,8 @@ async def test_discover_update_unreleased_prs_released(
     prefixer,
 ):
     prs = await read_sql_query(
-        select([PullRequest]).where(
-            and_(PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None)),
+        select(PullRequest).where(
+            PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None),
         ),
         mdb,
         PullRequest,
@@ -1485,8 +1485,8 @@ async def precomputed_merged_unreleased(
 ):
     postgres = pdb.url.dialect == "postgresql"
     prs = await read_sql_query(
-        select([PullRequest]).where(
-            and_(PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None)),
+        select(PullRequest).where(
+            PullRequest.number.in_(range(1000, 1010)), PullRequest.merged_at.isnot(None),
         ),
         mdb,
         PullRequest,
@@ -1722,7 +1722,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     await wait_deferred()
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
+        select(PullRequest).where(PullRequest.node_id.in_(unreleased_prs)),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -1745,7 +1745,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     )
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
+        select(PullRequest).where(PullRequest.node_id.in_(unreleased_prs)),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -2024,7 +2024,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     )
     true_dict = {pr.pr[PullRequest.node_id.name]: s for pr, s in zip(prs, samples_good)}
     ghmprf = GitHubMergedPullRequestFacts
-    rows = await pdb.fetch_all(select([ghmprf]))
+    rows = await pdb.fetch_all(select(ghmprf))
     assert len(rows) == 10
     for row in rows:
         assert isinstance(row[ghmprf.activity_days.name], list)
@@ -2095,7 +2095,7 @@ async def test_store_open_pull_request_facts_smoke(
     dfs.prs[PullRequest.closed_at.name] = None
     await store_open_pull_request_facts(zip(prs, samples), 1, pdb)
     ghoprf = GitHubOpenPullRequestFacts
-    rows = await pdb.fetch_all(select([ghoprf]))
+    rows = await pdb.fetch_all(select(ghoprf))
     assert len(rows) == 10
     new_dict = {}
     for row in rows:

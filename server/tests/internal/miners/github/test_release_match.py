@@ -46,7 +46,7 @@ async def test_map_prs_to_releases_cache(
     prefixer,
 ):
     prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.number == 1126),
+        select(PullRequest).where(PullRequest.number == 1126),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -132,7 +132,7 @@ async def test_map_prs_to_releases_pdb(
     prefixer,
 ):
     prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
+        select(PullRequest).where(PullRequest.number.in_((1126, 1180))),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -223,7 +223,7 @@ async def test_map_prs_to_releases_empty(
     prefixer,
 ):
     prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.number == 1231),
+        select(PullRequest).where(PullRequest.number == 1231),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -411,7 +411,7 @@ async def test_map_prs_to_releases_smoke_metrics(
     prefixer,
 ):
     try:
-        await mdb.fetch_val(select([func.count(PullRequestLabel.node_id)]))
+        await mdb.fetch_val(select(func.count(PullRequestLabel.node_id)))
     except OperationalError as e:
         # this happens sometimes, we have to reset the DB and proceed to the second lap
         await mdb.disconnect()
@@ -425,7 +425,7 @@ async def test_map_prs_to_releases_smoke_metrics(
         PullRequest.user_login.in_(["mcuadros", "vmarkovtsev"]),
     ]
     prs = await read_sql_query(
-        select([PullRequest]).where(sql.and_(*filters)),
+        select(PullRequest).where(sql.and_(*filters)),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -490,7 +490,7 @@ async def test_map_prs_to_releases_smoke_metrics(
 @with_defer
 async def test__find_dead_merged_prs_smoke(mdb):
     prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
+        select(PullRequest).where(PullRequest.merged_at.isnot(None)),
         mdb,
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
@@ -502,7 +502,7 @@ async def test__find_dead_merged_prs_smoke(mdb):
     assert dead_prs[Release.published_at.name].isnull().all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
     dead_prs = await mdb.fetch_all(
-        select([PullRequest.number]).where(
+        select(PullRequest.number).where(
             PullRequest.node_id.in_(dead_prs.index.get_level_values(0).values),
         ),
     )
@@ -566,7 +566,7 @@ https://athenianco.atlassian.net/browse/DEV-250
 async def test_map_prs_to_releases_miguel(
         mdb, pdb, rdb, release_match_setting_tag, cache, release_loader, prefixer):
     miguel_pr = await read_sql_query(
-        select([PullRequest]).where(PullRequest.number == 907),
+        select(PullRequest).where(PullRequest.number == 907),
         mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     # https://github.com/src-d/go-git/pull/907
     assert len(miguel_pr) == 1

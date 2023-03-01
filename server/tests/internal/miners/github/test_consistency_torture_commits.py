@@ -8,6 +8,7 @@ from freezegun import freeze_time
 import numpy as np
 import pandas as pd
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
@@ -84,7 +85,8 @@ def insert_table(file_name, model, date_columns, engine, preprocess):
         for i, t in enumerate(df.itertuples(index=False)):
             batch.append(t)
             if len(batch) == 1000 or i == len(df) - 1:
-                engine.execute(insert(model).values(batch))
+                with engine.begin() as conn:
+                    conn.execute(insert(model).values(batch))
                 batch.clear()
 
 
@@ -119,13 +121,16 @@ def mdb_torture_file(worker_id) -> Path:
         insert_table(
             "consistency_torture_edges.csv.xz", _NodeCommitParent, ["fetched_at"], engine, None,
         )
-        engine.execute(
-            """
-            INSERT INTO "github.api_push_commits"
-            (acc_id, node_id, repository_node_id, repository_full_name)
-            SELECT acc_id, graph_id, repository_id, 'org/repo' FROM "github.node_commit";
-            """,
-        )
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    """
+                INSERT INTO "github.api_push_commits"
+                (acc_id, node_id, repository_node_id, repository_full_name)
+                SELECT acc_id, graph_id, repository_id, 'org/repo' FROM "github.node_commit";
+                """,
+                ),
+            )
         check_collation(conn_str)
 
     return metadata_db_path

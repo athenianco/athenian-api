@@ -1197,7 +1197,7 @@ async def test_pr_facts_calculator_open_precomputed(
     facts1 = await pr_facts_calculator_no_cache(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
-    open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
+    open_facts = await pdb.fetch_all(select(GitHubOpenPullRequestFacts))
     assert len(open_facts) == 21
     facts2 = await pr_facts_calculator_no_cache(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -1235,7 +1235,7 @@ async def test_pr_facts_calculator_unreleased_precomputed(
     facts1 = await pr_facts_calculator_no_cache(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
-    unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
+    unreleased_facts = await pdb.fetch_all(select(GitHubMergedPullRequestFacts))
     assert len(unreleased_facts) == 2
     for row in unreleased_facts:
         assert row[GitHubMergedPullRequestFacts.data.name] is not None, row[

@@ -132,7 +132,7 @@ async def test_mine_deployments_from_scratch(
     )
     deployment_facts_extract_mentioned_people(deps)
     await wait_deferred()
-    commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
+    commits = await pdb.fetch_all(select(GitHubCommitDeployment))
     assert len(commits) == 4684
     assert metrics.count == 14 if eager_filter_repositories else 18
     assert metrics.unresolved == 0
@@ -628,7 +628,7 @@ async def test_mine_deployments_only_failed(
     await wait_deferred()
     assert len(deps) == 1
     assert len(deps.iloc[0]["prs"]) == 340
-    rows = await pdb.fetch_all(select([GitHubPullRequestDeployment]))
+    rows = await pdb.fetch_all(select(GitHubPullRequestDeployment))
     assert len(rows) == 340
 
 

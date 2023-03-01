@@ -78,7 +78,7 @@ class TestSetReleaseMatch(Requester):
 
         # there are two rows for gitbase in api_repositories, in the big 6MB fixture
         gitbase_exists = await sdb.fetch_val(
-            sa.select([1]).where(
+            sa.select(1).where(
                 ReleaseSetting.logical_name == "",
                 ReleaseSetting.repo_id.in_((39652769, 39652699)),
             ),
@@ -636,7 +636,7 @@ async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
         in ids
     )
     assert len(ids) == 16
-    rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
+    rows = await sdb.fetch_all(select(MappedJIRAIdentity))
     assert len(rows) == 1
     assert rows[0][MappedJIRAIdentity.account_id.name] == 1
     assert rows[0][MappedJIRAIdentity.github_user_id.name] == 40294
@@ -721,7 +721,7 @@ async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping
         assert user_map.developer_id is None
         assert user_map.developer_name is None
         assert user_map.jira_name is not None
-    rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
+    rows = await sdb.fetch_all(select(MappedJIRAIdentity))
     assert len(rows) == 0
 
 
@@ -883,7 +883,7 @@ async def test_set_work_type_create(client, headers, sdb):
         "rules": [{"body": {"arg": 777}, "name": "xxx"}],
     }
     row = await sdb.fetch_one(
-        select([WorkType.name, WorkType.color, WorkType.rules]).where(
+        select(WorkType.name, WorkType.color, WorkType.rules).where(
             WorkType.account_id == 1, WorkType.name == "Bug Making",
         ),
     )
@@ -915,7 +915,7 @@ async def test_set_work_type_update(client, headers, sdb):
         "rules": [{"body": {"arg": 777}, "name": "xxx"}],
     }
     rows = await sdb.fetch_all(
-        select([WorkType.name, WorkType.color, WorkType.rules]).where(
+        select(WorkType.name, WorkType.color, WorkType.rules).where(
             WorkType.account_id == 1, WorkType.name == "Bug Fixing",
         ),
     )
@@ -975,7 +975,7 @@ async def test_set_work_type_empty_rules(client, headers, sdb):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     rows = await sdb.fetch_all(
-        select([WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules]).where(
+        select(WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules).where(
             WorkType.name == "Bug Fixing",
         ),
     )
@@ -1160,10 +1160,10 @@ async def test_delete_logical_repository_smoke(
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is: " + body
-    rows = await sdb.fetch_all(select([LogicalRepository.name]))
+    rows = await sdb.fetch_all(select(LogicalRepository.name))
     assert len(rows) == 1
     assert rows[0][0] == "beta"
-    row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
+    row = await sdb.fetch_one(select(RepositorySet).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name] == [
         ["github.com", 40550, ""],
         ["github.com", 40550, "beta"],
@@ -1219,7 +1219,7 @@ async def test_delete_logical_repository_clean_deployments(
     )
     assert response.status == 200
     logical_repo_row = await sdb.fetch_one(
-        select([LogicalRepository]).where(LogicalRepository.name == "alpha"),
+        select(LogicalRepository).where(LogicalRepository.name == "alpha"),
     )
     assert logical_repo_row is None
 

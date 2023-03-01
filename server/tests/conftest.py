@@ -535,9 +535,10 @@ def _metadata_db(worker_id: str, force_reset: bool) -> str:
         conn_str = f"sqlite:///{metadata_db_path}"
     engine = create_engine(conn_str.rsplit("?", 1)[0])
     if engine.url.drivername == "postgresql":
-        engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
-        engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
-        engine.execute("create extension if not exists hstore;")
+        with engine.begin() as conn:
+            conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS github;"))
+            conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS jira;"))
+            conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS hstore;"))
     else:
         metadata.dereference_schemas()
     ShadowGithubBase.metadata.create_all(engine)
@@ -599,11 +600,12 @@ def _init_own_db_unchecked(
     base.metadata.drop_all(engine)
     if init_sql:
         try:
-            init_sql = init_sql[driver]
+            init_sql_text = init_sql[driver]
         except KeyError:
             pass
         else:
-            engine.execute(init_sql)
+            with engine.begin() as conn:
+                conn.execute(sa.text(init_sql_text))
     base.metadata.create_all(engine)
     if letter == "s":
         session = sessionmaker(bind=engine)()
@@ -690,7 +692,7 @@ async def mdb(_mdb, worker_id, event_loop, request):
     while True:
         try:
             # a canary query
-            await _mdb.fetch_val(select([func.count(NodeCommit.graph_id)]))
+            await _mdb.fetch_val(select(func.count(NodeCommit.graph_id)))
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)

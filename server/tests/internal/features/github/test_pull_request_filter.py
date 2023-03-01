@@ -1452,13 +1452,13 @@ async def test_pr_list_miner_filter_open_precomputed(
     prs1, _ = await filter_pull_requests(*args)
     await wait_deferred()
     assert len(prs1) == 21
-    open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
+    open_facts = await pdb.fetch_all(select(GitHubOpenPullRequestFacts))
     assert len(open_facts) == 21
 
     # the following is offtopic but saves the precious execution time
-    done_facts = await pdb.fetch_all(select([GitHubDonePullRequestFacts]))
+    done_facts = await pdb.fetch_all(select(GitHubDonePullRequestFacts))
     assert len(done_facts) == 294
-    merged_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
+    merged_facts = await pdb.fetch_all(select(GitHubMergedPullRequestFacts))
     assert len(merged_facts) == 246
     # offtopic ends
 

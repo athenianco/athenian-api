@@ -88,7 +88,7 @@ async def test_delete_token_smoke(client, headers, sdb, disable_default_user):
     )
     assert response.status == 200
     assert await response.json() == {}
-    assert len(await sdb.fetch_all(select([UserToken.id]))) == 0
+    assert len(await sdb.fetch_all(select(UserToken.id))) == 0
 
 
 @pytest.mark.parametrize("token_id, code", [(20, 404), (1, 404)])
@@ -122,7 +122,7 @@ async def test_patch_token_smoke(client, headers, sdb):
     )
     assert response.status == 200
     assert json.loads((await response.read()).decode("utf-8")) == {}
-    assert await sdb.fetch_val(select([UserToken.name])) == "yyy"
+    assert await sdb.fetch_val(select(UserToken.name)) == "yyy"
 
 
 @pytest.mark.parametrize(

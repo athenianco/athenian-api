@@ -743,7 +743,7 @@ async def test_load_releases_events_settings(
         Release.commit_id.name: 2756775,
         matched_by_column: ReleaseMatch.event,
     }
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     values = dict(rows[0])
     assert (
@@ -820,7 +820,7 @@ async def test_load_releases_events_url_none(
         releases.iloc[0]["url"]
         == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
     )
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     assert (
         rows[0]["url"]
@@ -2397,7 +2397,7 @@ async def test_override_first_releases_smoke(
     await wait_deferred()
 
     data = await pdb.fetch_val(
-        select([GitHubReleaseFacts.data]).where(GitHubReleaseFacts.id == 41512),
+        select(GitHubReleaseFacts.data).where(GitHubReleaseFacts.id == 41512),
     )
     facts = ReleaseFacts(data)
     checked = 0
@@ -2408,7 +2408,7 @@ async def test_override_first_releases_smoke(
                 assert len(facts[key] if facts[key] is not None else []) > 0, key
     assert checked == 7
     rows = await pdb.fetch_all(
-        select([GitHubDonePullRequestFacts.data]).where(
+        select(GitHubDonePullRequestFacts.data).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,
         ),
     )
@@ -2422,7 +2422,7 @@ async def test_override_first_releases_smoke(
     assert ignored == 1
 
     data = await pdb.fetch_val(
-        select([GitHubReleaseFacts.data]).where(GitHubReleaseFacts.id == 41512),
+        select(GitHubReleaseFacts.data).where(GitHubReleaseFacts.id == 41512),
     )
     facts = ReleaseFacts(data)
     checked = 0
@@ -2432,7 +2432,7 @@ async def test_override_first_releases_smoke(
             assert facts[key] is None or len(facts[key]) == 0, key
     assert checked == 7
     rows = await pdb.fetch_all(
-        select([GitHubDonePullRequestFacts.data]).where(
+        select(GitHubDonePullRequestFacts.data).where(
             GitHubDonePullRequestFacts.release_node_id == 41512,
         ),
     )

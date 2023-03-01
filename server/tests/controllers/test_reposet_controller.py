@@ -18,7 +18,7 @@ async def test_delete_repository_set(client, app, headers, disable_default_user,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    rs = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
+    rs = await sdb.fetch_one(select(RepositorySet).where(RepositorySet.id == 1))
     assert rs is None
 
 
