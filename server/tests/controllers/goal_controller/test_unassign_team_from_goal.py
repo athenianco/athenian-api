@@ -64,6 +64,16 @@ class TestUnassignTeamFromGoalErrors(BaseUnassignTeamFromGoalTest):
         res = await self.post_json(1, json={"team": 9}, assert_status=404)
         assert "Goal 1 not found" in res["detail"]
 
+    async def test_recursive_goal_account_mismatch(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1, account_id=3),
+            TeamFactory(id=9, owner_id=3),
+            TeamGoalFactory(goal_id=1, team_id=9),
+        )
+        res = await self.post_json(1, json={"team": 9, "recursive": True}, assert_status=404)
+        assert "Goal 1 not found" in res["detail"]
+
     async def test_default_user_forbidden(self, sdb: Database) -> None:
         await models_insert(
             sdb, GoalFactory(id=1), TeamFactory(id=9), TeamGoalFactory(goal_id=1, team_id=9),
@@ -102,4 +112,50 @@ class TestUnassignTeamFromGoal(BaseUnassignTeamFromGoalTest):
 
         await assert_missing_row(sdb, Goal, id=1)
         await assert_missing_row(sdb, TeamGoal, team_id=8)
+        await assert_existing_row(sdb, Team, id=8)
+
+    async def test_recursive(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            TeamFactory(id=11, parent_id=9),
+            TeamFactory(id=12, parent_id=11),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [8, 10, 11, 12]],
+        )
+        res = await self.post_json(1, json={"team": 11, "recursive": True})
+        assert res == {"id": 1}
+
+        await assert_existing_row(sdb, Goal, id=1)
+        for team in (11, 12):
+            await assert_missing_row(sdb, TeamGoal, goal_id=1, team_id=team)
+            await assert_existing_row(sdb, Team, id=team)
+        for team in (8, 10):
+            await assert_existing_row(sdb, TeamGoal, goal_id=1, team_id=team)
+
+    async def test_recursive_last_team_unassigned(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [9, 10]],
+        )
+        await self.post(1, json={"team": 9, "recursive": True}, assert_status=204)
+
+        await assert_missing_row(sdb, Goal, id=1)
+        for team in (9, 10):
+            await assert_missing_row(sdb, TeamGoal, goal_id=1, team_id=team)
+            await assert_existing_row(sdb, Team, id=team)
+
+    async def test_recursive_single_team(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=1), TeamFactory(id=8), TeamGoalFactory(goal_id=1, team_id=8),
+        )
+        await self.post(1, json={"team": 8, "recursive": True}, assert_status=204)
+        await assert_missing_row(sdb, Goal, id=1)
+        await assert_missing_row(sdb, TeamGoal, goal_id=1, team_id=8)
         await assert_existing_row(sdb, Team, id=8)

@@ -6,6 +6,7 @@ from athenian.api.align.exceptions import GoalNotFoundError
 from athenian.api.align.goals.dbaccess import (
     fetch_goal_account,
     unassign_team_from_goal as unassign_team_from_goal_in_db,
+    unassign_team_from_goal_recursive,
 )
 from athenian.api.auth import disable_default_user
 from athenian.api.internal.account import request_user_belongs_to_account
@@ -27,9 +28,14 @@ async def unassign_team_from_goal(
             account = await fetch_goal_account(id, sdb_conn)
             if not await request_user_belongs_to_account(request, account):
                 raise GoalNotFoundError(id)
-            still_existing = await unassign_team_from_goal_in_db(
-                account, id, unassign_req.team, sdb_conn,
-            )
+            if unassign_req.recursive:
+                still_existing = await unassign_team_from_goal_recursive(
+                    account, id, unassign_req.team, sdb_conn,
+                )
+            else:
+                still_existing = await unassign_team_from_goal_in_db(
+                    account, id, unassign_req.team, sdb_conn,
+                )
 
     if still_existing:
         return model_response(CreatedIdentifier(id=id))
