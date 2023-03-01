@@ -250,7 +250,7 @@ class JIRAFilter:
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter], ids: Optional[JIRAConfig]) -> JIRAFilter:
+    def from_web(cls, model: WebJIRAFilter | None, ids: JIRAConfig | None) -> JIRAFilter:
         """Initialize a new JIRAFilter from the corresponding web model."""
         if not model or ids is None:
             return cls.empty()
@@ -266,7 +266,7 @@ class JIRAFilter:
             epics=frozenset([s.upper() for s in (model.epics or [])]),
             issue_types=frozenset([normalize_issue_type(s) for s in (model.issue_types or [])]),
             priorities=frozenset([normalize_priority(p) for p in model.priorities or []]),
-            status_categories=frozenset(),
+            status_categories=frozenset(model.status_categories or []),
             custom_projects=custom_projects,
             unmapped=bool(model.unmapped),
         )
