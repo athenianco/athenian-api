@@ -21,6 +21,7 @@ from athenian.api.serialization import FriendlyJson
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,

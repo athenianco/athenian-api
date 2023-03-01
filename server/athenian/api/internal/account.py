@@ -469,7 +469,7 @@ async def copy_teams_as_needed(
 
     :return: <list of created teams if nothing exists>, <final number of teams>.
     """
-    log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
+    log = logging.getLogger("%s.copy_teams_as_needed" % metadata.__package__)
     existing = await sdb.fetch_val(
         select(func.count(StateTeam.id)).where(
             StateTeam.owner_id == account,
