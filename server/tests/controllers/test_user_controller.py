@@ -255,7 +255,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     expires_at = deserialize_datetime(model.parameters)
     assert expires_at.date() == date(2020, 1, 1)
     model = models[1]
-    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    expires_at = await sdb.fetch_val(select(DBAccount.expires_at).where(DBAccount.id == 1))
     assert expires_at.date() == date(2020, 1, 1)
     assert model.parameters == {"a": "test", "c": "d"}
 
@@ -274,7 +274,7 @@ async def test_set_account_expires_far_future(client, headers, god, sdb) -> None
     res_expires_feat = next(feat for feat in res_body if feat["name"] == "expires_at")
     assert res_expires_feat["parameters"] == "2112-05-12T16:00:00Z"
 
-    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    expires_at = await sdb.fetch_val(select(DBAccount.expires_at).where(DBAccount.id == 1))
     if sdb.url.dialect == "sqlite":
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     assert expires_at == datetime(2112, 5, 12, 16, tzinfo=timezone.utc)
@@ -282,14 +282,14 @@ async def test_set_account_expires_far_future(client, headers, god, sdb) -> None
 
 @pytest.mark.app_validate_responses(False)
 async def test_set_account_expires_far_past(client, headers, god, sdb) -> None:
-    orig_expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    orig_expires_at = await sdb.fetch_val(select(DBAccount.expires_at).where(DBAccount.id == 1))
     body = [{"name": "expires_at", "parameters": "1984-05-01T06:00:00Z"}]
     response = await client.request(
         method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 400
     # expires_at hasn't changed
-    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    expires_at = await sdb.fetch_val(select(DBAccount.expires_at).where(DBAccount.id == 1))
     assert expires_at == orig_expires_at
 
 
@@ -301,7 +301,7 @@ async def test_set_account_features_nongod(client, headers, sdb):
         method="POST", path="/private/account/1/features", headers=headers, json=body,
     )
     assert response.status == 403
-    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    expires_at = await sdb.fetch_val(select(DBAccount.expires_at).where(DBAccount.id == 1))
     assert expires_at.date() == date(2030, 1, 1)
 
 
@@ -517,7 +517,7 @@ class TestChangeUser(Requester):
         assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
         assert len(items["regulars"]) == 0
         assert "auth0|5e1f6e2e8bfa520ea5290741" == await sdb.fetch_val(
-            select([BanishedUserAccount.user_id]),
+            select(BanishedUserAccount.user_id),
         )
         if not membership_check:
             await assert_missing_row(sdb, Invitation, is_active=True, account_id=1)

@@ -2435,7 +2435,7 @@ async def test_filter_releases_by_tag(client, headers):
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_releases
 async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, app, sdb, mdb_rw):
-    backup = await mdb_rw.fetch_all(select([Release]))
+    backup = await mdb_rw.fetch_all(select(Release))
     backup = [dict(r) for r in backup]
     await sdb.execute(delete(AccountJiraInstallation))
     await mdb_rw.execute(delete(Release))

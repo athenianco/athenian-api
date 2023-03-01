@@ -99,11 +99,11 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
         },
     }
     # the second is admin backdoor
-    assert len(await sdb.fetch_all(select([Account]))) == 2
-    assert len(await sdb.fetch_all(select([RepositorySet]))) == 0
+    assert len(await sdb.fetch_all(select(Account))) == 2
+    assert len(await sdb.fetch_all(select(RepositorySet))) == 0
     response = await client.request(method="GET", path="/v1/reposets/1", headers=headers, json={})
     assert response.status == 200
-    reposets = await sdb.fetch_all(select([RepositorySet]))
+    reposets = await sdb.fetch_all(select(RepositorySet))
     assert len(reposets) == 1
     assert ["github.com", 40550, ""] in reposets[0]["items"]
 
@@ -118,7 +118,7 @@ async def test_gen_user_invitation_new(client, headers, sdb, app):
     x = body["url"][len(prefix) :]
     iid, salt = decode_slug(x, app.app["auth"].key)
     inv = await sdb.fetch_one(
-        select([Invitation]).where(and_(Invitation.id == iid, Invitation.salt == salt)),
+        select(Invitation).where(and_(Invitation.id == iid, Invitation.salt == salt)),
     )
     assert inv is not None
     assert inv[Invitation.is_active.name]
@@ -180,7 +180,7 @@ async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_def
     invited_user = InvitedUser.from_dict(body)
 
     new_account_row = await sdb.fetch_one(
-        select([Account]).where(Account.id == invited_user.account),
+        select(Account).where(Account.id == invited_user.account),
     )
     # expiration for the created account is based on TRIAL_PERIOD
     account_expires = new_account_row[Account.expires_at.name]
@@ -200,7 +200,7 @@ async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_def
 async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app, faker):
     app._auth0._default_user = app._auth0._default_user.copy()
     app._auth0._default_user.login = "vmarkovtsev"
-    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    num_accounts_before = len(await sdb.fetch_all(select(Account)))
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
@@ -246,7 +246,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
             },
         },
     }
-    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    num_accounts_after = len(await sdb.fetch_all(select(Account)))
     assert num_accounts_after == num_accounts_before
 
 
@@ -313,7 +313,7 @@ async def test_accept_invitation_disabled_membership_check(
     app._auth0._default_user = app._auth0._default_user.copy()
     app._auth0._default_user.login = "panzerxxx"
     check_fid = await sdb.fetch_val(
-        select([Feature.id]).where(
+        select(Feature.id).where(
             and_(
                 Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
                 Feature.component == FeatureComponent.server,
@@ -359,7 +359,7 @@ async def test_accept_invitation_enabled_membership_check(
     app._auth0._default_user = app._auth0._default_user.copy()
     app._auth0._default_user.login = "panzerxxx"
     check_fid = await sdb.fetch_val(
-        select([Feature.id]).where(
+        select(Feature.id).where(
             and_(
                 Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
                 Feature.component == FeatureComponent.server,
@@ -397,7 +397,7 @@ async def test_accept_invitation_banished(client, headers, sdb, disable_default_
     app._auth0._default_user = app._auth0._default_user.copy()
     app._auth0._default_user.login = "vmarkovtsev"
     check_fid = await sdb.fetch_val(
-        select([Feature.id]).where(
+        select(Feature.id).where(
             and_(
                 Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
                 Feature.component == FeatureComponent.server,
@@ -549,7 +549,7 @@ async def test_accept_invitation_github_disabled(
 
 
 async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_default_user, app):
-    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    num_accounts_before = len(await sdb.fetch_all(select(Account)))
     iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=admin_backdoor).create_defaults().explode(),
@@ -598,7 +598,7 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
             },
         },
     }
-    accounts = await sdb.fetch_all(select([Account]))
+    accounts = await sdb.fetch_all(select(Account))
     num_accounts_after = len(accounts)
     assert num_accounts_after == num_accounts_before + 1
     for row in accounts:
@@ -628,7 +628,7 @@ async def test_accept_invitation_admin_duplicate_not_precomputed(
             },
         ),
     )
-    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    num_accounts_before = len(await sdb.fetch_all(select(Account)))
     iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=admin_backdoor).create_defaults().explode(),
@@ -641,7 +641,7 @@ async def test_accept_invitation_admin_duplicate_not_precomputed(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     assert response.status == 429
-    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    num_accounts_after = len(await sdb.fetch_all(select(Account)))
     assert num_accounts_after == num_accounts_before
 
 
@@ -653,7 +653,7 @@ async def test_accept_invitation_admin_duplicate_no_reposet(
     app,
 ):
     await sdb.execute(delete(RepositorySet))
-    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    num_accounts_before = len(await sdb.fetch_all(select(Account)))
     iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=admin_backdoor).create_defaults().explode(),
@@ -666,7 +666,7 @@ async def test_accept_invitation_admin_duplicate_no_reposet(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     assert response.status == 429
-    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    num_accounts_after = len(await sdb.fetch_all(select(Account)))
     assert num_accounts_after == num_accounts_before
 
 

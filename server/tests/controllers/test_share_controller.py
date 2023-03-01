@@ -14,7 +14,7 @@ async def test_share_cycle_smoke(client, headers, disable_default_user, sdb):
     response = await client.request(method="POST", path="/v1/share", headers=headers, json=secret)
     ref = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, ref
-    rows = await sdb.fetch_all(select([Share]))
+    rows = await sdb.fetch_all(select(Share))
     assert len(rows) == 1
     assert not rows[0][Share.divine.name]
     assert ref == "7gsyzgrzminj8"
@@ -31,7 +31,7 @@ async def test_share_god(client, headers, disable_default_user, sdb, god):
     response = await client.request(method="POST", path="/v1/share", headers=headers, json=secret)
     ref = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, ref
-    rows = await sdb.fetch_all(select([Share]))
+    rows = await sdb.fetch_all(select(Share))
     assert len(rows) == 1
     assert rows[0][Share.divine.name]
 

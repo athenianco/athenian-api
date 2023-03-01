@@ -61,7 +61,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     assert isinstance(statuses, list)
     assert len(statuses) == 1
     assert statuses[0] == ReleaseNotificationStatus.ACCEPTED_RESOLVED
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     columns = dict(rows[0])
     assert columns[ReleaseNotification.created_at.name]
@@ -112,7 +112,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
     assert response.status == 200
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     assert rows[0][ReleaseNotification.author_node_id.name] is None
 
@@ -128,7 +128,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
     assert response.status == 200
-    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
     assert rows[0][ReleaseNotification.author_node_id.name] == 39936
 
@@ -366,7 +366,7 @@ class TestClearPrecomputedEvents(Requester):
             (GitHubMergedPullRequestFacts, 246),
             (GitHubReleaseFacts, 53),
         ):
-            assert len(await pdb.fetch_all(select([table]))) == n, table
+            assert len(await pdb.fetch_all(select(table))) == n, table
 
     @freeze_time("2020-01-01")
     async def test_clear_deployments(self, pdb, disable_default_user):
@@ -383,7 +383,7 @@ class TestClearPrecomputedEvents(Requester):
         )
         body = {"account": 1, "repositories": ["{1}"], "targets": ["deployment"]}
         await self._request(json=body)
-        rows = await pdb.fetch_all(select([GitHubDeploymentFacts]))
+        rows = await pdb.fetch_all(select(GitHubDeploymentFacts))
         assert len(rows) == 1
         row = rows[0]
         assert row[GitHubDeploymentFacts.deployment_name.name] == "Dummy deployment"
@@ -452,7 +452,7 @@ class TestNotifyDeployments(Requester):
             },
         ]
         await self._request(token, json=body)
-        rows = await rdb.fetch_all(select([DeployedComponent]))
+        rows = await rdb.fetch_all(select(DeployedComponent))
         assert len(rows) == 1
         row = dict(rows[0])
         created_at = row[DeployedComponent.created_at.name]
@@ -472,7 +472,7 @@ class TestNotifyDeployments(Requester):
             DeployedComponent.reference.name: ref,
             DeployedComponent.resolved_commit_node_id.name: commit,
         }
-        rows = await rdb.fetch_all(select([DeployedLabel]))
+        rows = await rdb.fetch_all(select(DeployedLabel))
         assert len(rows) == 2
         assert dict(rows[0]) == {
             DeployedLabel.account_id.name: 1,
@@ -486,7 +486,7 @@ class TestNotifyDeployments(Requester):
             DeployedLabel.key.name: "2",
             DeployedLabel.value.name: "two",
         }
-        rows = await rdb.fetch_all(select([DeploymentNotification]))
+        rows = await rdb.fetch_all(select(DeploymentNotification))
         assert len(rows) == 1
         row = dict(rows[0])
         created_at = row[DeploymentNotification.created_at.name]
@@ -763,17 +763,17 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
     )
     await resolve_deployed_component_references(sdb, mdb, rdb, None)
     rows = await rdb.fetch_all(
-        select([DeploymentNotification.name]).order_by(DeploymentNotification.name),
+        select(DeploymentNotification.name).order_by(DeploymentNotification.name),
     )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
     rows = await rdb.fetch_all(
-        select([DeployedComponent.deployment_name]).order_by(DeployedComponent.deployment_name),
+        select(DeployedComponent.deployment_name).order_by(DeployedComponent.deployment_name),
     )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
     rows = await rdb.fetch_all(
-        select([DeployedLabel.deployment_name]).order_by(DeployedLabel.deployment_name),
+        select(DeployedLabel.deployment_name).order_by(DeployedLabel.deployment_name),
     )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"

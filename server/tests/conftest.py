@@ -692,7 +692,7 @@ async def mdb(_mdb, worker_id, event_loop, request):
     while True:
         try:
             # a canary query
-            await _mdb.fetch_val(select([func.count(NodeCommit.graph_id)]))
+            await _mdb.fetch_val(select(func.count(NodeCommit.graph_id)))
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)

@@ -20,10 +20,10 @@ class NullsModel(Base):
 
 async def test_erase_integer_nulls(sdb):
     await sdb.execute(insert(NullsModel).values({"id": 1, "int_col": None}))
-    df = await read_sql_query(select([NullsModel]), sdb, NullsModel)
+    df = await read_sql_query(select(NullsModel), sdb, NullsModel)
     assert len(df) == 1
     df = await read_sql_query(
-        select([NullsModel]),
+        select(NullsModel),
         sdb,
         [
             NullsModel.id,
@@ -35,10 +35,10 @@ async def test_erase_integer_nulls(sdb):
 
 async def test_reset_integer_nulls(sdb):
     await sdb.execute(insert(NullsModel).values({"id": 1, "int_col": None}))
-    df = await read_sql_query(select([NullsModel]), sdb, NullsModel)
+    df = await read_sql_query(select(NullsModel), sdb, NullsModel)
     assert len(df) == 1
     df = await read_sql_query(
-        select([NullsModel]),
+        select(NullsModel),
         sdb,
         [
             NullsModel.id,

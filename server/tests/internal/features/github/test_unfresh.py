@@ -181,7 +181,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     assert len(facts_fresh) == 36
     for node_id in (163160, 163206):
         data = await pdb.fetch_val(
-            select([GitHubDonePullRequestFacts.data]).where(
+            select(GitHubDonePullRequestFacts.data).where(
                 GitHubDonePullRequestFacts.pr_node_id == node_id,
             ),
         )

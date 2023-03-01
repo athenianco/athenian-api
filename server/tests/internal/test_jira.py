@@ -184,11 +184,9 @@ async def test_match_jira_identities_from_scratch(sdb, mdb, slack):
     assert matched == 9
     stored = await sdb.fetch_all(
         select(
-            [
-                MappedJIRAIdentity.github_user_id,
-                MappedJIRAIdentity.jira_user_id,
-                MappedJIRAIdentity.confidence,
-            ],
+            MappedJIRAIdentity.github_user_id,
+            MappedJIRAIdentity.jira_user_id,
+            MappedJIRAIdentity.confidence,
         ),
     )
     assert matched == len(stored)
@@ -219,7 +217,7 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
     )
     matched = await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)
     assert matched == 8
-    stored = await sdb.fetch_val(select([count(distinct(MappedJIRAIdentity.github_user_id))]))
+    stored = await sdb.fetch_val(select(count(distinct(MappedJIRAIdentity.github_user_id))))
     assert matched + 1 == stored
 
 
@@ -259,7 +257,7 @@ class TestDisableEmptyProjects:
         disabled = await disable_empty_projects(1, (6366825,), sdb, mdb, slack, cache)
         assert disabled == 1
         settings = await sdb.fetch_all(
-            select([JIRAProjectSetting.key, JIRAProjectSetting.enabled]).where(
+            select(JIRAProjectSetting.key, JIRAProjectSetting.enabled).where(
                 JIRAProjectSetting.account_id == 1,
             ),
         )

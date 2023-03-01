@@ -181,7 +181,7 @@ async def test_load_branches_max_date(mdb_rw, branch_miner, prefixer, meta_ids):
 
 async def test_load_branches_only_one(mdb_rw, branch_miner, prefixer, meta_ids):
     mdb = mdb_rw
-    branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
+    branches = await mdb.fetch_all(select(Branch).where(Branch.branch_name != "master"))
     await mdb.execute(
         update(Branch)
         .where(Branch.branch_name == "master")
