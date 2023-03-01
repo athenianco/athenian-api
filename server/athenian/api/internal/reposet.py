@@ -386,7 +386,7 @@ async def _load_account_reposets(
                     raise ResponseError(ForbiddenError(detail=str(login)))
                 if not (
                     meta_ids := await match_metadata_installation(
-                        account, login, sdb_conn, mdb_conn, mdb, slack,
+                        account, login, sdb_conn, mdb, slack,
                     )
                 ):
                     raise_no_source_data()
@@ -516,9 +516,7 @@ async def load_account_state(
             return None
         async with sdb.connection() as sdb_conn:
             async with sdb_conn.transaction():
-                if not await match_metadata_installation(
-                    account, login, sdb_conn, mdb, mdb, slack,
-                ):
+                if not await match_metadata_installation(account, login, sdb_conn, mdb, slack):
                     log.warning(
                         "Did not match installations to account %d as %s", account, auth0_id,
                     )
