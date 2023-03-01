@@ -151,7 +151,7 @@ async def delete_dashboard_chart(dashboard_id: int, chart_id: int, sdb_conn: Dat
     """Delete a dashboard chart, raise errors if not existing."""
     where = (DashboardChart.dashboard_id == dashboard_id, DashboardChart.id == chart_id)
     # no rowcount is returned with aysncpg
-    select_stmt = sa.select([1]).where(*where)
+    select_stmt = sa.select(1).where(*where)
     if (await sdb_conn.fetch_val(select_stmt)) is None:
         raise DashboardChartNotFoundError(dashboard_id, chart_id)
 

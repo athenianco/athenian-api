@@ -136,10 +136,10 @@ async def get_metadata_account_ids(
 ) -> tuple[int, ...]:
     """Fetch the metadata account IDs for the given API account ID."""
     ids = await sdb.fetch_all(
-        select([AccountGitHubAccount.id]).where(AccountGitHubAccount.account_id == account),
+        select(AccountGitHubAccount.id).where(AccountGitHubAccount.account_id == account),
     )
     if len(ids) == 0:
-        acc_exists = await sdb.fetch_val(select([Account.id]).where(Account.id == account))
+        acc_exists = await sdb.fetch_val(select(Account.id).where(Account.id == account))
         if not acc_exists:
             raise ResponseError(
                 NotFoundError(
@@ -207,8 +207,8 @@ async def match_metadata_installation(
     """
     log = logging.getLogger(f"{metadata.__package__}.match_metadata_installation")
     user_rows, owner_rows = await gather(
-        mdb_conn.fetch_all(select([NodeUser.acc_id]).where(NodeUser.login == login)),
-        mdb.fetch_all(select([MetadataAccount.id]).where(MetadataAccount.owner_login == login)),
+        mdb_conn.fetch_all(select(NodeUser.acc_id).where(NodeUser.login == login)),
+        mdb.fetch_all(select(MetadataAccount.id).where(MetadataAccount.owner_login == login)),
     )
     meta_ids = set(chain((r[0] for r in user_rows), (r[0] for r in owner_rows)))
     del user_rows, owner_rows
@@ -218,7 +218,7 @@ async def match_metadata_installation(
     owned_accounts = {
         r[0]
         for r in await sdb_conn.fetch_all(
-            select([AccountGitHubAccount.id]).where(AccountGitHubAccount.id.in_(meta_ids)),
+            select(AccountGitHubAccount.id).where(AccountGitHubAccount.id.in_(meta_ids)),
         )
     }
     meta_ids -= owned_accounts
@@ -244,7 +244,7 @@ async def match_metadata_installation(
             metadata_accounts = [
                 (r[0], r[1])
                 for r in await mdb.fetch_all(
-                    select([MetadataAccount.id, MetadataAccount.owner_login]).where(
+                    select(MetadataAccount.id, MetadataAccount.owner_login).where(
                         MetadataAccount.id.in_(meta_ids),
                     ),
                 )
@@ -546,7 +546,7 @@ async def copy_teams_as_needed(
 
 async def generate_jira_invitation_link(account: int, sdb: DatabaseLike) -> str:
     """Return the JIRA installation URL for the given account."""
-    secret = await sdb.fetch_val(select([Account.secret]).where(Account.id == account))
+    secret = await sdb.fetch_val(select(Account.secret).where(Account.id == account))
     assert secret not in (None, Account.missing_secret)
     return jira_url_template % secret
 
@@ -594,7 +594,7 @@ async def get_installation_owner(
 ) -> str:
     """Load the native user ID who installed the app."""
     user_login = await mdb.fetch_val(
-        select([MetadataAccount.owner_login]).where(MetadataAccount.id == metadata_account_id),
+        select(MetadataAccount.owner_login).where(MetadataAccount.id == metadata_account_id),
     )
     if user_login is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
@@ -615,7 +615,7 @@ async def get_installation_url_prefix(
 ) -> str:
     """Load the installation URL prefix, e.g. "https://github.com"."""
     url = await mdb.fetch_val(
-        select([MetadataAccount.install_url]).where(MetadataAccount.id == metadata_account_id),
+        select(MetadataAccount.install_url).where(MetadataAccount.id == metadata_account_id),
     )
     if url is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))

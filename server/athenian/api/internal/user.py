@@ -38,7 +38,7 @@ async def load_user_accounts(
 ) -> dict[int, AccountStatus]:
     """Fetch the user accounts membership and flags."""
     accounts = await sdb.fetch_all(
-        select([UserAccount, Account.expires_at])
+        select(UserAccount, Account.expires_at)
         .select_from(join(UserAccount, Account, UserAccount.account_id == Account.id))
         .where(UserAccount.user_id == uid),
     )
@@ -55,7 +55,7 @@ async def load_user_accounts(
         ]
         + [
             rdb.fetch_val(
-                select([func.count(DeploymentNotification.name)]).where(
+                select(func.count(DeploymentNotification.name)).where(
                     DeploymentNotification.account_id == x[UserAccount.account_id.name],
                 ),
             )

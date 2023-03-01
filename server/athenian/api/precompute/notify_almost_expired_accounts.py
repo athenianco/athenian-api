@@ -2,7 +2,7 @@ import argparse
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 
-from sqlalchemy import and_, select
+import sqlalchemy as sa
 
 from athenian.api.async_utils import gather
 from athenian.api.db import ensure_db_datetime_tz
@@ -19,7 +19,9 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     left = right - timedelta(hours=1)
     accounts: dict[int, datetime] = dict(
         await sdb.fetch_all(
-            select(Account.id, Account.expires_at).where(Account.expires_at.between(left, right)),
+            sa.select(Account.id, Account.expires_at).where(
+                Account.expires_at.between(left, right),
+            ),
         ),
     )
 
@@ -29,15 +31,15 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     log.info("Notifying about almost expired accounts: %s", sorted(accounts))
     user_rows, *meta_ids = await gather(
         sdb.fetch_all(
-            select([UserAccount.account_id, UserAccount.user_id]).where(
-                and_(UserAccount.account_id.in_(accounts), UserAccount.is_admin),
+            sa.select(UserAccount.account_id, UserAccount.user_id).where(
+                UserAccount.account_id.in_(accounts), UserAccount.is_admin,
             ),
         ),
         *(get_metadata_account_ids_or_empty(acc, sdb, cache) for acc in accounts),
     )
     users = dict(user_rows)
     name_rows = await mdb.fetch_all(
-        select(GitHubAccount.id, GitHubAccount.name).where(
+        sa.select(GitHubAccount.id, GitHubAccount.name).where(
             GitHubAccount.id.in_(chain.from_iterable(meta_ids)),
         ),
     )

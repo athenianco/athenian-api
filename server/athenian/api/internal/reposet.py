@@ -136,7 +136,7 @@ async def fetch_reposet(
         else:
             columns = list(columns)
             columns.append(RepositorySet.owner_id)
-    rs = await sdb.fetch_one(select(columns).where(RepositorySet.id == id))
+    rs = await sdb.fetch_one(select(*columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail=f"Repository set {id} does not exist"))
     return RepositorySet(**rs)
@@ -351,9 +351,10 @@ async def _load_account_reposets(
 ) -> list[Mapping]:
     assert isinstance(sdb_conn, Connection)
     assert isinstance(mdb_conn, Connection)
-    rss = await sdb_conn.fetch_all(
-        select(fields).where(RepositorySet.owner_id == account).order_by(RepositorySet.created_at),
+    stmt = (
+        select(*fields).where(RepositorySet.owner_id == account).order_by(RepositorySet.created_at)
     )
+    rss = await sdb_conn.fetch_all(stmt)
     if rss:
         return rss
 
