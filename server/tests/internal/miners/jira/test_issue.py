@@ -34,6 +34,7 @@ from athenian.api.internal.settings import (
     ReleaseSettings,
 )
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
+from athenian.api.models.metadata.jira import Status
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import (
@@ -155,6 +156,34 @@ class TestFetchJIRAIssues:
         cached_issues = await fetch_jira_issues(**kwargs)
         assert_frame_equal(issues, cached_issues)
 
+    async def test_status_categories(self, mdb, pdb, default_branches, release_match_setting_tag):
+        jira_filter = JIRAFilter.empty().replace(
+            account=DEFAULT_JIRA_ACCOUNT_ID, projects=["10003", "10009"],
+        )
+        kwargs = self._kwargs(
+            time_from=dt(2021, 1, 1),
+            time_to=dt(2021, 7, 1),
+            default_branches=default_branches,
+            release_settings=release_match_setting_tag,
+            mdb=mdb,
+            pdb=pdb,
+            # jira_filter=jira_filter
+        )
+        all_issues = await fetch_jira_issues(**kwargs)
+        assert len(all_issues) == 125
+
+        kwargs["jira_filter"] = jira_filter.replace(
+            status_categories=frozenset([Status.CATEGORY_TODO]),
+        )
+        todo_issues = await fetch_jira_issues(**kwargs)
+        assert len(todo_issues) == 116
+
+        kwargs["jira_filter"] = jira_filter.replace(
+            status_categories=frozenset([Status.CATEGORY_IN_PROGRESS]),
+        )
+        in_progress_issues = await fetch_jira_issues(**kwargs)
+        assert len(in_progress_issues) == 9
+
     @classmethod
     def _kwargs(cls, **extra) -> dict[str, Any]:
         return {
@@ -171,6 +200,7 @@ class TestFetchJIRAIssues:
             "logical_settings": LogicalRepositorySettings.empty(),
             "account": DEFAULT_ACCOUNT_ID,
             "meta_ids": (DEFAULT_MD_ACCOUNT_ID,),
+            "cache": None,
             **extra,
         }
 
@@ -288,14 +318,7 @@ class TestGenerateJIRAPRsQuery:
             await models_insert(mdb_rw, *models)
 
             jira_filter = JIRAFilter(
-                1,
-                frozenset(("1",)),
-                LabelFilter.empty(),
-                frozenset(),
-                frozenset(),
-                {"pr1", "pr2"},
-                False,
-                False,
+                1, frozenset(("1",)), priorities=frozenset(("pr1", "pr2")), custom_projects=False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1, 1, 2]
@@ -321,7 +344,7 @@ class TestGenerateJIRAPRsQuery:
             await models_insert(mdb_rw, *models)
 
             jira_filter = JIRAFilter(
-                1, ("P1",), LabelFilter.empty(), frozenset(), frozenset(), {"pr1"}, False, False,
+                1, frozenset(("P1",)), priorities=(("pr1",)), custom_projects=False,
             )
             res = await self._fetch_with_jira_filter(mdb_rw, jira_filter)
             assert [r[PullRequest.node_id.name] for r in res] == [1]

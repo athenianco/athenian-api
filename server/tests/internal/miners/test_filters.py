@@ -106,6 +106,16 @@ class TestJIRAFilterCombine:
         f1 = JIRAFilter.combine(f)
         assert f == f1
 
+    def test_status_categories(self) -> None:
+        f0 = JIRAFilter(account=1)
+        f1 = JIRAFilter(account=1, status_categories=frozenset(["Foo"]))
+        f2 = JIRAFilter(account=1, status_categories=frozenset(["Bar", "Ba Z"]))
+
+        assert JIRAFilter.combine(f0, f1) == f0
+        assert JIRAFilter.combine(f1, f2) == JIRAFilter(
+            account=1, status_categories=frozenset(["Foo", "Bar", "Ba Z"]),
+        )
+
 
 class TestJIRAFilterFromWeb:
     def test_empty_web_filter(self) -> None:
