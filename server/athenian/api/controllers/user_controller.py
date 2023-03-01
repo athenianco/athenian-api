@@ -63,7 +63,7 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
 async def get_account_details(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the members and installed GitHub and JIRA organizations of the account."""
     user_id = request.uid
-    users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
+    users = await request.sdb.fetch_all(select(UserAccount).where(UserAccount.account_id == id))
     if len(users) == 0:
         raise ResponseError(NotFoundError(detail="Account %d does not exist." % id))
     for user in users:
@@ -159,7 +159,7 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
     aucr = AccountUserChangeRequest.from_dict(body)
     async with request.sdb.connection() as conn:
         users = await request.sdb.fetch_all(
-            select([UserAccount]).where(UserAccount.account_id == aucr.account),
+            select(UserAccount).where(UserAccount.account_id == aucr.account),
         )
         for user in users:
             if user[UserAccount.user_id.name] == aucr.user:

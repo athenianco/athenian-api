@@ -127,7 +127,7 @@ async def get_everything(
     """Download all the data collected by Athenian for custom analysis."""
     if account == 0:
         rows = await request.sdb.fetch_all(
-            select([UserAccount.account_id]).where(UserAccount.user_id == request.uid),
+            select(UserAccount.account_id).where(UserAccount.user_id == request.uid),
         )
         if len(rows) != 1:
             raise ResponseError(

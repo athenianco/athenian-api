@@ -93,7 +93,7 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the team to list.
     """
     async with request.sdb.connection() as sdb_conn:
-        team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
+        team = await sdb_conn.fetch_one(select(Team).where(Team.id == id))
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         account = team[Team.owner_id.name]
@@ -122,7 +122,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status_from_request(request, account)
         teams, meta_ids = await gather(
-            sdb_conn.fetch_all(select([Team]).where(Team.owner_id == account).order_by(Team.name)),
+            sdb_conn.fetch_all(select(Team).where(Team.owner_id == account).order_by(Team.name)),
             get_metadata_account_ids(account, sdb_conn, request.cache),
         )
     return await _list_loaded_teams(teams, account, meta_ids, request)
@@ -253,7 +253,7 @@ async def _resolve_members(
 async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
     if parent_id is None:
         return
-    parent_owner = await sdb.fetch_val(select([Team.owner_id]).where(Team.id == parent_id))
+    parent_owner = await sdb.fetch_val(select(Team.owner_id).where(Team.id == parent_id))
     if parent_owner != account:  # including None
         raise ResponseError(BadRequestError(detail="Team's parent does not exist."))
 
@@ -261,7 +261,7 @@ async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLik
 async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
     while parent_id not in (visited := {None, team_id}):
         visited.add(
-            parent_id := await sdb.fetch_val(select([Team.parent_id]).where(Team.id == parent_id)),
+            parent_id := await sdb.fetch_val(select(Team.parent_id).where(Team.id == parent_id)),
         )
     if parent_id is not None:
         visited.remove(None)
@@ -296,6 +296,6 @@ async def resync_teams(
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     await sync_teams(account, meta_ids, request.sdb, request.mdb, force=True, unmapped=unmapped)
     teams = await request.sdb.fetch_all(
-        select([Team]).where(Team.owner_id == account).order_by(Team.name),
+        select(Team).where(Team.owner_id == account).order_by(Team.name),
     )
     return await _list_loaded_teams(teams, account, meta_ids, request)
