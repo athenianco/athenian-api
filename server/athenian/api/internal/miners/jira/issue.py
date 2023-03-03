@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, func, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -397,8 +398,6 @@ async def _fetch_jira_issues(
 ) -> tuple[pd.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
-    resolved_colname = AthenianIssue.resolved.name
-    created_colname = Issue.created.name
     issues = await query_jira_raw(
         [
             Issue.id,
@@ -435,15 +434,78 @@ async def _fetch_jira_issues(
     else:
         on_raw_fetch_complete_task = _NoResult.stub()
     if issues.empty or not adjust_timestamps_using_prs:
-        for col in (
-            ISSUE_PRS_BEGAN,
-            ISSUE_PRS_RELEASED,
-            ISSUE_PRS_COUNT,
-            ISSUE_PR_IDS,
-            resolved_colname,
-        ):
-            issues[col] = [None] * len(issues)
-        return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+        _fill_issues_with_empty_prs_info(issues)
+    else:
+        assert default_branches is not None
+        await _fill_issues_with_mapped_prs_info(
+            issues,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            jira_filter.account,
+            pdb,
+            mdb,
+        )
+    return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+
+
+@sentry_span
+async def fetch_jira_issues_by_keys(
+    keys: Sequence[str],
+    jira_config: JIRAConfig,
+    default_branches: dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Iterable[InstrumentedAttribute] = (),
+) -> pd.DataFrame:
+    """Load JIRA issues based on their key. Result dataframe order is undetermined."""
+    columns = [
+        Issue.id,
+        Issue.created,
+        AthenianIssue.updated,
+        AthenianIssue.work_began,
+        AthenianIssue.resolved,
+        Status.category_name,
+        *extra_columns,
+    ]
+    issues = await _query_jira_raw_by_keys(keys, columns, jira_config, mdb, cache)
+    if issues.empty:
+        _fill_issues_with_empty_prs_info(issues)
+    else:
+        await _fill_issues_with_mapped_prs_info(
+            issues,
+            default_branches,
+            release_settings,
+            logical_settings,
+            account,
+            meta_ids,
+            jira_config.acc_id,
+            pdb,
+            mdb,
+        )
+    return issues
+
+
+async def _fill_issues_with_mapped_prs_info(
+    issues: pd.DataFrame,
+    default_branches: dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: tuple[int, ...],
+    jira_account: int,
+    pdb: DatabaseLike,
+    mdb: DatabaseLike,
+) -> None:
+    log = logging.getLogger("%s.jira" % metadata.__package__)
+
     if len(issues) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
     else:
@@ -479,7 +541,7 @@ async def _fetch_jira_issues(
             ),
         )
         .where(
-            NodePullRequestJiraIssues.jira_acc == jira_filter.account,
+            NodePullRequestJiraIssues.jira_acc == jira_account,
             NodePullRequestJiraIssues.node_acc.in_(meta_ids),
             jira_id_cond,
         )
@@ -571,14 +633,26 @@ async def _fetch_jira_issues(
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
     issues[ISSUE_PR_IDS] = issue_prs
-    issues[resolved_colname] = issues[resolved_colname].astype(issues[created_colname].dtype)
-    if (negative := issues[resolved_colname].values < issues[created_colname].values).any():
+    ISSUE_RESOLVED = AthenianIssue.resolved.name
+    ISSUE_CREATED = Issue.created.name
+
+    if (negative := issues[ISSUE_RESOLVED].values < issues[ISSUE_CREATED].values).any():
         log.error(
             "JIRA issues have resolved < created: %s",
             issues.index.values[negative].tolist(),
         )
-        issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
-    return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
+        issues[ISSUE_RESOLVED].values[negative] = issues[ISSUE_CREATED].values[negative]
+
+
+def _fill_issues_with_empty_prs_info(issues: pd.DataFrame) -> None:
+    for col in (
+        ISSUE_PRS_BEGAN,
+        ISSUE_PRS_RELEASED,
+        ISSUE_PRS_COUNT,
+        ISSUE_PR_IDS,
+        AthenianIssue.resolved.name,
+    ):
+        issues[col] = [None] * len(issues)
 
 
 @sentry_span
@@ -754,34 +828,22 @@ async def query_jira_raw(
                 sql.outerjoin(
                     seed,
                     epics_major,
-                    sql.and_(
-                        Issue.epic_id == epics_major.id,
-                        Issue.acc_id == epics_major.acc_id,
-                    ),
+                    sql.and_(Issue.epic_id == epics_major.id, Issue.acc_id == epics_major.acc_id),
                 ),
                 epics_self,
-                sql.and_(
-                    Issue.id == epics_self.id,
-                    Issue.acc_id == epics_self.acc_id,
-                ),
+                sql.and_(Issue.id == epics_self.id, Issue.acc_id == epics_self.acc_id),
             )
         elif len(jira_filter.epics):
             seed = sql.join(
                 seed,
                 epic,
-                sql.and_(
-                    Issue.epic_id == epic.id,
-                    Issue.acc_id == epic.acc_id,
-                ),
+                sql.and_(Issue.epic_id == epic.id, Issue.acc_id == epic.acc_id),
             )
         return sql.select(*columns).select_from(
             sql.outerjoin(
                 seed,
                 AthenianIssue,
-                sql.and_(
-                    Issue.acc_id == AthenianIssue.acc_id,
-                    Issue.id == AthenianIssue.id,
-                ),
+                sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
             ),
         )
 
@@ -886,6 +948,37 @@ async def query_jira_raw(
     df.disable_consolidate()
     df = df.take(np.flatnonzero(passed))
     return df
+
+
+@sentry_span
+async def _query_jira_raw_by_keys(
+    keys: Sequence[str],
+    columns: list[InstrumentedAttribute],
+    jira_config: JIRAConfig,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> pd.DataFrame:
+    where = [
+        Issue.acc_id == jira_config.acc_id,
+        Issue.project_id.in_(jira_config.projects),
+        Issue.is_deleted.is_(False),
+        Issue.key.progressive_in(keys),
+    ]
+    issue_status_join = sa.outerjoin(
+        Issue,
+        Status,
+        sql.and_(Issue.status_id == Status.id, Issue.acc_id == Status.acc_id),
+    )
+    issue_athenian_issue_join = sa.outerjoin(
+        issue_status_join,
+        AthenianIssue,
+        sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
+    )
+    stmt = sa.select(*columns).select_from(issue_athenian_issue_join).where(*where)
+    if len(keys) > 100:
+        stmt = stmt.with_statement_hint(f"Leading({Issue.__tablename__} *VALUES*)")
+    issues = await read_sql_query(stmt, mdb, columns, index=Issue.id.name)
+    return _validate_and_clean_issues(issues, jira_config.acc_id)
 
 
 def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
@@ -1092,7 +1185,7 @@ def resolve_work_began_and_resolved(
 
 
 @sentry_span
-async def fetch_jira_issues_by_keys(
+async def fetch_jira_issues_rows_by_keys(
     keys: Collection[str],
     jira_ids: JIRAConfig,
     mdb: DatabaseLike,
@@ -1100,7 +1193,6 @@ async def fetch_jira_issues_by_keys(
     """Load brief information about JIRA issues mapped to the given issue keys."""
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Issue, name="epic")
-    in_any_values = len(keys) > 100
     query = (
         sql.select(
             regiss.key.label("id"),
@@ -1113,21 +1205,18 @@ async def fetch_jira_issues_by_keys(
             sql.outerjoin(
                 regiss,
                 epiciss,
-                sql.and_(
-                    epiciss.id == regiss.epic_id,
-                    epiciss.acc_id == regiss.acc_id,
-                ),
+                sql.and_(epiciss.id == regiss.epic_id, epiciss.acc_id == regiss.acc_id),
             ),
         )
         .where(
             regiss.acc_id == jira_ids[0],
-            regiss.key.in_any_values(keys) if in_any_values else regiss.key.in_(keys),
+            regiss.key.progressive_in(keys),
             regiss.project_id.in_(jira_ids[1]),
             regiss.is_deleted.is_(False),
         )
     )
-    if in_any_values:
-        (
+    if len(keys) > 100:
+        query = (
             query.with_statement_hint("Leading(((regular *VALUES*) epic))")
             .with_statement_hint(f"Rows(*VALUES* regular #{len(keys)})")
             .with_statement_hint(f"Rows(*VALUES* regular epic #{len(keys)})")

@@ -40,19 +40,9 @@ async def test_get_metadata_account_id_error(sdb):
 @with_defer
 async def test_match_metadata_installation(sdb, mdb, slack):
     await sdb.execute(delete(AccountGitHubAccount))
-    with pytest.raises(AssertionError):
-        async with sdb.connection() as sdb_conn:
-            async with sdb_conn.transaction():
-                async with mdb.connection() as mdb_conn:
-                    await match_metadata_installation(
-                        1, "vmarkovtsev", sdb_conn, mdb_conn, mdb_conn, slack,
-                    )
     async with sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            async with mdb.connection() as mdb_conn:
-                meta_ids = await match_metadata_installation(
-                    1, "vmarkovtsev", sdb_conn, mdb_conn, mdb, slack,
-                )
+            meta_ids = await match_metadata_installation(1, "vmarkovtsev", sdb_conn, mdb, slack)
     assert meta_ids == {6366825}
 
 

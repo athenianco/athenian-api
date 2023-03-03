@@ -197,7 +197,6 @@ async def match_metadata_installation(
     account: int,
     login: str,
     sdb_conn: Connection,
-    mdb_conn: Connection,
     mdb: Database,
     slack: Optional[SlackWebClient],
 ) -> Collection[int]:
@@ -207,7 +206,7 @@ async def match_metadata_installation(
     """
     log = logging.getLogger(f"{metadata.__package__}.match_metadata_installation")
     user_rows, owner_rows = await gather(
-        mdb_conn.fetch_all(select(NodeUser.acc_id).where(NodeUser.login == login)),
+        mdb.fetch_all(select(NodeUser.acc_id).where(NodeUser.login == login)),
         mdb.fetch_all(select(MetadataAccount.id).where(MetadataAccount.owner_login == login)),
     )
     meta_ids = set(chain((r[0] for r in user_rows), (r[0] for r in owner_rows)))
