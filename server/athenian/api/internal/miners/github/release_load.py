@@ -15,6 +15,7 @@ import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, false, func, or_, select, true, union_all, update
+from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.functions import coalesce
 
@@ -1627,13 +1628,7 @@ class ReleaseMatcher:
         deserialize=pickle.loads,
         # commit_shas are already sorted
         key=lambda commit_shas, time_from, time_to, **_: (
-            ""
-            if len(commit_shas) == 0
-            else (
-                ",".join(commit_shas)
-                if isinstance(commit_shas[0], str)
-                else b",".join(commit_shas).decode()
-            ),
+            "" if len(commit_shas) == 0 else bytes(commit_shas.view("S1").data),
             time_from,
             time_to,
         ),
@@ -1642,19 +1637,11 @@ class ReleaseMatcher:
     )
     async def _fetch_commits(
         self,
-        commit_shas: Sequence[str] | np.ndarray,
+        commit_shas: npt.NDArray[bytes],
         time_from: datetime,
         time_to: datetime,
         repos: Iterable[str],
     ) -> pd.DataFrame:
-        filters = [
-            PushCommit.acc_id.in_(self._meta_ids),
-            PushCommit.committed_date.between(time_from, time_to),
-        ]
-        if small_scale := (len(commit_shas) < 100):
-            filters.append(PushCommit.sha.in_(commit_shas))
-        else:
-            filters.append(PushCommit.sha.in_any_values(commit_shas))
         selected = [
             PushCommit.acc_id,
             PushCommit.node_id,
@@ -1669,7 +1656,56 @@ class ReleaseMatcher:
             PushCommit.repository_full_name,
             PushCommit.repository_node_id,
         ]
-        query = select(selected).where(*filters).order_by(desc(PushCommit.committed_date))
+        if time_to - time_from < timedelta(days=1):
+            return await self._fetch_commits_postfilter(
+                commit_shas, time_from, time_to, repos, selected,
+            )
+        else:
+            return await self._fetch_commits_prefilter(
+                commit_shas, time_from, time_to, repos, selected,
+            )
+
+    @sentry_span
+    async def _fetch_commits_postfilter(
+        self,
+        commit_shas: npt.NDArray[bytes],
+        time_from: datetime,
+        time_to: datetime,
+        repos: Iterable[str],
+        selected: list[InstrumentedAttribute],
+    ) -> pd.DataFrame:
+        query = (
+            select(*selected)
+            .where(
+                PushCommit.acc_id.in_(self._meta_ids),
+                PushCommit.committed_date.between(time_from, time_to),
+                PushCommit.repository_full_name.in_(repos),
+            )
+            .order_by(desc(PushCommit.committed_date))
+        )
+        df = await read_sql_query(query, self._mdb, selected)
+        matched = in1d_str(df[PushCommit.sha.name].values, commit_shas)
+        df = df.take(np.flatnonzero(matched))
+        return df
+
+    @sentry_span
+    async def _fetch_commits_prefilter(
+        self,
+        commit_shas: npt.NDArray[bytes],
+        time_from: datetime,
+        time_to: datetime,
+        repos: Iterable[str],
+        selected: list[InstrumentedAttribute],
+    ) -> pd.DataFrame:
+        filters = [
+            PushCommit.acc_id.in_(self._meta_ids),
+            PushCommit.committed_date.between(time_from, time_to),
+        ]
+        if small_scale := (len(commit_shas) < 100):
+            filters.append(PushCommit.sha.in_(commit_shas))
+        else:
+            filters.append(PushCommit.sha.in_any_values(commit_shas))
+        query = select(*selected).where(*filters).order_by(desc(PushCommit.committed_date))
         if small_scale:
             query = query.with_statement_hint(
                 "IndexScan(cmm github_node_commit_sha)",
