@@ -3454,5 +3454,8 @@ async def reset_broken_deployments(account: int, pdb: Database, rdb: Database) -
         await _delete_precomputed_deployments(bad_deps, account, pdb)
         log.warning("invalidated %d broken deployments: %.1000s", len(bad_deps), bad_deps)
     else:
-        log.info("scanned %d commits, found no deployment duplicates 🎉", len(rows_commits))
+        log.info(
+            "scanned %d commits and PRs, found no deployment duplicates 🎉",
+            len(rows_commits),
+        )
     return len(bad_deps)
