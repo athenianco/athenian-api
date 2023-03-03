@@ -975,7 +975,8 @@ async def _query_jira_raw_by_keys(
         sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
     )
     stmt = sa.select(*columns).select_from(issue_athenian_issue_join).where(*where)
-    stmt = stmt.with_statement_hint(f"Leading({Issue.__tablename__}, *VALUES*)")
+    if len(keys) > 100:
+        stmt = stmt.with_statement_hint(f"Leading({Issue.__tablename__} *VALUES*)")
     issues = await read_sql_query(stmt, mdb, columns, index=Issue.id.name)
     return _validate_and_clean_issues(issues, jira_config.acc_id)
 
