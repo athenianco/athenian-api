@@ -181,6 +181,59 @@ class TestPRFactsCalculator:
                 await calculator(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
                 assert load_pdb_mock.call_count == 1
 
+    @with_defer
+    async def test_cache_jira_labels_precomputed_facts(
+        self,
+        mdb_rw: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+        release_match_setting_tag: ReleaseSettings,
+    ) -> None:
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID,)
+        cache = build_fake_cache()
+        init_kwargs = self._init_kwargs()
+        calculator = PRFactsCalculator(1, meta_ids, mdb_rw, pdb, rdb, cache=cache, **init_kwargs)
+
+        base_kw = await self._kwargs(meta_ids, mdb_rw, sdb)
+        base_kw.update(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1))
+        base_kw["with_jira"] = JIRAEntityToFetch.EVERYTHING()
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAIssueFactory(id="20", key="1", labels=["l0", "l1"]),
+                md_factory.JIRAIssueFactory(id="21", key="2", labels=["l1"]),
+                *pr_jira_issue_mappings((163041, "20"), (163041, "21"), (163040, "20")),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            # let precompute
+            calculator_no_cache = PRFactsCalculator(1, meta_ids, mdb_rw, pdb, rdb, **init_kwargs)
+            r_no_cache = await calculator_no_cache(**base_kw)
+            await wait_deferred()
+
+            # spy called load_precomputed_done_facts_filters() to verify cache hits/misses
+            with mock.patch.object(
+                calculator._done_prs_facts_loader,
+                "load_precomputed_done_facts_filters",
+                wraps=calculator._done_prs_facts_loader.load_precomputed_done_facts_filters,
+            ) as load_pdb_mock:
+                r0 = await calculator(**base_kw)
+                await wait_deferred()
+                assert load_pdb_mock.call_count == 1
+
+                r1 = await calculator(**base_kw)
+                await wait_deferred()
+                assert load_pdb_mock.call_count == 1
+
+            for r in (r_no_cache, r0, r1):
+                assert sorted(r[r.node_id == 163041].jira_ids.values[0]) == ["1", "2"]
+                assert sorted(r[r.node_id == 163041].jira_labels.values[0]) == ["l0", "l1", "l1"]
+
+                assert sorted(r[r.node_id == 163040].jira_ids.values[0]) == ["1"]
+                assert sorted(r[r.node_id == 163040].jira_labels.values[0]) == ["l0", "l1"]
+
     async def _kwargs(self, meta_ids: tuple[int, ...], mdb: Database, sdb: Database) -> dict:
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         return {

@@ -1113,8 +1113,8 @@ class PullRequestJiraMapper:
             existing[pr_id] = LoadedJIRADetails(
                 # labels are handled differently since they are already an array for each issue
                 **{
-                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: _concatenate_or_first(
-                        df[c.name].values[indexes],
+                    PR_JIRA_DETAILS_COLUMN_MAP[c][0]: np.concatenate(
+                        df[c.name].values[indexes], dtype="U", casting="unsafe",
                     )
                     if c is Issue.labels
                     else df[c.name].values[indexes]
@@ -1156,10 +1156,6 @@ class PullRequestJiraMapper:
         empty_jira = LoadedJIRADetails.empty()
         for f in facts.values():
             f.jira = empty_jira
-
-
-def _concatenate_or_first(arrays: Sequence[np.ndarray]) -> np.ndarray:
-    return arrays[0] if len(arrays) == 1 else np.concatenate(arrays)
 
 
 def resolve_work_began_and_resolved(
