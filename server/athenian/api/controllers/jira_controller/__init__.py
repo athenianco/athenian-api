@@ -210,7 +210,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     exptime=short_term_exptime,
     serialize=serialize_models,
     deserialize=deserialize_models,
-    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
+    key=lambda return_, account_info, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, **_: (  # noqa
         JIRAFilterReturn.EPICS in return_,
         JIRAFilterReturn.PRIORITIES in return_,
         JIRAFilterReturn.STATUSES in return_,
@@ -222,9 +222,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
-        ",".join("%s:%s" % db for db in sorted(default_branches.items())),
-        release_settings,
-        logical_settings,
+        ",".join("%s:%s" % db for db in sorted(account_info.default_branches.items())),
+        account_info.release_settings,
+        account_info.logical_settings,
     ),
 )
 async def _epic_flow(
@@ -538,7 +538,7 @@ async def _epic_flow(
     exptime=short_term_exptime,
     serialize=serialize_models,
     deserialize=deserialize_models,
-    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
+    key=lambda return_, account_info, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, **_: (  # noqa
         JIRAFilterReturn.ISSUES in return_,
         JIRAFilterReturn.ISSUE_BODIES in return_,
         JIRAFilterReturn.LABELS in return_,
@@ -555,9 +555,9 @@ async def _epic_flow(
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
-        ",".join("%s:%s" % db for db in sorted(default_branches.items())),
-        release_settings,
-        logical_settings,
+        ",".join("%s:%s" % db for db in sorted(account_info.default_branches.items())),
+        account_info.release_settings,
+        account_info.logical_settings,
     ),
 )
 async def _issue_flow(

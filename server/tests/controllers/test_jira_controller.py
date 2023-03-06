@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+from unittest import mock
 
 from dateutil.tz import tzutc
 import pytest
@@ -7,6 +8,7 @@ from sqlalchemy import delete, insert, update
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.jira.epic import filter_epics
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
@@ -612,6 +614,47 @@ async def test_filter_jira_epics_no_time(client, headers):
     assert len(model.epics) == 60
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
+
+
+@with_defer
+async def test_with_cache(client, headers, client_cache):
+    body = {
+        "date_from": "2020-06-20",
+        "date_to": "2020-07-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["epics", "priorities", "statuses"],
+    }
+
+    # TOFIX: BranchMiner.load_branches gives inconsistent results for
+    # first call (!) and breaks filter_epics caching
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    assert response.status == 200
+
+    with mock.patch(
+        "athenian.api.controllers.jira_controller.filter_epics", wraps=filter_epics,
+    ) as filter_epics_mock:
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+        filter_epics_mock.assert_called_once()
+        res_body = await response.json()
+        assert response.status == 200
+        assert len(res_body["epics"]) == 16
+
+        await wait_deferred()
+
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+        # cache HIT, filter_epics not called again
+        filter_epics_mock.assert_called_once()
+        res_body = await response.json()
+        assert response.status == 200
+        assert len(res_body["epics"]) == 16
 
 
 @pytest.mark.parametrize("ikey", ("DEV-162", "DEV-163"))
