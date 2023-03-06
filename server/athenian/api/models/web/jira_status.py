@@ -1,4 +1,15 @@
+from enum import Enum
+
 from athenian.api.models.web.base_model_ import Model
+
+
+class JIRAStatusCategory(Enum):
+    """The category of a JIRA issue status."""
+
+    TO_DO = "To Do"
+    IN_PROGRESS = "In Progress"
+    DONE = "Done"
+    NO_CATEGORY = "No Category"
 
 
 class JIRAStatus(Model):
@@ -23,10 +34,9 @@ class JIRAStatus(Model):
 
         :param stage: The stage of this JIRAStatus.
         """
-        allowed_values = ("To Do", "In Progress", "Done", "No Category")
-        if stage not in allowed_values:
+        if stage not in (allowed := [f.value for f in JIRAStatusCategory]):
             raise ValueError(
-                f"Invalid value for `stage` ({stage}), must be one of {allowed_values}",
+                f"Invalid value for `stage` ({stage}), must be one of {list(allowed)}",
             )
 
         return stage
