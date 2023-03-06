@@ -137,6 +137,7 @@ from athenian.api.models.web.goal import (
     GoalMetricSeriesPoint,
     GoalSeriesGranularity,
     GoalTree,
+    GoalUnassignTeamRequest,
     GoalUpdateRequest,
     GoalValue,
     TeamGoalAssociation,

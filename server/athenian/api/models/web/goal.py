@@ -100,3 +100,10 @@ class GoalUpdateRequest(Model):
     jira_priorities: Optional[list[str]]
     jira_issue_types: Optional[list[str]]
     team_goals: list[TeamGoalAssociation]
+
+
+class GoalUnassignTeamRequest(Model):
+    """Request to unassign a team from a goal."""
+
+    team: int
+    recursive: bool = False

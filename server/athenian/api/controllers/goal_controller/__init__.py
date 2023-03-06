@@ -7,3 +7,6 @@ from athenian.api.controllers.goal_controller.goal_template import (
     update_goal_template,
 )
 from athenian.api.controllers.goal_controller.measure_goals import measure_goals
+from athenian.api.controllers.goal_controller.unassign_team_from_goal import (
+    unassign_team_from_goal,
+)

@@ -4,12 +4,12 @@ from operator import itemgetter
 
 from freezegun import freeze_time
 import pytest
-import sqlalchemy as sa
 
 from athenian.api.align.exceptions import (
     GoalMutationError,
     GoalNotFoundError,
     GoalTemplateNotFoundError,
+    TeamGoalNotFoundError,
 )
 from athenian.api.align.goals.dbaccess import (
     GoalColumnAlias,
@@ -17,7 +17,6 @@ from athenian.api.align.goals.dbaccess import (
     assign_team_goals,
     convert_metric_params_datatypes,
     create_default_goal_templates,
-    delete_empty_goals,
     delete_goal_template_from_db,
     delete_team_goals,
     fetch_goal_account,
@@ -26,12 +25,14 @@ from athenian.api.align.goals.dbaccess import (
     get_goal_templates_from_db,
     insert_goal_template,
     replace_team_goals,
+    unassign_team_from_goal,
+    unassign_team_from_goal_recursive,
     update_goal,
     update_goal_template_in_db,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.db import Database, ensure_db_datetime_tz, integrity_errors
-from athenian.api.models.state.models import Goal, GoalTemplate, TeamGoal
+from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from tests.testutils.db import (
     SKIP_MODEL_FIELD,
     assert_existing_row,
@@ -334,24 +335,6 @@ class TestFetchTeamGoals:
         assert rows[3][GoalColumnAlias.METRIC_PARAMS.value] == {"a": "b"}
 
 
-class TestDeleteEmptyGoals:
-    async def test_delete(self, sdb: Database) -> None:
-        await models_insert(
-            sdb,
-            TeamFactory(id=10),
-            GoalFactory(id=20),
-            GoalFactory(id=21),
-            GoalFactory(id=22),
-            GoalFactory(id=23),
-            TeamGoalFactory(team_id=10, goal_id=20),
-            TeamGoalFactory(team_id=10, goal_id=22),
-        )
-
-        await delete_empty_goals(1, sdb)
-        goals = [r[0] for r in await sdb.fetch_all(sa.select(Goal.id).order_by(Goal.id))]
-        assert goals == [20, 22]
-
-
 class TestGetGoalTemplateFromDB:
     async def test_found(self, sdb: Database) -> None:
         await models_insert(sdb, GoalTemplateFactory(id=102, name="Foo"))
@@ -462,3 +445,87 @@ class TestConvertMetricParamsDatatypes:
 
         assert res == {"threshold": timedelta(seconds=100)}
         assert res is not metric_params
+
+
+class TestUnassignTeamFromGoal:
+    async def test_assignment_not_existing(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=1), TeamFactory(id=9), TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        params = ((1, 2, 9), (1, 1, 10), (2, 1, 9))
+        for account_id, goal_id, team in params:
+            async with transaction_conn(sdb) as sdb_conn:
+                with pytest.raises(TeamGoalNotFoundError):
+                    await unassign_team_from_goal(account_id, goal_id, team, sdb_conn)
+
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9),
+            TeamGoalFactory(goal_id=1, team_id=8),
+            TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal(1, 1, 8, sdb_conn)
+
+        assert goal_still_exists
+        await assert_existing_row(sdb, Goal, id=1, account_id=1)
+        await assert_existing_row(sdb, TeamGoal, team_id=9, goal_id=1)
+        await assert_missing_row(sdb, TeamGoal, team_id=8, goal_id=1)
+
+    async def test_last_team_unassigned(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=1), TeamFactory(id=9), TeamGoalFactory(goal_id=1, team_id=9),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal(1, 1, 9, sdb_conn)
+
+        assert not goal_still_exists
+        await assert_missing_row(sdb, Goal, id=1)
+
+
+class TestUnassignTeamFromGoalRecursive:
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            TeamFactory(id=11, parent_id=9),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [8, 9, 10, 11]],
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal_recursive(1, 1, 9, sdb_conn)
+
+        assert goal_still_exists
+        await assert_existing_row(sdb, Goal, id=1, account_id=1)
+        for t in (9, 10, 11):
+            await assert_missing_row(sdb, TeamGoal, team_id=t, goal_id=1)
+        await assert_existing_row(sdb, TeamGoal, goal_id=1, team_id=8)
+        await assert_existing_row(sdb, Team, id=9)
+
+    async def test_last_team_unassigned(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(id=1),
+            TeamFactory(id=8),
+            TeamFactory(id=9, parent_id=8),
+            TeamFactory(id=10, parent_id=9),
+            *[TeamGoalFactory(goal_id=1, team_id=t) for t in [9, 10]],
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            goal_still_exists = await unassign_team_from_goal_recursive(1, 1, 9, sdb_conn)
+
+        assert not goal_still_exists
+        await assert_missing_row(sdb, Goal, id=1, account_id=1)
+        for t in (9, 10):
+            await assert_missing_row(sdb, TeamGoal, team_id=t, goal_id=1)
+        await assert_existing_row(sdb, Team, id=9)

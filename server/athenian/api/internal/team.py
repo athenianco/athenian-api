@@ -8,7 +8,7 @@ import aiomcache
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.align.goals.dbaccess import delete_empty_goals
+from athenian.api.align.goals.empty_goals import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users

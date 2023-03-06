@@ -13,6 +13,7 @@ from athenian.api.align.exceptions import (
     GoalMutationError,
     GoalNotFoundError,
     GoalTemplateNotFoundError,
+    TeamGoalNotFoundError,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import MetricParamNames
@@ -24,6 +25,7 @@ from athenian.api.db import (
     dialect_specific_insert,
     is_postgresql,
 )
+from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.serialization import deserialize_timedelta
 from athenian.api.tracing import sentry_span
@@ -282,20 +284,6 @@ async def fetch_team_goals(
     return await sdb.fetch_all(stmt)
 
 
-@sentry_span
-async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
-    """Delete all account Goal-s having no more TeamGoal-s assigned."""
-    delete_stmt = sa.delete(Goal).where(
-        sa.and_(
-            Goal.account_id == account,
-            sa.not_(sa.exists().where(TeamGoal.goal_id == Goal.id)),
-            # inefficient, generates a subquery:
-            # Goal.id.not_in(sa.select(TeamGoal.goal_id).distinct()),
-        ),
-    )
-    await sdb_conn.execute(delete_stmt)
-
-
 async def get_goal_template_from_db(template_id: int, sdb: DatabaseLike) -> Row:
     """Return a GoalTemplate."""
     stmt = sa.select(GoalTemplate).where(GoalTemplate.id == template_id)
@@ -370,6 +358,65 @@ def convert_metric_params_datatypes(metric_params: Optional[dict]) -> dict:
     if isinstance(threshold := metric_params.get(MetricParamNames.threshold), str):
         parsed[MetricParamNames.threshold] = deserialize_timedelta(threshold)
     return parsed
+
+
+async def unassign_team_from_goal(
+    account: int,
+    goal_id: int,
+    team: int,
+    sdb_conn: Connection,
+) -> bool:
+    """Unassign a team from a goal.
+
+    Delete the goal if that was the last assigned team.
+    Raise TeamGoalNotFoundError if the team is not assigned to the goal.
+    Return True if the goal still exists after the operation.
+    """
+    where = [Goal.account_id == account, Goal.id == goal_id]
+    join_on = sa.and_(Goal.id == TeamGoal.goal_id, TeamGoal.team_id == team)
+    select_stmt = (
+        sa.select(TeamGoal.team_id)
+        .select_from(sa.outerjoin(Goal, TeamGoal, join_on))
+        .where(*where)
+    )
+    assigned_team = await sdb_conn.fetch_val(select_stmt)
+    if assigned_team is None:
+        raise TeamGoalNotFoundError(goal_id, team)
+
+    delete_stmt = sa.delete(TeamGoal).where(TeamGoal.goal_id == goal_id, TeamGoal.team_id == team)
+    await sdb_conn.execute(delete_stmt)
+
+    return not await _delete_goal_if_empty(account, goal_id, sdb_conn)
+
+
+async def unassign_team_from_goal_recursive(
+    account: int,
+    goal_id: int,
+    team: int,
+    sdb_conn: Connection,
+) -> bool:
+    """Unassign a team and all its descendants from a goal.
+
+    Delete the goal if the last assigned team was removed this way.
+    Return True if the goal still exists after the operation.
+
+    """
+    teams = await fetch_teams_recursively(account, sdb_conn, root_team_ids=[team])
+    team_ids = [t[Team.id.name] for t in teams]
+    delete_stmt = sa.delete(TeamGoal).where(
+        TeamGoal.goal_id == goal_id, TeamGoal.team_id.in_(team_ids),
+    )
+    await sdb_conn.execute(delete_stmt)
+    return not await _delete_goal_if_empty(account, goal_id, sdb_conn)
+
+
+async def _delete_goal_if_empty(account: int, goal_id: int, sdb_conn: Connection) -> bool:
+    """Delete the goal when it has no assigned teams."""
+    if not await sdb_conn.fetch_val(sa.select(1).where(TeamGoal.goal_id == goal_id)):
+        delete_goal_stmt = sa.delete(Goal).where(Goal.id == goal_id, Goal.account_id == account)
+        await sdb_conn.execute(delete_goal_stmt)
+        return True
+    return False
 
 
 @sentry_span

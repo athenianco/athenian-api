@@ -44,3 +44,17 @@ class GoalTemplateNotFoundError(ResponseError):
             title="Goal template not found",
         )
         super().__init__(wrapped_error)
+
+
+class TeamGoalNotFoundError(ResponseError):
+    """A team - goal assignment was not found."""
+
+    def __init__(self, goal_id, team_id: int):
+        """Init the TeamGoalNotFound."""
+        wrapped_error = GenericError(
+            type="/errors/align/TeamGoalNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Team {team_id} not assigned to goal {goal_id}",
+            title="Team not assigned to Goal",
+        )
+        super().__init__(wrapped_error)
