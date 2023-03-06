@@ -25,6 +25,7 @@ from athenian.api.controllers.jira_controller.common import (
     build_issue_web_models,
     collect_account_info,
     fetch_issues_prs,
+    fetch_issues_users,
 )
 from athenian.api.controllers.jira_controller.get_jira_issues import get_jira_issues
 from athenian.api.db import Database
@@ -35,12 +36,7 @@ from athenian.api.internal.features.github.pull_request_filter import (
     fetch_pr_deployments,
 )
 from athenian.api.internal.features.histogram import HistogramParameters, Scale
-from athenian.api.internal.jira import (
-    JIRAConfig,
-    normalize_issue_type,
-    normalize_priority,
-    normalize_user_type,
-)
+from athenian.api.internal.jira import JIRAConfig, normalize_issue_type, normalize_priority
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
@@ -68,9 +64,7 @@ from athenian.api.models.metadata.jira import (
     IssueType,
     Priority,
     Status,
-    User,
 )
-from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import (
     CalculatedJIRAHistogram,
     CalculatedJIRAMetricValues,
@@ -695,19 +689,6 @@ async def _issue_flow(
         components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name].values)))
     else:
         components = []
-    if JIRAFilterReturn.USERS in return_:
-        people = np.unique(
-            np.concatenate(
-                [
-                    _nonzero(issues[Issue.reporter_id.name].values),
-                    _nonzero(issues[Issue.assignee_id.name].values),
-                    list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.name].values))),
-                ],
-            ),
-        )
-        # we can leave None because `IN (null)` is always false
-    else:
-        people = []
     if JIRAFilterReturn.PRIORITIES in return_:
         priorities = issues[Issue.priority_id.name].unique()
     else:
@@ -758,22 +739,7 @@ async def _issue_flow(
     async def fetch_users():
         if JIRAFilterReturn.USERS not in return_:
             return []
-        return await mdb.fetch_all(
-            select(User.display_name, User.avatar_url, User.type, User.id)
-            .where(User.id.in_(people), User.acc_id == jira_acc_id)
-            .order_by(User.display_name),
-        )
-
-    @sentry_span
-    async def fetch_mapped_identities():
-        if JIRAFilterReturn.USERS not in return_:
-            return []
-        return await sdb.fetch_all(
-            select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
-                MappedJIRAIdentity.account_id == account_info.account,
-                MappedJIRAIdentity.jira_user_id.in_(people),
-            ),
-        )
+        return await fetch_issues_users(issues, account_info, sdb, mdb)
 
     @sentry_span
     async def extract_labels():
@@ -815,7 +781,6 @@ async def _issue_flow(
         (prs, deps),
         component_names,
         users,
-        mapped_identities,
         priorities,
         statuses,
         issue_types,
@@ -824,26 +789,11 @@ async def _issue_flow(
         _fetch_prs(),
         fetch_components(),
         fetch_users(),
-        fetch_mapped_identities(),
         _fetch_priorities(priorities, jira_acc_id, return_, mdb),
         _fetch_statuses(statuses, status_project_map, jira_acc_id, return_, mdb),
         _fetch_types(issue_type_projects, jira_acc_id, return_, mdb),
         extract_labels(),
     )
-    mapped_identities = {
-        r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
-        for r in mapped_identities
-    }
-    user_node_to_prefixed_login = account_info.prefixer.user_node_to_prefixed_login.get
-    users = [
-        JIRAUser(
-            avatar=row[User.avatar_url.name],
-            name=row[User.display_name.name],
-            type=normalize_user_type(row[User.type.name]),
-            developer=user_node_to_prefixed_login(mapped_identities.get(row[User.id.name])),
-        )
-        for row in users
-    ]
     if deps is not None:
         prefix_logical_repo = account_info.prefixer.prefix_logical_repo
         deps = {
