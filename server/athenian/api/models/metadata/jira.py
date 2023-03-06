@@ -82,7 +82,7 @@ class Issue(Base):
     reporter_display_name = Column(Text, nullable=False)
     assignee_id = Column(Text)
     assignee_display_name = Column(Text)
-    commenters_ids = Column(postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
+    commenters_ids = Column(TextArray)
     commenters_display_names = Column(TextArray)
     comments_count = Column(Integer, nullable=False)
     priority_id = Column(Text, nullable=True, info={"dtype": "S8", "reset_nulls": True})
