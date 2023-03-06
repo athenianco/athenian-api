@@ -462,7 +462,7 @@ class TestPullRequestJiraMapper:
             )
             assert_array_equal(prs[(10, "r")].jira.labels, np.array(["l0"]))
             assert_array_equal(prs[(11, "r")].jira.labels, np.array(["l0", "l1"]))
-            assert_array_equal(prs[(12, "r")].jira.labels, np.array([]))
+            assert_array_equal(prs[(12, "r")].jira.labels, np.array([], dtype="U"))
             assert_array_equal(prs[(13, "r")].jira.labels, np.array(["l0"]))
             assert_array_equal(prs[(14, "r")].jira.labels, np.array(["l0", "l0", "l1"]))
 
