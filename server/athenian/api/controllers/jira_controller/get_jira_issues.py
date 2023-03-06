@@ -1,3 +1,5 @@
+from typing import Container
+
 from aiohttp import web
 import numpy as np
 import pandas as pd
@@ -8,13 +10,16 @@ from athenian.api.controllers.jira_controller.common import (
     build_issue_web_models,
     collect_account_info,
     fetch_issues_prs,
+    fetch_issues_users,
 )
 from athenian.api.db import Database
 from athenian.api.internal.miners.jira.issue import ISSUE_PR_IDS, fetch_jira_issues_by_keys
 from athenian.api.models.metadata.jira import Issue, IssueType
 from athenian.api.models.web import (
+    GetJIRAIssuesInclude,
     GetJIRAIssuesRequest,
     GetJIRAIssuesResponse,
+    GetJIRAIssuesResponseInclude,
     PullRequest as WebPullRequest,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
@@ -24,6 +29,7 @@ from athenian.api.response import model_response
 async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Response:
     """Retrieve jira issues."""
     issues_req = model_from_body(GetJIRAIssuesRequest, body)
+    sdb, mdb = request.sdb, request.mdb
     account_info = await collect_account_info(issues_req.account, request, True)
     extra_columns = [
         Issue.key,
@@ -38,6 +44,8 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         Issue.comments_count,
         Issue.story_points,
     ]
+    if GetJIRAIssuesInclude.JIRA_USERS.value in (issues_req.include or ()):
+        extra_columns.extend([Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids])
 
     issues = await fetch_jira_issues_by_keys(
         issues_req.issues,
@@ -47,21 +55,23 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         account_info.logical_settings,
         account_info.account,
         account_info.meta_ids,
-        request.mdb,
+        mdb,
         request.pdb,
         request.cache,
         extra_columns=extra_columns,
     )
     if issues.empty:
-        return model_response(GetJIRAIssuesResponse(issues=[]))
+        issue_type_names = prs = {}
+    else:
+        issue_type_names = await _get_issue_type_names_mapping(
+            issues, account_info.jira_conf.acc_id, mdb,
+        )
+        prs = await _fetch_prs(issues, account_info, request)
+        issues = _sort_issues(issues, issues_req.issues)
 
-    issue_type_names = await _get_issue_type_names_mapping(
-        issues, account_info.jira_conf.acc_id, request.mdb,
-    )
-    prs = await _fetch_prs(issues, account_info, request)
-    issues = _sort_issues(issues, issues_req.issues)
-    models = build_issue_web_models(issues, prs, issue_type_names)
-    return model_response(GetJIRAIssuesResponse(issues=models))
+    issue_models = build_issue_web_models(issues, prs, issue_type_names)
+    include = await _build_include(issues, issues_req.include or (), account_info, sdb, mdb)
+    return model_response(GetJIRAIssuesResponse(issues=issue_models, include=include))
 
 
 async def _get_issue_type_names_mapping(
@@ -108,3 +118,20 @@ def _sort_issues(issues: pd.DataFrame, request_keys: list[str]) -> pd.DataFrame:
     order = {k: i for i, k in enumerate(request_keys)}
     order_indexes = np.argsort([order[k] for k in issues[Issue.key.name].values])
     return issues.iloc[order_indexes]
+
+
+async def _build_include(
+    issues: pd.DataFrame,
+    include: Container[str],
+    account_info: AccountInfo,
+    sdb: Database,
+    mdb: Database,
+) -> GetJIRAIssuesResponseInclude | None:
+    if GetJIRAIssuesInclude.JIRA_USERS.value in include:
+        jira_users = await fetch_issues_users(issues, account_info, sdb, mdb)
+    else:
+        jira_users = None
+
+    if jira_users is None:
+        return None
+    return GetJIRAIssuesResponseInclude(jira_users=jira_users)
