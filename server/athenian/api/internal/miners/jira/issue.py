@@ -648,14 +648,11 @@ async def _fill_issues_with_mapped_prs_info(
 
 
 def _fill_issues_with_empty_prs_info(issues: pd.DataFrame) -> None:
-    for col in (
-        ISSUE_PRS_BEGAN,
-        ISSUE_PRS_RELEASED,
-        ISSUE_PRS_COUNT,
-        ISSUE_PR_IDS,
-        AthenianIssue.resolved.name,
-    ):
-        issues[col] = [None] * len(issues)
+    for col in (ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED, AthenianIssue.resolved.name):
+        issues[col] = np.full(len(issues), np.datetime64("nat"), "datetime64[s]")
+
+    issues[ISSUE_PRS_COUNT] = np.zeros(len(issues), float)
+    issues[ISSUE_PR_IDS] = np.full(len(issues), None, object)
 
 
 @sentry_span
