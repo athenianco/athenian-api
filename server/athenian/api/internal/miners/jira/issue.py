@@ -493,6 +493,7 @@ async def fetch_jira_issues_by_keys(
     return issues
 
 
+@sentry_span
 async def _fill_issues_with_mapped_prs_info(
     issues: pd.DataFrame,
     default_branches: dict[str, str],
@@ -617,11 +618,13 @@ async def _fill_issues_with_mapped_prs_info(
         i = issue_to_index[pr_to_issue[key]]
         node_id, repo = key
         if pr_created_at is not None:
-            work_began[i] = np.nanmin(
-                np.array([work_began[i], pr_created_at], dtype=np.datetime64),
-            )
+            if pr_created_at == pr_created_at:
+                key_work_began = work_began[i]
+                work_began[i] = key_work_began if key_work_began < pr_created_at else pr_created_at
         if (pr_done_at := released_prs.get(key)) is not None:
-            released[i] = np.nanmax(np.array([released[i], pr_done_at], dtype=np.datetime64))
+            if pr_done_at == pr_done_at:
+                key_released = released[i]
+                released[i] = key_released if key_released > pr_done_at else pr_done_at
             continue
         if repo not in release_settings.native:
             # deleted repository, consider the PR as force push dropped
