@@ -29,9 +29,17 @@ async def insert_repo(
     await models_insert(
         sdb, ReleaseSettingFactory(repo_id=repository.node_id, match=ReleaseMatch.tag),
     )
+    repository_node = md_factory.NodeRepositoryFactory(
+        name=repository.full_name.split("/", 1)[1],
+        name_with_owner=repository.full_name,
+        url=repository.html_url,
+        node_id=repository.node_id,
+    )
+
     await _add_repo_to_reposet(repository.node_id, "", sdb)
     md_models = [
         repository,
+        repository_node,
         # AccountRepository rows are needed to pass GitHubAccessChecker
         md_factory.AccountRepositoryFactory(
             repo_full_name=repository.full_name, repo_graph_id=repository.node_id,
@@ -140,14 +148,12 @@ def jira_issue_models(
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid jira issue."""
 
+    work_began = kwargs.pop("work_began", None)
     issue = md_factory.JIRAIssueFactory(id=id, **kwargs)
-    athenian_extra_kwargs = {}
-    if resolved is not None:
-        athenian_extra_kwargs["resolved"] = resolved
-
-    athenian_issue = md_factory.JIRAAthenianIssueFactory(
-        id=id, updated=issue.updated, **athenian_extra_kwargs,
-    )
+    athenian_kwargs = {"updated": issue.updated, "resolved": resolved}
+    if work_began is not None:
+        athenian_kwargs["work_began"] = work_began
+    athenian_issue = md_factory.JIRAAthenianIssueFactory(id=id, **athenian_kwargs)
     return [issue, athenian_issue]
 
 

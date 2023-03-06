@@ -1,5 +1,6 @@
 import asyncio
 from collections import Counter, defaultdict
+import dataclasses
 from datetime import datetime, timedelta, timezone
 from itertools import chain, repeat
 import logging
@@ -18,31 +19,31 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, list_with_yield, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
-from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
+from athenian.api.controllers.filter_controller import webify_deployment
+from athenian.api.controllers.jira_controller.common import (
+    AccountInfo,
+    build_issue_web_models,
+    collect_account_info,
+    fetch_issues_prs,
+)
+from athenian.api.controllers.jira_controller.get_jira_issues import get_jira_issues
 from athenian.api.db import Database
-from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
 from athenian.api.internal.features.github.pull_request_filter import (
     PullRequestListMiner,
     fetch_pr_deployments,
-    unwrap_pull_requests,
 )
 from athenian.api.internal.features.histogram import HistogramParameters, Scale
 from athenian.api.internal.jira import (
     JIRAConfig,
-    get_jira_installation,
     normalize_issue_type,
     normalize_priority,
     normalize_user_type,
 )
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.github.bots import bots
-from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
-from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
-from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.jira.epic import filter_epics
 from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
@@ -54,9 +55,8 @@ from athenian.api.internal.miners.jira.issue import (
     query_jira_raw,
     resolve_work_began_and_resolved,
 )
-from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
+from athenian.api.internal.miners.types import Deployment
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_jira_with
 from athenian.api.models.metadata.github import Branch, PullRequest
@@ -107,22 +107,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     return_ = set(filt.return_ or JIRAFilterReturn)
     if not filt.return_:
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
-    (
-        meta_ids,
-        jira_conf,
-        branches,
-        default_branches,
-        release_settings,
-        logical_settings,
-        prefixer,
-    ) = await _collect_ids(
+    account_info = await collect_account_info(
         filt.account,
         request,
         JIRAFilterReturn.ISSUE_BODIES in return_ or JIRAFilterReturn.EPICS in return_,
     )
     if filt.projects is not None:
+        jira_conf = account_info.jira_conf
         projects = jira_conf.project_ids_map(filt.projects)
         jira_conf = JIRAConfig(jira_conf.acc_id, projects, jira_conf.epics)
+        account_info = dataclasses.replace(account_info, jira_conf=jira_conf)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(
@@ -151,7 +145,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ) = await gather(
         _epic_flow(
             return_,
-            jira_conf,
+            account_info,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -160,19 +154,13 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             reporters,
             assignees,
             commenters,
-            default_branches,
-            release_settings,
-            logical_settings,
-            filt.account,
-            meta_ids,
             mdb,
             pdb,
             cache,
         ),
         _issue_flow(
             return_,
-            filt.account,
-            jira_conf,
+            account_info,
             time_from,
             time_to,
             filt.exclude_inactive,
@@ -182,12 +170,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             reporters,
             assignees,
             commenters,
-            branches,
-            default_branches,
-            release_settings,
-            logical_settings,
-            prefixer,
-            meta_ids,
             sdb,
             mdb,
             pdb,
@@ -247,7 +229,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 )
 async def _epic_flow(
     return_: set[str],
-    jira_ids: JIRAConfig,
+    account_info: AccountInfo,
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     exclude_inactive: bool,
@@ -256,11 +238,6 @@ async def _epic_flow(
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
-    default_branches: dict[str, str],
-    release_settings: ReleaseSettings,
-    logical_settings: LogicalRepositorySettings,
-    account: int,
-    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
@@ -291,7 +268,7 @@ async def _epic_flow(
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
     epics_df, children_df, subtask_counts, epic_children_map = await filter_epics(
-        jira_ids,
+        account_info.jira_conf,
         time_from,
         time_to,
         exclude_inactive,
@@ -300,11 +277,11 @@ async def _epic_flow(
         reporters,
         assignees,
         commenters,
-        default_branches,
-        release_settings,
-        logical_settings,
-        account,
-        meta_ids,
+        account_info.default_branches,
+        account_info.release_settings,
+        account_info.logical_settings,
+        account_info.account,
+        account_info.meta_ids,
         mdb,
         pdb,
         cache,
@@ -525,12 +502,13 @@ async def _epic_flow(
     else:
         status_ids = np.array([], dtype="S")
         status_project_map = {}
+    jira_acc_id = account_info.jira_conf.acc_id
     priorities, statuses, types = await gather(
-        _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
-        _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
+        _fetch_priorities(priority_ids, jira_acc_id, return_, mdb),
+        _fetch_statuses(status_ids, status_project_map, jira_acc_id, return_, mdb),
         _fetch_types(
             issue_type_ids,
-            jira_ids[0],
+            jira_acc_id,
             return_,
             mdb,
             columns=[IssueType.id, IssueType.project_id, IssueType.name],
@@ -584,8 +562,7 @@ async def _epic_flow(
 )
 async def _issue_flow(
     return_: set[str],
-    account: int,
-    jira_ids: JIRAConfig,
+    account_info: AccountInfo,
     time_from: Optional[datetime],
     time_to: Optional[datetime],
     exclude_inactive: bool,
@@ -595,12 +572,6 @@ async def _issue_flow(
     reporters: Collection[str],
     assignees: Collection[Optional[str]],
     commenters: Collection[str],
-    branches: pd.DataFrame,
-    default_branches: Optional[dict[str, str]],
-    release_settings: Optional[ReleaseSettings],
-    logical_settings: Optional[LogicalRepositorySettings],
-    prefixer: Prefixer,
-    meta_ids: tuple[int, ...],
     sdb: Database,
     mdb: Database,
     pdb: Database,
@@ -618,7 +589,6 @@ async def _issue_flow(
     """Fetch various information related to JIRA issues."""
     if JIRAFilterReturn.ISSUES not in return_ or return_ == {JIRAFilterReturn.ISSUES}:
         return [], [], [], [], [], [], None
-    log = logging.getLogger("%s.filter_jira_stuff/issue" % metadata.__package__)
     extra_columns = [
         Issue.epic_id,
         Issue.labels,
@@ -648,13 +618,14 @@ async def _issue_flow(
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
     epics = [] if JIRAFilterReturn.ONLY_FLYING not in return_ else False
-    jira_filter = JIRAFilter.from_jira_config(jira_ids).replace(
+    jira_filter = JIRAFilter.from_jira_config(account_info.jira_conf).replace(
         epics=epics,
         labels=label_filter,
         issue_types=types,
         # priorities are already lower-cased and de-None-d
         priorities=priorities,
     )
+    jira_acc_id = account_info.jira_conf.acc_id
 
     if full_fetch := return_.difference(
         {
@@ -673,11 +644,11 @@ async def _issue_flow(
             assignees,
             commenters,
             False,
-            default_branches,
-            release_settings,
-            logical_settings,
-            account,
-            meta_ids,
+            account_info.default_branches,
+            account_info.release_settings,
+            account_info.logical_settings,
+            account_info.account,
+            account_info.meta_ids,
             mdb,
             pdb,
             cache,
@@ -766,8 +737,7 @@ async def _issue_flow(
             return []
         return await mdb.fetch_all(
             select(Component.id, Component.name).where(
-                Component.id.in_(components),
-                Component.acc_id == jira_ids[0],
+                Component.id.in_(components), Component.acc_id == jira_acc_id,
             ),
         )
 
@@ -777,10 +747,7 @@ async def _issue_flow(
             return []
         return await mdb.fetch_all(
             select(User.display_name, User.avatar_url, User.type, User.id)
-            .where(
-                User.id.in_(people),
-                User.acc_id == jira_ids[0],
-            )
+            .where(User.id.in_(people), User.acc_id == jira_acc_id)
             .order_by(User.display_name),
         )
 
@@ -790,7 +757,7 @@ async def _issue_flow(
             return []
         return await sdb.fetch_all(
             select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
-                MappedJIRAIdentity.account_id == account,
+                MappedJIRAIdentity.account_id == account_info.account,
                 MappedJIRAIdentity.jira_user_id.in_(people),
             ),
         )
@@ -823,152 +790,13 @@ async def _issue_flow(
             labels = []
         return labels
 
-    @sentry_span
     async def _fetch_prs() -> tuple[
         dict[str, WebPullRequest],
         dict[str, Deployment],
     ]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_ or len(pr_ids) == 0:
             return {}, {}
-
-        async def fetch_prs_and_dependent_tasks():
-            prs_df = await read_sql_query(
-                select(PullRequest)
-                .where(
-                    PullRequest.acc_id.in_(meta_ids),
-                    PullRequest.node_id.in_(pr_ids),
-                )
-                .order_by(PullRequest.node_id.name),
-                mdb,
-                PullRequest,
-                index=PullRequest.node_id.name,
-            )
-            PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
-            closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
-            check_runs_task = asyncio.create_task(
-                PullRequestMiner.fetch_pr_check_runs(
-                    prs_df.index.values[closed_pr_mask],
-                    prs_df.index.values[~closed_pr_mask],
-                    account,
-                    meta_ids,
-                    mdb,
-                    pdb,
-                    cache,
-                ),
-                name=f"_issue_flow/_fetch_prs/fetch_pr_check_runs({len(prs_df)})",
-            )
-            merged_pr_ids = prs_df.index.values[
-                prs_df[PullRequest.merged_at.name].notnull().values
-            ]
-            deployments_task = asyncio.create_task(
-                fetch_pr_deployments(
-                    merged_pr_ids,
-                    logical_settings,
-                    prefixer,
-                    account,
-                    meta_ids,
-                    mdb,
-                    pdb,
-                    rdb,
-                    cache,
-                ),
-                name=f"_issue_flow/_fetch_prs/fetch_pr_deployments({len(merged_pr_ids)})",
-            )
-            return prs_df, check_runs_task, deployments_task
-
-        (
-            (prs_df, check_runs_task, deployments_task),
-            (facts, ambiguous),
-            account_bots,
-        ) = await gather(
-            fetch_prs_and_dependent_tasks(),
-            DonePRFactsLoader.load_precomputed_done_facts_ids(
-                pr_ids,
-                default_branches,
-                release_settings,
-                prefixer,
-                account,
-                pdb,
-                panic_on_missing_repositories=False,
-            ),
-            bots(account, meta_ids, mdb, sdb, cache),
-        )
-        existing_mask = (
-            prs_df[PullRequest.repository_full_name.name].isin(release_settings.native).values
-        )
-        if not existing_mask.all():
-            prs_df = prs_df.take(np.flatnonzero(existing_mask))
-        found_repos_arr = prs_df[PullRequest.repository_full_name.name].unique()
-        found_repos_set = set(found_repos_arr)
-        if ambiguous.keys() - found_repos_set:
-            # there are archived or disabled repos
-            ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos_set}
-        related_branches = branches.take(
-            np.flatnonzero(
-                np.in1d(
-                    branches[Branch.repository_full_name.name].values.astype("U"),
-                    found_repos_arr.astype("U"),
-                ),
-            ),
-        )
-        (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
-            unwrap_pull_requests(
-                prs_df,
-                facts,
-                ambiguous,
-                check_runs_task,
-                deployments_task,
-                JIRAEntityToFetch.NOTHING,
-                related_branches,
-                default_branches,
-                account_bots,
-                release_settings,
-                logical_settings,
-                prefixer,
-                account,
-                meta_ids,
-                mdb,
-                pdb,
-                rdb,
-                cache,
-            ),
-            fetch_repository_environments(
-                prs_df[PullRequest.repository_full_name.name].unique(),
-                None,
-                prefixer,
-                account,
-                rdb,
-                cache,
-            ),
-        )
-
-        miner = PullRequestListMiner(
-            mined_prs,
-            dfs,
-            facts,
-            set(),
-            set(),
-            datetime(1970, 1, 1, tzinfo=timezone.utc),
-            datetime.now(timezone.utc),
-            False,
-            repo_envs,
-        )
-        pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-        if missing_repo_indexes := [
-            i
-            for i, pr in enumerate(pr_list_items)
-            if drop_logical_repo(pr.repository) not in prefixer.repo_name_to_prefixed_name
-        ]:
-            log.error(
-                "Discarded %d PRs because their repositories are gone: %s",
-                len(missing_repo_indexes),
-                {pr_list_items[i].repository for i in missing_repo_indexes},
-            )
-            for i in reversed(missing_repo_indexes):
-                pr_list_items.pop(i)
-        deployments = await deployments_task
-        prs = dict(web_pr_from_struct(pr_list_items, prefixer, log, lambda w, pr: (pr.node_id, w)))
-        return prs, deployments
+        return await fetch_issues_prs(pr_ids, account_info, sdb, mdb, pdb, rdb, cache)
 
     (
         (prs, deps),
@@ -984,16 +812,16 @@ async def _issue_flow(
         fetch_components(),
         fetch_users(),
         fetch_mapped_identities(),
-        _fetch_priorities(priorities, jira_ids[0], return_, mdb),
-        _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
-        _fetch_types(issue_type_projects, jira_ids[0], return_, mdb),
+        _fetch_priorities(priorities, jira_acc_id, return_, mdb),
+        _fetch_statuses(statuses, status_project_map, jira_acc_id, return_, mdb),
+        _fetch_types(issue_type_projects, jira_acc_id, return_, mdb),
         extract_labels(),
     )
     mapped_identities = {
         r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
         for r in mapped_identities
     }
-    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login.get
+    user_node_to_prefixed_login = account_info.prefixer.user_node_to_prefixed_login.get
     users = [
         JIRAUser(
             avatar=row[User.avatar_url.name],
@@ -1004,7 +832,7 @@ async def _issue_flow(
         for row in users
     ]
     if deps is not None:
-        prefix_logical_repo = prefixer.prefix_logical_repo
+        prefix_logical_repo = account_info.prefixer.prefix_logical_repo
         deps = {
             key: webify_deployment(val, prefix_logical_repo) for key, val in sorted(deps.items())
         }
@@ -1019,14 +847,8 @@ async def _issue_flow(
         )
     else:
         issue_types = []
-    # fmt: off
-    issue_type_names = {
-        (row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode()):
-            row[IssueType.name.name]
-        for row in issue_types
-    }
-    # fmt: on
-    issue_types = [
+
+    web_issue_types = [
         JIRAIssueType(
             name=row[IssueType.name.name],
             image=row[IssueType.icon_url.name],
@@ -1064,89 +886,10 @@ async def _issue_flow(
 
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        issue_models = []
-        now = np.datetime64(datetime.utcnow())
-        for (
-            issue_key,
-            issue_title,
-            issue_created,
-            issue_updated,
-            issue_prs_began,
-            issue_work_began,
-            issue_prs_released,
-            issue_resolved,
-            issue_reporter,
-            issue_assignee,
-            issue_priority,
-            issue_status,
-            issue_prs,
-            issue_type,
-            issue_project,
-            issue_comments,
-            issue_url,
-            issue_story_points,
-        ) in zip(
-            *(
-                issues[column].values
-                for column in (
-                    Issue.key.name,
-                    Issue.title.name,
-                    Issue.created.name,
-                    AthenianIssue.updated.name,
-                    ISSUE_PRS_BEGAN,
-                    AthenianIssue.work_began.name,
-                    ISSUE_PRS_RELEASED,
-                    AthenianIssue.resolved.name,
-                    Issue.reporter_display_name.name,
-                    Issue.assignee_display_name.name,
-                    Issue.priority_name.name,
-                    Issue.status.name,
-                    ISSUE_PR_IDS,
-                    Issue.type_id.name,
-                    Issue.project_id.name,
-                    Issue.comments_count.name,
-                    Issue.url.name,
-                    Issue.story_points.name,
-                )
-            ),
-        ):
-            work_began, resolved = resolve_work_began_and_resolved(
-                issue_work_began, issue_prs_began, issue_resolved, issue_prs_released,
-            )
-            if resolved:
-                lead_time = resolved - work_began
-                life_time = resolved - issue_created
-            else:
-                life_time = now - issue_created
-                if work_began:
-                    lead_time = now - work_began
-                else:
-                    lead_time = None
-            issue_models.append(
-                JIRAIssue(
-                    id=issue_key,
-                    title=issue_title,
-                    created=issue_created,
-                    updated=issue_updated,
-                    work_began=work_began,
-                    resolved=resolved,
-                    lead_time=lead_time,
-                    life_time=life_time,
-                    reporter=issue_reporter,
-                    assignee=issue_assignee,
-                    comments=issue_comments,
-                    priority=issue_priority,
-                    status=issue_status,
-                    project=issue_project.decode(),
-                    type=issue_type_names[(issue_project, issue_type)],
-                    prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
-                    url=issue_url,
-                    story_points=issue_story_points,
-                ),
-            )
+        issue_models = build_issue_web_models(issues, prs, issue_types)
     else:
         issue_models = []
-    return issue_models, labels, users, issue_types, priorities, statuses, deps
+    return issue_models, labels, users, web_issue_types, priorities, statuses, deps
 
 
 @sentry_span
@@ -1240,67 +983,20 @@ def _nonzero(arr: np.ndarray) -> np.ndarray:
     return arr[arr.nonzero()[0]]
 
 
-async def _collect_ids(
-    account: int,
-    request: AthenianWebRequest,
-    with_branches_and_settings: bool,
-) -> tuple[
-    tuple[int, ...],
-    JIRAConfig,
-    Optional[pd.DataFrame],
-    Optional[dict[str, str]],
-    Optional[ReleaseSettings],
-    Optional[LogicalRepositorySettings],
-    Prefixer,
-]:
-    sdb, mdb, pdb, cache = request.sdb, request.mdb, request.pdb, request.cache
-    meta_ids = await get_metadata_account_ids(account, sdb, cache)
-    prefixer = await Prefixer.load(meta_ids, mdb, cache)
-    repos, jira_ids = await gather(
-        get_account_repositories(account, prefixer, sdb),
-        get_jira_installation(account, sdb, mdb, cache),
-        op="sdb/ids",
-    )
-    repos = [str(r) for r in repos]
-    if with_branches_and_settings:
-        settings = Settings.from_request(request, account, prefixer)
-        (branches, default_branches), logical_settings = await gather(
-            BranchMiner.load_branches(
-                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip=True,
-            ),
-            settings.list_logical_repositories(repos),
-            op="sdb/branches and releases",
-        )
-        repos = logical_settings.append_logical_prs(repos)
-        release_settings = await settings.list_release_matches(repos)
-    else:
-        branches = release_settings = logical_settings = None
-        default_branches = {}
-    return (
-        meta_ids,
-        jira_ids,
-        branches,
-        default_branches,
-        release_settings,
-        logical_settings,
-        prefixer,
-    )
-
-
 async def _calc_linear_entry(
     request: AthenianWebRequest,
     metrics_req: JIRAMetricsRequest,
 ) -> tuple[list[list[datetime]], timedelta, np.ndarray, np.ndarray]:
-    ids = await _collect_ids(metrics_req.account, request, True)
-    (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
+    account_info = await collect_account_info(metrics_req.account, request, True)
     time_intervals, tzoffset = _request_time_intervals(metrics_req)
     participants = await resolve_jira_with(
         metrics_req.with_, metrics_req.account, request.sdb, request.mdb, request.cache,
     )
+    meta_ids = account_info.meta_ids
     calculator = make_calculator(
         metrics_req.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
     )
-    groups = _jira_metrics_request_read_groups(metrics_req, jira_conf)
+    groups = _jira_metrics_request_read_groups(metrics_req, account_info.jira_conf)
     metric_values, split_labels = await calculator.calc_jira_metrics_line_github(
         metrics_req.metrics,
         time_intervals,
@@ -1309,9 +1005,9 @@ async def _calc_linear_entry(
         groups,
         metrics_req.group_by_jira_label,
         metrics_req.exclude_inactive,
-        release_settings,
-        logical_settings,
-        default_branches,
+        account_info.release_settings,
+        account_info.logical_settings,
+        account_info.default_branches,
     )
     return time_intervals, tzoffset, metric_values, split_labels
 
@@ -1320,13 +1016,15 @@ async def _calc_histogram_entry(
     request: AthenianWebRequest,
     hist_req: JIRAHistogramsRequest,
 ) -> tuple[dict[HistogramParameters, list[str]], np.ndarray]:
-    ids = await _collect_ids(hist_req.account, request, True)
-    (meta_ids, jira_conf, _, default_branches, release_settings, logical_settings, _) = ids
+    account_info = await collect_account_info(hist_req.account, request, True)
+    meta_ids = account_info.meta_ids
+    jira_conf = account_info.jira_conf
     time_intervals, tzoffset = _request_time_intervals(hist_req)
     participants = await resolve_jira_with(
         hist_req.with_, hist_req.account, request.sdb, request.mdb, request.cache,
     )
     label_filter = LabelFilter.from_iterables(hist_req.labels_include, hist_req.labels_exclude)
+
     calculator = make_calculator(
         hist_req.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache,
     )
@@ -1356,9 +1054,9 @@ async def _calc_histogram_entry(
             {normalize_issue_type(t) for t in (hist_req.types or [])},
             hist_req.epics or [],
             hist_req.exclude_inactive,
-            release_settings,
-            logical_settings,
-            default_branches,
+            account_info.release_settings,
+            account_info.logical_settings,
+            account_info.default_branches,
             jira_conf,
         )
     except UnsupportedMetricError as e:
