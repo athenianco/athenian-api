@@ -16,6 +16,15 @@ class OrderByDirection(Enum):
     DESCENDING = "descending"
 
 
+class OrderByExpression(Model):
+    """An expression based on a field used to sort some items."""
+
+    field: str
+    exclude_nulls: bool = True
+    direction: str = OrderByDirection.ASCENDING.value
+    nulls_first: bool = False
+
+
 class SearchPullRequestsOrderByStageTiming(Enum):
     """Stage timing that can be used as orderby fields when searching for pull requests."""
 
@@ -31,15 +40,6 @@ class SearchPullRequestsOrderByPRTrait(Enum):
 
     WORK_BEGAN = "pr-order-by-work-began"
     FIRST_REVIEW_REQUEST = "pr-order-by-first-review-request"
-
-
-class SearchPullRequestsOrderByExpression(Model):
-    """An expression based on a field used to sort pull requests."""
-
-    field: str
-    exclude_nulls: bool = True
-    direction: str = OrderByDirection.ASCENDING.value
-    nulls_first: bool = False
 
 
 class FilterOperator(Enum):
@@ -65,6 +65,10 @@ class SearchPullRequestsFilter(Model):
             value = deserialize_timedelta(self.value)
             return type(self)(field=self.field, operator=self.operator, value=value)
         return self
+
+
+class SearchPullRequestsOrderByExpression(OrderByExpression):
+    """An expression based on a field used to sort pull requests."""
 
 
 class SearchPullRequestsRequest(Model):
