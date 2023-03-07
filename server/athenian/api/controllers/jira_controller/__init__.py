@@ -26,6 +26,7 @@ from athenian.api.controllers.jira_controller.common import (
     collect_account_info,
     fetch_issues_prs,
     fetch_issues_users,
+    web_prs_map_from_struct,
 )
 from athenian.api.controllers.jira_controller.get_jira_issues import get_jira_issues
 from athenian.api.db import Database
@@ -775,7 +776,9 @@ async def _issue_flow(
     ]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_ or len(pr_ids) == 0:
             return {}, {}
-        return await fetch_issues_prs(pr_ids, account_info, sdb, mdb, pdb, rdb, cache)
+        prs, deployments = await fetch_issues_prs(pr_ids, account_info, sdb, mdb, pdb, rdb, cache)
+        web_prs = web_prs_map_from_struct(prs, account_info.prefixer)
+        return web_prs, deployments
 
     (
         (prs, deps),
