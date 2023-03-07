@@ -19,6 +19,7 @@ from athenian.api.async_utils import gather
 from athenian.api.controllers.search_controller.common import (
     OrderBy,
     OrderByMetrics,
+    OrderByValues,
     build_metrics_calculator_ensemble,
 )
 from athenian.api.db import Database
@@ -488,22 +489,11 @@ class _OrderByStageTimings(OrderBy):
         return ordered_indexes, discard
 
 
-class _OrderByTraits(OrderBy):
+class _OrderByTraits(OrderByValues):
     FIELDS = [f.value for f in SearchPullRequestsOrderByPRTrait]
 
     def __init__(self, pr_facts: pd.DataFrame):
         self._pr_facts = pr_facts
-
-    def apply_expression(
-        self,
-        expr: OrderByExpression,
-        current_indexes: npt.NDArray[int],
-    ) -> tuple[npt.NDArray[int], npt.NDArray[int]]:
-        values = self._get_values(expr).copy()[current_indexes]
-        nulls = values != values
-        discard = self._discard_mask(expr, nulls)
-        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
-        return ordered_indexes, discard
 
     def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchPullRequestsOrderByPRTrait.WORK_BEGAN.value:

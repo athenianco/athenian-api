@@ -110,6 +110,8 @@ def pr_models(
     if closed_at is not None:
         pr_kwargs["closed_at"] = closed_at
         kwargs.setdefault("closed", True)
+    if "created_at" in kwargs:
+        pr_kwargs["created_at"] = kwargs.pop("created_at")
 
     models = [
         md_factory.PullRequestFactory(repository_node_id=repo_id, **pr_kwargs, **kwargs),
@@ -141,18 +143,18 @@ def pr_models(
 
 
 def jira_issue_models(
-    id: int,
+    id: str,
     *,
     resolved: datetime | None = None,
     **kwargs: Any,
 ) -> Sequence[Any]:
     """Return the models to insert in mdb to have a valid jira issue."""
 
-    work_began = kwargs.pop("work_began", None)
+    athenian_kwargs = {"resolved": resolved}
+    if "work_began" in kwargs:
+        athenian_kwargs["work_began"] = kwargs.pop("work_began")
     issue = md_factory.JIRAIssueFactory(id=id, **kwargs)
-    athenian_kwargs = {"updated": issue.updated, "resolved": resolved}
-    if work_began is not None:
-        athenian_kwargs["work_began"] = work_began
+    athenian_kwargs["updated"] = issue.updated
     athenian_issue = md_factory.JIRAAthenianIssueFactory(id=id, **athenian_kwargs)
     return [issue, athenian_issue]
 

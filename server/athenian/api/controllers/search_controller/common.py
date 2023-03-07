@@ -93,6 +93,26 @@ class OrderByMetrics(OrderBy):
         return ordered_indexes, discard
 
 
+class OrderByValues(OrderBy):
+    """handles order by values extract through a custom function."""
+
+    def apply_expression(
+        self,
+        expr: OrderByExpression,
+        current_indexes: npt.NDArray[int],
+    ) -> tuple[npt.NDArray[int], npt.NDArray[int]]:
+        """Apply the order by expression."""
+        values = self._get_values(expr)[current_indexes]
+        nulls = values != values
+        discard = self._discard_mask(expr, nulls)
+        ordered_indexes = self._ordered_indexes(expr, current_indexes, values, nulls)
+        return ordered_indexes, discard
+
+    @abc.abstractmethod
+    def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
+        """Extract the values to use in ordering."""
+
+
 CalcualtorT = TypeVar("CalcualtorT", bound=MetricCalculatorEnsemble)
 
 

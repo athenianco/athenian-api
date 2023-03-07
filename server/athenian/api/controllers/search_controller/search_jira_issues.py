@@ -5,12 +5,14 @@ from typing import Sequence
 from aiohttp import web
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.search_controller.common import (
     OrderBy,
     OrderByMetrics,
+    OrderByValues,
     build_metrics_calculator_ensemble,
 )
 from athenian.api.db import Database
@@ -23,15 +25,17 @@ from athenian.api.internal.features.jira.issue_metrics import (
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.miners.jira.issue import fetch_jira_issues
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues, resolve_work_began
 from athenian.api.internal.miners.participation import JIRAParticipants
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_jira_with
-from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Issue
 from athenian.api.models.web import (
     JIRAIssueDigest,
+    OrderByExpression,
     SearchJIRAIssuesOrderByExpression,
+    SearchJIRAIssuesOrderByIssueTrait,
     SearchJIRAIssuesRequest,
     SearchJIRAIssuesResponse,
 )
@@ -182,6 +186,7 @@ def _apply_order_by(
     keep_mask = np.full((len(issues),), True, bool)
     ordered_indexes = np.arange(len(issues))
     order_by_metrics: _OrderByJIRAMetrics | None = None
+    order_by_trait: _OrderByIssueTrait | None = None
 
     for expr in reversed(order_by):
         orderer: OrderBy
@@ -190,6 +195,10 @@ def _apply_order_by(
                 assert unchecked_metric_calc is not None
                 order_by_metrics = _OrderByJIRAMetrics(unchecked_metric_calc)
             orderer = order_by_metrics
+        elif expr.field in _OrderByIssueTrait.FIELDS:
+            if order_by_trait is None:
+                order_by_trait = _OrderByIssueTrait(issues)
+            orderer = order_by_trait
         else:
             raise ValueError(f"Invalid order by field {expr.field}")
 
@@ -204,3 +213,27 @@ class _OrderByJIRAMetrics(OrderByMetrics):
     """Handles order by jira metric values."""
 
     FIELDS = jira_metric_calculators
+
+
+class _OrderByIssueTrait(OrderByValues):
+    """Handles order by extra jira issues traits."""
+
+    FIELDS = [f.value for f in SearchJIRAIssuesOrderByIssueTrait]
+
+    def __init__(self, issues: pd.DataFrame):
+        self._issues = issues
+
+    def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
+        if expr.field == SearchJIRAIssuesOrderByIssueTrait.CREATED.value:
+            return self._issues[Issue.created.name].values
+        if expr.field == SearchJIRAIssuesOrderByIssueTrait.WORK_BEGAN.value:
+            return resolve_work_began(
+                self._issues[AthenianIssue.work_began.name].values,
+                self._issues["prs_began"].values,
+            )
+        raise RuntimeError(f"Cannot order by jira issue trait {expr.field}")
+
+    @classmethod
+    def _negate_values(cls, values: npt.NDArray) -> npt.NDArray:
+        # datetime64 array cannot be negated
+        return -(values.astype(np.int64))
