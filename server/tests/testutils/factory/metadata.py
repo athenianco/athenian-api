@@ -155,7 +155,7 @@ class UserFactory(SQLAlchemyModelFactory):
     node_id = factory.Sequence(lambda n: n + 1)
     avatar_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}.jpg")
     login = factory.LazyAttribute(lambda user: f"user-{user.node_id}")
-    html_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}")
+    html_url = factory.LazyAttribute(lambda user: f"https://github.com/{user.login}")
 
 
 class ReleaseFactory(SQLAlchemyModelFactory):
