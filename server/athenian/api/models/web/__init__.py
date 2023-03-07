@@ -165,6 +165,7 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
+from athenian.api.models.web.jira_comment import JIRAComment
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_epic_issue_common import JIRAEpicIssueCommon
