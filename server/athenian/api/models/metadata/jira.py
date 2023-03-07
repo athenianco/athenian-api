@@ -5,6 +5,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    ForeignKeyConstraint,
     Integer,
     Numeric,
     SmallInteger,
@@ -95,6 +96,30 @@ class Issue(Base):
 
 Issue.story_points.default = Issue.story_points.server_default = None
 Issue.story_points.nullable = True
+
+
+class Comment(Base):
+    __tablename__ = "comment"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("acc_id", "issue_id"),
+            (Issue.acc_id, Issue.id),
+            name="comment_acc_id_issue_id_fkey",
+            ondelete="CASCADE",
+        ),
+        Base.__table_args__,
+    )
+
+    id = Column(Text, primary_key=True, info={"dtype": "S16"})
+    issue_id = Column(Text, info={"dtype": "S12"}, nullable=False)
+    author_id = Column(Text, nullable=False)
+    author_display_name = Column(Text, nullable=False)
+    created = Column(TIMESTAMP(timezone=True), nullable=False)
+    body = Column(Text, nullable=False)
+    updated = Column(TIMESTAMP(timezone=True), nullable=False)
+    update_author_id = Column(Text)
+    update_author_display_name = Column(Text)
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class Component(Base):
