@@ -24,6 +24,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import (
     AthenianIssue,
+    Comment,
     Component,
     Issue,
     IssueType,
@@ -338,6 +339,20 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
         # adding athenian_epic_id attr is required since explode_model() doesn't
         # work with aliased columns, i.e. epic_id = Column("athenian_epic_id", Text)
         obj.athenian_epic_id = obj.epic_id
+
+
+class JIRACommentFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Comment
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: str(n + 1))
+    issue_id = 1
+    created = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    author_id = "reporter-1"
+    author_display_name = "Reporter N. 1"
+    body = "A Certain Comment"
+    updated = factory.LazyAttribute(lambda c: c.created)
 
 
 class JIRAComponentFactory(SQLAlchemyModelFactory):
