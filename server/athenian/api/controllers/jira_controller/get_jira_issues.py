@@ -16,15 +16,17 @@ from athenian.api.controllers.jira_controller.common import (
 )
 from athenian.api.db import Database
 from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
+from athenian.api.internal.miners.jira.comment import fetch_issues_comments
 from athenian.api.internal.miners.jira.issue import ISSUE_PR_IDS, fetch_jira_issues_by_keys
 from athenian.api.internal.miners.types import PullRequestListItem
-from athenian.api.models.metadata.jira import Issue, IssueType
+from athenian.api.models.metadata.jira import Comment, Issue, IssueType
 from athenian.api.models.web import (
     GetJIRAIssuesInclude,
     GetJIRAIssuesRequest,
     GetJIRAIssuesResponse,
     GetJIRAIssuesResponseInclude,
     IncludedNativeUser,
+    JIRAComment as WebJIRAComment,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
@@ -70,7 +72,7 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         extra_columns=extra_columns,
     )
     if issues.empty:
-        issue_type_names = {}
+        issue_type_names = comments_map = {}
         prs = []
     else:
         issue_type_names = await _get_issue_type_names_mapping(
@@ -79,8 +81,13 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         prs = await _fetch_prs(issues, account_info, request)
         issues = _sort_issues(issues, issues_req.issues)
 
+        if GetJIRAIssuesInclude.COMMENTS.value in include:
+            comments_map = await _fetch_comments(issues, account_info, mdb)
+        else:
+            comments_map = {}
+
     prs_map = web_prs_map_from_struct(prs, account_info.prefixer)
-    issue_models = build_issue_web_models(issues, prs_map, {}, issue_type_names)
+    issue_models = build_issue_web_models(issues, prs_map, comments_map, issue_type_names)
     include = await _build_include(issues, prs, include, account_info, sdb, mdb, request.cache)
     return model_response(GetJIRAIssuesResponse(issues=issue_models, include=include), native=True)
 
@@ -122,6 +129,30 @@ async def _fetch_prs(
         ids, account_info, req.sdb, req.mdb, req.pdb, req.rdb, req.cache,
     )
     return prs
+
+
+async def _fetch_comments(
+    issues: md.DataFrame,
+    account_info: AccountInfo,
+    mdb: Database,
+) -> dict[str, list[WebJIRAComment]]:
+    issue_ids = issues.index.values
+    extra_columns = [Comment.author_display_name, Comment.created, Comment.body]
+    jira_acc_id = account_info.jira_conf.acc_id
+    comments = await fetch_issues_comments(issue_ids, jira_acc_id, mdb, extra_columns)
+
+    comments_map = {}
+    for indexes in comments.groupby("issue_id"):
+        issue_id = comments[Comment.issue_id.name][indexes[0]]
+        comments_map[issue_id] = [
+            WebJIRAComment(
+                author=comments[Comment.author_display_name.name][idx],
+                created=comments[Comment.created.name][idx],
+                rendered_body=comments[Comment.body.name][idx],
+            )
+            for idx in indexes
+        ]
+    return comments_map
 
 
 def _sort_issues(issues: md.DataFrame, request_keys: list[str]) -> md.DataFrame:
