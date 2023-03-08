@@ -828,7 +828,7 @@ async def _issue_flow(
         }
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        issue_models = build_issue_web_models(issues, prs, issue_types)
+        issue_models = build_issue_web_models(issues, prs, {}, issue_types)
     else:
         issue_models = []
     return issue_models, labels, users, web_issue_types, priorities, statuses, deps
