@@ -13,8 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import column_property
+from sqlalchemy.orm import column_property, declarative_base
 from sqlalchemy.sql.elements import TextClause
 
 
