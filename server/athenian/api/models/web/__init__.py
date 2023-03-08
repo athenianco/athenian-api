@@ -129,7 +129,12 @@ from athenian.api.models.web.generic_error import (
     TooManyRequestsError,
     UnauthorizedError,
 )
-from athenian.api.models.web.get_jira_issues import GetJIRAIssuesRequest, GetJIRAIssuesResponse
+from athenian.api.models.web.get_jira_issues import (
+    GetJIRAIssuesInclude,
+    GetJIRAIssuesRequest,
+    GetJIRAIssuesResponse,
+    GetJIRAIssuesResponseInclude,
+)
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.goal import (

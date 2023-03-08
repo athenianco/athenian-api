@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import chain
 import logging
 from typing import Sequence
 
@@ -19,7 +20,7 @@ from athenian.api.internal.features.github.pull_request_filter import (
     fetch_pr_deployments,
     unwrap_pull_requests,
 )
-from athenian.api.internal.jira import JIRAConfig, get_jira_installation
+from athenian.api.internal.jira import JIRAConfig, get_jira_installation, normalize_user_type
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -38,8 +39,13 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.metadata.github import Branch, PullRequest
-from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType
-from athenian.api.models.web import JIRAIssue as WebJIRAIssue, PullRequest as WebPullRequest
+from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, User
+from athenian.api.models.state.models import MappedJIRAIdentity
+from athenian.api.models.web import (
+    JIRAIssue as WebJIRAIssue,
+    JIRAUser as WebJIRAUser,
+    PullRequest as WebPullRequest,
+)
 from athenian.api.request import AthenianWebRequest
 from athenian.api.tracing import sentry_span
 
@@ -356,3 +362,54 @@ async def fetch_issues_prs(
         ),
     )
     return prs, deployments
+
+
+@sentry_span
+async def fetch_issues_users(
+    issues: pd.DataFrame,
+    account_info: AccountInfo,
+    sdb: Database,
+    mdb: Database,
+) -> list[WebJIRAUser]:
+    """Fetch the users associated with the issues and build the web models for the response."""
+
+    def _nonzero(arr: np.ndarray) -> np.ndarray:
+        return arr[arr.nonzero()[0]]
+
+    user_ids = np.unique(
+        np.concatenate(
+            [
+                _nonzero(issues[Issue.reporter_id.name].values),
+                _nonzero(issues[Issue.assignee_id.name].values),
+                list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.name].values))),
+            ],
+        ),
+    )
+
+    user_rows, mapped_identity_rows = await gather(
+        mdb.fetch_all(
+            sa.select(User.display_name, User.avatar_url, User.type, User.id)
+            .where(User.id.in_(user_ids), User.acc_id == account_info.jira_conf.acc_id)
+            .order_by(User.display_name),
+        ),
+        sdb.fetch_all(
+            sa.select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
+                MappedJIRAIdentity.account_id == account_info.account,
+                MappedJIRAIdentity.jira_user_id.in_(user_ids),
+            ),
+        ),
+    )
+    mapped_identities = {
+        r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
+        for r in mapped_identity_rows
+    }
+    user_node_to_prefixed_login = account_info.prefixer.user_node_to_prefixed_login.get
+    return [
+        WebJIRAUser(
+            avatar=row[User.avatar_url.name],
+            name=row[User.display_name.name],
+            type=normalize_user_type(row[User.type.name]),
+            developer=user_node_to_prefixed_login(mapped_identities.get(row[User.id.name])),
+        )
+        for row in user_rows
+    ]

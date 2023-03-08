@@ -1,12 +1,15 @@
+from operator import itemgetter
 from typing import Any
 
 import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import AccountJiraInstallation
+from athenian.api.models.web import GetJIRAIssuesInclude
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
+from tests.testutils.factory.state import MappedJIRAIdentityFactory
 from tests.testutils.factory.wizards import (
     insert_repo,
     jira_issue_models,
@@ -74,7 +77,7 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
         assert [i["id"] for i in res["issues"]] == ["DEV-69", "DEV-1012", "DEV-90", "DEV-729"]
 
     async def test_status(self, mdb_rw: Database) -> None:
-        issue_kwargs = {"project_id": "1"}
+        issue_kwargs: dict[str, Any] = {"project_id": "1"}
         mdb_models = [
             md_factory.JIRAProjectFactory(id="1", key="P1"),
             md_factory.JIRAIssueTypeFactory(id="0", name="Type 0", project_id="1"),
@@ -126,8 +129,8 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
         assert issues[0]["life_time"] == f"{3600 * 3}s"
 
     async def test_mapped_prs(self, sdb: Database, mdb_rw: Database) -> None:
-        issue_kwargs = {"project_id": "1", "type_id": "0"}
-        pr_kwargs = {"repository_full_name": "o/r"}
+        issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "0"}
+        pr_kwargs: dict[str, Any] = {"repository_full_name": "o/r"}
         mdb_models = [
             *pr_models(99, 1, 1, **pr_kwargs),
             *pr_models(99, 11, 11, **pr_kwargs),
@@ -163,3 +166,51 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
 
         issue_3 = issues[2]
         assert "prs" not in issue_3
+
+
+class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
+    async def test_include_no_issues(self) -> None:
+        body = self._body(issues=["P1-33"], include=[GetJIRAIssuesInclude.JIRA_USERS.value])
+        res = await self.post_json(json=body)
+        assert res["issues"] == []
+        assert res["include"] == {}
+
+    async def test_users(self, sdb: Database, mdb_rw: Database) -> None:
+        JIRA_USERS = GetJIRAIssuesInclude.JIRA_USERS.value
+        issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "0"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
+            md_factory.JIRAUserFactory(id="u0", display_name="U 0", avatar_url="http://a.co/0"),
+            md_factory.JIRAUserFactory(id="u1", display_name="U 1", avatar_url="http://a.co/1"),
+            md_factory.UserFactory(node_id=333, login="gh333"),
+            *jira_issue_models("1", key="P1-1", assignee_id="u0", **issue_kwargs),
+            *jira_issue_models("2", key="P1-2", commenters_ids=["u1"], **issue_kwargs),
+        ]
+
+        await models_insert(sdb, MappedJIRAIdentityFactory(jira_user_id="u1", github_user_id=333))
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+            body = self._body(issues=["P1-1", "P1-2"], include=[JIRA_USERS])
+            res = await self.post_json(json=body)
+        jira_users = sorted(res["include"]["jira_users"], key=itemgetter("name"))
+        assert jira_users[0]["name"] == "U 0"
+        assert jira_users[0]["type"] == "atlassian"
+        assert jira_users[0]["avatar"] == "http://a.co/0"
+        assert jira_users[1]["name"] == "U 1"
+        assert jira_users[1]["type"] == "atlassian"
+        assert jira_users[1]["avatar"] == "http://a.co/1"
+        assert jira_users[1]["developer"] == "github.com/user-333"
+
+    async def test_users_fixture(self) -> None:
+        body = self._body(issues=["DEV-164"], include=[GetJIRAIssuesInclude.JIRA_USERS.value])
+        res = await self.post_json(json=body)
+        assert sorted(u["avatar"] for u in res["include"]["jira_users"]) == [
+            "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+            "initials/RS-0.png",
+            "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/"
+            "WL-5.png",
+        ]
+        assert [u["type"] for u in res["include"]["jira_users"]] == ["atlassian"] * 2

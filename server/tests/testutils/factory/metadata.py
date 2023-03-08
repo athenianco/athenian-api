@@ -332,7 +332,7 @@ class JIRAUserFactory(SQLAlchemyModelFactory):
 
     acc_id = DEFAULT_JIRA_ACCOUNT_ID
     id = factory.Sequence(lambda n: f"{n + 1}")
-    type = "?"
+    type = "atlassian"
     display_name = factory.LazyAttribute(lambda user: f"jira user {user.id}")
     avatar_url = factory.LazyAttribute(lambda user: f"https://jira.com/user-{user.id}.jpg")
 
