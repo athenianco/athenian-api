@@ -1,6 +1,7 @@
-from typing import Container
+from typing import Container, Sequence
 
 from aiohttp import web
+import aiomcache
 import numpy as np
 import pandas as pd
 import sqlalchemy as sa
@@ -11,16 +12,19 @@ from athenian.api.controllers.jira_controller.common import (
     collect_account_info,
     fetch_issues_prs,
     fetch_issues_users,
+    web_prs_map_from_struct,
 )
 from athenian.api.db import Database
+from athenian.api.internal.miners.github.user import UserAvatarKeys, mine_user_avatars
 from athenian.api.internal.miners.jira.issue import ISSUE_PR_IDS, fetch_jira_issues_by_keys
+from athenian.api.internal.miners.types import PullRequestListItem
 from athenian.api.models.metadata.jira import Issue, IssueType
 from athenian.api.models.web import (
     GetJIRAIssuesInclude,
     GetJIRAIssuesRequest,
     GetJIRAIssuesResponse,
     GetJIRAIssuesResponseInclude,
-    PullRequest as WebPullRequest,
+    IncludedNativeUser,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response
@@ -44,7 +48,8 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         Issue.comments_count,
         Issue.story_points,
     ]
-    if GetJIRAIssuesInclude.JIRA_USERS.value in (issues_req.include or ()):
+    include = issues_req.include or ()
+    if GetJIRAIssuesInclude.JIRA_USERS.value in include:
         extra_columns.extend([Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids])
 
     issues = await fetch_jira_issues_by_keys(
@@ -61,7 +66,8 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         extra_columns=extra_columns,
     )
     if issues.empty:
-        issue_type_names = prs = {}
+        issue_type_names = {}
+        prs = []
     else:
         issue_type_names = await _get_issue_type_names_mapping(
             issues, account_info.jira_conf.acc_id, mdb,
@@ -69,8 +75,9 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
         prs = await _fetch_prs(issues, account_info, request)
         issues = _sort_issues(issues, issues_req.issues)
 
-    issue_models = build_issue_web_models(issues, prs, issue_type_names)
-    include = await _build_include(issues, issues_req.include or (), account_info, sdb, mdb)
+    prs_map = web_prs_map_from_struct(prs, account_info.prefixer)
+    issue_models = build_issue_web_models(issues, prs_map, issue_type_names)
+    include = await _build_include(issues, prs, include, account_info, sdb, mdb, request.cache)
     return model_response(GetJIRAIssuesResponse(issues=issue_models, include=include))
 
 
@@ -105,7 +112,7 @@ async def _fetch_prs(
     issues: pd.DataFrame,
     account_info: AccountInfo,
     req: AthenianWebRequest,
-) -> dict[str, WebPullRequest]:
+) -> list[PullRequestListItem]:
     ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
     prs, _ = await fetch_issues_prs(
         ids, account_info, req.sdb, req.mdb, req.pdb, req.rdb, req.cache,
@@ -122,16 +129,27 @@ def _sort_issues(issues: pd.DataFrame, request_keys: list[str]) -> pd.DataFrame:
 
 async def _build_include(
     issues: pd.DataFrame,
+    prs: Sequence[PullRequestListItem],
     include: Container[str],
     account_info: AccountInfo,
     sdb: Database,
     mdb: Database,
+    cache: aiomcache.Client | None,
 ) -> GetJIRAIssuesResponseInclude | None:
     if GetJIRAIssuesInclude.JIRA_USERS.value in include:
         jira_users = await fetch_issues_users(issues, account_info, sdb, mdb)
     else:
         jira_users = None
 
-    if jira_users is None:
+    if GetJIRAIssuesInclude.GITHUB_USERS.value in include:
+        user_ids = {part for pr in prs for parts in pr.participants.values() for part in parts}
+        avatars = await mine_user_avatars(
+            UserAvatarKeys.PREFIXED_LOGIN, account_info.meta_ids, mdb, cache, nodes=user_ids,
+        )
+        github_users = {login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars}
+    else:
+        github_users = None
+
+    if jira_users is None and github_users is None:
         return None
-    return GetJIRAIssuesResponseInclude(jira_users=jira_users)
+    return GetJIRAIssuesResponseInclude(jira_users=jira_users, github_users=github_users)

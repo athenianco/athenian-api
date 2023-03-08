@@ -34,7 +34,7 @@ from athenian.api.internal.miners.jira.issue import (
     resolve_resolved,
     resolve_work_began,
 )
-from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch
+from athenian.api.internal.miners.types import Deployment, JIRAEntityToFetch, PullRequestListItem
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
@@ -212,7 +212,7 @@ async def fetch_issues_prs(
     pdb: Database,
     rdb: Database,
     cache: aiomcache.Client | None,
-) -> tuple[dict[str, WebPullRequest], dict[str, Deployment]]:
+) -> tuple[list[PullRequestListItem], dict[str, Deployment]]:
     """Fetch the PRs associated with the issues and the related deployments."""
     log = logging.getLogger(f"{metadata.__package__}.fetch_issues_prs")
 
@@ -356,12 +356,16 @@ async def fetch_issues_prs(
         for i in reversed(missing_repo_indexes):
             pr_list_items.pop(i)
     deployments = await deployments_task
-    prs = dict(
-        web_pr_from_struct(
-            pr_list_items, account_info.prefixer, log, lambda w, pr: (pr.node_id, w),
-        ),
-    )
-    return prs, deployments
+    return pr_list_items, deployments
+
+
+def web_prs_map_from_struct(
+    prs: Sequence[PullRequestListItem],
+    prefixer: Prefixer,
+) -> dict[str, WebPullRequest]:
+    """Build the web pull requests map from the PullRequestListItem structs."""
+    log = logging.getLogger(f"{metadata.__package__}.web_prs_dict_from_struct")
+    return dict(web_pr_from_struct(prs, prefixer, log, lambda w, pr: (pr.node_id, w)))
 
 
 @sentry_span

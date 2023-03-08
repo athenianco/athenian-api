@@ -170,7 +170,9 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
 
 class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
     async def test_include_no_issues(self) -> None:
-        body = self._body(issues=["P1-33"], include=[GetJIRAIssuesInclude.JIRA_USERS.value])
+        JIRA_USERS = GetJIRAIssuesInclude.JIRA_USERS.value
+        GITHUB_USERS = GetJIRAIssuesInclude.GITHUB_USERS.value
+        body = self._body(issues=["P1-33"], include=[JIRA_USERS, GITHUB_USERS])
         res = await self.post_json(json=body)
         assert res["issues"] == []
         assert res["include"] == {}
@@ -183,7 +185,7 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
             md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
             md_factory.JIRAUserFactory(id="u0", display_name="U 0", avatar_url="http://a.co/0"),
             md_factory.JIRAUserFactory(id="u1", display_name="U 1", avatar_url="http://a.co/1"),
-            md_factory.UserFactory(node_id=333, login="gh333"),
+            md_factory.UserFactory(node_id=333, login="gh33"),
             *jira_issue_models("1", key="P1-1", assignee_id="u0", **issue_kwargs),
             *jira_issue_models("2", key="P1-2", commenters_ids=["u1"], **issue_kwargs),
         ]
@@ -202,7 +204,7 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
         assert jira_users[1]["name"] == "U 1"
         assert jira_users[1]["type"] == "atlassian"
         assert jira_users[1]["avatar"] == "http://a.co/1"
-        assert jira_users[1]["developer"] == "github.com/user-333"
+        assert jira_users[1]["developer"] == "github.com/gh33"
 
     async def test_users_fixture(self) -> None:
         body = self._body(issues=["DEV-164"], include=[GetJIRAIssuesInclude.JIRA_USERS.value])
@@ -214,3 +216,31 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
             "WL-5.png",
         ]
         assert [u["type"] for u in res["include"]["jira_users"]] == ["atlassian"] * 2
+
+    async def test_github_users(self, sdb: Database, mdb_rw: Database) -> None:
+        GITHUB_USERS = GetJIRAIssuesInclude.GITHUB_USERS.value
+        issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "0"}
+        pr_kwargs: dict[str, Any] = {"repository_full_name": "o/r"}
+        mdb_models = [
+            *pr_models(99, 1, 1, user_node_id=33, merged_by_id=44, **pr_kwargs),
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
+            md_factory.UserFactory(node_id=33, login="gh33", avatar_url="https://a/3.jpg"),
+            md_factory.UserFactory(node_id=44, login="gh44", avatar_url="https://a/4.jpg"),
+            *jira_issue_models("1", key="P1-1", assignee_id="u0", **issue_kwargs),
+            *pr_jira_issue_mappings((1, "1")),
+        ]
+        body = self._body(issues=["P1-1"], include=[GITHUB_USERS])
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            res = await self.post_json(json=body)
+
+        assert res["include"]["github_users"] == {
+            "github.com/gh33": {"avatar": "https://a/3.jpg"},
+            "github.com/gh44": {"avatar": "https://a/4.jpg"},
+        }
