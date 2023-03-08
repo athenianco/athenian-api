@@ -167,6 +167,24 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
         issue_3 = issues[2]
         assert "prs" not in issue_3
 
+    async def test_story_points(self, mdb_rw: Database) -> None:
+        issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.JIRAIssueTypeFactory(id="1", project_id="1"),
+            *jira_issue_models("1", key="P-1", story_points=5, **issue_kwargs),
+            *jira_issue_models("2", key="P-2", story_points=None, **issue_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body = self._body(issues=["P-1", "P-2"])
+            res = await self.post_json(json=body)
+        assert res["issues"][0]["story_points"] == 5
+        assert "story_points" not in res["issues"][1]
+
 
 class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
     async def test_include_no_issues(self) -> None:

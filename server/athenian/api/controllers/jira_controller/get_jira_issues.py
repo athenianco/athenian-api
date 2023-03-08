@@ -78,7 +78,7 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
     prs_map = web_prs_map_from_struct(prs, account_info.prefixer)
     issue_models = build_issue_web_models(issues, prs_map, issue_type_names)
     include = await _build_include(issues, prs, include, account_info, sdb, mdb, request.cache)
-    return model_response(GetJIRAIssuesResponse(issues=issue_models, include=include))
+    return model_response(GetJIRAIssuesResponse(issues=issue_models, include=include), native=True)
 
 
 async def _get_issue_type_names_mapping(
