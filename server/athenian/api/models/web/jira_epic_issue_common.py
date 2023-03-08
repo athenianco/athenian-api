@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_comment import JIRAComment
 
 
 class JIRAEpicIssueCommon(Model, sealed=False):
@@ -18,6 +19,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
     reporter: str
     assignee: Optional[str]
     comments: int
+    comment_list: Optional[list[JIRAComment]]
     priority: Optional[str]
     rendered_description: Optional[str]
     status: str
