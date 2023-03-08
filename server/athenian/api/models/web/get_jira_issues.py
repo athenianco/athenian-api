@@ -10,6 +10,7 @@ from athenian.api.models.web.jira_user import JIRAUser
 class GetJIRAIssuesInclude(Enum):
     """Additional information to include in the response for the get_jira_issues operation."""
 
+    COMMENTS = "comments"
     DESCRIPTION = "description"
     GITHUB_USERS = "github_users"
     JIRA_USERS = "jira_users"
