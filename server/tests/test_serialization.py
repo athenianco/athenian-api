@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Type
 
 from freezegun import freeze_time
 import numpy as np
@@ -123,6 +123,38 @@ class TestDeserializeModel:
 
         t = deserialize_model({"b": 1, "c": True}, T)
         assert t.c is True
+
+    def test_union_field_int_float_priority(self) -> None:
+        # we should always deserialize int and float as the correct type
+        # if they are both allowed
+        class T(Model):
+            f: float | int | str
+
+        class T0(T):
+            f: float | int | str
+
+        class T1(T):
+            f: int | float | str
+
+        def test_model(M: Type[T]):
+            t: T = deserialize_model({"f": "abc"}, M)
+            assert type(t.f) is str
+            assert t.f == "abc"
+
+            t = deserialize_model({"f": 32}, M)
+            assert type(t.f) is int
+            assert t.f == 32
+
+            t = deserialize_model({"f": 32.2}, M)
+            assert type(t.f) is float
+            assert t.f == 32.2
+
+            t = deserialize_model({"f": 1.0}, M)
+            assert type(t.f) is float
+            assert t.f == 1.0
+
+        test_model(T0)
+        test_model(T1)
 
 
 class TestFriendlyJson:

@@ -59,12 +59,7 @@ def _deserialize(
             elif typing_utils.is_optional(klass):
                 return _deserialize(data, klass.__args__[0], path)
             elif typing_utils.is_union(klass):
-                for arg in klass.__args__:
-                    try:
-                        return _deserialize(data, arg, path)
-                    except (ValueError, TypeError):
-                        continue
-                raise ValueError(f"None of the union options fit: {klass.__args__}")
+                return _deserialize_union_type(data, klass, path)
             raise ValueError(f"Invalid generic klass {klass}")
         else:
             return deserialize_model(data, klass, path)  # type: ignore
@@ -76,6 +71,25 @@ def _deserialize(
         else:
             klass_str = str(klass)
         raise ParseError(f"Failed to parse {data} as {klass_str}: {e}", path) from e
+
+
+def _deserialize_union_type(
+    data,
+    klass: Class,
+    path: str,
+) -> dict | list | Class | int | float | str | bool | date | datetime | timedelta:
+    # return the data with no conversion if it already has one of the accepted types;
+    # this allows to preserve the received number informal "subtype" from JSON when
+    # the union type is `float | int`
+    if data.__class__ in klass.__args__:
+        return data
+
+    for arg in klass.__args__:
+        try:
+            return _deserialize(data, arg, path)
+        except (ValueError, TypeError):
+            continue
+    raise ValueError(f"None of the union options fit: {klass.__args__}")
 
 
 def _deserialize_primitive(data, klass: Class) -> Class | int | float | str | bool:
