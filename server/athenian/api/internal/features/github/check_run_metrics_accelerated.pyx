@@ -27,6 +27,12 @@ import numpy as np
 # __builtin_clzl is a compiler built-in that counts the number of leading zeros
 cdef extern int __builtin_clzl(unsigned long)
 
+cdef int _leading_zero_bits(unsigned long n):
+   if n == 0:
+       # __builtin_clzl is undefined when called with 0
+       return sizeof(n) * 8
+   return __builtin_clzl(n)
+
 
 def calculate_interval_intersections(starts: np.ndarray,
                                      finishes: np.ndarray,
@@ -49,11 +55,12 @@ def calculate_interval_intersections(starts: np.ndarray,
     series = np.arange(max_intervals, dtype=np.uint64)
     intervals = np.concatenate([starts, finishes])
     size = len(starts)
-    time_offset = 64 - __builtin_clzl(max_intervals - 1)
+    time_offset = 64 - _leading_zero_bits(max_intervals - 1)
     intervals <<= time_offset
     groups_count = len(borders)
-    group_offset = __builtin_clzl(groups_count - 1)
+    group_offset = _leading_zero_bits(groups_count - 1)
     group_indexes = np.repeat(np.arange(groups_count, dtype=np.uint64), group_lengths)
+
     intervals[:size] |= group_indexes << group_offset
     intervals[size:] |= group_indexes << group_offset
     # https://codereview.stackexchange.com/questions/83018/vectorized-numpy-version-of-arange-with-multiple-start-stop
