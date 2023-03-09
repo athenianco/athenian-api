@@ -52,8 +52,13 @@ def calculate_interval_intersections(starts: np.ndarray,
     time_offset = 64 - __builtin_clzl(max_intervals - 1)
     intervals <<= time_offset
     groups_count = len(borders)
-    group_offset = __builtin_clzl(groups_count - 1)
+    if groups_count == 1:
+        # __builtin_clzl is undefined when called with 0
+        group_offset = sizeof(groups_count) * 8
+    else:
+        group_offset = __builtin_clzl(groups_count - 1)
     group_indexes = np.repeat(np.arange(groups_count, dtype=np.uint64), group_lengths)
+
     intervals[:size] |= group_indexes << group_offset
     intervals[size:] |= group_indexes << group_offset
     # https://codereview.stackexchange.com/questions/83018/vectorized-numpy-version-of-arange-with-multiple-start-stop
