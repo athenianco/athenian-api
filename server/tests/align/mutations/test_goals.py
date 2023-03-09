@@ -291,6 +291,20 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert tg_row[TeamGoal.repositories.name] is None
         assert tg_row[Goal.metric_params.name] is None
 
+    async def test_float_target(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(owner_id=1, id=10))
+
+        team_goals = [
+            {TeamGoalInputFields.teamId: 10, TeamGoalInputFields.target: {"float": 1.42}},
+        ]
+
+        variables = {"createGoalInput": self._mk_input(teamGoals=team_goals), "accountId": 1}
+
+        new_goal_id = await self._create(variables)
+        await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg_row[TeamGoal.target.name] == 1.42
+
     async def test_create_multiple_team_goals(self, sdb: Database) -> None:
         await models_insert(
             sdb,
