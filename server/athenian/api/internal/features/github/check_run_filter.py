@@ -83,13 +83,13 @@ async def filter_check_runs(
     )
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
-    if df_check_runs.empty:
-        return timeline_dates, []
     suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values
     completed = np.flatnonzero(
         in1d_str(suite_statuses, np.array([b"COMPLETED", b"SUCCESS", b"FAILURE"], dtype="S")),
     )
     df_check_runs = df_check_runs.take(completed)
+    if df_check_runs.empty:
+        return timeline_dates, []
     del suite_statuses, completed
     df_check_runs.sort_values(CheckRun.started_at.name, inplace=True, ascending=False)
     repocol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.repository_full_name.name].values)

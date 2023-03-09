@@ -4,11 +4,15 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.check_run_filter import filter_check_runs
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo
 from tests.testutils.time import dt
 
 
@@ -291,6 +295,32 @@ async def test_filter_check_runs_logical_repos(mdb, logical_settings):
     )
     assert len(timeline) == len(set(timeline)) == 26
     assert len(items) == 8
+
+
+async def test_only_queued_runs(mdb_rw: Database, sdb: Database, logical_settings) -> None:
+    models = [
+        md_factory.CheckRunFactory(
+            repository_full_name="o/r",
+            repository_node_id=99,
+            started_at=dt(2022, 1, 2),
+            committed_date=dt(2022, 1, 2),
+            check_suite_status="QUEUED",
+        ),
+    ]
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+        await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+
+        _, items = await _filter(
+            time_from=dt(2022, 1, 1),
+            time_to=dt(2022, 1, 3),
+            repositories=["o/r"],
+            logical_settings=logical_settings,
+            mdb=mdb_rw,
+        )
+    assert items == []
 
 
 async def _filter(**kwargs: Any) -> tuple[list[date], list[CodeCheckRunListItem]]:

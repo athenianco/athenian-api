@@ -6,6 +6,7 @@ from athenian.api.models.metadata.github import (
     Account,
     AccountRepository,
     Bot,
+    CheckRun,
     FetchProgress,
     NodeCommit,
     NodePullRequest,
@@ -246,6 +247,28 @@ class TeamMemberFactory(SQLAlchemyModelFactory):
     acc_id = DEFAULT_MD_ACCOUNT_ID
     parent_id = factory.Sequence(lambda n: n + 1)
     child_id = factory.Sequence(lambda n: n + 2)
+
+
+class CheckRunFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = CheckRun
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
+    commit_node_id = factory.LazyAttribute(lambda r: r.check_run_node_id)
+    sha = "a" * 40
+    authored_date = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=5))
+    committed_date = factory.LazyAttribute(lambda r: r.authored_date)
+    committed_date_hack = factory.LazyAttribute(lambda r: r.committed_date)
+    additions = 1
+    deletions = 0
+    changed_files = 1
+    started_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=2))
+    check_suite_node_id = 1
+    check_run_node_id = factory.Sequence(lambda n: n + 100)
+    url = factory.LazyAttribute(lambda r: f"https://github.com/check-run/{r.check_run_node_id}")
+    name = factory.LazyAttribute(lambda r: f"check-run-{r.check_run_node_id}")
 
 
 class JIRAAthenianIssueFactory(SQLAlchemyModelFactory):
