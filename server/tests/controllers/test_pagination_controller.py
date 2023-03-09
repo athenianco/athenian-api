@@ -14,7 +14,6 @@ from tests.testutils.factory.state import ReleaseSettingFactory
 @pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("batch, count", [(100, 8), (500, 3)])
 async def test_paginate_prs_smoke(client, headers, batch, count):
-    print("filter", flush=True)
     main_request = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-01",
@@ -29,21 +28,13 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
     )
     assert response.status == 200
     await response.read()
-    print("paginate", flush=True)
-    body = {
-        "request": main_request,
-        "batch": batch,
-    }
+    body = {"request": main_request, "batch": batch}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert len(model.updated) == count, model.updated
     for i in range(count - 1):
         assert isinstance(model.updated[i], date)
@@ -87,7 +78,6 @@ async def test_paginate_prs_nasty_input(client, headers, account, batch, stages,
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_paginate_prs_jira(client, headers):
-    print("filter", flush=True)
     main_request = {
         "date_from": "2017-10-13",
         "date_to": "2018-04-01",
@@ -105,40 +95,27 @@ async def test_paginate_prs_jira(client, headers):
     )
     assert response.status == 200
     await response.read()
-    print("paginate", flush=True)
-    body = {
-        "request": main_request,
-        "batch": 1,
-    }
+    body = {"request": main_request, "batch": 1}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2018, 3, 15), date(2018, 1, 15)]
     main_request["jira"]["labels_include"] = ["nope"]
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2018, 4, 1), date(2017, 10, 13)]
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_paginate_prs_no_done(client, headers):
-    print("filter", flush=True)
     main_request = {
         "date_from": "2020-01-12",
         "date_to": "2020-03-01",
@@ -151,43 +128,29 @@ async def test_paginate_prs_no_done(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request,
     )
-    text = (await response.read()).decode()
-    assert response.status == 200, text
+    assert response.status == 200
 
-    print("paginate", flush=True)
-    body = {
-        "request": main_request,
-        "batch": 5,
-    }
+    body = {"request": main_request, "batch": 5}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
     main_request["stages"] = ["done"]
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     # exactly the same even though there should be 0 PRs
     # we ignore the stages
     assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
 
 
 async def test_paginate_prs_empty(client, headers):
-    print("filter", flush=True)
     main_request = {
         "date_from": "2015-01-01",
         "date_to": "2015-01-01",
@@ -202,11 +165,7 @@ async def test_paginate_prs_empty(client, headers):
     )
     assert response.status == 200
     await response.read()
-    print("paginate", flush=True)
-    body = {
-        "request": main_request,
-        "batch": 5,
-    }
+    body = {"request": main_request, "batch": 5}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
@@ -242,20 +201,13 @@ async def test_paginate_prs_same_day(client, headers, sdb):
     )
     assert response.status == 200
     await response.read()
-    body = {
-        "request": main_request,
-        "batch": 5,
-    }
+    body = {"request": main_request, "batch": 5}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2015, 10, 23), date(2015, 10, 23)]
 
 
@@ -263,7 +215,6 @@ async def test_paginate_prs_same_day(client, headers, sdb):
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_pull_requests
 async def test_paginate_prs_deps(client, headers, precomputed_sample_deployments):
-    print("filter", flush=True)
     main_request = {
         "date_from": "2018-01-11",
         "date_to": "2020-04-01",
@@ -278,21 +229,13 @@ async def test_paginate_prs_deps(client, headers, precomputed_sample_deployments
     )
     assert response.status == 200
     await response.read()
-    print("paginate", flush=True)
-    body = {
-        "request": main_request,
-        "batch": 100,
-    }
+    body = {"request": main_request, "batch": 100}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    obj = json.loads(text)
-    try:
-        model = PullRequestPaginationPlan.from_dict(obj)
-    except Exception as e:
-        raise ValueError(text) from e
+    assert response.status == 200
+    obj = await response.json()
+    model = PullRequestPaginationPlan.from_dict(obj)
     assert model.to_dict() == {
         "updated": [
             date(2020, 3, 10),
