@@ -95,8 +95,8 @@ async def filter_check_runs(
     repocol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.repository_full_name.name].values)
     crnamecol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.name.name].values)
     group_keys = np.char.add(np.char.add(repocol, b"|"), crnamecol)
-    unique_repo_crnames, first_encounters, inverse_cr_map, repo_crnames_counts = np.unique(
-        group_keys, return_counts=True, return_index=True, return_inverse=True,
+    unique_repo_crnames, first_encounters, inverse_cr_map = np.unique(
+        group_keys, return_index=True, return_inverse=True,
     )
     unique_repo_crnames = np.char.decode(np.char.partition(unique_repo_crnames, b"|"), "UTF-8")
     started_ats = df_check_runs[CheckRun.started_at.name].values
