@@ -19,6 +19,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
     assignee: Optional[str]
     comments: int
     priority: Optional[str]
+    rendered_description: Optional[str]
     status: str
     type: str
     url: str
