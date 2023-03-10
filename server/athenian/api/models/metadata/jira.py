@@ -90,6 +90,7 @@ class Issue(Base):
     is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
     story_points_ = Column(Numeric, name="story_points")
     story_points = column_property(cast(story_points_, REAL))
+    description = Column(Text)
 
 
 Issue.story_points.default = Issue.story_points.server_default = None
