@@ -26,6 +26,7 @@ from athenian.api.models.web import (
     GoalCreateRequest,
     GoalUpdateRequest,
     InvalidRequestError,
+    JIRAMetricID,
     PullRequestMetricID,
 )
 from athenian.api.request import AthenianWebRequest, model_from_body
@@ -188,16 +189,22 @@ async def _parse_update_request(
     )
 
 
+# TODO: take those list from OpenAPI spec
 _NUMERIC_THRESHOLD_METRICS = [
     PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO,
     PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,
 ]
 _TIME_DURATION_THRESHOLD_METRICS = [
+    JIRAMetricID.JIRA_LIFE_TIME_BELOW_THRESHOLD_RATIO,
+    JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO,
     PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME_BELOW_THRESHOLD_RATIO,
     PullRequestMetricID.PR_LEAD_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_CYCLE_TIME_BELOW_THRESHOLD_RATIO,
     PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO,
     PullRequestMetricID.PR_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
     PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_WIP_TIME_BELOW_THRESHOLD_RATIO,
+    PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO,
 ]
 
 
@@ -209,9 +216,8 @@ def _validate_metric_params(goal_metric: str, update_req: GoalUpdateRequest) -> 
     else:
         for tg in update_req.team_goals:
             if tg.metric_params:
-                raise ResponseError(
-                    InvalidRequestError(".team_goals", f'Invalid team goals: "{tg}"'),
-                )
+                msg = f"metric_params {tg.metric_params} not allowed for metric {goal_metric}"
+                raise ResponseError(InvalidRequestError(".team_goals", msg))
 
 
 def _check_team_goals_threshold_type(
@@ -221,5 +227,5 @@ def _check_team_goals_threshold_type(
 ) -> None:
     for tg in update_req.team_goals:
         if tg.metric_params and not isinstance(tg.metric_params.get("threshold"), types):
-            msg = "Invalid metric_params {} for metric {metric}"
+            msg = f"Invalid metric_params {tg.metric_params} for metric {metric}"
             raise ResponseError(InvalidRequestError(".team_goals", msg))
