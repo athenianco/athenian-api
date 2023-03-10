@@ -1141,7 +1141,7 @@ class PullRequestMiner:
                 df[_issue.project_id.name] = df[_issue.project_id.name].astype("S8")
                 return df.set_index([PullRequest.node_id.name, _issue.key.name])
             df = await read_sql_query(
-                sql.select(selected)
+                sql.select(*selected)
                 .select_from(
                     sql.join(
                         NodePullRequest,
@@ -1634,33 +1634,24 @@ class PullRequestMiner:
                         substr_cond = substr.like(message)
                     queries.append(
                         sql.select(
-                            [
-                                NodeCommit.node_id.label(ghrpr.matched_merge_commit_id.name),
-                                NodeCommit.sha.label(ghrpr.matched_merge_commit_sha.name),
-                                sql.literal_column(str(repo_id))
-                                .label(NodeCommit.repository_id.name)
-                                .cast(BigInteger),
-                                sql.literal_column(str(pr_node_id))
-                                .label(ghrpr.pr_node_id.name)
-                                .cast(BigInteger),
-                                NodeCommit.committed_date.label(
-                                    ghrpr.matched_merge_commit_committed_date.name,
-                                ),
-                                NodeCommit.pushed_date.label(
-                                    ghrpr.matched_merge_commit_pushed_date.name,
-                                ),
-                                (await first_line_of_commit_message(mdb)).label(
-                                    NodeCommit.message.name,
-                                ),
-                            ],
-                        ).where(
-                            sql.and_(
-                                acc_id_conds[acc_id],
-                                repo_cond,
-                                committed_date_cond,
-                                substr_cond,
+                            NodeCommit.node_id.label(ghrpr.matched_merge_commit_id.name),
+                            NodeCommit.sha.label(ghrpr.matched_merge_commit_sha.name),
+                            sql.literal_column(str(repo_id))
+                            .label(NodeCommit.repository_id.name)
+                            .cast(BigInteger),
+                            sql.literal_column(str(pr_node_id))
+                            .label(ghrpr.pr_node_id.name)
+                            .cast(BigInteger),
+                            NodeCommit.committed_date.label(
+                                ghrpr.matched_merge_commit_committed_date.name,
                             ),
-                        ),
+                            NodeCommit.pushed_date.label(
+                                ghrpr.matched_merge_commit_pushed_date.name,
+                            ),
+                            (await first_line_of_commit_message(mdb)).label(
+                                NodeCommit.message.name,
+                            ),
+                        ).where(acc_id_conds[acc_id], repo_cond, committed_date_cond, substr_cond),
                     )
         if not queries:
             return prs
@@ -1828,7 +1819,7 @@ class PullRequestMiner:
                 PullRequest.acc_id == acc_id,
                 (
                     sql.case(
-                        [(PullRequest.closed, PullRequest.closed_at)],
+                        (PullRequest.closed, PullRequest.closed_at),
                         else_=sql.text("'3000-01-01'"),  # backed up with a DB index
                     )
                     >= time_from
@@ -1888,7 +1879,7 @@ class PullRequestMiner:
                         ),
                     )
             if not jira:
-                query = sql.select(selected_columns).where(*filters)
+                query = sql.select(*selected_columns).where(*filters)
                 if (
                     PRParticipationKind.AUTHOR in participants
                     or PRParticipationKind.MERGER in participants
@@ -1971,7 +1962,7 @@ class PullRequestMiner:
             cache,
         )
         if not jira:
-            query = sql.select([PullRequest])
+            query = sql.select(PullRequest)
             if len(node_id_map) > 100:
                 query = (
                     query.where(
@@ -2100,11 +2091,9 @@ class PullRequestMiner:
             DeploymentNotification.finished_at,
         ]
         notifications = await read_sql_query(
-            sql.select(cols).where(
-                sql.and_(
-                    DeploymentNotification.account_id == account,
-                    DeploymentNotification.name.in_(df.index.unique()),
-                ),
+            sql.select(*cols).where(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.name.in_(df.index.unique()),
             ),
             con=rdb,
             columns=cols,

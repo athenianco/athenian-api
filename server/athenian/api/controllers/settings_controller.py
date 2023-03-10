@@ -143,11 +143,9 @@ async def get_jira_projects(
         ),
         mdb.fetch_all(
             select(
-                [
-                    Issue.project_id,
-                    func.count(Issue.id).label("issues_count"),
-                    func.max(Issue.updated).label("last_update"),
-                ],
+                Issue.project_id,
+                func.count(Issue.id).label("issues_count"),
+                func.max(Issue.updated).label("last_update"),
             )
             .where(Issue.acc_id == jira_id)
             .group_by(Issue.project_id),
@@ -336,11 +334,9 @@ async def get_jira_identities(
     tasks = [
         request.sdb.fetch_all(
             select(
-                [
-                    MappedJIRAIdentity.github_user_id,
-                    MappedJIRAIdentity.jira_user_id,
-                    MappedJIRAIdentity.confidence,
-                ],
+                MappedJIRAIdentity.github_user_id,
+                MappedJIRAIdentity.jira_user_id,
+                MappedJIRAIdentity.confidence,
             ).where(MappedJIRAIdentity.account_id == id),
         ),
         get_metadata_account_ids(id, request.sdb, request.cache),
@@ -413,10 +409,7 @@ async def get_work_type(request: AthenianWebRequest, body: dict) -> web.Response
     """Fetch the definition of the work type given the name."""
     model = WorkTypeGetRequest.from_dict(body)
     row = await request.sdb.fetch_one(
-        select(WorkType).where(
-            WorkType.account_id == model.account,
-            WorkType.name == model.name,
-        ),
+        select(WorkType).where(WorkType.account_id == model.account, WorkType.name == model.name),
     )
     if row is None:
         raise ResponseError(NotFoundError(f'Work type "{model.name}" does not exist.'))
@@ -459,10 +452,7 @@ async def delete_work_type(request: AthenianWebRequest, body: dict) -> web.Respo
     """Remove the work type given the name."""
     model = WorkTypeGetRequest.from_dict(body)
     row = await request.sdb.fetch_one(
-        select(WorkType).where(
-            WorkType.account_id == model.account,
-            WorkType.name == model.name,
-        ),
+        select(WorkType).where(WorkType.account_id == model.account, WorkType.name == model.name),
     )
     if row is None:
         raise ResponseError(NotFoundError(f'Work type "{model.name}" does not exist.'))

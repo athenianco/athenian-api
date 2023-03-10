@@ -108,7 +108,7 @@ class DonePRFactsLoader:
         selected = [ghprt.pr_node_id, ghprt.repository_full_name, ghprt.release_match]
         filters = cls._create_common_filters(time_from, time_to, repos, account)
         with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
-            rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+            rows = await pdb.fetch_all(select(*selected).where(and_(*filters)))
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         pr_node_id_col = 0  # performance: faster than ghprt.pr_node_id.name
@@ -330,7 +330,7 @@ class DonePRFactsLoader:
                     ],
                 ),
             ]
-            query = select(selected).where(and_(*filters))
+            query = select(*selected).where(and_(*filters))
         else:
             match_groups, _ = group_repos_by_release_match(
                 repos, default_branches, release_settings,
@@ -341,7 +341,7 @@ class DonePRFactsLoader:
             or_items, or_repos = match_groups_to_sql(match_groups, ghprt, False)
             query = union_all(
                 *(
-                    select(selected).where(
+                    select(*selected).where(
                         and_(
                             ghprt.acc_id == account,
                             item,
@@ -440,7 +440,7 @@ class DonePRFactsLoader:
             ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.pr_node_id.in_(node_ids),
         ]
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(and_(*filters))
         with sentry_sdk.start_span(op="load_precomputed_done_facts_ids/fetch"):
             rows = await pdb.fetch_all(query)
         result = {}
@@ -818,8 +818,8 @@ class DonePRFactsLoader:
         or_items = or_items()
         selected = sorted(selected, key=lambda i: i.key)
         if postgres:
-            return [select(selected).where(and_(item, *filters)) for item in or_items]
-        return [select(selected).where(and_(or_(*or_items), *filters))]
+            return [select(*selected).where(and_(item, *filters)) for item in or_items]
+        return [select(*selected).where(and_(or_(*or_items), *filters))]
 
     @classmethod
     def _create_common_filters(

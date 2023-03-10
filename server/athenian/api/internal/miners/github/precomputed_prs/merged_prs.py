@@ -251,11 +251,7 @@ class MergedPRFactsLoader:
         """
         log = logging.getLogger("%s.load_merged_pull_request_facts_all" % metadata.__package__)
         ghmprf = GitHubMergedPullRequestFacts
-        selected = [
-            ghmprf.pr_node_id,
-            ghmprf.repository_full_name,
-            ghmprf.data,
-        ]
+        selected = [ghmprf.pr_node_id, ghmprf.repository_full_name, ghmprf.data]
         default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         filters = [
             ghmprf.acc_id == account,
@@ -263,7 +259,7 @@ class MergedPRFactsLoader:
             ghmprf.repository_full_name.in_(repos),
             ghmprf.format_version == default_version,
         ]
-        query = select(selected).where(and_(*filters))
+        query = select(*selected).where(and_(*filters))
         with sentry_sdk.start_span(op="load_merged_pull_request_facts_all/fetch"):
             rows = await pdb.fetch_all(query)
         facts = {}
@@ -562,7 +558,7 @@ async def discover_inactive_merged_unreleased_prs(
     selected = sorted(selected, key=lambda i: i.key)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(
-            select(selected)
+            select(*selected)
             .select_from(body)
             .where(and_(*filters))
             .order_by(desc(GitHubMergedPullRequestFacts.merged_at)),
