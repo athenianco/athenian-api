@@ -1,32 +1,32 @@
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import date, timedelta
+from typing import Any
 
 import pandas as pd
 import pytest
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.check_run_filter import filter_check_runs
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo
+from tests.testutils.time import dt
 
 
-def td_list(items: List[Optional[int]]) -> List[timedelta]:
+def td_list(items: list[int | None]) -> list[timedelta | None]:
     return [(x if x is None else timedelta(seconds=x)) for x in items]
 
 
 async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
-    timeline, items = await filter_check_runs(
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 0.95],
-        logical_settings,
-        (6366825,),
-        mdb,
-        None,
+    timeline, items = await _filter(
+        time_from=dt(2015, 1, 1),
+        time_to=dt(2020, 1, 1),
+        quantiles=[0, 0.95],
+        logical_settings=logical_settings,
+        mdb=mdb,
     )
     assert len(timeline) == len(set(timeline)) == 61
     assert len(items) == 9
@@ -46,45 +46,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
             stddev_execution_time=timedelta(seconds=1),
             median_execution_time=timedelta(seconds=1),
             count_timeline=[
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
+                *([0] * 39),
                 18,
                 18,
                 17,
@@ -108,45 +70,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
                 4,
             ],
             successes_timeline=[
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
+                *([0] * 39),
                 17,
                 17,
                 16,
@@ -171,50 +95,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
             ],
             mean_execution_time_timeline=td_list(
                 [
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    *([None] * 44),
                     0,
                     0,
                     0,
@@ -235,50 +116,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
             ),
             median_execution_time_timeline=td_list(
                 [
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    *([None] * 44),
                     0.0,
                     0.0,
                     0.0,
@@ -308,45 +146,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
             stddev_execution_time=timedelta(seconds=1),
             median_execution_time=timedelta(seconds=1),
             count_timeline=[
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
+                *([0] * 39),
                 10,
                 18,
                 13,
@@ -370,45 +170,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
                 4,
             ],
             successes_timeline=[
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
+                *([0] * 39),
                 9,
                 17,
                 12,
@@ -432,115 +194,11 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
                 4,
             ],
             mean_execution_time_timeline=td_list(
-                [
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    1,
-                    None,
-                    1,
-                    1,
-                    1,
-                ],
+                [*([None] * 44), 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1],
             ),
             median_execution_time_timeline=td_list(
                 [
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    *([None] * 44),
                     0.0,
                     0.0,
                     0.0,
@@ -564,36 +222,23 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
 
 
 async def test_filter_check_runs_daily(mdb, logical_settings):
-    timeline, items = await filter_check_runs(
-        datetime(2018, 2, 1, tzinfo=timezone.utc),
-        datetime(2018, 2, 12, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 1],
-        logical_settings,
-        (6366825,),
-        mdb,
-        None,
+    timeline, items = await _filter(
+        time_from=dt(2018, 2, 1),
+        time_to=dt(2018, 2, 12),
+        logical_settings=logical_settings,
+        mdb=mdb,
     )
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 7
 
 
 async def test_filter_check_runs_empty(mdb, logical_settings):
-    timeline, items = await filter_check_runs(
-        datetime(2018, 2, 1, tzinfo=timezone.utc),
-        datetime(2018, 2, 12, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        ["xxx"],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 1],
-        logical_settings,
-        (6366825,),
-        mdb,
-        None,
+    timeline, items = await _filter(
+        time_from=dt(2018, 2, 1),
+        time_to=dt(2018, 2, 12),
+        pushers=["xxx"],
+        logical_settings=logical_settings,
+        mdb=mdb,
     )
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 0
@@ -601,78 +246,117 @@ async def test_filter_check_runs_empty(mdb, logical_settings):
 
 @with_defer
 async def test_filter_check_runs_cache(mdb, cache, logical_settings):
-    timeline1, items1 = await filter_check_runs(
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 0.95],
-        logical_settings,
-        (6366825,),
-        mdb,
-        cache,
+    timeline1, items1 = await _filter(
+        time_from=dt(2015, 1, 1),
+        time_to=dt(2020, 1, 1),
+        quantiles=[0, 0.95],
+        logical_settings=logical_settings,
+        mdb=mdb,
+        cache=cache,
     )
     await wait_deferred()
-    timeline2, items2 = await filter_check_runs(
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 0.95],
-        logical_settings,
-        (6366825,),
-        None,
-        cache,
+    timeline2, items2 = await _filter(
+        time_from=dt(2015, 1, 1),
+        time_to=dt(2020, 1, 1),
+        quantiles=[0, 0.95],
+        logical_settings=logical_settings,
+        mdb=None,
+        cache=cache,
     )
     assert timeline1 == timeline2
     assert items1 == items2
-    timeline2, items2 = await filter_check_runs(
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 0.05],
-        logical_settings,
-        (6366825,),
-        None,
-        cache,
+    timeline2, items2 = await _filter(
+        time_from=dt(2015, 1, 1),
+        time_to=dt(2020, 1, 1),
+        quantiles=[0, 0.05],
+        logical_settings=logical_settings,
+        mdb=None,
+        cache=cache,
     )
     assert items1 != items2
     with pytest.raises(AttributeError):
-        await filter_check_runs(
-            datetime(2015, 1, 1, tzinfo=timezone.utc),
-            datetime(2020, 1, 2, tzinfo=timezone.utc),
-            ["src-d/go-git"],
-            [],
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            [0, 0.95],
-            logical_settings,
-            (6366825,),
-            None,
-            cache,
+        await _filter(
+            time_from=dt(2015, 1, 1),
+            time_to=dt(2020, 1, 2),
+            quantiles=[0, 0.95],
+            logical_settings=logical_settings,
+            mdb=None,
+            cache=cache,
         )
 
 
 async def test_filter_check_runs_logical_repos(mdb, logical_settings):
-    timeline, items = await filter_check_runs(
-        datetime(2016, 2, 1, tzinfo=timezone.utc),
-        datetime(2018, 2, 12, tzinfo=timezone.utc),
-        ["src-d/go-git/alpha"],
-        [],
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        [0, 1],
-        logical_settings,
-        (6366825,),
-        mdb,
-        None,
+    timeline, items = await _filter(
+        time_from=dt(2016, 2, 1),
+        time_to=dt(2018, 2, 12),
+        repositories=["src-d/go-git/alpha"],
+        logical_settings=logical_settings,
+        mdb=mdb,
     )
     assert len(timeline) == len(set(timeline)) == 26
     assert len(items) == 8
+
+
+async def test_only_queued_runs(mdb_rw: Database, sdb: Database, logical_settings) -> None:
+    models = [
+        md_factory.CheckRunFactory(
+            repository_full_name="o/r",
+            repository_node_id=99,
+            started_at=dt(2022, 1, 2),
+            committed_date=dt(2022, 1, 2),
+            check_suite_status="QUEUED",
+        ),
+    ]
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+        await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+
+        _, items = await _filter(
+            time_from=dt(2022, 1, 1),
+            time_to=dt(2022, 1, 3),
+            repositories=["o/r"],
+            logical_settings=logical_settings,
+            mdb=mdb_rw,
+        )
+    assert items == []
+
+
+async def test_unicode_run_name(mdb_rw: Database, sdb: Database, logical_settings) -> None:
+    models = [
+        md_factory.CheckRunFactory(
+            repository_full_name="o/r",
+            repository_node_id=99,
+            started_at=dt(2022, 1, 2),
+            committed_date=dt(2022, 1, 2),
+            check_suite_status="COMPLETED",
+            name="check run 🧪",
+        ),
+    ]
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+        await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+
+        timeline, items = await _filter(
+            time_from=dt(2022, 1, 1),
+            time_to=dt(2022, 1, 3),
+            repositories=["o/r"],
+            logical_settings=logical_settings,
+            mdb=mdb_rw,
+        )
+    assert len(items) == 1
+    assert items[0].title == "check run 🧪"
+
+
+async def _filter(**kwargs: Any) -> tuple[list[date], list[CodeCheckRunListItem]]:
+    kwargs.setdefault("repositories", ["src-d/go-git"])
+    kwargs.setdefault("pushers", [])
+    kwargs.setdefault("labels", LabelFilter.empty())
+    kwargs.setdefault("jira", JIRAFilter.empty())
+    kwargs.setdefault("quantiles", [0, 1])
+    kwargs.setdefault("meta_ids", (DEFAULT_MD_ACCOUNT_ID,))
+    kwargs.setdefault("cache", None)
+    return await filter_check_runs(**kwargs)

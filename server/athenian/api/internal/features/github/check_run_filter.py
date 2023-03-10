@@ -83,22 +83,28 @@ async def filter_check_runs(
     )
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
-    if df_check_runs.empty:
-        return timeline_dates, []
     suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values
     completed = np.flatnonzero(
         in1d_str(suite_statuses, np.array([b"COMPLETED", b"SUCCESS", b"FAILURE"], dtype="S")),
     )
     df_check_runs = df_check_runs.take(completed)
+    if df_check_runs.empty:
+        return timeline_dates, []
     del suite_statuses, completed
     df_check_runs.sort_values(CheckRun.started_at.name, inplace=True, ascending=False)
-    repocol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.repository_full_name.name].values)
-    crnamecol = objects_to_pyunicode_bytes(df_check_runs[CheckRun.name.name].values)
-    group_keys = np.char.add(np.char.add(repocol, b"|"), crnamecol)
-    unique_repo_crnames, first_encounters, inverse_cr_map, repo_crnames_counts = np.unique(
-        group_keys, return_counts=True, return_index=True, return_inverse=True,
+
+    repocol = df_check_runs[CheckRun.repository_full_name.name].values
+    repocol_bytes = objects_to_pyunicode_bytes(repocol)
+    crnamecol = df_check_runs[CheckRun.name.name].values
+    crnamecol_bytes = objects_to_pyunicode_bytes(crnamecol)
+
+    group_keys = np.char.add(np.char.add(repocol_bytes, b"|"), crnamecol_bytes)
+    _, first_encounters, inverse_cr_map = np.unique(
+        group_keys, return_index=True, return_inverse=True,
     )
-    unique_repo_crnames = np.char.decode(np.char.partition(unique_repo_crnames, b"|"), "UTF-8")
+    unique_repos = repocol[first_encounters]
+    unique_crnames = crnamecol[first_encounters]
+
     started_ats = df_check_runs[CheckRun.started_at.name].values
     last_execution_times = started_ats[first_encounters].astype("datetime64[s]")
     last_execution_urls = df_check_runs[CheckRun.url.name].values[first_encounters]
@@ -150,8 +156,8 @@ async def filter_check_runs(
             warnings.filterwarnings("ignore", "All-NaN slice encountered")
             warnings.filterwarnings("ignore", "Mean of empty slice")
             warnings.filterwarnings("ignore", "divide by zero encountered in true_divide")
-            for i, ((repo, _, name), last_execution_time, last_execution_url) in enumerate(
-                zip(unique_repo_crnames, last_execution_times, last_execution_urls),
+            for i, (repo, name, last_execution_time, last_execution_url) in enumerate(
+                zip(unique_repos, unique_crnames, last_execution_times, last_execution_urls),
             ):
                 masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}
                 for k, v in masks.items():
