@@ -262,3 +262,32 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
             "github.com/gh33": {"avatar": "https://a/3.jpg"},
             "github.com/gh44": {"avatar": "https://a/4.jpg"},
         }
+
+
+class TestIncludeDescription(BaseGetJIRAIssuesTests):
+    async def test_base(self, mdb_rw: Database) -> None:
+        DESCRIPTION = GetJIRAIssuesInclude.DESCRIPTION.value
+        issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "0"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
+            *jira_issue_models("1", key="P-1", description="D 0", **issue_kwargs),
+            *jira_issue_models("2", key="P-2", description="D 1", **issue_kwargs),
+            *jira_issue_models("3", key="P-3", **issue_kwargs),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+            body = self._body(issues=["P-1", "P-2", "P-3"], include=[DESCRIPTION])
+            res = await self.post_json(json=body)
+
+            assert [i["id"] for i in res["issues"]] == ["P-1", "P-2", "P-3"]
+
+            assert res["issues"][0]["rendered_description"] == "D 0"
+            assert res["issues"][1]["rendered_description"] == "D 1"
+            assert res["issues"][2].get("rendered_description") is None
+
+            res = await self.post_json(json=self._body(issues=["P-1"], include=[]))
+            assert [i["id"] for i in res["issues"]] == ["P-1"]
+            assert res["issues"][0].get("rendered_description") is None
