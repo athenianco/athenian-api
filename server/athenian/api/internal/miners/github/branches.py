@@ -5,8 +5,10 @@ import logging
 from typing import Collection, Iterable, Iterator, Optional
 
 import aiomcache
+import medvedi as md
+from medvedi.accelerators import in1d_str
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import delete, distinct, select, union_all
 
@@ -15,13 +17,11 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, cached_methods, short_term_exptime
 from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
 from athenian.api.defer import defer
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.io import deserialize_args, serialize_args
 from athenian.api.models.metadata.github import Branch, NodeRepositoryRef
 from athenian.api.models.persistentdata.models import HealthMetric
-from athenian.api.object_arrays import objects_to_pyunicode_bytes
-from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import numpy_struct
 from athenian.precomputer.db.models import GitHubBranches, GitHubRepository
@@ -91,7 +91,7 @@ class BranchMiner:
         strip: bool = False,
         full_sync: bool = False,
         metrics: Optional[BranchMinerMetrics] = None,
-    ) -> tuple[pd.DataFrame, dict[str, str]]:
+    ) -> tuple[md.DataFrame, dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
@@ -106,11 +106,11 @@ class BranchMiner:
         )[:-1]
 
     def _postprocess_branches(
-        result: tuple[pd.DataFrame, dict[str, str], bool],
+        result: tuple[md.DataFrame, dict[str, str], bool],
         repos: Optional[Iterable[str]],
         strip: bool,
         **_,
-    ) -> tuple[pd.DataFrame, dict[str, str], bool]:
+    ) -> tuple[md.DataFrame, dict[str, str], bool]:
         branches, default_branches, with_repos = result
         if repos is None:
             if with_repos:
@@ -146,7 +146,7 @@ class BranchMiner:
         strip: bool,
         full_sync: bool,
         metrics: Optional[BranchMinerMetrics],
-    ) -> tuple[pd.DataFrame, dict[str, str], bool]:
+    ) -> tuple[md.DataFrame, dict[str, str], bool]:
         if strip and repos is not None:
             repos = [r.split("/", 1)[1] for r in repos]
         if repos is not None:
@@ -174,41 +174,45 @@ class BranchMiner:
             if new_branches.empty:
                 new_branches = missed_branches
             else:
-                new_indexes = np.flatnonzero(
-                    np.in1d(
-                        new_branches[Branch.branch_id.name].values,
-                        missed_branches[Branch.branch_id.name].values,
-                        invert=True,
-                    ),
+                new_mask = new_branches.isin(
+                    Branch.branch_id.name,
+                    missed_branches[Branch.branch_id.name],
+                    invert=True,
                 )
-                if len(new_indexes) == 0:
-                    new_branches = missed_branches
+                if new_count := new_mask.sum():
+                    if new_count < len(new_branches):
+                        new_branches = new_branches.take(new_mask)
+                    new_branches = md.concat(missed_branches, new_branches, ignore_index=True)
                 else:
-                    if len(new_indexes) < len(new_branches):
-                        new_branches = new_branches.take(new_indexes)
-                    new_branches = pd.concat([missed_branches, new_branches], ignore_index=True)
+                    new_branches = missed_branches
         if old_branches is None or old_branches.empty:
             branches = new_branches
         elif new_branches.empty:
             branches = old_branches
         else:
-            old_indexes = np.flatnonzero(
-                np.in1d(
-                    np.char.add(
-                        int_to_str(old_branches[Branch.repository_node_id.name].values),
-                        objects_to_pyunicode_bytes(old_branches[Branch.branch_name.name].values),
-                    ),
-                    np.char.add(
-                        int_to_str(new_branches[Branch.repository_node_id.name].values),
-                        objects_to_pyunicode_bytes(new_branches[Branch.branch_name.name].values),
-                    ),
-                    invert=True,
+            old_branch_names = old_branches[Branch.branch_name.name].astype("U", copy=False)
+            new_branch_names = new_branches[Branch.branch_name.name].astype("U", copy=False)
+            joint_index = merge_to_str(
+                np.concatenate(
+                    [
+                        old_branches[Branch.repository_node_id.name],
+                        new_branches[Branch.repository_node_id.name],
+                    ],
+                ),
+                np.concatenate(
+                    [
+                        old_branch_names.view(f"S{old_branch_names.dtype.itemsize}"),
+                        new_branch_names.view(f"S{new_branch_names.dtype.itemsize}"),
+                    ],
                 ),
             )
-            if len(old_indexes):
-                if len(old_indexes) < len(old_branches):
-                    old_branches = old_branches.take(old_indexes)
-                branches = pd.concat([new_branches, old_branches], ignore_index=True)
+            old_mask = ~in1d_str(
+                joint_index[: len(old_branches)], joint_index[len(old_branches) :], verbatim=True,
+            )
+            if old_count := old_mask.sum():
+                if old_count < len(old_branches):
+                    old_branches = old_branches.take(old_mask)
+                branches = md.concat(new_branches, old_branches, ignore_index=True)
             else:
                 branches = new_branches
         if pdb is not None:
@@ -217,7 +221,7 @@ class BranchMiner:
                     account,
                     branches,
                     repo_ids,
-                    new_branches[Branch.repository_node_id.name].unique()
+                    new_branches.unique(Branch.repository_node_id.name, unordered=True)
                     if not new_branches.empty
                     else [],
                     now,
@@ -229,16 +233,16 @@ class BranchMiner:
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
-        branch_repos = branches[Branch.repository_full_name.name].values
+        branch_repos = branches[Branch.repository_full_name.name]
         unique_branch_repos, index_map, counts = np.unique(
             branch_repos, return_inverse=True, return_counts=True,
         )
         if repos is None:
             repos = unique_branch_repos
         order = np.argsort(index_map)
-        branch_names = branches[Branch.branch_name.name].values[order]
-        branch_defaults = branches[Branch.is_default.name].values[order]
-        branch_commit_ids = branches[Branch.commit_id.name].values[order]
+        branch_names = branches[Branch.branch_name.name][order]
+        branch_defaults = branches[Branch.is_default.name][order]
+        branch_commit_ids = branches[Branch.commit_id.name][order]
         pos = 0
         for i, repo in enumerate(unique_branch_repos):
             next_pos = pos + counts[i]
@@ -271,14 +275,14 @@ class BranchMiner:
         if ambiguous_defaults:
             map_indexes = np.flatnonzero(
                 np.in1d(
-                    branches[Branch.commit_id.name].values,
+                    branches[Branch.commit_id.name],
                     np.concatenate([rb[0] for rb in ambiguous_defaults.values()]),
                 ),
             )
             committed_dates = dict(
                 zip(
-                    branches[Branch.commit_id.name].values[map_indexes],
-                    branches[Branch.commit_date.name].values[map_indexes],
+                    branches[Branch.commit_id.name][map_indexes],
+                    branches[Branch.commit_date.name][map_indexes],
                 ),
             )
             for repo, (repo_commit_ids, repo_branch_names) in ambiguous_defaults.items():
@@ -319,7 +323,7 @@ class BranchMiner:
                         mdb,
                         [NodeRepositoryRef.parent_id],
                     )
-                )[NodeRepositoryRef.parent_id.name].values
+                )[NodeRepositoryRef.parent_id.name]
                 inconsistent = np.in1d(zero_nodes, refs, assume_unique=True)
                 if errors := list(compress(zero_names, inconsistent)):
                     if metrics is not None:
@@ -366,7 +370,7 @@ class BranchMiner:
         prefixer: Prefixer,
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
-    ) -> pd.DataFrame:
+    ) -> md.DataFrame:
         columns = [
             Branch.branch_id,
             Branch.branch_name,
@@ -443,7 +447,7 @@ class BranchMiner:
         meta_ids: tuple[int, ...],
         mdb: DatabaseLike,
         pdb: Database,
-    ) -> pd.DataFrame:
+    ) -> md.DataFrame:
         branches_fetched_ats = dict(
             await pdb.fetch_all(
                 select(GitHubRepository.node_id, GitHubRepository.branches_fetched_at).where(
@@ -473,11 +477,11 @@ class BranchMiner:
         )
         if dfs[0] is None:
             if dfs[1] is None:
-                return pd.DataFrame()
+                return md.DataFrame()
             return dfs[1]
         if dfs[1] is None:
             return dfs[0]
-        return pd.concat(dfs, ignore_index=True)
+        return md.concat(*dfs, ignore_index=True)
 
     @classmethod
     @sentry_span
@@ -487,7 +491,7 @@ class BranchMiner:
         repos: Optional[Collection[int]],
         prefixer: Prefixer,
         pdb: Database,
-    ) -> pd.DataFrame:
+    ) -> md.DataFrame:
         rows = await pdb.fetch_all(
             select(GitHubBranches.repository_node_id, GitHubBranches.data).where(
                 GitHubBranches.acc_id == account,
@@ -497,7 +501,7 @@ class BranchMiner:
             ),
         )
         if not rows:
-            return pd.DataFrame()
+            return md.DataFrame()
         repo_node_to_name = prefixer.repo_node_to_name.get
         branches = [
             PrecomputedBranches(r[1], repository_node_id=r[0], repository_full_name=name)
@@ -510,8 +514,6 @@ class BranchMiner:
                 values, borders = PrecomputedBranches.vectorize_field(branches, col)
             except NotImplementedError:
                 values = np.concatenate([rb[col] for rb in branches])
-            if col == Branch.commit_date.name:
-                values = pd.Series(values, dtype=pd.DatetimeTZDtype(tz=timezone.utc))
             columns[col] = values
         lengths = np.diff(borders)
         columns[Branch.repository_node_id.name] = np.repeat(
@@ -520,23 +522,29 @@ class BranchMiner:
         columns[Branch.repository_full_name.name] = np.repeat(
             [b.repository_full_name for b in branches], lengths,
         )
-        return pd.DataFrame(columns)
+        return md.DataFrame(
+            columns,
+            dtype={
+                Branch.repository_full_name.name: object,
+                Branch.branch_name.name: object,
+            },
+        )
 
     @classmethod
     @sentry_span
     async def _store_precomputed_branches(
         cls,
         account: int,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         all_repo_ids: Optional[list[int]],
         repo_ids_to_update: Collection[int],
         now: datetime,
         prefixer: Prefixer,
         pdb: Database,
     ) -> None:
-        order = np.argsort(branches[Branch.repository_node_id.name].values)
+        order = np.argsort(branches[Branch.repository_node_id.name])
         repo_ids, repo_id_ff, counts = np.unique(
-            branches[Branch.repository_node_id.name].values[order],
+            branches[Branch.repository_node_id.name][order],
             return_index=True,
             return_counts=True,
         )
@@ -556,7 +564,7 @@ class BranchMiner:
         for repo_index in repo_indexes:
             indexes = order[borders[repo_index] : borders[repo_index + 1]]
             pb = PrecomputedBranches.from_fields(
-                **{col: branches[col].values[indexes] for col in PrecomputedBranches.dtype.names},
+                **{col: branches[col][indexes] for col in PrecomputedBranches.dtype.names},
             )
             inserted_branches.append(
                 GitHubBranches(
@@ -606,6 +614,6 @@ class BranchMiner:
                     await pdb_conn.execute_many(sql_repos, inserted_repos)
 
 
-def dummy_branches_df() -> pd.DataFrame:
+def dummy_branches_df() -> md.DataFrame:
     """Create an empty dataframe with Branch columns."""
-    return pd.DataFrame(columns=[c.name for c in Branch.__table__.columns])
+    return md.DataFrame(columns=[c.name for c in Branch.__table__.columns])

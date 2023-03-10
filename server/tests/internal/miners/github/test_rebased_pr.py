@@ -1,5 +1,5 @@
+from medvedi.testing import assert_frame_equal
 import numpy as np
-from pandas.testing import assert_frame_equal
 from sqlalchemy import select
 
 from athenian.api.async_utils import read_sql_query
@@ -36,20 +36,20 @@ async def _test_match_rebased_smoke(mdb, pdb, kwarg) -> None:
     assert len(prs1) == 129
     prs2 = await match_rebased_prs([40550], 1, (6366825,), mdb, pdb, **kwarg)
     for df in (prs1, prs2):
-        df.sort_index(axis=1, inplace=True)
+        df.reset_index(inplace=True, drop=True)
         df.sort_values(GitHubRebasedPullRequest.pr_node_id.name, inplace=True, ignore_index=True)
     assert_frame_equal(prs1, prs2)
     pr_merges = dict(
         await mdb.fetch_all(
             select(NodePullRequest.node_id, NodePullRequest.merge_commit_id).where(
                 NodePullRequest.acc_id == 6366825,
-                NodePullRequest.node_id.in_(prs1[GitHubRebasedPullRequest.pr_node_id.name].values),
+                NodePullRequest.node_id.in_(prs1[GitHubRebasedPullRequest.pr_node_id.name]),
             ),
         ),
     )
     for pr_node_id, rebased_commit_id in zip(
-        prs1[GitHubRebasedPullRequest.pr_node_id.name].values,
-        prs1[GitHubRebasedPullRequest.matched_merge_commit_id.name].values,
+        prs1[GitHubRebasedPullRequest.pr_node_id.name],
+        prs1[GitHubRebasedPullRequest.matched_merge_commit_id.name],
     ):
         assert pr_merges[pr_node_id] != rebased_commit_id
     rows = await pdb.fetch_all(select(GitHubRebasedPullRequest))
@@ -61,19 +61,23 @@ async def _test_match_rebased_smoke(mdb, pdb, kwarg) -> None:
 @with_defer
 async def test_mark_dead_prs_smoke(mdb, pdb, branches, dag):
     forward = await read_sql_query(
-        select(PullRequest), mdb, PullRequest, index=PullRequest.node_id,
+        select(PullRequest).order_by(PullRequest.node_id),
+        mdb,
+        PullRequest,
+        index=PullRequest.node_id,
     )
     dag_shas = dag["src-d/go-git"][1][0]
-    merge_ids = forward[PullRequest.merge_commit_id.name].values.copy()
-    alive = np.in1d(forward[PullRequest.merge_commit_sha.name].values, dag_shas)
+    merge_ids = forward[PullRequest.merge_commit_id.name].copy()
+    alive = forward.isin(PullRequest.merge_commit_sha.name, dag_shas)
     await PullRequestMiner.mark_dead_prs(forward, branches, dag, 1, (6366825,), mdb, pdb)
-    matched = np.in1d(forward[PullRequest.merge_commit_sha.name].values, dag_shas)
+    matched = forward.isin(PullRequest.merge_commit_sha.name, dag_shas)
     prs_forward = set(forward.index.values[matched & ~alive])
     backward = await match_rebased_prs(
         [40550], 1, (6366825,), mdb, pdb, commit_shas=dag["src-d/go-git"][1][0],
     )
-    prs_backward = set(backward[GitHubRebasedPullRequest.pr_node_id.name].values)
-    assert not (prs_backward - prs_forward)
+    prs_backward = set(backward[GitHubRebasedPullRequest.pr_node_id.name])
+    prs_diff = prs_backward - prs_forward
+    assert not prs_diff, len(prs_diff)
     for pr_node_id in prs_forward - prs_backward:
         pr_merge = merge_ids[forward.index.values == pr_node_id]
         assert len(pr_merge) == 1

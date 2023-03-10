@@ -38,9 +38,6 @@ except ImportError:
 
 import numpy as np
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import pandas as pd
 try:
     import pytest
 except ImportError:
@@ -77,7 +74,6 @@ from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.db import Connection, Database, db_retry_intervals, measure_db_overhead_and_retry
 from athenian.api.defer import with_defer
-from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal import account
 from athenian.api.internal.features.entries import MetricEntriesCalculator, PRFactsCalculator
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -141,8 +137,6 @@ if os.getenv("NEST_ASYNCIO"):
     nest_asyncio.apply()
 uvloop.install()
 np.seterr(all="raise")
-warnings.simplefilter(action="error", category=pd.errors.PerformanceWarning)
-patch_pandas()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
@@ -1027,7 +1021,12 @@ async def dag(mdb, meta_ids):
 @pytest.fixture(scope="function")
 @with_defer
 async def precomputed_dead_prs(mdb, pdb, branches, dag, meta_ids) -> None:
-    prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
+    prs = await read_sql_query(
+        select(PullRequest).order_by(PullRequest.node_id),
+        mdb,
+        PullRequest,
+        index=PullRequest.node_id,
+    )
     await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, meta_ids, mdb, pdb)
 
 
@@ -1284,7 +1283,7 @@ async def _precompute_deployments(
     )
     log = logging.getLogger(f"{package}.precomputed_deployments")
     log.info("Mined %d deployments", len(deps))
-    log.info("Mined %d release deployments", sum(len(df) for df in deps["releases"].values))
+    log.info("Mined %d release deployments", sum(len(df) for df in deps["releases"]))
 
 
 @pytest.fixture(scope="function")

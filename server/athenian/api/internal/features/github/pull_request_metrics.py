@@ -3,9 +3,9 @@ from enum import IntEnum
 import logging
 from typing import Dict, Iterable, List, Optional, Sequence, Type
 
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 
 from athenian.api import metadata
 from athenian.api.internal.features.metric import (
@@ -71,7 +71,7 @@ class PullRequestHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
         )
 
 
-def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray]:
+def group_prs_by_lines(lines: Sequence[int], items: md.DataFrame) -> List[np.ndarray]:
     """
     Bin PRs by number of changed `lines`.
 
@@ -81,13 +81,13 @@ def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.nda
     :param lines: Either an empty sequence or one with at least 2 elements. The numbers must \
                   monotonically increase.
     """
-    return group_by_lines(lines, items["size"].values)
+    return group_by_lines(lines, items["size"])
 
 
 def group_prs_by_participants(
     participants: Sequence[PRParticipants],
     items_only_contain_specified_participants: bool,
-    items: pd.DataFrame,
+    items: md.DataFrame,
 ) -> list[np.ndarray]:
     """
     Group PRs by participants.
@@ -122,22 +122,22 @@ def group_prs_by_participants(
                 PRParticipationKind.MERGER,
                 PRParticipationKind.RELEASER,
             ):
-                group |= items[name].isin(devs).values
+                group |= items.isin(name, devs)
             else:
                 log.warning("Unsupported participation kind: %s", name)
-        groups.append(np.nonzero(group)[0])
+        groups.append(np.flatnonzero(group))
     return groups
 
 
 def calculate_logical_prs_duplication_mask(
-    items: pd.DataFrame,
+    items: md.DataFrame,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
 ) -> Optional[np.ndarray]:
     """Assign indexes to PRs with the same logical settings for each logical repository."""
     if not logical_settings.has_logical_prs():
         return None
-    repos_column = items[PullRequestFacts.f.repository_full_name].values.astype("S", copy=False)
+    repos_column = items[PullRequestFacts.f.repository_full_name].astype("S", copy=False)
     return calculate_logical_duplication_mask(repos_column, release_settings, logical_settings)
 
 
@@ -162,22 +162,22 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         override_event_time: Optional[datetime] = None,
         override_event_indexes: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         wip_end = np.full(len(facts), None, min_times.dtype)
-        no_last_review = facts[PullRequestFacts.f.last_review].isnull().values
+        no_last_review = facts.isnull(PullRequestFacts.f.last_review)
         has_last_review = ~no_last_review
-        frr = facts[PullRequestFacts.f.first_review_request].values
+        frr = facts[PullRequestFacts.f.first_review_request]
         wip_end[has_last_review] = frr[has_last_review]
 
         # review was probably requested but never happened
-        no_last_commit = facts[PullRequestFacts.f.last_commit].isnull().values
+        no_last_commit = facts.isnull(PullRequestFacts.f.last_commit)
         has_last_commit = ~no_last_commit & no_last_review
-        wip_end[has_last_commit] = facts[PullRequestFacts.f.last_commit].values[has_last_commit]
+        wip_end[has_last_commit] = facts[PullRequestFacts.f.last_commit][has_last_commit]
 
         # 0 commits in the PR, no reviews and review requests
         # => review time = 0
@@ -185,7 +185,7 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         # => release time = 0
         # This PR is either closed or not fully fetched.
         remaining = np.flatnonzero(np.isnat(wip_end))
-        closed = facts[PullRequestFacts.f.closed].values[remaining]
+        closed = facts[PullRequestFacts.f.closed][remaining]
         wip_end[remaining] = closed
         remaining = remaining[closed != closed]
         wip_end[remaining] = frr[remaining]
@@ -198,7 +198,7 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         wip_end = wip_end[wip_end_indexes].astype(dtype)
         wip_end_in_range = (min_times[:, None] <= wip_end) & (wip_end < max_times[:, None])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        work_began = facts[PullRequestFacts.f.work_began].values
+        work_began = facts[PullRequestFacts.f.work_began]
         for result_dim, wip_end_in_range_dim in zip(result, wip_end_in_range):
             wip_end_indexes_dim = wip_end_indexes[wip_end_in_range_dim]
             result_dim[wip_end_indexes_dim] = (
@@ -240,33 +240,27 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         allow_unclosed=False,
         override_event_time: Optional[datetime] = None,
         override_event_indexes: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        has_first_review_request = facts[PullRequestFacts.f.first_review_request].notnull().values
+        has_first_review_request = facts.notnull(PullRequestFacts.f.first_review_request)
         review_end = np.full(len(facts), None, min_times.dtype)
         # we cannot be sure that the approvals finished unless the PR is closed.
         if allow_unclosed:
             closed_mask = has_first_review_request
         else:
-            closed_mask = (
-                facts[PullRequestFacts.f.closed].notnull().values & has_first_review_request
-            )
-        not_approved_mask = facts[PullRequestFacts.f.approved].isnull().values
+            closed_mask = facts.notnull(PullRequestFacts.f.closed) & has_first_review_request
+        not_approved_mask = facts.isnull(PullRequestFacts.f.approved)
         approved_mask = ~not_approved_mask & closed_mask
         last_review_mask = (
-            not_approved_mask
-            & facts[PullRequestFacts.f.last_review].notnull().values
-            & closed_mask
+            not_approved_mask & facts.notnull(PullRequestFacts.f.last_review) & closed_mask
         )
-        review_end[approved_mask] = facts[PullRequestFacts.f.approved].values[approved_mask]
-        review_end[last_review_mask] = facts[PullRequestFacts.f.last_review].values[
-            last_review_mask
-        ]
+        review_end[approved_mask] = facts[PullRequestFacts.f.approved][approved_mask]
+        review_end[last_review_mask] = facts[PullRequestFacts.f.last_review][last_review_mask]
 
         if override_event_time is not None:
             review_end[override_event_indexes] = override_event_time
@@ -281,7 +275,7 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
         review_in_range[:, review_not_none] = review_in_range_mask
         review_end = np.broadcast_to(review_end[None, :], (len(min_times), len(review_end)))
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        frr = facts[PullRequestFacts.f.first_review_request].values
+        frr = facts[PullRequestFacts.f.first_review_request]
         for result_dim, review_end_dim, review_in_range_mask_dim, review_in_range_dim in zip(
             result, review_end, review_in_range_mask, review_in_range,
         ):
@@ -324,7 +318,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         override_event_time: Optional[datetime] = None,
@@ -332,8 +326,8 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         merge_end = result.copy().astype(min_times.dtype)
-        closed_indexes = np.flatnonzero(facts[PullRequestFacts.f.merged].notnull().values)
-        closed = facts[PullRequestFacts.f.merged].values[closed_indexes]
+        closed_indexes = np.flatnonzero(facts.notnull(PullRequestFacts.f.merged))
+        closed = facts[PullRequestFacts.f.merged][closed_indexes]
         closed_in_range = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         closed_indexes = np.broadcast_to(
             closed_indexes[None, :], (len(min_times), len(closed_indexes)),
@@ -352,30 +346,28 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
 
         dtype = facts[PullRequestFacts.f.created].dtype
         not_approved_mask = np.broadcast_to(
-            facts[PullRequestFacts.f.approved].isnull().values[None, :], result.shape,
+            facts.isnull(PullRequestFacts.f.approved)[None, :], result.shape,
         )
         approved_mask = ~not_approved_mask & closed_mask
         merge_end_approved = merge_end[approved_mask].astype(dtype)
-        approved = np.broadcast_to(
-            facts[PullRequestFacts.f.approved].values[None, :], result.shape,
-        )
+        approved = np.broadcast_to(facts[PullRequestFacts.f.approved][None, :], result.shape)
         result[approved_mask] = merge_end_approved - approved[approved_mask]
         not_last_review_mask = np.broadcast_to(
-            facts[PullRequestFacts.f.last_review].isnull().values[None, :], result.shape,
+            facts.isnull(PullRequestFacts.f.last_review)[None, :], result.shape,
         )
         last_review_mask = ~not_last_review_mask & not_approved_mask & closed_mask
         merge_end_last_reviewed = merge_end[last_review_mask].astype(dtype)
         last_review = np.broadcast_to(
-            facts[PullRequestFacts.f.last_review].values[None, :], result.shape,
+            facts[PullRequestFacts.f.last_review][None, :], result.shape,
         )
         result[last_review_mask] = merge_end_last_reviewed - last_review[last_review_mask]
         has_last_commit = np.broadcast_to(
-            facts[PullRequestFacts.f.last_commit].notnull().values[None, :], result.shape,
+            facts.notnull(PullRequestFacts.f.last_commit)[None, :], result.shape,
         )
         last_commit_mask = not_approved_mask & not_last_review_mask & has_last_commit & closed_mask
         merge_end_last_commit = merge_end[last_commit_mask].astype(dtype)
         last_commit = np.broadcast_to(
-            facts[PullRequestFacts.f.last_commit].values[None, :], result.shape,
+            facts[PullRequestFacts.f.last_commit][None, :], result.shape,
         )
         result[last_commit_mask] = merge_end_last_commit - last_commit[last_commit_mask]
         return result
@@ -415,16 +407,16 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         override_event_time: Optional[datetime] = None,
         override_event_indexes: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        released = facts[PullRequestFacts.f.released].values
+        released = facts[PullRequestFacts.f.released]
         released_mask = (min_times[:, None] <= released) & (released < max_times[:, None])
-        release_end = result.copy().astype(min_times.dtype)
+        release_end = result.astype(min_times.dtype)
         release_end[released_mask] = np.broadcast_to(released[None, :], result.shape)[
             released_mask
         ]
@@ -434,8 +426,8 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
             released_mask[:, override_event_indexes] = True
 
         result_mask = released_mask
-        result_mask[:, facts[PullRequestFacts.f.merged].isnull().values] = False
-        merged = np.broadcast_to(facts[PullRequestFacts.f.merged].values[None, :], result.shape)[
+        result_mask[:, facts.isnull(PullRequestFacts.f.merged)] = False
+        merged = np.broadcast_to(facts[PullRequestFacts.f.merged][None, :], result.shape)[
             result_mask
         ]
         release_end = release_end[result_mask]
@@ -468,17 +460,17 @@ class OpenTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         override_event_time: Optional[datetime] = None,
         override_event_indexes: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        closed = facts[PullRequestFacts.f.closed].values
+        closed = facts[PullRequestFacts.f.closed]
         closed_mask = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         closed = np.broadcast_to(closed[None, :], result.shape)[closed_mask]
-        opened = np.broadcast_to(facts[PullRequestFacts.f.created].values[None, :], result.shape)[
+        opened = np.broadcast_to(facts[PullRequestFacts.f.created][None, :], result.shape)[
             closed_mask
         ]
         result[closed_mask] = closed - opened
@@ -520,16 +512,16 @@ class CycleTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        released_indexes = np.nonzero(facts[PullRequestFacts.f.released].notnull().values)[0]
-        released = facts[PullRequestFacts.f.released].values[released_indexes]
+        released_indexes = np.nonzero(facts.notnull(PullRequestFacts.f.released))[0]
+        released = facts[PullRequestFacts.f.released][released_indexes]
         released_in_range = (min_times[:, None] <= released) & (released < max_times[:, None])
-        work_began = facts[PullRequestFacts.f.work_began].values
+        work_began = facts[PullRequestFacts.f.work_began]
         for result_dim, released_in_range_dim in zip(result, released_in_range):
             released_indexes_dim = released_indexes[released_in_range_dim]
             result_dim[released_indexes_dim] = (
@@ -610,7 +602,7 @@ class LiveCycleTimeCalculator(MetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -676,26 +668,26 @@ class AllCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        created_in_range_mask = facts[PullRequestFacts.f.created].values < max_times[:, None]
-        released = facts[PullRequestFacts.f.released].values
+        created_in_range_mask = facts[PullRequestFacts.f.created] < max_times[:, None]
+        released = facts[PullRequestFacts.f.released]
         released_in_range_mask = released >= min_times[:, None]
-        closed = facts[PullRequestFacts.f.closed].values
+        closed = facts[PullRequestFacts.f.closed]
         closed_in_range_mask = (closed >= min_times[:, None]) | (closed != closed)
         if not self.exclude_inactive:
-            merged_unreleased_mask = (
-                facts[PullRequestFacts.f.merged].values < min_times[:, None]
-            ) & (released != released)
+            merged_unreleased_mask = (facts[PullRequestFacts.f.merged] < min_times[:, None]) & (
+                released != released
+            )
         else:
             merged_unreleased_mask = np.array([False])
             # we should intersect each PR's activity days with [min_times, max_times).
             # the following is similar to ReviewedCalculator
             activity_mask = np.full((len(min_times), len(facts)), False)
-            activity_days = np.concatenate(facts[PullRequestFacts.f.activity_days].values).astype(
+            activity_days = np.concatenate(facts[PullRequestFacts.f.activity_days]).astype(
                 facts[PullRequestFacts.f.created].dtype,
             )
             activities_in_range = (min_times[:, None] <= activity_days) & (
@@ -703,7 +695,7 @@ class AllCounter(SumMetricCalculator[int]):
             )
             activity_offsets = np.zeros(len(facts) + 1, dtype=int)
             np.cumsum(
-                facts[PullRequestFacts.f.activity_days].apply(len).values,
+                nested_lengths(facts[PullRequestFacts.f.activity_days]),
                 out=activity_offsets[1:],
             )
             for activity_mask_dim, activities_in_range_dim in zip(
@@ -736,20 +728,19 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        result_mask = (
-            facts[PullRequestFacts.f.first_comment_on_first_review].notnull().values
-            & facts[PullRequestFacts.f.first_review_request].notnull().values
-        )
-        fc_on_fr = facts[PullRequestFacts.f.first_comment_on_first_review].values[result_mask]
+        result_mask = facts.notnull(
+            PullRequestFacts.f.first_comment_on_first_review,
+        ) & facts.notnull(PullRequestFacts.f.first_review_request)
+        fc_on_fr = facts[PullRequestFacts.f.first_comment_on_first_review][result_mask]
         fc_on_fr_in_range_mask = (min_times[:, None] <= fc_on_fr) & (fc_on_fr < max_times[:, None])
         result_indexes = np.nonzero(result_mask)[0]
-        first_review_request = facts[PullRequestFacts.f.first_review_request].values
+        first_review_request = facts[PullRequestFacts.f.first_review_request]
         for result_dim, fc_on_fr_in_range_mask_dim in zip(result, fc_on_fr_in_range_mask):
             result_indexes_dim = result_indexes[fc_on_fr_in_range_mask_dim]
             result_dim[result_indexes_dim] = (
@@ -790,12 +781,12 @@ class OpenedCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        created = facts[PullRequestFacts.f.created].values
+        created = facts[PullRequestFacts.f.created]
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
@@ -814,7 +805,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        review_timestamps = np.concatenate(facts[PullRequestFacts.f.reviews].values).astype(
+        review_timestamps = np.concatenate(facts[PullRequestFacts.f.reviews]).astype(
             facts[PullRequestFacts.f.created].dtype,
         )
         reviews_in_range = (min_times[:, None] <= review_timestamps) & (
@@ -822,7 +813,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
         )
         # we cannot sum `reviews_in_range` because there can be several reviews for the same PR
         review_offsets = np.zeros(len(facts) + 1, dtype=int)
-        np.cumsum(facts[PullRequestFacts.f.reviews].apply(len).values, out=review_offsets[1:])
+        np.cumsum(nested_lengths(facts[PullRequestFacts.f.reviews]), out=review_offsets[1:])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         for result_dim, reviews_in_range_dim in zip(result, reviews_in_range):
             # np.searchsorted aliases several reviews of the same PR to the right border of a
@@ -844,12 +835,12 @@ class MergedCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        merged = facts[PullRequestFacts.f.merged].values
+        merged = facts[PullRequestFacts.f.merged]
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         result[(min_times[:, None] <= merged) & (merged < max_times[:, None])] = 1
         return result
@@ -863,14 +854,14 @@ class RejectedCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        closed = facts[PullRequestFacts.f.closed].values
+        closed = facts[PullRequestFacts.f.closed]
         closed_in_range_mask = (min_times[:, None] <= closed) & (closed < max_times[:, None])
-        unmerged_mask = facts[PullRequestFacts.f.merged].isnull().values
+        unmerged_mask = facts.isnull(PullRequestFacts.f.merged)
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         result[closed_in_range_mask & unmerged_mask] = 1
         return result
@@ -884,12 +875,12 @@ class ClosedCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        closed = facts[PullRequestFacts.f.closed].values
+        closed = facts[PullRequestFacts.f.closed]
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         result[(min_times[:, None] <= closed) & (closed < max_times[:, None])] = 1
         return result
@@ -942,20 +933,20 @@ class DoneCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        released = facts[PullRequestFacts.f.released].values
+        released = facts[PullRequestFacts.f.released]
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         result[(min_times[:, None] <= released) & (released < max_times[:, None])] = 1
-        rejected_mask = facts[PullRequestFacts.f.closed].notnull().values & (
-            facts[PullRequestFacts.f.merged].isnull().values
-            | facts[PullRequestFacts.f.force_push_dropped].values
-            | facts[PullRequestFacts.f.release_ignored].values
+        rejected_mask = facts.notnull(PullRequestFacts.f.closed) & (
+            facts.isnull(PullRequestFacts.f.merged)
+            | facts[PullRequestFacts.f.force_push_dropped]
+            | facts[PullRequestFacts.f.release_ignored]
         )
-        closed = facts[PullRequestFacts.f.closed].values
+        closed = facts[PullRequestFacts.f.closed]
         result[(min_times[:, None] <= closed) & (closed < max_times[:, None]) & rejected_mask] = 1
         return result
 
@@ -986,7 +977,7 @@ class _ReviewedPlusNotReviewedCalculator(MetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -1024,13 +1015,13 @@ class SizeCalculatorMixin(MetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        sizes = np.repeat(facts[PullRequestFacts.f.size].values[None, :], len(min_times), axis=0)
-        created = facts[PullRequestFacts.f.created].values
+        sizes = np.repeat(facts[PullRequestFacts.f.size][None, :], len(min_times), axis=0)
+        created = facts[PullRequestFacts.f.created]
         sizes[~((min_times[:, None] <= created) & (created < max_times[:, None]))] = self.nan
         return sizes
 
@@ -1072,17 +1063,17 @@ class StagePendingDependencyCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         merged_mask, approved_mask, frr_mask = (
-            facts[c].notnull().values for c in ("merged", "approved", "first_review_request")
+            facts.notnull(c) for c in ("merged", "approved", "first_review_request")
         )
 
         stage_masks = np.zeros((len(min_times), len(facts), len(PendingStage)), self.dtype)
-        other = ~facts[PullRequestFacts.f.done].values
+        other = ~facts[PullRequestFacts.f.done]
         stage_masks[:, merged_mask & other, PendingStage.RELEASE] = True
         other &= ~merged_mask
         stage_masks[:, approved_mask & other, PendingStage.MERGE] = True
@@ -1103,7 +1094,7 @@ class BaseStagePendingCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -1146,7 +1137,7 @@ class JIRAMappingCalculator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -1154,7 +1145,7 @@ class JIRAMappingCalculator(SumMetricCalculator[int]):
         result = self._calcs[0].peek.copy()
         result[
             :,
-            ~nested_lengths(facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].values).astype(bool),
+            ~nested_lengths(facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS]).astype(bool),
         ] = self.nan
         return result
 
@@ -1221,13 +1212,13 @@ class AverageParticipantsCalculator(AverageMetricCalculator[np.float32]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.repeat(
-            facts[PullRequestFacts.f.participants].values[None, :].astype(self.dtype),
+            facts[PullRequestFacts.f.participants][None, :].astype(self.dtype),
             len(min_times),
             axis=0,
         )
@@ -1245,12 +1236,12 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        comments = facts[PullRequestFacts.f.review_comments].values
+        comments = facts[PullRequestFacts.f.review_comments]
         empty_mask = comments == 0
         comments = comments.astype(self.dtype)
         comments[empty_mask] = None
@@ -1278,12 +1269,12 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        lengths = facts[PullRequestFacts.f.reviews].map(len).values
+        lengths = nested_lengths(facts[PullRequestFacts.f.reviews])
         empty_mask = lengths == 0
         lengths = lengths.astype(self.dtype)
         lengths[empty_mask] = None
@@ -1302,13 +1293,13 @@ class AverageCommentsCalculator(AverageMetricCalculator[np.float32]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        regular_comments = facts[PullRequestFacts.f.regular_comments].values
-        review_comments = facts[PullRequestFacts.f.review_comments].values
+        regular_comments = facts[PullRequestFacts.f.regular_comments]
+        review_comments = facts[PullRequestFacts.f.review_comments]
         comments = regular_comments + review_comments
         empty_mask = review_comments == 0  # only reviewed PRs!
         comments = comments.astype(self.dtype)
@@ -1351,7 +1342,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -1378,17 +1369,17 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         if facts.empty:
             return result
         envs = np.array(self.environments, dtype="U")
-        fact_envs = facts[PullRequestFacts.f.environments].values
+        fact_envs = facts[PullRequestFacts.f.environments]
         all_envs = np.concatenate(fact_envs).astype("U", copy=False)
         if len(all_envs) == 0:
             return result
         all_finished = np.concatenate(
-            facts[PullRequestFacts.f.deployed].values,
+            facts[PullRequestFacts.f.deployed],
             dtype=facts[PullRequestFacts.f.created].dtype,
             casting="unsafe",
         ).astype("datetime64[s]", copy=False)
         all_conclusions = np.concatenate(
-            facts[PullRequestFacts.f.deployment_conclusions].values,
+            facts[PullRequestFacts.f.deployment_conclusions],
             dtype=np.int8,
             casting="unsafe",
         )
@@ -1477,7 +1468,7 @@ class DeploymentMetricBase(MetricCalculator[T]):
 
     def calc_deployed(
         self,
-        facts: Optional[pd.DataFrame] = None,
+        facts: Optional[md.DataFrame] = None,
         columns: Optional[tuple[npt.NDArray[np.timedelta64], npt.NDArray[int]]] = None,
     ) -> npt.NDArray[np.timedelta64]:
         """
@@ -1501,12 +1492,12 @@ class DeploymentMetricBase(MetricCalculator[T]):
                 )
             except AssertionError as e:
                 log = logging.getLogger(f"{metadata.__package__}.{type(self).__name__}")
-                all_envs = np.concatenate(facts[PullRequestFacts.f.environments].values)
+                all_envs = np.concatenate(facts[PullRequestFacts.f.environments])
                 mask = (
-                    np.concatenate(facts[PullRequestFacts.f.deployment_conclusions].values)
+                    np.concatenate(facts[PullRequestFacts.f.deployment_conclusions])
                     == DeploymentConclusion.SUCCESS
                 ) & (all_envs == self.environments[self.environment])
-                env_lengths = nested_lengths(facts[PullRequestFacts.f.environments].values)
+                env_lengths = nested_lengths(facts[PullRequestFacts.f.environments])
                 nnz_env_mask = env_lengths > 0
                 trimmed_env_lengths = env_lengths[nnz_env_mask]
                 env_offsets = np.zeros(len(trimmed_env_lengths), dtype=int)
@@ -1514,10 +1505,10 @@ class DeploymentMetricBase(MetricCalculator[T]):
                 dep_counts = np.add.reduceat(mask, env_offsets)
                 bad_deps_mask = dep_counts > 1
                 mask &= np.repeat(bad_deps_mask, trimmed_env_lengths)
-                pr_node_ids = facts[PullRequestFacts.f.node_id].values[
+                pr_node_ids = facts[PullRequestFacts.f.node_id][
                     np.flatnonzero(nnz_env_mask)[np.flatnonzero(bad_deps_mask)]
                 ]
-                affected_deps = np.concatenate(facts[PullRequestFacts.f.deployments].values)[mask]
+                affected_deps = np.concatenate(facts[PullRequestFacts.f.deployments])[mask]
                 pos = 0
                 for pr_node_id, step in zip(pr_node_ids, dep_counts[bad_deps_mask]):
                     log.error(
@@ -1528,10 +1519,7 @@ class DeploymentMetricBase(MetricCalculator[T]):
                     pos += step
                 raise e from None
             finished[indexes] = nnz_finished
-        columns = columns or (
-            facts[PullRequestFacts.f.merged].values,
-            facts[PullRequestFacts.f.node_id].values,
-        )
+        columns = columns or (facts[PullRequestFacts.f.merged], facts[PullRequestFacts.f.node_id])
         merged, pr_node_ids = columns
         mask = finished < merged
         if (contradictions := mask.sum()) > 0:
@@ -1559,7 +1547,7 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         override_event_time: Optional[datetime] = None,
@@ -1569,8 +1557,8 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
         finished = self.calc_deployed(facts)
         if override_event_time is not None:
             finished[override_event_indexes] = override_event_time
-        started = facts[PullRequestFacts.f.merged].values.copy()
-        released = facts[PullRequestFacts.f.released].values
+        started = facts[PullRequestFacts.f.merged].copy()
+        released = facts[PullRequestFacts.f.released]
         release_exists = released <= finished
         started[release_exists] = released[release_exists]
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])
@@ -1603,13 +1591,13 @@ class DeploymentPendingMarker(DeploymentMetricBase):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         finished = self.calc_deployed(facts)
-        repo_names = facts[PullRequestFacts.f.repository_full_name].values
+        repo_names = facts[PullRequestFacts.f.repository_full_name]
         if self.drop_logical:
             repo_names = drop_logical_in_array(repo_names)
         repo_mask = np.in1d(repo_names, self.repositories[self.environment])
@@ -1640,14 +1628,14 @@ class LeadDeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         finished = self.calc_deployed(facts)
-        work_began = facts[PullRequestFacts.f.work_began].values
+        work_began = facts[PullRequestFacts.f.work_began]
         delta = finished - work_began
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])
         result[finished_in_range] = np.broadcast_to(delta, result.shape)[finished_in_range]

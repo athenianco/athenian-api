@@ -1,7 +1,7 @@
 from typing import Collection, Dict, List, Sequence, Type, TypeVar
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 
 from athenian.api.internal.features.metric import Metric, MetricInt
 from athenian.api.internal.features.metric_calculator import (
@@ -69,13 +69,13 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[self.timestamp_column].astype(min_times.dtype, copy=False).values
+        column = facts[self.timestamp_column].astype(min_times.dtype, copy=False)
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         result[column_in_range] = 1
         return result
@@ -91,14 +91,14 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        topic_column = facts[self.topic_column].values
-        ts_column = facts[self.timestamp_column].values
+        topic_column = facts[self.topic_column]
+        ts_column = facts[self.timestamp_column]
         column_in_range = (min_times[:, None] <= ts_column) & (ts_column < max_times[:, None])
         for result_dim, column_in_range_dim in zip(result, column_in_range):
             result_dim[column_in_range_dim] = topic_column[column_in_range_dim]
@@ -142,12 +142,14 @@ class ActiveCounter(MetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.array:
-        column = facts[PushCommit.committed_date.name].dt.floor(freq="D").values
+        column = (
+            facts[PushCommit.committed_date.name].astype("datetime64[D]").astype("datetime64[us]")
+        )
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         timestamps = np.repeat(column[None, :], len(min_times), axis=0)
         result = timestamps.view(int)
@@ -167,7 +169,7 @@ class Active0Counter(AnyMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -226,20 +228,20 @@ class PRReviewedCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[NodePullRequestReview.submitted_at.name].values
+        column = facts[NodePullRequestReview.submitted_at.name]
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         duplicated = facts.duplicated(
             [
                 NodePullRequestReview.pull_request_node_id.name,
                 developer_identity_column,
             ],
-        ).values
+        )
         column_in_range[np.broadcast_to(duplicated[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result
@@ -261,15 +263,15 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[NodePullRequestReview.submitted_at.name].values
+        column = facts[NodePullRequestReview.submitted_at.name]
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
-        wrong_state = facts[NodePullRequestReview.state.name].values != self.state.value
+        wrong_state = facts[NodePullRequestReview.state.name] != self.state.value
         column_in_range[np.broadcast_to(wrong_state[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result
@@ -313,7 +315,7 @@ class WorkedCounter(AnyMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -327,11 +329,11 @@ class WorkedCounter(AnyMetricCalculator[int]):
 
 def group_actions_by_developers(
     devs: Sequence[Collection[str]],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> List[np.ndarray]:
     """Group developer actions by developer groups."""
     indexes = []
-    identities = df[developer_identity_column].values.astype("S")
+    identities = df[developer_identity_column].astype("S")
     for group in devs:
         if len(group) == 1:
             dev = next(iter(group))

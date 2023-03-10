@@ -4,9 +4,9 @@ from typing import Sequence
 
 from aiohttp import web
 import aiomcache
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.search_controller.common import (
@@ -159,11 +159,11 @@ async def _search_jira_issue_digests(
         unchecked_calc_ens = _build_pr_metrics_calculator(issues, search_filter, order_by)
         issues = _apply_order_by(issues, order_by, unchecked_calc_ens)
 
-    return [JIRAIssueDigest(id=issue_key) for issue_key in issues[Issue.key.name].values]
+    return [JIRAIssueDigest(id=issue_key) for issue_key in issues[Issue.key.name]]
 
 
 def _build_pr_metrics_calculator(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     search_filter: _SearchFilter,
     order_by: Sequence[SearchJIRAIssuesOrderByExpression],
 ) -> JIRAMetricCalculatorEnsemble | None:
@@ -175,10 +175,10 @@ def _build_pr_metrics_calculator(
 
 @sentry_span
 def _apply_order_by(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     order_by: Sequence[SearchJIRAIssuesOrderByExpression],
     unchecked_metric_calc: JIRAMetricCalculatorEnsemble | None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     assert order_by
     if not len(issues):
         return issues
@@ -220,16 +220,16 @@ class _OrderByIssueTrait(OrderByValues):
 
     FIELDS = [f.value for f in SearchJIRAIssuesOrderByIssueTrait]
 
-    def __init__(self, issues: pd.DataFrame):
+    def __init__(self, issues: md.DataFrame):
         self._issues = issues
 
     def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchJIRAIssuesOrderByIssueTrait.CREATED.value:
-            return self._issues[Issue.created.name].values
+            return self._issues[Issue.created.name]
         if expr.field == SearchJIRAIssuesOrderByIssueTrait.WORK_BEGAN.value:
             return resolve_work_began(
-                self._issues[AthenianIssue.work_began.name].values,
-                self._issues["prs_began"].values,
+                self._issues[AthenianIssue.work_began.name],
+                self._issues["prs_began"],
             )
         raise RuntimeError(f"Cannot order by jira issue trait {expr.field}")
 

@@ -18,9 +18,9 @@ from typing import (
 )
 
 import aiomcache
+import medvedi as md
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -75,7 +75,7 @@ class UnfreshPullRequestFactsFetcher:
         pr_jira_mapper: Optional[PullRequestJiraMapper],
         jira_entities: JIRAEntityToFetch | int,
         exclude_inactive: bool,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: Dict[str, str],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
@@ -194,7 +194,7 @@ class UnfreshPullRequestFactsFetcher:
         else:
 
             async def dummy_inactive_prs():
-                return pd.DataFrame()
+                return np.array([], dtype=int), np.array([], dtype=object)
 
             tasks.append(dummy_inactive_prs())
         (
@@ -212,21 +212,26 @@ class UnfreshPullRequestFactsFetcher:
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
         if on_prs_known is not None:
             on_prs_known(np.concatenate([done_node_ids, unique_unreleased_pr_node_ids]))
-        unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
+        unmerged_mask = unreleased_prs.isnull(PullRequest.merged_at.name)
         open_pr_authors = dict(
             zip(
                 unique_unreleased_pr_node_ids[unmerged_mask],
-                unreleased_prs[PullRequest.user_login.name].values[unmerged_mask],
+                unreleased_prs[PullRequest.user_login.name][unmerged_mask],
             ),
         )
         unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings,
         )
-        unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
-        merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
-        open_prs = unreleased_prs.index.take(np.flatnonzero(~merged_mask))
-        merged_prs = unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(
-            inactive_merged_prs,
+        unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0)
+        merged_mask = unreleased_prs.notnull(PullRequest.merged_at.name)
+        open_prs = unreleased_prs[[]].take(~merged_mask).index
+        merged_prs = md.join(
+            unreleased_prs[[]].take(merged_mask),
+            md.DataFrame(
+                dict(zip(unreleased_prs.index.names, inactive_merged_prs)),
+                index=unreleased_prs.index.names,
+            ),
+            how="outer",
         )
         del unreleased_prs
         tasks = [
@@ -292,7 +297,7 @@ class UnfreshPullRequestFactsFetcher:
         else:
             PullRequestJiraMapper.apply_empty_to_pr_facts(facts)
 
-        deps = pd.concat([released_deps, unreleased_deps])
+        deps = md.concat(released_deps, unreleased_deps)
         # there may be shared deployments in released_deps and unreleased_deps
         # the same way as in done_facts and merged_facts
         unique_dep_indexes = np.flatnonzero(~deps.index.duplicated())
@@ -347,7 +352,7 @@ class UnfreshPullRequestFactsFetcher:
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> pd.Index:
+    ) -> tuple[npt.NDArray[int], npt.NDArray[str]]:
         prs = await discover_inactive_merged_unreleased_prs(
             time_from,
             time_to,
@@ -362,7 +367,13 @@ class UnfreshPullRequestFactsFetcher:
             cache,
         )
         if not jira:
-            return pd.Index([(k, r) for k, val in prs.items() for r in val])
+            node_ids = []
+            repos = []
+            for k, val in prs.items():
+                for r in val:
+                    node_ids.append(k)
+                    repos.append(r)
+            return np.array(node_ids, dtype=int), np.array(repos, dtype=object)
         columns = [PullRequest.node_id, PullRequest.repository_full_name]
         query = await generate_jira_prs_query(
             [PullRequest.acc_id.in_(meta_ids), PullRequest.node_id.in_(prs)],
@@ -383,19 +394,20 @@ class UnfreshPullRequestFactsFetcher:
             ],
         )
         if not has_logical_repos:
-            return df.index
-        clones = [
-            (node_id, repo)
-            for node_id in df.index.get_level_values(0).values
-            for repo in prs[node_id]
-        ]
-        return pd.Index(clones)
+            return df.index.levels()
+        node_ids = []
+        repos = []
+        for node_id in df.index.get_level_values(0):
+            for repo in prs[node_id]:
+                node_ids.append(node_id)
+                repos.append(repo)
+        return np.array(node_ids, dtype=int), np.array(repos, dtype=object)
 
     @staticmethod
     @sentry_span
     def append_deployments(
         facts: PullRequestFactsMap,
-        deps: pd.DataFrame,
+        deps: md.DataFrame,
         log: logging.Logger,
     ) -> None:
         """Insert missing deployments info in the PR facts."""
@@ -406,14 +418,18 @@ class UnfreshPullRequestFactsFetcher:
         try:
             assert deps.index.is_unique
         except AssertionError as e:
-            log.error("duplicated deployments: %s", deps.index[deps.index.duplicated()].tolist())
+            duplicates = deps.index.duplicated()
+            levels = deps.index.levels()
+            log.error(
+                "duplicated deployments: %s",
+                [tuple(level[i] for level in levels) for i in duplicates],
+            )
             raise e from None
-        pr_node_ids = deps.index.get_level_values(0).values
-        repos = deps.index.get_level_values(1).values
-        names = deps.index.get_level_values(2).values
-        finisheds = deps[DeploymentNotification.finished_at.name].values.astype("datetime64[s]")
-        envs = deps[DeploymentNotification.environment.name].values.astype("U", copy=False)
-        conclusions = deps[DeploymentNotification.conclusion.name].values
+        pr_node_ids, repos, names = deps.index.levels()
+        finisheds = deps[DeploymentNotification.finished_at.name]
+        assert finisheds.dtype.kind == "M"
+        envs = deps[DeploymentNotification.environment.name].astype("U", copy=False)
+        conclusions = deps[DeploymentNotification.conclusion.name]
         # enums are very slow to use directly: DeploymentConclusion[conclusion]
         # this is an optimization that actually makes a big difference in the profile
         deployment_conclusion_cache = {c.name: c for c in DeploymentConclusion}

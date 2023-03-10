@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Collection, Dict, List, Sequence, Type, TypeVar
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 
 from athenian.api.internal.features.metric import MetricFloat, MetricInt, MetricTimeDelta
 from athenian.api.internal.features.metric_calculator import (
@@ -57,19 +57,17 @@ class DeploymentBinnedMetricCalculator(BinnedMetricCalculator):
 
 def group_deployments_by_repositories(
     repositories: Sequence[Collection[str]],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> List[np.ndarray]:
     """Group deployments by repository node IDs."""
     if len(repositories) == 0:
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(repositories)
-    df_repos = df[DeploymentFacts.f.repositories].values
+    df_repos = df[DeploymentFacts.f.repositories]
     df_repos_flat = np.concatenate(df_repos)
     # DEV-4112 exclude empty deployments
-    df_commits = np.concatenate(
-        df[DeploymentFacts.f.commits_overall].values, dtype=int, casting="unsafe",
-    )
+    df_commits = np.concatenate(df[DeploymentFacts.f.commits_overall], dtype=int, casting="unsafe")
     df_repos_flat[df_commits == 0] = ""
 
     offsets = np.zeros(len(df), dtype=int)
@@ -100,7 +98,7 @@ def group_deployments_by_repositories(
 
 def group_deployments_by_participants(
     participants: List[ReleaseParticipants],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> List[np.ndarray]:
     """Group deployments by participants."""
     if len(participants) == 0:
@@ -116,7 +114,7 @@ def group_deployments_by_participants(
             DeploymentFacts.f.release_authors,
         ],
     ):
-        values = df[col].values
+        values = df[col]
         offsets = np.zeros(len(values) + 1, dtype=int)
         lengths = nested_lengths(values)
         np.cumsum(lengths, out=offsets[1:])
@@ -139,14 +137,14 @@ def group_deployments_by_participants(
 
 def group_deployments_by_environments(
     environments: List[List[str]],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> List[np.ndarray]:
     """Group deployments by environments."""
     if len(environments) == 0:
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(environments)
-    df_envs = df[DeploymentNotification.environment.name].values.astype("U", copy=False)
+    df_envs = df[DeploymentNotification.environment.name].astype("U", copy=False)
     unique_envs, imap = np.unique(np.concatenate(environments), return_inverse=True)
     result = []
     if len(unique_envs) <= len(environments):
@@ -171,13 +169,13 @@ class DeploymentsCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        deployed = facts[DeploymentNotification.finished_at.name].values
+        deployed = facts[DeploymentNotification.finished_at.name]
         result[(min_times[:, None] <= deployed) & (deployed < max_times[:, None])] = 1
         return result
 
@@ -190,15 +188,15 @@ class SuccessfulDeploymentsCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        deployed = facts[DeploymentNotification.finished_at.name].values.copy()
+        deployed = facts[DeploymentNotification.finished_at.name].copy()
         unsuccessful = (
-            facts[DeploymentNotification.conclusion.name].values
+            facts[DeploymentNotification.conclusion.name]
             != DeploymentNotification.CONCLUSION_SUCCESS
         )
         deployed[unsuccessful] = np.datetime64("NaT")
@@ -214,15 +212,15 @@ class FailedDeploymentsCounter(SumMetricCalculator[int]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        deployed = facts[DeploymentNotification.finished_at.name].values.copy()
+        deployed = facts[DeploymentNotification.finished_at.name].copy()
         unfailed = (
-            facts[DeploymentNotification.conclusion.name].values
+            facts[DeploymentNotification.conclusion.name]
             != DeploymentNotification.CONCLUSION_FAILURE
         )
         deployed[unfailed] = np.datetime64("NaT")
@@ -240,16 +238,16 @@ class DurationCalculator(AverageMetricCalculator[datetime]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values.copy()
+        started = facts[DeploymentNotification.started_at.name]
+        finished = facts[DeploymentNotification.finished_at.name].copy()
         cancelled = (
-            facts[DeploymentNotification.conclusion.name].values
+            facts[DeploymentNotification.conclusion.name]
             == DeploymentNotification.CONCLUSION_CANCELLED
         )
         durations = finished - started
@@ -269,16 +267,16 @@ class SuccessfulDurationCalculator(AverageMetricCalculator[datetime]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values.copy()
+        started = facts[DeploymentNotification.started_at.name]
+        finished = facts[DeploymentNotification.finished_at.name].copy()
         unsuccessful = (
-            facts[DeploymentNotification.conclusion.name].values
+            facts[DeploymentNotification.conclusion.name]
             != DeploymentNotification.CONCLUSION_SUCCESS
         )
         durations = finished - started
@@ -298,16 +296,16 @@ class FailedDurationCalculator(AverageMetricCalculator[datetime]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values.copy()
+        started = facts[DeploymentNotification.started_at.name]
+        finished = facts[DeploymentNotification.finished_at.name].copy()
         unfailed = (
-            facts[DeploymentNotification.conclusion.name].values
+            facts[DeploymentNotification.conclusion.name]
             != DeploymentNotification.CONCLUSION_FAILURE
         )
         durations = finished - started
@@ -333,15 +331,15 @@ class ItemsMixin:
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         agg = self.agg
-        items = np.fromiter((agg(v) for v in facts[self.dimension].values), int, len(facts))
-        deployed = facts[DeploymentNotification.finished_at.name].values
+        items = np.fromiter((agg(v) for v in facts[self.dimension]), int, len(facts))
+        deployed = facts[DeploymentNotification.finished_at.name]
         mask = (min_times[:, None] <= deployed) & (deployed < max_times[:, None])
         result[mask] = np.broadcast_to(items[None, :], result.shape)[mask]
         return result

@@ -1,8 +1,8 @@
 from datetime import timezone
 from typing import Collection
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 from sqlalchemy import sql
 
 from athenian.api.async_utils import read_sql_query
@@ -10,7 +10,7 @@ from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, insert_or_ig
 from athenian.api.models.precomputed.models import GitHubRebasedPullRequest
 
 
-def drop_undead_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+def drop_undead_duplicates(df: md.DataFrame) -> md.DataFrame:
     """Remove duplicate matches of rebased PRs according to the time heuristic."""
     df.sort_values(
         [
@@ -29,7 +29,7 @@ async def load_undead_prs(
     suspects: Collection[int],
     account: int,
     pdb: Database,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Fetch rebased PRs that are known to exist in the new DAG."""
     df = await read_sql_query(
         sql.select(GitHubRebasedPullRequest).where(
@@ -40,9 +40,9 @@ async def load_undead_prs(
         GitHubRebasedPullRequest,
     )
     if pdb.url.dialect == "sqlite":
-        df[GitHubRebasedPullRequest.acc_id.name] = df[
-            GitHubRebasedPullRequest.acc_id.name
-        ].values.astype(np.int32)
+        df[GitHubRebasedPullRequest.acc_id.name] = df[GitHubRebasedPullRequest.acc_id.name].astype(
+            np.int32,
+        )
     df = drop_undead_duplicates(df)
     add_pdb_hits(pdb, "dead_prs", len(df))
     add_pdb_misses(pdb, "dead_prs", len(suspects) - len(df))
@@ -50,7 +50,7 @@ async def load_undead_prs(
 
 
 async def store_undead_prs(
-    df: pd.DataFrame,
+    df: md.DataFrame,
     account: int,
     pdb: Database,
 ):
@@ -61,11 +61,11 @@ async def store_undead_prs(
             pr_node_id=pr_node_id,
             matched_merge_commit_id=matched_merge_commit_id,
             matched_merge_commit_sha=matched_merge_commit_sha.decode(),
-            matched_merge_commit_committed_date=pd.Timestamp(
-                matched_merge_commit_committed_date, tzinfo=timezone.utc,
+            matched_merge_commit_committed_date=matched_merge_commit_committed_date.item().replace(
+                tzinfo=timezone.utc,
             ),
-            matched_merge_commit_pushed_date=pd.Timestamp(
-                matched_merge_commit_pushed_date, tzinfo=timezone.utc,
+            matched_merge_commit_pushed_date=matched_merge_commit_pushed_date.item().replace(
+                tzinfo=timezone.utc,
             )
             if matched_merge_commit_pushed_date == matched_merge_commit_pushed_date
             else None,
@@ -78,12 +78,12 @@ async def store_undead_prs(
             matched_merge_commit_sha,
             matched_merge_commit_committed_date,
             matched_merge_commit_pushed_date,
-        ) in zip(
-            df[GitHubRebasedPullRequest.pr_node_id.name].values,
-            df[GitHubRebasedPullRequest.matched_merge_commit_id.name].values,
-            df[GitHubRebasedPullRequest.matched_merge_commit_sha.name].values,
-            df[GitHubRebasedPullRequest.matched_merge_commit_committed_date.name].values,
-            df[GitHubRebasedPullRequest.matched_merge_commit_pushed_date.name].values,
+        ) in df.iterrows(
+            GitHubRebasedPullRequest.pr_node_id.name,
+            GitHubRebasedPullRequest.matched_merge_commit_id.name,
+            GitHubRebasedPullRequest.matched_merge_commit_sha.name,
+            GitHubRebasedPullRequest.matched_merge_commit_committed_date.name,
+            GitHubRebasedPullRequest.matched_merge_commit_pushed_date.name,
         )
     ]
     await insert_or_ignore(GitHubRebasedPullRequest, values, "store_undead_prs", pdb)

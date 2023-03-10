@@ -19,7 +19,6 @@ from athenian.api.defer import enable_defer
 from athenian.api.experiments.aggregates.models import Base, PullRequestEvent, PullRequestStatus
 from athenian.api.experiments.aggregates.typing_utils import PullRequestsCollection
 from athenian.api.experiments.aggregates.utils import get_accounts_and_repos
-from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.github.pull_request_filter import fetch_pull_requests
 from athenian.api.internal.miners.types import PRParticipationKind, PullRequestListItem
@@ -48,7 +47,6 @@ async def refresh_aggregates(
     freshness_threshold_seconds: int = DEFAULT_FRESHNESS_THRESHOLD_SECONDS,
 ) -> None:
     """Refresh aggregates metrics for the provided accounts."""
-    patch_pandas()
     enable_defer(False)
     log.info("Starting refreshing aggregates...")
     async with _get_db_conns(sdb_conn, mdb_conn, pdb_conn, adb_conn) as conns:

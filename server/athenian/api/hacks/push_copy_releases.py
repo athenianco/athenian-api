@@ -13,7 +13,6 @@ from athenian.api.__main__ import check_schema_versions, setup_context
 from athenian.api.async_utils import gather
 from athenian.api.db import Database, insert_or_ignore, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer
-from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
@@ -65,7 +64,6 @@ def _parse_args():
 def main():
     """Go away linter."""
     athenian.api.is_testing = True
-    patch_pandas()
 
     log = logging.getLogger("push_copy_releases")
     args = _parse_args()
@@ -129,13 +127,13 @@ def main():
         log.info("Pushing %d releases", len(releases))
         now = datetime.now(timezone.utc)
         for name, sha, commit_id, published_at, url, author, repo_id in zip(
-            releases[Release.name.name].values,
-            releases[Release.sha.name].values,
-            releases[Release.commit_id.name].values,
+            releases[Release.name.name],
+            releases[Release.sha.name],
+            releases[Release.commit_id.name],
             releases[Release.published_at.name],
-            releases[Release.url.name].values,
-            releases[Release.author.name].values,
-            releases[Release.repository_node_id.name].values,
+            releases[Release.url.name],
+            releases[Release.author.name],
+            releases[Release.repository_node_id.name],
         ):
             inserted.append(
                 ReleaseNotification(

@@ -5,6 +5,7 @@ import warnings
 
 import aiomcache
 from dateutil.rrule import MONTHLY, rrule
+from medvedi.accelerators import in1d_str
 import numpy as np
 
 from athenian.api.cache import cached, short_term_exptime
@@ -20,7 +21,6 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.object_arrays import objects_to_pyunicode_bytes
 from athenian.api.tracing import sentry_span
-from athenian.api.unordered_unique import in1d_str
 
 
 @sentry_span
@@ -83,7 +83,7 @@ async def filter_check_runs(
     )
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
-    suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values
+    suite_statuses = df_check_runs[CheckRun.check_suite_status.name]
     completed = np.flatnonzero(
         in1d_str(suite_statuses, np.array([b"COMPLETED", b"SUCCESS", b"FAILURE"], dtype="S")),
     )
@@ -93,9 +93,9 @@ async def filter_check_runs(
     del suite_statuses, completed
     df_check_runs.sort_values(CheckRun.started_at.name, inplace=True, ascending=False)
 
-    repocol = df_check_runs[CheckRun.repository_full_name.name].values
+    repocol = df_check_runs[CheckRun.repository_full_name.name]
     repocol_bytes = objects_to_pyunicode_bytes(repocol)
-    crnamecol = df_check_runs[CheckRun.name.name].values
+    crnamecol = df_check_runs[CheckRun.name.name]
     crnamecol_bytes = objects_to_pyunicode_bytes(crnamecol)
 
     group_keys = np.char.add(np.char.add(repocol_bytes, b"|"), crnamecol_bytes)
@@ -105,11 +105,11 @@ async def filter_check_runs(
     unique_repos = repocol[first_encounters]
     unique_crnames = crnamecol[first_encounters]
 
-    started_ats = df_check_runs[CheckRun.started_at.name].values
+    started_ats = df_check_runs[CheckRun.started_at.name]
     last_execution_times = started_ats[first_encounters].astype("datetime64[s]")
-    last_execution_urls = df_check_runs[CheckRun.url.name].values[first_encounters]
+    last_execution_urls = df_check_runs[CheckRun.url.name][first_encounters]
 
-    suitecol = df_check_runs[CheckRun.check_suite_node_id.name].values
+    suitecol = df_check_runs[CheckRun.check_suite_node_id.name]
     unique_suites, run_counts = np.unique(suitecol, return_counts=True)
     suite_blocks = np.array(
         np.split(np.argsort(suitecol), np.cumsum(run_counts)[:-1]), dtype=object,
@@ -124,21 +124,21 @@ async def filter_check_runs(
         unique_run_counts, group_counts * unique_run_counts,
     )
 
-    no_pr_mask = df_check_runs[CheckRun.pull_request_node_id.name].values == 0
+    no_pr_mask = df_check_runs[CheckRun.pull_request_node_id.name] == 0
     prs_inverse_cr_map = inverse_cr_map.copy()
     prs_inverse_cr_map[no_pr_mask] = -1
 
-    statuscol = df_check_runs[CheckRun.status.name].values
-    conclusioncol = df_check_runs[CheckRun.conclusion.name].values
-    check_suite_conclusions = df_check_runs[CheckRun.check_suite_conclusion.name].values
+    statuscol = df_check_runs[CheckRun.status.name]
+    conclusioncol = df_check_runs[CheckRun.conclusion.name]
+    check_suite_conclusions = df_check_runs[CheckRun.check_suite_conclusion.name]
     success_mask, failure_mask, skipped_mask = calculate_check_run_outcome_masks(
         statuscol, conclusioncol, check_suite_conclusions, True, True, True,
     )
-    commitscol = df_check_runs[CheckRun.commit_node_id.name].values
+    commitscol = df_check_runs[CheckRun.commit_node_id.name]
 
     started_ats = started_ats.astype("datetime64[s]")
-    completed_ats = df_check_runs[CheckRun.completed_at.name].values.astype(started_ats.dtype)
-    critical_mask = completed_ats == df_check_runs[check_suite_completed_column].values.astype(
+    completed_ats = df_check_runs[CheckRun.completed_at.name].astype(started_ats.dtype)
+    critical_mask = completed_ats == df_check_runs[check_suite_completed_column].astype(
         started_ats.dtype,
     )
     elapseds = completed_ats - started_ats

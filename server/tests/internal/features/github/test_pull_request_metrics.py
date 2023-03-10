@@ -4,10 +4,10 @@ from functools import partial
 import itertools
 from typing import Optional, Sequence, Tuple
 
+import medvedi as md
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
-from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import insert, select
 
@@ -86,7 +86,7 @@ from athenian.api.models.web import Granularity, PullRequestMetricID
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import generate_pr_samples, has_memcached
 from tests.testutils.factory.miners import PullRequestFactsFactory
-from tests.testutils.time import dt, dt64arr_ns, dt64arr_s
+from tests.testutils.time import dt, dt64arr_s, dt64arr_us
 
 
 def random_dropout(pr, prob):
@@ -132,10 +132,10 @@ def random_dropout(pr, prob):
 def test_pull_request_metrics_2d(pr_samples, cls):  # noqa: F811
     calc = cls(quantiles=(0, 1))
     time_froms = np.array(
-        [datetime.utcnow() - timedelta(days=i * 200) for i in range(1, 3)], dtype="datetime64[ns]",
+        [datetime.utcnow() - timedelta(days=i * 200) for i in range(1, 3)], dtype="datetime64[us]",
     )
     time_tos = np.array(
-        [datetime.utcnow(), datetime.utcnow() - timedelta(days=100)], dtype="datetime64[ns]",
+        [datetime.utcnow(), datetime.utcnow() - timedelta(days=100)], dtype="datetime64[us]",
     )
     prs = df_from_structs(random_dropout(pr, 0.5) for pr in pr_samples(1000))
     r = calc._analyze(prs, time_froms, time_tos)
@@ -159,7 +159,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F81
     time_from = datetime.utcnow() - timedelta(days=10000)
     time_to = datetime.utcnow()
     prs = df_from_structs(random_dropout(pr, 0.5) for pr in pr_samples(1000))
-    r = calc._analyze(prs, dt64arr_ns(time_from), dt64arr_ns(time_to))
+    r = calc._analyze(prs, dt64arr_us(time_from), dt64arr_us(time_to))
     assert (r[~np.isnat(r)] >= np.array(0, dtype=r.dtype)).all()
 
 
@@ -168,7 +168,7 @@ def test_pull_request_metrics_empty_input(pr_samples):
     df = df_from_structs(pr_samples(1)).iloc[:0]
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
-    calc(df, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(df)), True))
+    calc(df, dt64arr_us(time_from), dt64arr_us(time_to), None, np.full((1, len(df)), True))
     assert len(calc.values) == 1
     assert len(calc.values[0]) == 1
     assert not calc.values[0][0].exists
@@ -180,8 +180,8 @@ def test_pull_request_metrics_empty_group(pr_samples, fill_val):
     df = df_from_structs(pr_samples(100))
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
-    time_from = np.concatenate([dt64arr_ns(time_from)] * 2)
-    time_to = np.concatenate([dt64arr_ns(time_to)] * 2)
+    time_from = np.concatenate([dt64arr_us(time_from)] * 2)
+    time_to = np.concatenate([dt64arr_us(time_to)] * 2)
     calc(df, time_from, time_to, 1, np.full((1, len(df)), fill_val))
     assert len(calc.values) == 1
     assert len(calc.values[0]) == 1
@@ -208,7 +208,7 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
         assert calc._analyze(
-            df_from_structs([pr]), dt64arr_ns(time_from), dt64arr_ns(time_to),
+            df_from_structs([pr]), dt64arr_us(time_from), dt64arr_us(time_to),
         ) == np.array([None])
 
         time_from = datetime.utcnow()
@@ -217,7 +217,7 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
         assert calc._analyze(
-            df_from_structs([pr]), dt64arr_ns(time_from), dt64arr_ns(time_to),
+            df_from_structs([pr]), dt64arr_us(time_from), dt64arr_us(time_to),
         ) == np.array([None])
 
 
@@ -260,7 +260,7 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
     prs = df_from_structs(pr for pr in pr_samples(100) if pr.closed and pr.closed < time_to)
-    calc(prs, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(prs)), True))
+    calc(prs, dt64arr_us(time_from), dt64arr_us(time_to), None, np.full((1, len(prs)), True))
     assert len(prs) > 0
     m = calc.values[0][0]
     assert m.exists
@@ -273,7 +273,7 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
     time_from = datetime.utcnow() - timedelta(days=365 * 3)
     time_to = time_from + timedelta(days=7)
     prs = df_from_structs(pr_samples(100))
-    args = prs, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(prs)), True)
+    args = prs, dt64arr_us(time_from), dt64arr_us(time_to), None, np.full((1, len(prs)), True)
     calc_closed(*args)
     calc_released(*args)
     assert calc_closed.values[0][0].exists
@@ -291,7 +291,7 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
     prs = df_from_structs(pr_samples(1000))
-    args = prs, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(prs)), True)
+    args = prs, dt64arr_us(time_from), dt64arr_us(time_to), None, np.full((1, len(prs)), True)
     for dep in calc._calcs:
         dep(*args)
     calc(*args)
@@ -330,8 +330,8 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
             df = df_from_structs([pr])
             args = (
                 df,
-                dt64arr_ns(time_from),
-                dt64arr_ns(time_to),
+                dt64arr_us(time_from),
+                dt64arr_us(time_to),
                 None,
                 np.full((1, len(df)), True),
             )
@@ -354,8 +354,8 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
         if pr.closed and pr.closed > time_to > pr.created >= time_from:
             args = (
                 df_from_structs([pr]),
-                dt64arr_ns(time_from),
-                dt64arr_ns(time_to),
+                dt64arr_us(time_from),
+                dt64arr_us(time_to),
                 None,
                 np.array([[True]]),
             )
@@ -390,7 +390,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
         quantiles=(0, 1),
     )
     prs = df_from_structs(pr_samples(1000))
-    time_tos = np.full(2, datetime.utcnow(), "datetime64[ns]")
+    time_tos = np.full(2, datetime.utcnow(), "datetime64[us]")
     time_froms = time_tos - np.timedelta64(timedelta(days=10000))
     args = prs, time_froms, time_tos, None, np.full((1, len(prs)), True)
     for dep1 in calc._calcs:
@@ -440,7 +440,7 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
     )
     calc = cls(*calc_q._calcs, quantiles=(0, 0.95))
     prs = df_from_structs(pr_samples(1000))
-    time_to = np.concatenate([dt64arr_ns(datetime.utcnow())] * 2)
+    time_to = np.concatenate([dt64arr_us(datetime.utcnow())] * 2)
     time_from = time_to - np.array([timedelta(days=10000)], dtype="timedelta64")
     args = prs, time_from, time_to, 1, np.full((1, len(prs)), True)
     for dep1 in calc._calcs:
@@ -1123,8 +1123,8 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
         prs = df_from_structs(pr_samples(100))
         args = [
             prs,
-            dt64arr_ns(time_from),
-            dt64arr_ns(time_to),
+            dt64arr_us(time_from),
+            dt64arr_us(time_to),
             None,
             np.full((1, len(prs)), True),
         ]
@@ -1161,7 +1161,7 @@ def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
     ensemble(
-        df_from_structs(pr_samples(1)), dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(1)],
+        df_from_structs(pr_samples(1)), dt64arr_us(time_from), dt64arr_us(time_to), [np.arange(1)],
     )
     assert ensemble.values() == {}
 
@@ -1278,7 +1278,7 @@ async def test_pr_facts_calculator_jira(
     ]
     facts = await pr_facts_calculator(*args)
     await wait_deferred()
-    assert facts[PullRequestFacts.f.released].notnull().sum() == 235
+    assert facts.notnull(PullRequestFacts.f.released).sum() == 235
     args[5] = JIRAFilter(
         account=1,
         projects=frozenset(("10003", "10009")),
@@ -1286,16 +1286,16 @@ async def test_pr_facts_calculator_jira(
         custom_projects=False,
     )
     facts = await pr_facts_calculator(*args)
-    assert facts[PullRequestFacts.f.released].notnull().sum() == 16
+    assert facts.notnull(PullRequestFacts.f.released).sum() == 16
 
     args[5] = JIRAFilter.empty()
     args[-1] = JIRAEntityToFetch.ISSUES
     facts = await pr_facts_calculator(*args)
 
-    assert facts.jira_ids.astype(bool).sum() == 60
+    assert facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].astype(bool).sum() == 60
     await wait_deferred()
     facts = await pr_facts_calculator_cache_only(*args)
-    assert facts.jira_ids.astype(bool).sum() == 60
+    assert facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].astype(bool).sum() == 60
 
 
 @with_defer
@@ -1328,12 +1328,20 @@ async def test_pr_facts_calculator_jira_everything(
         JIRAEntityToFetch.EVERYTHING(),
     ]
     facts = await pr_facts_calculator(*args)
-    pr_fact = facts[facts.node_id == 163209]
-    assert facts.jira_ids.astype(bool).sum() == 60
-    assert_array_equal(pr_fact.jira_ids.values[0], np.array(["DEV-678"]))
-    assert_array_equal(pr_fact.jira_projects.values[0], np.array([b"10009"]))
-    assert_array_equal(pr_fact.jira_types.values[0], np.array([b"10024"]))
-    assert_array_equal(pr_fact.jira_priorities.values[0], np.array([b"5"]))
+    pr_fact = facts.take(facts[PullRequestFacts.f.node_id] == 163209)
+    assert facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS].astype(bool).sum() == 60
+    assert_array_equal(
+        pr_fact[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][0], np.array(["DEV-678"]),
+    )
+    assert_array_equal(
+        pr_fact[PullRequestFacts.INDIRECT_FIELDS.JIRA_PROJECTS][0], np.array([b"10009"]),
+    )
+    assert_array_equal(
+        pr_fact[PullRequestFacts.INDIRECT_FIELDS.JIRA_TYPES][0], np.array([b"10024"]),
+    )
+    assert_array_equal(
+        pr_fact[PullRequestFacts.INDIRECT_FIELDS.JIRA_PRIORITIES][0], np.array([b"5"]),
+    )
 
 
 @with_defer
@@ -1382,9 +1390,9 @@ async def test_pr_facts_calculator_event_releases(
     ]
     facts = await pr_facts_calculator(*args)
     await wait_deferred()
-    assert facts[PullRequestFacts.f.released].notnull().sum() == 381
+    assert facts.notnull(PullRequestFacts.f.released).sum() == 381
     facts = await pr_facts_calculator(*args)
-    assert facts[PullRequestFacts.f.released].notnull().sum() == 381
+    assert facts.notnull(PullRequestFacts.f.released).sum() == 381
 
 
 @with_defer
@@ -1437,15 +1445,13 @@ class QuantileTestingMetric(MetricCalculator):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
         """Calculate the actual state update."""
-        return np.repeat(
-            (facts["released"] - facts["created"]).values[None, :], len(min_times), axis=0,
-        )
+        return np.repeat((facts["released"] - facts["created"])[None, :], len(min_times), axis=0)
 
     def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
         """Calculate the actual current metric value."""
@@ -1456,8 +1462,8 @@ def test_quantiles(pr_samples):
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
     samples = df_from_structs(pr_samples(200))
-    min_times = dt64arr_ns(time_from)
-    max_times = dt64arr_ns(time_to)
+    min_times = dt64arr_us(time_from)
+    max_times = dt64arr_us(time_to)
     groups = [np.arange(len(samples))]
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 1), quantile_stride=0)
     ensemble(samples, min_times, max_times, groups)
@@ -1482,8 +1488,8 @@ def test_counter_quantiles(pr_samples):
     c_base = WorkInProgressTimeCalculator(quantiles=quantiles)
     c_with = WorkInProgressCounterWithQuantiles(c_base, quantiles=quantiles)
     c_without = WorkInProgressCounter(c_base, quantiles=quantiles)
-    min_times = dt64arr_ns(time_from)
-    max_times = dt64arr_ns(time_to)
+    min_times = dt64arr_us(time_from)
+    max_times = dt64arr_us(time_to)
     qmins, qmaxs = MetricCalculatorEnsemble.compose_quantile_time_intervals(
         min_times[0], max_times[0], 73,
     )
@@ -1505,7 +1511,7 @@ async def real_pr_samples(
     pr_facts_calculator_factory,
     prefixer,
     bots,
-) -> Tuple[datetime, datetime, pd.DataFrame]:
+) -> Tuple[datetime, datetime, md.DataFrame]:
     pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -1701,7 +1707,7 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
         environments=["staging", "mirror", "production"],
     )
     time_from, time_to, samples = real_pr_samples
-    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    ensemble(samples, dt64arr_us(time_from), dt64arr_us(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [
         (PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
@@ -1729,7 +1735,7 @@ async def test_pull_request_deployment_stage_counts(precomputed_deployments, rea
         environments=["staging", "mirror", "production"],
     )
     time_from, time_to, samples = real_pr_samples
-    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    ensemble(samples, dt64arr_us(time_from), dt64arr_us(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [
         (PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 513]),
@@ -1756,7 +1762,7 @@ async def test_pull_request_cycle_deployment_time(
         environments=["staging", "mirror", "production"],
     )
     time_from, time_to, samples = real_pr_samples
-    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    ensemble(samples, dt64arr_us(time_from), dt64arr_us(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [
         (
@@ -1780,7 +1786,7 @@ async def test_pull_request_deployment_time_with_failed(
         environments=["staging", "production"],
     )
     time_from, time_to, samples = real_pr_samples
-    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    ensemble(samples, dt64arr_us(time_from), dt64arr_us(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     assert (
         values[PullRequestMetricID.PR_DEPLOYMENT_TIME][0][0].value
@@ -1790,7 +1796,7 @@ async def test_pull_request_deployment_time_with_failed(
 
 class TestGroupPRsByParticipants:
     def test_multiple_groups(self) -> None:
-        items = pd.DataFrame({"author": [20, 30], "values": [100, 200]})
+        items = md.DataFrame({"author": [20, 30], "values": [100, 200]})
 
         participants = [
             {PRParticipationKind.AUTHOR: {10, 30}},
@@ -1804,7 +1810,7 @@ class TestGroupPRsByParticipants:
         assert np.array_equal(res[1], [0])
 
     def test_single_participants_group_items_only_specified_participants(self) -> None:
-        items = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        items = md.DataFrame({"a": [1, 2], "b": [3, 4]})
         participants = [{PRParticipationKind.AUTHOR: {2}}]
 
         res = group_prs_by_participants(participants, True, items)
@@ -1813,7 +1819,7 @@ class TestGroupPRsByParticipants:
         assert np.array_equal(res[0], [0, 1])
 
     def test_single_participants_group(self) -> None:
-        items = pd.DataFrame({"author": [1, 2, 2], "b": [3, 3, 3]})
+        items = md.DataFrame({"author": [1, 2, 2], "b": [3, 3, 3]})
         participants = [{PRParticipationKind.AUTHOR: {2}}]
 
         res = group_prs_by_participants(participants, False, items)
@@ -1821,14 +1827,14 @@ class TestGroupPRsByParticipants:
         assert np.array_equal(res[0], [1, 2])
 
     def test_no_participant_groups(self) -> None:
-        items = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        items = md.DataFrame({"a": [1, 2], "b": [3, 4]})
         res = group_prs_by_participants([], False, items)
         # all rows are selected with no groups
         assert len(res) == 1
         assert np.array_equal(res[0], [0, 1])
 
     def test_empty_items_multiple_participant_groups(self) -> None:
-        items = pd.DataFrame()
+        items = md.DataFrame()
         participants = [
             {PRParticipationKind.AUTHOR: {1, 3}},
             {PRParticipationKind.AUTHOR: {2}},
@@ -1843,8 +1849,8 @@ class TestGroupPRsByParticipants:
 class TestWorkInProgressTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 2, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 2, 1))
 
         wip_time_calc = WorkInProgressTimeCalculator(quantiles=quantiles)
         calc = WorkInProgressTimeBelowThresholdRatio(
@@ -1875,8 +1881,10 @@ class TestWorkInProgressTimeBelowThresholdRatio:
         **kwargs,
     ) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            work_began=pd.Timestamp(work_began),
-            first_review_request=first_review_request,
+            work_began=np.datetime64(work_began.replace(tzinfo=None), "s"),
+            first_review_request=np.datetime64(first_review_request.replace(tzinfo=None), "s")
+            if first_review_request is not None
+            else None,
             **kwargs,
         )
 
@@ -1887,8 +1895,8 @@ class TestReviewedCalculator:
 
         calc = ReviewedCalculator(quantiles=[0, 1])
 
-        min_times = dt64arr_ns(dt(2001, 1, 1))
-        max_times = dt64arr_ns(dt(2135, 1, 1))
+        min_times = dt64arr_us(dt(2001, 1, 1))
+        max_times = dt64arr_us(dt(2135, 1, 1))
 
         calc(prs, min_times, max_times, None, np.full((1, len(prs)), True))
 
@@ -1910,8 +1918,8 @@ class TestReviewedRatioCalculator:
             reviewed_calc, rev_non_rev_calc, quantiles=(0, 1),
         )
 
-        min_times = dt64arr_ns(dt(2001, 1, 1))
-        max_times = dt64arr_ns(dt(2135, 1, 1))
+        min_times = dt64arr_us(dt(2001, 1, 1))
+        max_times = dt64arr_us(dt(2135, 1, 1))
         calc_args = (prs, min_times, max_times, None, np.full((1, len(prs)), True))
 
         reviewed_calc(*calc_args)
@@ -1932,23 +1940,23 @@ class TestReviewedRatioCalculator:
 class TestReviewTimeCalculator:
     def test_base(self) -> None:
         calc = ReviewTimeCalculator(quantiles=(0, 1))
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 3, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 3, 1))
 
         prs = [
             PullRequestFactsFactory(
-                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)),
-                approved=pd.Timestamp(dt(2022, 1, 4)),
+                first_review_request_exact=np.datetime64(dt(2022, 1, 1), "s"),
+                approved=np.datetime64(dt(2022, 1, 4), "s"),
             ),
             PullRequestFactsFactory(
-                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)),
-                approved=pd.Timestamp(dt(2022, 1, 2)),
+                first_review_request_exact=np.datetime64(dt(2022, 1, 1), "s"),
+                approved=np.datetime64(dt(2022, 1, 2), "s"),
             ),
             PullRequestFactsFactory(
-                first_review_request_exact=None, approved=pd.Timestamp(dt(2022, 1, 2)),
+                first_review_request_exact=None, approved=np.datetime64(dt(2022, 1, 2), "s"),
             ),  # review not requested, doesn't affect metric
             PullRequestFactsFactory(
-                first_review_request_exact=pd.Timestamp(dt(2022, 1, 1)), approved=None,
+                first_review_request_exact=np.datetime64(dt(2022, 1, 1), "s"), approved=None,
             ),  # not reviewed, doesn't affect metric
         ]
         facts = df_from_structs(prs)
@@ -1961,8 +1969,8 @@ class TestReviewTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
         threshold = timedelta(hours=5)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 4, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 4, 1))
 
         review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
         calc = ReviewTimeBelowThresholdRatio(
@@ -1988,8 +1996,8 @@ class TestReviewTimeBelowThresholdRatio:
     def test_complex_groups_mask(self) -> None:
         quantiles = (0, 1)
         threshold = timedelta(hours=3)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 4, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 4, 1))
 
         review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
         calc = ReviewTimeBelowThresholdRatio(
@@ -2022,8 +2030,8 @@ class TestReviewTimeBelowThresholdRatio:
     def test_empty_groups_in_the_middle(self) -> None:
         quantiles = (0, 1)
         threshold = timedelta(hours=3)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 4, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 4, 1))
 
         review_time_calc = ReviewTimeCalculator(quantiles=quantiles)
         calc = ReviewTimeBelowThresholdRatio(
@@ -2061,16 +2069,16 @@ class TestReviewTimeBelowThresholdRatio:
     @classmethod
     def _mk_pr(cls, review_request: datetime, approved: Optional[datetime]) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            first_review_request_exact=pd.Timestamp(review_request),
-            approved=pd.Timestamp(approved) if approved else None,
+            first_review_request_exact=np.datetime64(review_request.replace(tzinfo=None), "s"),
+            approved=np.datetime64(approved.replace(tzinfo=None), "s") if approved else None,
         )
 
 
 class TestWaitFirstReviewTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 2, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 2, 1))
 
         wait_review_calc = WaitFirstReviewTimeCalculator(quantiles=quantiles)
         calc = WaitFirstReviewTimeBelowThresholdRatio(
@@ -2114,16 +2122,20 @@ class TestWaitFirstReviewTimeBelowThresholdRatio:
         first_comment: Optional[datetime],
     ) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            first_review_request_exact=review_request,
-            first_comment_on_first_review=pd.Timestamp(first_comment) if first_comment else None,
+            first_review_request_exact=np.datetime64(review_request.replace(tzinfo=None), "s")
+            if review_request is not None
+            else None,
+            first_comment_on_first_review=np.datetime64(first_comment.replace(tzinfo=None), "s")
+            if first_comment is not None
+            else None,
         )
 
 
 class TestSizeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 7, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
         prs = [
             self._mk_pr(50),
             self._mk_pr(100),
@@ -2149,14 +2161,16 @@ class TestSizeBelowThresholdRatio:
 
     @classmethod
     def _mk_pr(cls, size: int, created: datetime = _DEFAULT_DT) -> PullRequestFacts:
-        return PullRequestFactsFactory(size=size, created=pd.Timestamp(created))
+        return PullRequestFactsFactory(
+            size=size, created=np.datetime64(created.replace(tzinfo=None), "s"),
+        )
 
 
 class TestReviewCommentsAboveThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 7, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
         prs = [
             self._mk_pr(0),  # ignored, not reviewed
             self._mk_pr(1),
@@ -2191,14 +2205,17 @@ class TestReviewCommentsAboveThresholdRatio:
 
     @classmethod
     def _mk_pr(cls, review_comments: int, created=_DEFAULT_CREATED) -> PullRequestFacts:
-        return PullRequestFactsFactory(review_comments=review_comments, created=created)
+        return PullRequestFactsFactory(
+            review_comments=review_comments,
+            created=np.datetime64(created.replace(tzinfo=None), "s"),
+        )
 
 
 class TestMergingTimeBelowThresholdRatio:
     def test_with_groups(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 4, 1))
-        max_times = dt64arr_ns(dt(2022, 5, 1))
+        min_times = dt64arr_us(dt(2022, 4, 1))
+        max_times = dt64arr_us(dt(2022, 5, 1))
         prs = [
             self._mk_pr(dt(2022, 4, 1, 1), dt(2022, 4, 1, 5)),
             self._mk_pr(dt(2022, 4, 1, 2), dt(2022, 4, 1, 3)),
@@ -2228,15 +2245,16 @@ class TestMergingTimeBelowThresholdRatio:
     @classmethod
     def _mk_pr(cls, approved: datetime, merged: datetime) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            approved=pd.Timestamp(approved), merged=pd.Timestamp(merged),
+            approved=np.datetime64(approved.replace(tzinfo=None), "s"),
+            merged=np.datetime64(merged.replace(tzinfo=None), "s"),
         )
 
 
 class TestOpenTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 7, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
         prs = [
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 8)),
@@ -2264,8 +2282,8 @@ class TestOpenTimeBelowThresholdRatio:
 
     def test_more_groups(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 7, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
         prs = [
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 8)),
@@ -2292,8 +2310,8 @@ class TestOpenTimeBelowThresholdRatio:
 
     def test_other_groups(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 7, 1))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
         prs = [
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 5)),
             self._mk_pr(dt(2022, 1, 3), dt(2022, 1, 4)),
@@ -2322,15 +2340,16 @@ class TestOpenTimeBelowThresholdRatio:
     @classmethod
     def _mk_pr(cls, created: datetime, closed: Optional[datetime]) -> PullRequestFacts:
         return PullRequestFactsFactory(
-            created=created, closed=None if closed is None else pd.Timestamp(closed),
+            created=np.datetime64(created.replace(tzinfo=None), "s"),
+            closed=None if closed is None else np.datetime64(closed.replace(tzinfo=None), "s"),
         )
 
 
 class TestCycleTimeBelowThresholdRatio:
     def test_base(self) -> None:
         quantiles = (0, 1)
-        min_times = dt64arr_ns(dt(2022, 1, 1))
-        max_times = dt64arr_ns(dt(2022, 1, 20))
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 1, 20))
         prs = [
             self._mk_pr(dt(2022, 1, 1), dt(2022, 1, 4)),
             self._mk_pr(dt(2022, 1, 2), dt(2022, 1, 4)),
@@ -2351,4 +2370,7 @@ class TestCycleTimeBelowThresholdRatio:
 
     @classmethod
     def _mk_pr(cls, work_began: datetime, released: datetime) -> PullRequestFacts:
-        return PullRequestFactsFactory(released=released, work_began=work_began)
+        return PullRequestFactsFactory(
+            released=np.datetime64(released.replace(tzinfo=None), "s"),
+            work_began=np.datetime64(work_began.replace(tzinfo=None), "s"),
+        )

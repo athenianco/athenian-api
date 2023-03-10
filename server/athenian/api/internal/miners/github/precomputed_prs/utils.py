@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Set
 
 from dateutil.rrule import DAILY, rrule
+import numpy as np
 from sqlalchemy import not_, or_
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -55,28 +56,31 @@ def append_activity_days_filter(
 
 def collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite: bool):
     """Collect activity days from mined PR and facts."""
-    activity_days = set()
+    dtype = np.dtype("datetime64[D]")
+    activity_days = [[facts.created]]
     if facts.released is not None:
-        activity_days.add(facts.released.item().date())
+        activity_days.append([facts.released])
     if facts.closed is not None:
-        activity_days.add(facts.closed.item().date())
-    activity_days.add(facts.created.item().date())
+        activity_days.append([facts.closed])
+
     # if they are empty the column dtype is sometimes an object so .dt raises an exception
     if not pr.review_requests.empty:
-        activity_days.update(pr.review_requests[PullRequestReviewRequest.created_at.name].dt.date)
+        activity_days.append(pr.review_requests[PullRequestReviewRequest.created_at.name])
     if not pr.reviews.empty:
-        activity_days.update(pr.reviews[PullRequestReview.created_at.name].dt.date)
+        activity_days.append(pr.reviews[PullRequestReview.created_at.name])
     if not pr.comments.empty:
-        activity_days.update(pr.comments[PullRequestComment.created_at.name].dt.date)
+        activity_days.append(pr.comments[PullRequestComment.created_at.name])
     if not pr.commits.empty:
-        activity_days.update(pr.commits[PullRequestCommit.committed_date.name].dt.date)
+        activity_days.append(pr.commits[PullRequestCommit.committed_date.name])
+
+    activity_days = np.concatenate(activity_days, dtype=dtype).astype("datetime64[s]")
+    activity_days = np.unique(activity_days[activity_days == activity_days]).tolist()
+
     if sqlite:
-        activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
+        activity_days = [d.strftime("%Y-%m-%d") for d in activity_days]
     else:
         # Postgres is "clever" enough to localize them otherwise
-        activity_days = [
-            datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc) for d in activity_days
-        ]
+        activity_days = [d.replace(tzinfo=timezone.utc) for d in activity_days]
     return activity_days
 
 

@@ -25,9 +25,9 @@ from typing import (
 )
 
 import aiomcache
+import medvedi as md
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
 import sentry_sdk
 
 from athenian.api import metadata
@@ -133,6 +133,7 @@ from athenian.api.internal.miners.participation import (
 from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts, ReleaseFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
+from athenian.api.io import deserialize_args, serialize_args
 from athenian.api.models.metadata.github import (
     CheckRun,
     NodePullRequest,
@@ -142,7 +143,6 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import HealthMetric
-from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.sorted_ops import sorted_union1d
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
@@ -349,7 +349,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: dict[str, str],
         fresh: bool,
     ) -> np.ndarray:
@@ -434,7 +434,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: dict[str, str],
         fresh: bool,
     ) -> Sequence[np.ndarray]:
@@ -495,30 +495,37 @@ class MetricEntriesCalculator:
         executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
 
         def calc_request(i: int, request: MetricsLineRequest) -> None:
-            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
-            group_by = [
-                repo_grouping.get_groups([t.repositories for t in request.teams]),
-                group_prs_by_participants(
-                    [t.participants for t in request.teams], False, df_facts,
-                ),
-                group_pr_facts_by_jira(jira_grouping, df_facts),
-            ]
-            groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
-            groups = deduplicate_groups(
-                groups,
-                df_facts,
-                deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
-                deduplicate_mask=dedupe_mask,
-            )
-            calc = PullRequestBinnedMetricCalculator(
-                request.metrics,
-                quantiles,
-                self._quantile_stride,
-                exclude_inactive=exclude_inactive,
-                **request.metric_params,
-                # environments=request.environments,
-            )
-            results[i] = calc(df_facts, request.time_intervals, groups)
+            try:
+                jira_grouping = convert_jira_filters_to_grouping(
+                    t.jira_filter for t in request.teams
+                )
+                group_by = [
+                    repo_grouping.get_groups([t.repositories for t in request.teams]),
+                    group_prs_by_participants(
+                        [t.participants for t in request.teams], False, df_facts,
+                    ),
+                    group_pr_facts_by_jira(jira_grouping, df_facts),
+                ]
+                groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
+                groups = deduplicate_groups(
+                    groups,
+                    df_facts,
+                    deduplicate_key=PullRequestFacts.f.node_id
+                    if dedupe_mask is not None
+                    else None,
+                    deduplicate_mask=dedupe_mask,
+                )
+                calc = PullRequestBinnedMetricCalculator(
+                    request.metrics,
+                    quantiles,
+                    self._quantile_stride,
+                    exclude_inactive=exclude_inactive,
+                    **request.metric_params,
+                    # environments=request.environments,
+                )
+                results[i] = calc(df_facts, request.time_intervals, groups)
+            except Exception as e:
+                results[i] = e
 
         with sentry_sdk.start_span(
             op="PullRequestBinnedMetricCalculator",
@@ -528,6 +535,10 @@ class MetricEntriesCalculator:
                 executor.submit(calc_request, i, request)
 
             executor.shutdown(wait=True)
+
+        for r in results:
+            if isinstance(r, Exception):
+                raise r from None
         return results
 
     @sentry_span
@@ -569,7 +580,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: Optional[pd.DataFrame],
+        branches: Optional[md.DataFrame],
         default_branches: Optional[dict[str, str]],
         fresh: bool,
     ) -> np.ndarray:
@@ -762,10 +773,13 @@ class MetricEntriesCalculator:
         executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(mined_dfs)))
 
         def calculate(i: int) -> None:
-            mined_topics, mined_df = mined_dfs[i]
-            calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1), 0)
-            groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
-            arrays[i] = calc(mined_df, time_intervals, groups)
+            try:
+                mined_topics, mined_df = mined_dfs[i]
+                calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1), 0)
+                groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
+                arrays[i] = calc(mined_df, time_intervals, groups)
+            except Exception as e:
+                arrays[i] = e
 
         with sentry_sdk.start_span(
             op="DeveloperBinnedMetricCalculator",
@@ -777,6 +791,9 @@ class MetricEntriesCalculator:
 
             executor.shutdown(wait=True)
 
+        for r in arrays:
+            if isinstance(r, Exception):
+                raise r from None
         result = np.full(arrays[0].shape, None)
         result.ravel()[:] = [
             [list(chain.from_iterable(m)) for m in zip(*lists)]
@@ -817,7 +834,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: dict[str, str],
     ) -> tuple[np.ndarray, dict[str, ReleaseMatch]]:
         """
@@ -894,7 +911,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: dict[str, str],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for release metrics.
@@ -949,27 +966,34 @@ class MetricEntriesCalculator:
         executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
 
         def calc_request(i: int, request: MetricsLineRequest) -> None:
-            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
-            group_by = [
-                repo_grouping.get_groups([t.repositories for t in request.teams]),
-                group_releases_by_participants([t.participants for t in request.teams], df_facts),
-                group_release_facts_by_jira(jira_grouping, df_facts),
-            ]
-            groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
+            try:
+                jira_grouping = convert_jira_filters_to_grouping(
+                    t.jira_filter for t in request.teams
+                )
+                group_by = [
+                    repo_grouping.get_groups([t.repositories for t in request.teams]),
+                    group_releases_by_participants(
+                        [t.participants for t in request.teams], df_facts,
+                    ),
+                    group_release_facts_by_jira(jira_grouping, df_facts),
+                ]
+                groups = _intersect_items_groups(len(request.teams), len(df_facts), *group_by)
 
-            dedupe_mask = calculate_logical_release_duplication_mask(
-                df_facts, release_settings, logical_settings,
-            )
-            groups = deduplicate_groups(
-                groups,
-                df_facts,
-                deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
-                deduplicate_mask=dedupe_mask,
-            )
-            calc = ReleaseBinnedMetricCalculator(
-                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
-            )
-            results[i] = calc(df_facts, request.time_intervals, groups)
+                dedupe_mask = calculate_logical_release_duplication_mask(
+                    df_facts, release_settings, logical_settings,
+                )
+                groups = deduplicate_groups(
+                    groups,
+                    df_facts,
+                    deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
+                    deduplicate_mask=dedupe_mask,
+                )
+                calc = ReleaseBinnedMetricCalculator(
+                    request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+                )
+                results[i] = calc(df_facts, request.time_intervals, groups)
+            except Exception as e:
+                results[i] = e
 
         with sentry_sdk.start_span(
             op="ReleaseBinnedMetricCalculator",
@@ -979,6 +1003,10 @@ class MetricEntriesCalculator:
                 executor.submit(calc_request, i, request)
 
             executor.shutdown(wait=True)
+
+        for r in results:
+            if isinstance(r, Exception):
+                raise r from None
         return results
 
     @sentry_span
@@ -1156,7 +1184,7 @@ class MetricEntriesCalculator:
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-        branches: pd.DataFrame,
+        branches: md.DataFrame,
         default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
     ) -> np.ndarray:
@@ -1381,16 +1409,21 @@ class MetricEntriesCalculator:
         executor = ThreadPoolExecutor(max_workers=min(os.cpu_count(), len(requests)))
 
         def calc_request(i: int, request: MetricsLineRequest) -> None:
-            jira_grouping = convert_jira_filters_to_grouping(t.jira_filter for t in request.teams)
-            group_by = [
-                split_issues_by_participants([t.participants for t in request.teams], issues),
-                group_jira_facts_by_jira(jira_grouping, issues),
-            ]
-            groups = _intersect_items_groups(len(request.teams), len(issues), *group_by)
-            calc = JIRABinnedMetricCalculator(
-                request.metrics, quantiles, self._quantile_stride, **request.metric_params,
-            )
-            results[i] = calc(issues, request.time_intervals, groups)
+            try:
+                jira_grouping = convert_jira_filters_to_grouping(
+                    t.jira_filter for t in request.teams
+                )
+                group_by = [
+                    split_issues_by_participants([t.participants for t in request.teams], issues),
+                    group_jira_facts_by_jira(jira_grouping, issues),
+                ]
+                groups = _intersect_items_groups(len(request.teams), len(issues), *group_by)
+                calc = JIRABinnedMetricCalculator(
+                    request.metrics, quantiles, self._quantile_stride, **request.metric_params,
+                )
+                results[i] = calc(issues, request.time_intervals, groups)
+            except Exception as e:
+                results[i] = e
 
         with sentry_sdk.start_span(
             op="JIRABinnedMetricCalculator",
@@ -1400,6 +1433,10 @@ class MetricEntriesCalculator:
                 executor.submit(calc_request, i, request)
 
             executor.shutdown(wait=True)
+
+        for r in results:
+            if isinstance(r, Exception):
+                raise r from None
         return results
 
     @sentry_span
@@ -1487,7 +1524,7 @@ class MetricEntriesCalculator:
         lines: Sequence[int],
         logical_settings: LogicalRepositorySettings,
     ) -> tuple[
-        pd.DataFrame,
+        md.DataFrame,
         np.ndarray,  # groups
         np.ndarray,  # how many suites in each group
         np.ndarray,  # distinct suite sizes
@@ -1515,7 +1552,7 @@ class MetricEntriesCalculator:
         else:
             suite_sizes = np.array([])
 
-            def check_runs_grouper(df: pd.DataFrame) -> list[np.ndarray]:
+            def check_runs_grouper(df: md.DataFrame) -> list[np.ndarray]:
                 return [np.arange(len(df))]
 
         lines_grouper = partial(group_check_runs_by_lines, lines)
@@ -1558,7 +1595,7 @@ class _BatchRepoGrouping:
     def __init__(
         self,
         all_repositories: set[str],
-        df_facts: pd.Dataframe,
+        df_facts: md.DataFrame,
         logical_settings: LogicalRepositorySettings,
     ):
         self._all_repositories = all_repositories
@@ -1646,7 +1683,7 @@ class _FactsJIRAFiltersHelper:
     """The single filter to use to mine facts."""
     entities_to_fetch: JIRAEntityToFetch
     """The entities to fetch in order to correctly apply grouping on mined facts"""
-    grouper: Callable[[pd.DataFrame], list[np.ndarray]]
+    grouper: Callable[[md.DataFrame], list[np.ndarray]]
     """The grouping function to group by jira filters."""
 
 
@@ -1758,7 +1795,7 @@ def _intersect_items_groups(
     return groups
 
 
-def _global_grouper(facts: pd.Dataframe) -> list[npt.NDArray[int]]:
+def _global_grouper(facts: md.DataFrame) -> list[npt.NDArray[int]]:
     """Group the facts to select everything, in a single group."""
     return [np.arange(len(facts))]
 
@@ -1899,11 +1936,11 @@ class PRFactsCalculator:
         prefixer: Prefixer,
         fresh: bool,
         with_jira: JIRAEntityToFetch | int,
-        branches: Optional[pd.DataFrame] = None,
+        branches: Optional[md.DataFrame] = None,
         default_branches: Optional[dict[str, str]] = None,
         on_prs_known: Optional[Callable[[Collection[int]], Any]] = None,
         metrics: Optional[MinePullRequestMetrics] = None,
-    ) -> pd.DataFrame:
+    ) -> md.DataFrame:
         """
         Calculate facts about pull request on GitHub.
 
@@ -1934,9 +1971,9 @@ class PRFactsCalculator:
             on_prs_known,
         )
         if df.empty:
-            df = pd.DataFrame(columns=PullRequestFacts.f)
+            df = md.DataFrame(columns=PullRequestFacts.f)
         if on_prs_known is not None and not from_scratch:
-            on_prs_known(df[PullRequestFacts.f.node_id].values)
+            on_prs_known(df[PullRequestFacts.f.node_id])
         if metrics is not None:
             self._set_count_metrics(df, metrics)
         return df
@@ -1976,10 +2013,10 @@ class PRFactsCalculator:
         prefixer: Prefixer,
         fresh: bool,
         with_jira: JIRAEntityToFetch | int,
-        branches: Optional[pd.DataFrame],
+        branches: Optional[md.DataFrame],
         default_branches: Optional[dict[str, str]],
         on_prs_known: Optional[Callable[[Collection[int]], Any]],
-    ) -> tuple[pd.DataFrame, JIRAEntityToFetch | int, bool]:
+    ) -> tuple[md.DataFrame, JIRAEntityToFetch | int, bool]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self._branch_miner.load_branches(
@@ -2149,18 +2186,18 @@ class PRFactsCalculator:
         # used later to retrieve jira mapping for mined prs
         if with_jira:
             columns = JIRAEntityToFetch.to_columns(with_jira & ~JIRAEntityToFetch.ISSUES)
-            new_jira = miner.dfs.jiras[[c.name for c in columns]].copy(deep=False)
-            new_jira.index = new_jira.index.copy()
+            new_jira = miner.dfs.jiras[[c.name for c in columns]].copy()
             if with_jira & JIRAEntityToFetch.ISSUES:
                 new_jira[
                     JIRAEntityToFetch.to_columns(JIRAEntityToFetch.ISSUES)[0].name
-                ] = new_jira.index.get_level_values(1).values
+                ] = new_jira.index.get_level_values(1)
 
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
-        add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
-        for key in precomputed_unreleased_prs:
+        add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs[0]))
+        for key in zip(*precomputed_unreleased_prs):
             precomputed_facts[key] = unreleased_facts[key]
+        del precomputed_unreleased_prs
         facts_miner = PullRequestFactsMiner(bots)
         mined_prs = []
         mined_facts = {}
@@ -2245,14 +2282,12 @@ class PRFactsCalculator:
 
         # TODO: miner returns in dfs.deployments some PRs included in blacklist,
         # so some PRs can be both in done_deps and new_deps, find out why
-        dupl_new_deps = np.intersect1d(
-            new_deps.index.values, done_deps.index.values, assume_unique=True,
-        )
-        if dupl_new_deps.size > 0:
-            new_deps.drop(dupl_new_deps, inplace=True)
+        unique_new_deps = new_deps.index.diff(done_deps.index)
+        if len(unique_new_deps) < len(new_deps):
+            new_deps.take(unique_new_deps, inplace=True)
 
         self._unfresh_pr_facts_fetcher.append_deployments(
-            precomputed_facts, pd.concat([done_deps, new_deps]), self._log,
+            precomputed_facts, md.concat(done_deps, new_deps), self._log,
         )
         all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
         all_facts_df = df_from_structs(
@@ -2261,13 +2296,13 @@ class PRFactsCalculator:
         return all_facts_df, with_jira, True
 
     @staticmethod
-    def _set_count_metrics(facts: pd.DataFrame, metrics: MinePullRequestMetrics) -> None:
+    def _set_count_metrics(facts: md.DataFrame, metrics: MinePullRequestMetrics) -> None:
         metrics.count = len(facts)
         metrics.done_count = int(facts[PullRequestFacts.f.done].sum())
         metrics.merged_count = int(
-            (facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]).sum(),
+            (facts.notnull(PullRequestFacts.f.merged) & ~facts[PullRequestFacts.f.done]).sum(),
         )
-        metrics.open_count = int(facts[PullRequestFacts.f.closed].isnull().sum())
+        metrics.open_count = int(facts.isnull(PullRequestFacts.f.closed).sum())
         metrics.undead_count = int(facts[PullRequestFacts.f.force_push_dropped].sum())
 
 

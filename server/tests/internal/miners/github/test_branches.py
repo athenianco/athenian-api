@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
 from freezegun import freeze_time
+from medvedi.testing import assert_frame_equal
 import numpy as np
-from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, insert, select, update
 
@@ -66,13 +66,13 @@ async def test_load_branches_cache(mdb, cache, branch_miner, prefixer, meta_ids)
         ["src-d/go-git"], prefixer, 1, meta_ids, mdb, None, cache,
     )
     await wait_deferred()
-    assert "src-d/go-git" in branches[Branch.repository_full_name.name].values
+    assert "src-d/go-git" in branches[Branch.repository_full_name.name]
     assert defaults == {"src-d/go-git": "master", "src-d/юникод": "вадим"}
     branches1, defaults1 = await branch_miner.load_branches(
         ["src-d/go-git"], prefixer, 1, meta_ids, None, None, cache,
     )
     await wait_deferred()
-    assert "src-d/go-git" in branches1[Branch.repository_full_name.name].values
+    assert "src-d/go-git" in branches1[Branch.repository_full_name.name]
     assert defaults1 == {"src-d/go-git": "master"}
     branches2, defaults2 = await branch_miner.load_branches(
         ["github.com/src-d/go-git"],
@@ -265,7 +265,7 @@ async def _test_load_branches_precomputed(mdb, pdb, branch_miner, prefixer, meta
     )
     # unicode check, must exclude this repo with the same ID
     branches = branches.take(
-        np.flatnonzero(branches[Branch.repository_full_name.name].values != "src-d/юникод"),
+        np.flatnonzero(branches[Branch.repository_full_name.name] != "src-d/юникод"),
     )
     defaults.pop("src-d/юникод", None)
     assert len(branches) == 4
@@ -282,17 +282,13 @@ async def _test_load_branches_precomputed(mdb, pdb, branch_miner, prefixer, meta
     )
     # the same repo node ID but different repo name "src-d/юникод" - loaded as "src-d/go-git"
     branches_new = branches_new.take(
-        np.flatnonzero(branches_new[Branch.branch_name.name].values != "вадим"),
+        np.flatnonzero(branches_new[Branch.branch_name.name] != "вадим"),
     )
-    branches = (
-        branches.reindex(sorted(branches.columns), axis=1)
-        .sort_values(Branch.branch_name.name, ignore_index=True)
-        .reset_index(drop=True)
+    branches.sort_values(Branch.branch_name.name, ignore_index=True, inplace=True).reset_index(
+        drop=True, inplace=True,
     )
-    branches_new = (
-        branches_new.reindex(sorted(branches_new.columns), axis=1)
-        .sort_values(Branch.branch_name.name, ignore_index=True)
-        .reset_index(drop=True)
+    branches_new.sort_values(Branch.branch_name.name, ignore_index=True, inplace=True).reset_index(
+        drop=True, inplace=True,
     )
     assert_frame_equal(branches, branches_new)
     defaults_new.pop("src-d/юникод", None)
@@ -343,8 +339,8 @@ async def test_load_branches_extend_precomputed(mdb_rw, pdb, branch_miner, prefi
     assert len(branches) == 1 + 5
     assert defaults["src-d/gitbase"] == "first-things-first"
     assert defaults["src-d/go-git"] == "master"
-    assert (branches[Branch.repository_full_name.name].values == "src-d/gitbase").any()
-    assert (branches[Branch.repository_full_name.name].values == "src-d/go-git").sum() == 4
+    assert (branches[Branch.repository_full_name.name] == "src-d/gitbase").any()
+    assert (branches[Branch.repository_full_name.name] == "src-d/go-git").sum() == 4
 
 
 @with_defer

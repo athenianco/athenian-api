@@ -4,10 +4,11 @@ from pathlib import Path
 import pickle
 from typing import Any
 
+import medvedi as md
+from medvedi.testing import assert_frame_equal, assert_index_equal
 import morcilla
 import numpy as np
-import pandas as pd
-from pandas.testing import assert_frame_equal
+from numpy.testing import assert_array_equal
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import delete, func, insert, select
@@ -487,8 +488,9 @@ async def test_mine_deployments_append(
         eager_filter_repositories=False,
     )
     await wait_deferred()
-    assert len(deps.loc[name]["prs"]) == 0
-    assert len(deps.loc[name]["releases"]) == 0
+    i = np.argmax(deps.index.get_level_values(0) == name)
+    assert len(deps["prs"][i]) == 0
+    assert len(deps["releases"][i]) == 0
     await _validate_deployed_prs(pdb)
 
 
@@ -701,12 +703,12 @@ async def test_mine_deployments_logical(
     physical_count = alpha_count = beta_count = beta_releases = 0
     for deployment_name, components, releases in zip(
         deps.index.values,
-        deps["components"].values,
-        deps["releases"].values,
+        deps["components"],
+        deps["releases"],
     ):
-        component_repos = components[DeployedComponent.repository_full_name].unique()
+        component_repos = components.unique(DeployedComponent.repository_full_name)
         release_repos = (
-            releases.index.get_level_values(1).unique()
+            np.unique(releases.index.get_level_values(1))
             if not releases.empty
             else np.array([], dtype=object)
         )
@@ -840,17 +842,24 @@ async def test_mine_deployments_no_release_facts(
         cache,
     )
     assert len(deps) == 1
-    assert deps.iloc[0].name == "Dummy deployment"
+    assert deps.iloc[0][DeploymentFacts.f.name] == "Dummy deployment"
     deployment_facts_extract_mentioned_people(deps)
-    obj = deps["releases"].iloc[0].to_dict()
-    for val in obj.values():
-        if isinstance(val, dict):
-            for r, arr in val.items():
-                if isinstance(arr, np.ndarray):
-                    val[r] = arr.tolist()
-    del obj["prs_created_at"]
+    dfs = deps["releases"][0]
+    obj = {
+        c: {
+            (node_id, repo): v if not isinstance(v, np.ndarray) else v.tolist()
+            for node_id, repo, v in zip(*dfs.index.levels(), dfs[c])
+        }
+        for c in dfs.columns
+    }
+    for col in (
+        ReleaseFacts.f.prs_created_at,
+        ReleaseFacts.f.node_id,
+        ReleaseFacts.f.repository_full_name,
+    ):
+        del obj[col]
 
-    all_keys = list(obj["commit_authors"])
+    all_keys = list(obj[ReleaseFacts.f.commit_authors])
     for field in (
         "jira_ids",
         "jira_pr_offsets",
@@ -861,10 +870,10 @@ async def test_mine_deployments_no_release_facts(
     ):
         assert obj.pop(field) == {k: [] for k in all_keys}
 
-    for field in ("prs_title", "deployments"):
+    for field in (ReleaseFacts.f.prs_title, ReleaseFacts.f.deployments):
         assert obj.pop(field) == {k: None for k in all_keys}
 
-    assert obj == {
+    ground_truth = {
         "commit_authors": {
             (41475, "src-d/go-git"): [39789, 40187],
             (41474, "src-d/go-git"): [39771, 39789, 39887, 40025, 40292],
@@ -3251,57 +3260,57 @@ async def test_mine_deployments_no_release_facts(
             (41491, "src-d/go-git"): [],
         },
         "age": {
-            (41475, "src-d/go-git"): pd.Timedelta("1 days 01:44:14"),
-            (41474, "src-d/go-git"): pd.Timedelta("42 days 14:43:54"),
-            (41473, "src-d/go-git"): pd.Timedelta("61 days 12:00:20"),
-            (41472, "src-d/go-git"): pd.Timedelta("62 days 23:02:57"),
-            (41471, "src-d/go-git"): pd.Timedelta("14 days 17:40:53"),
-            (41470, "src-d/go-git"): pd.Timedelta("0 days 08:09:17"),
-            (41469, "src-d/go-git"): pd.Timedelta("63 days 18:40:09"),
-            (41468, "src-d/go-git"): pd.Timedelta("7 days 16:47:44"),
-            (41467, "src-d/go-git"): pd.Timedelta("34 days 12:49:02"),
-            (41485, "src-d/go-git"): pd.Timedelta("39 days 02:41:13"),
-            (41484, "src-d/go-git"): pd.Timedelta("20 days 20:44:28"),
-            (41483, "src-d/go-git"): pd.Timedelta("38 days 00:24:01"),
-            (41482, "src-d/go-git"): pd.Timedelta("32 days 02:17:06"),
-            (41481, "src-d/go-git"): pd.Timedelta("22 days 21:06:20"),
-            (41480, "src-d/go-git"): pd.Timedelta("28 days 20:58:21"),
-            (41479, "src-d/go-git"): pd.Timedelta("6 days 05:04:00"),
-            (41478, "src-d/go-git"): pd.Timedelta("8 days 00:24:48"),
-            (41477, "src-d/go-git"): pd.Timedelta("21 days 21:36:25"),
-            (41476, "src-d/go-git"): pd.Timedelta("22 days 22:10:14"),
-            (41517, "src-d/go-git"): pd.Timedelta("31 days 22:37:43"),
-            (41519, "src-d/go-git"): pd.Timedelta("8 days 00:35:15"),
-            (41518, "src-d/go-git"): pd.Timedelta("125 days 19:12:28"),
-            (41514, "src-d/go-git"): pd.Timedelta("6 days 22:37:02"),
-            (41513, "src-d/go-git"): pd.Timedelta("30 days 23:13:34"),
-            (41516, "src-d/go-git"): pd.Timedelta("11 days 12:02:59"),
-            (41515, "src-d/go-git"): pd.Timedelta("24 days 09:43:53"),
-            (41512, "src-d/go-git"): pd.Timedelta("29 days 12:04:34"),
-            (41511, "src-d/go-git"): pd.Timedelta("112 days 00:21:38"),
-            (41510, "src-d/go-git"): pd.Timedelta("0 days 23:48:24"),
-            (41509, "src-d/go-git"): pd.Timedelta("11 days 20:29:13"),
-            (41508, "src-d/go-git"): pd.Timedelta("30 days 19:53:48"),
-            (41506, "src-d/go-git"): pd.Timedelta("2 days 19:45:31"),
-            (41505, "src-d/go-git"): pd.Timedelta("32 days 00:38:29"),
-            (41503, "src-d/go-git"): pd.Timedelta("7 days 10:12:43"),
-            (41502, "src-d/go-git"): pd.Timedelta("2 days 19:38:14"),
-            (41501, "src-d/go-git"): pd.Timedelta("38 days 04:41:13"),
-            (41507, "src-d/go-git"): pd.Timedelta("56 days 01:44:25"),
-            (41496, "src-d/go-git"): pd.Timedelta("27 days 20:28:23"),
-            (41495, "src-d/go-git"): pd.Timedelta("47 days 00:55:47"),
-            (41500, "src-d/go-git"): pd.Timedelta("8 days 23:17:32"),
-            (41499, "src-d/go-git"): pd.Timedelta("15 days 04:52:38"),
-            (41498, "src-d/go-git"): pd.Timedelta("2 days 21:47:06"),
-            (41497, "src-d/go-git"): pd.Timedelta("58 days 09:34:39"),
-            (41490, "src-d/go-git"): pd.Timedelta("7 days 07:24:03"),
-            (41488, "src-d/go-git"): pd.Timedelta("20 days 05:30:41"),
-            (41487, "src-d/go-git"): pd.Timedelta("15 days 23:41:53"),
-            (41486, "src-d/go-git"): pd.Timedelta("2 days 19:24:15"),
-            (41494, "src-d/go-git"): pd.Timedelta("1 days 00:57:12"),
-            (41493, "src-d/go-git"): pd.Timedelta("25 days 14:50:16"),
-            (41492, "src-d/go-git"): pd.Timedelta("51 days 13:01:36"),
-            (41491, "src-d/go-git"): pd.Timedelta("199 days 09:01:05"),
+            (41475, "src-d/go-git"): timedelta(days=1, hours=1, minutes=44, seconds=14),
+            (41474, "src-d/go-git"): timedelta(days=42, hours=14, minutes=43, seconds=54),
+            (41473, "src-d/go-git"): timedelta(days=61, hours=12, minutes=0, seconds=20),
+            (41472, "src-d/go-git"): timedelta(days=62, hours=23, minutes=2, seconds=57),
+            (41471, "src-d/go-git"): timedelta(days=14, hours=17, minutes=40, seconds=53),
+            (41470, "src-d/go-git"): timedelta(days=0, hours=8, minutes=9, seconds=17),
+            (41469, "src-d/go-git"): timedelta(days=63, hours=18, minutes=40, seconds=9),
+            (41468, "src-d/go-git"): timedelta(days=7, hours=16, minutes=47, seconds=44),
+            (41467, "src-d/go-git"): timedelta(days=34, hours=12, minutes=49, seconds=2),
+            (41485, "src-d/go-git"): timedelta(days=39, hours=2, minutes=41, seconds=13),
+            (41484, "src-d/go-git"): timedelta(days=20, hours=20, minutes=44, seconds=28),
+            (41483, "src-d/go-git"): timedelta(days=38, hours=0, minutes=24, seconds=1),
+            (41482, "src-d/go-git"): timedelta(days=32, hours=2, minutes=17, seconds=6),
+            (41481, "src-d/go-git"): timedelta(days=22, hours=21, minutes=6, seconds=20),
+            (41480, "src-d/go-git"): timedelta(days=28, hours=20, minutes=58, seconds=21),
+            (41479, "src-d/go-git"): timedelta(days=6, hours=5, minutes=4, seconds=0),
+            (41478, "src-d/go-git"): timedelta(days=8, hours=0, minutes=24, seconds=48),
+            (41477, "src-d/go-git"): timedelta(days=21, hours=21, minutes=36, seconds=25),
+            (41476, "src-d/go-git"): timedelta(days=22, hours=22, minutes=10, seconds=14),
+            (41517, "src-d/go-git"): timedelta(days=31, hours=22, minutes=37, seconds=43),
+            (41519, "src-d/go-git"): timedelta(days=8, hours=0, minutes=35, seconds=15),
+            (41518, "src-d/go-git"): timedelta(days=125, hours=19, minutes=12, seconds=28),
+            (41514, "src-d/go-git"): timedelta(days=6, hours=22, minutes=37, seconds=2),
+            (41513, "src-d/go-git"): timedelta(days=30, hours=23, minutes=13, seconds=34),
+            (41516, "src-d/go-git"): timedelta(days=11, hours=12, minutes=2, seconds=59),
+            (41515, "src-d/go-git"): timedelta(days=24, hours=9, minutes=43, seconds=53),
+            (41512, "src-d/go-git"): timedelta(days=29, hours=12, minutes=4, seconds=34),
+            (41511, "src-d/go-git"): timedelta(days=112, hours=0, minutes=21, seconds=38),
+            (41510, "src-d/go-git"): timedelta(days=0, hours=23, minutes=48, seconds=24),
+            (41509, "src-d/go-git"): timedelta(days=11, hours=20, minutes=29, seconds=13),
+            (41508, "src-d/go-git"): timedelta(days=30, hours=19, minutes=53, seconds=48),
+            (41506, "src-d/go-git"): timedelta(days=2, hours=19, minutes=45, seconds=31),
+            (41505, "src-d/go-git"): timedelta(days=32, hours=0, minutes=38, seconds=29),
+            (41503, "src-d/go-git"): timedelta(days=7, hours=10, minutes=12, seconds=43),
+            (41502, "src-d/go-git"): timedelta(days=2, hours=19, minutes=38, seconds=14),
+            (41501, "src-d/go-git"): timedelta(days=38, hours=4, minutes=41, seconds=13),
+            (41507, "src-d/go-git"): timedelta(days=56, hours=1, minutes=44, seconds=25),
+            (41496, "src-d/go-git"): timedelta(days=27, hours=20, minutes=28, seconds=23),
+            (41495, "src-d/go-git"): timedelta(days=47, hours=0, minutes=55, seconds=47),
+            (41500, "src-d/go-git"): timedelta(days=8, hours=23, minutes=17, seconds=32),
+            (41499, "src-d/go-git"): timedelta(days=15, hours=4, minutes=52, seconds=38),
+            (41498, "src-d/go-git"): timedelta(days=2, hours=21, minutes=47, seconds=6),
+            (41497, "src-d/go-git"): timedelta(days=58, hours=9, minutes=34, seconds=39),
+            (41490, "src-d/go-git"): timedelta(days=7, hours=7, minutes=24, seconds=3),
+            (41488, "src-d/go-git"): timedelta(days=20, hours=5, minutes=30, seconds=41),
+            (41487, "src-d/go-git"): timedelta(days=15, hours=23, minutes=41, seconds=53),
+            (41486, "src-d/go-git"): timedelta(days=2, hours=19, minutes=24, seconds=15),
+            (41494, "src-d/go-git"): timedelta(days=1, hours=0, minutes=57, seconds=12),
+            (41493, "src-d/go-git"): timedelta(days=25, hours=14, minutes=50, seconds=16),
+            (41492, "src-d/go-git"): timedelta(days=51, hours=13, minutes=1, seconds=36),
+            (41491, "src-d/go-git"): timedelta(days=199, hours=9, minutes=1, seconds=5),
         },
         "additions": {
             (41475, "src-d/go-git"): 2,
@@ -3516,57 +3525,57 @@ async def test_mine_deployments_no_release_facts(
             (41491, "src-d/go-git"): 40550,
         },
         "published_at": {
-            (41475, "src-d/go-git"): pd.Timestamp("2019-08-01 15:25:42+0000", tz="UTC"),
-            (41474, "src-d/go-git"): pd.Timestamp("2019-07-31 13:41:28+0000", tz="UTC"),
-            (41473, "src-d/go-git"): pd.Timestamp("2019-06-18 22:57:34+0000", tz="UTC"),
-            (41472, "src-d/go-git"): pd.Timestamp("2019-04-18 10:57:14+0000", tz="UTC"),
-            (41471, "src-d/go-git"): pd.Timestamp("2019-02-14 11:54:17+0000", tz="UTC"),
-            (41470, "src-d/go-git"): pd.Timestamp("2019-01-30 18:13:24+0000", tz="UTC"),
-            (41469, "src-d/go-git"): pd.Timestamp("2019-01-30 10:04:07+0000", tz="UTC"),
-            (41468, "src-d/go-git"): pd.Timestamp("2018-11-27 15:23:58+0000", tz="UTC"),
-            (41467, "src-d/go-git"): pd.Timestamp("2018-11-19 22:36:14+0000", tz="UTC"),
-            (41485, "src-d/go-git"): pd.Timestamp("2018-10-16 09:47:12+0000", tz="UTC"),
-            (41484, "src-d/go-git"): pd.Timestamp("2018-09-07 07:05:59+0000", tz="UTC"),
-            (41483, "src-d/go-git"): pd.Timestamp("2018-08-17 10:21:31+0000", tz="UTC"),
-            (41482, "src-d/go-git"): pd.Timestamp("2018-07-10 09:57:30+0000", tz="UTC"),
-            (41481, "src-d/go-git"): pd.Timestamp("2018-06-08 07:40:24+0000", tz="UTC"),
-            (41480, "src-d/go-git"): pd.Timestamp("2018-05-16 10:34:04+0000", tz="UTC"),
-            (41479, "src-d/go-git"): pd.Timestamp("2018-04-17 13:35:43+0000", tz="UTC"),
-            (41478, "src-d/go-git"): pd.Timestamp("2018-04-11 08:31:43+0000", tz="UTC"),
-            (41477, "src-d/go-git"): pd.Timestamp("2018-04-03 08:06:55+0000", tz="UTC"),
-            (41476, "src-d/go-git"): pd.Timestamp("2018-03-12 10:30:30+0000", tz="UTC"),
-            (41517, "src-d/go-git"): pd.Timestamp("2018-02-17 12:20:16+0000", tz="UTC"),
-            (41519, "src-d/go-git"): pd.Timestamp("2018-01-16 13:42:33+0000", tz="UTC"),
-            (41518, "src-d/go-git"): pd.Timestamp("2018-01-08 13:07:18+0000", tz="UTC"),
-            (41514, "src-d/go-git"): pd.Timestamp("2017-09-04 17:54:50+0000", tz="UTC"),
-            (41513, "src-d/go-git"): pd.Timestamp("2017-08-28 19:17:48+0000", tz="UTC"),
-            (41516, "src-d/go-git"): pd.Timestamp("2017-07-28 20:04:14+0000", tz="UTC"),
-            (41515, "src-d/go-git"): pd.Timestamp("2017-07-17 08:01:15+0000", tz="UTC"),
-            (41512, "src-d/go-git"): pd.Timestamp("2017-06-22 22:17:22+0000", tz="UTC"),
-            (41511, "src-d/go-git"): pd.Timestamp("2017-05-24 10:12:48+0000", tz="UTC"),
-            (41510, "src-d/go-git"): pd.Timestamp("2017-02-01 09:51:10+0000", tz="UTC"),
-            (41509, "src-d/go-git"): pd.Timestamp("2017-01-31 10:02:46+0000", tz="UTC"),
-            (41508, "src-d/go-git"): pd.Timestamp("2017-01-19 13:33:33+0000", tz="UTC"),
-            (41506, "src-d/go-git"): pd.Timestamp("2016-12-19 17:39:45+0000", tz="UTC"),
-            (41505, "src-d/go-git"): pd.Timestamp("2016-12-16 21:54:14+0000", tz="UTC"),
-            (41503, "src-d/go-git"): pd.Timestamp("2016-11-14 21:15:45+0000", tz="UTC"),
-            (41502, "src-d/go-git"): pd.Timestamp("2016-11-07 11:03:02+0000", tz="UTC"),
-            (41501, "src-d/go-git"): pd.Timestamp("2016-11-04 15:24:48+0000", tz="UTC"),
-            (41507, "src-d/go-git"): pd.Timestamp("2016-09-27 10:43:35+0000", tz="UTC"),
-            (41496, "src-d/go-git"): pd.Timestamp("2016-08-02 08:59:10+0000", tz="UTC"),
-            (41495, "src-d/go-git"): pd.Timestamp("2016-07-05 12:30:47+0000", tz="UTC"),
-            (41500, "src-d/go-git"): pd.Timestamp("2016-05-19 11:35:00+0000", tz="UTC"),
-            (41499, "src-d/go-git"): pd.Timestamp("2016-05-10 12:17:28+0000", tz="UTC"),
-            (41498, "src-d/go-git"): pd.Timestamp("2016-04-25 07:24:50+0000", tz="UTC"),
-            (41497, "src-d/go-git"): pd.Timestamp("2016-04-22 09:37:44+0000", tz="UTC"),
-            (41490, "src-d/go-git"): pd.Timestamp("2016-02-24 00:03:05+0000", tz="UTC"),
-            (41488, "src-d/go-git"): pd.Timestamp("2016-02-16 16:39:02+0000", tz="UTC"),
-            (41487, "src-d/go-git"): pd.Timestamp("2016-01-27 11:08:21+0000", tz="UTC"),
-            (41486, "src-d/go-git"): pd.Timestamp("2016-01-11 11:26:28+0000", tz="UTC"),
-            (41494, "src-d/go-git"): pd.Timestamp("2016-01-08 16:02:13+0000", tz="UTC"),
-            (41493, "src-d/go-git"): pd.Timestamp("2016-01-07 15:05:01+0000", tz="UTC"),
-            (41492, "src-d/go-git"): pd.Timestamp("2015-12-13 00:14:45+0000", tz="UTC"),
-            (41491, "src-d/go-git"): pd.Timestamp("2015-10-22 11:13:09+0000", tz="UTC"),
+            (41475, "src-d/go-git"): np.datetime64("2019-08-01 15:25:42", "us"),
+            (41474, "src-d/go-git"): np.datetime64("2019-07-31 13:41:28", "us"),
+            (41473, "src-d/go-git"): np.datetime64("2019-06-18 22:57:34", "us"),
+            (41472, "src-d/go-git"): np.datetime64("2019-04-18 10:57:14", "us"),
+            (41471, "src-d/go-git"): np.datetime64("2019-02-14 11:54:17", "us"),
+            (41470, "src-d/go-git"): np.datetime64("2019-01-30 18:13:24", "us"),
+            (41469, "src-d/go-git"): np.datetime64("2019-01-30 10:04:07", "us"),
+            (41468, "src-d/go-git"): np.datetime64("2018-11-27 15:23:58", "us"),
+            (41467, "src-d/go-git"): np.datetime64("2018-11-19 22:36:14", "us"),
+            (41485, "src-d/go-git"): np.datetime64("2018-10-16 09:47:12", "us"),
+            (41484, "src-d/go-git"): np.datetime64("2018-09-07 07:05:59", "us"),
+            (41483, "src-d/go-git"): np.datetime64("2018-08-17 10:21:31", "us"),
+            (41482, "src-d/go-git"): np.datetime64("2018-07-10 09:57:30", "us"),
+            (41481, "src-d/go-git"): np.datetime64("2018-06-08 07:40:24", "us"),
+            (41480, "src-d/go-git"): np.datetime64("2018-05-16 10:34:04", "us"),
+            (41479, "src-d/go-git"): np.datetime64("2018-04-17 13:35:43", "us"),
+            (41478, "src-d/go-git"): np.datetime64("2018-04-11 08:31:43", "us"),
+            (41477, "src-d/go-git"): np.datetime64("2018-04-03 08:06:55", "us"),
+            (41476, "src-d/go-git"): np.datetime64("2018-03-12 10:30:30", "us"),
+            (41517, "src-d/go-git"): np.datetime64("2018-02-17 12:20:16", "us"),
+            (41519, "src-d/go-git"): np.datetime64("2018-01-16 13:42:33", "us"),
+            (41518, "src-d/go-git"): np.datetime64("2018-01-08 13:07:18", "us"),
+            (41514, "src-d/go-git"): np.datetime64("2017-09-04 17:54:50", "us"),
+            (41513, "src-d/go-git"): np.datetime64("2017-08-28 19:17:48", "us"),
+            (41516, "src-d/go-git"): np.datetime64("2017-07-28 20:04:14", "us"),
+            (41515, "src-d/go-git"): np.datetime64("2017-07-17 08:01:15", "us"),
+            (41512, "src-d/go-git"): np.datetime64("2017-06-22 22:17:22", "us"),
+            (41511, "src-d/go-git"): np.datetime64("2017-05-24 10:12:48", "us"),
+            (41510, "src-d/go-git"): np.datetime64("2017-02-01 09:51:10", "us"),
+            (41509, "src-d/go-git"): np.datetime64("2017-01-31 10:02:46", "us"),
+            (41508, "src-d/go-git"): np.datetime64("2017-01-19 13:33:33", "us"),
+            (41506, "src-d/go-git"): np.datetime64("2016-12-19 17:39:45", "us"),
+            (41505, "src-d/go-git"): np.datetime64("2016-12-16 21:54:14", "us"),
+            (41503, "src-d/go-git"): np.datetime64("2016-11-14 21:15:45", "us"),
+            (41502, "src-d/go-git"): np.datetime64("2016-11-07 11:03:02", "us"),
+            (41501, "src-d/go-git"): np.datetime64("2016-11-04 15:24:48", "us"),
+            (41507, "src-d/go-git"): np.datetime64("2016-09-27 10:43:35", "us"),
+            (41496, "src-d/go-git"): np.datetime64("2016-08-02 08:59:10", "us"),
+            (41495, "src-d/go-git"): np.datetime64("2016-07-05 12:30:47", "us"),
+            (41500, "src-d/go-git"): np.datetime64("2016-05-19 11:35:00", "us"),
+            (41499, "src-d/go-git"): np.datetime64("2016-05-10 12:17:28", "us"),
+            (41498, "src-d/go-git"): np.datetime64("2016-04-25 07:24:50", "us"),
+            (41497, "src-d/go-git"): np.datetime64("2016-04-22 09:37:44", "us"),
+            (41490, "src-d/go-git"): np.datetime64("2016-02-24 00:03:05", "us"),
+            (41488, "src-d/go-git"): np.datetime64("2016-02-16 16:39:02", "us"),
+            (41487, "src-d/go-git"): np.datetime64("2016-01-27 11:08:21", "us"),
+            (41486, "src-d/go-git"): np.datetime64("2016-01-11 11:26:28", "us"),
+            (41494, "src-d/go-git"): np.datetime64("2016-01-08 16:02:13", "us"),
+            (41493, "src-d/go-git"): np.datetime64("2016-01-07 15:05:01", "us"),
+            (41492, "src-d/go-git"): np.datetime64("2015-12-13 00:14:45", "us"),
+            (41491, "src-d/go-git"): np.datetime64("2015-10-22 11:13:09", "us"),
         },
         "sha": {
             (41475, "src-d/go-git"): b"0d1a009cbb604db18be960db5f1525b99a55d727",
@@ -3993,6 +4002,10 @@ async def test_mine_deployments_no_release_facts(
             (41491, "src-d/go-git"): "mcuadros",
         },
     }
+    for topic, values in ground_truth.items():
+        assert obj[topic] == values, topic
+    diff_keys = obj.keys() - ground_truth.keys()
+    assert not diff_keys
 
 
 @with_defer
@@ -4059,14 +4072,13 @@ async def test_mine_deployments_precomputed_dummy(
     )
     people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 1
-    assert deps1.index.tolist() == deps2.index.tolist()
-    assert (rel1 := deps1["releases"].iloc[0]).columns.tolist() == (
-        rel2 := deps2["releases"].iloc[0]
-    ).columns.tolist()
-    assert len(rel1) == len(rel2)
-    assert (rel1.index == rel2.index).all()
-    del deps1["releases"]
-    del deps2["releases"]
+    assert_index_equal(deps1.index, deps2.index)
+    for topic in ("releases", "components", "labels"):
+        for pdf, sdf in zip(deps1[topic], deps2[topic]):
+            assert_frame_equal(pdf, sdf)
+    for df in (deps1, deps2):
+        for col in ("releases", "components", "labels"):
+            del df[col]
     assert_frame_equal(deps1, deps2)
     assert (people1 == people2).all()
 
@@ -4138,18 +4150,21 @@ async def test_mine_deployments_precomputed_sample(
     )
     people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 2 * 9
-    assert deps1.index.tolist() == deps2.index.tolist()
+    assert_index_equal(deps1.index, deps2.index)
     lensum = 0
     for i in range(18):
-        assert (rel1 := deps1["releases"].iloc[i]).columns.tolist() == (
-            rel2 := deps2["releases"].iloc[i]
-        ).columns.tolist(), i
+        assert (rel1 := deps1["releases"][i]).columns == (rel2 := deps2["releases"][i]).columns, i
         assert len(rel1) == len(rel2)
-        assert (rel1.index.values == rel2.index.values).all()
+        for il1, il2 in zip(rel1.index.levels(), rel2.index.levels()):
+            assert_array_equal(il1, il2)
         lensum += len(rel1)
     assert lensum == 68 * 2
-    del deps1["releases"]
-    del deps2["releases"]
+    for topic in ("components", "labels"):
+        for pdf, sdf in zip(deps1[topic], deps2[topic]):
+            assert_frame_equal(pdf, sdf)
+    for df in (deps1, deps2):
+        for col in ("releases", "components", "labels"):
+            del df[col]
     assert_frame_equal(deps1, deps2)
     assert (people1 == people2).all()
 
@@ -4246,10 +4261,11 @@ async def test_mine_deployments_reversed(
     )
     deployment_facts_extract_mentioned_people(deps2)
     assert len(deps2) == len(deps1) + 1
-    assert deps1.index.tolist() == deps2.index.tolist()[1:]
-    assert deps2.iloc[0][DeploymentFacts.f.commits_overall][0] == 0
-    assert deps2.iloc[0][DeploymentFacts.f.commits_prs][0] == 0
-    assert len(deps2.iloc[0][DeploymentFacts.f.prs]) == 0
+    assert set(deps1.index.values) == set(deps2.index.values) - {"production_2019_12_01"}
+    i = np.flatnonzero(deps2.index.values == "production_2019_12_01")[0]
+    assert deps2.iloc[i][DeploymentFacts.f.commits_overall][0] == 0
+    assert deps2.iloc[i][DeploymentFacts.f.commits_prs][0] == 0
+    assert len(deps2.iloc[i][DeploymentFacts.f.prs]) == 0
 
 
 @with_defer
@@ -4402,14 +4418,15 @@ async def test_mine_deployments_event_releases(
     )
     deployment_facts_extract_mentioned_people(deps)
     for depname in ("production_2019_11_01", "staging_2019_11_01"):
-        df = deps.loc[depname]["releases"]
+        df = deps.take(deps.index.get_level_values(0) == depname)["releases"][0]
         assert len(df) == 1
-        assert len(df.iloc[0][DeploymentFacts.f.commit_authors]) == 113
-        assert len(set(df.iloc[0][DeploymentFacts.f.commit_authors])) == 113
-        assert len(df.iloc[0]["prs_node_id"]) == 509
-        assert len(set(df.iloc[0]["prs_node_id"])) == 509
-        assert df.iloc[0][Release.name.name] == "Pushed!"
-        assert df.iloc[0][Release.sha.name] == b"1edb992dbc419a0767b1cf3a524b0d35529799f5"
+        df = df.iloc[0]
+        assert df[Release.name.name] == "Pushed!"
+        assert df[Release.sha.name] == b"1edb992dbc419a0767b1cf3a524b0d35529799f5"
+        assert len(df[ReleaseFacts.f.commit_authors]) == 113
+        assert len(set(df[ReleaseFacts.f.commit_authors])) == 113
+        assert len(df[ReleaseFacts.f.prs_node_id]) == 509
+        assert len(set(df[ReleaseFacts.f.prs_node_id])) == 509
 
 
 @pytest.mark.parametrize("old_notifications_mode", ["1", "2", "1-1"])
@@ -4538,8 +4555,12 @@ async def test_invalidate_newer_deploys_smoke(
         ),
     )
     deps = await mine_deployments_()
-    deploy_new_prs_post = deps[deps.name == "deploy_new"].prs[0]
-    deploy_old1_prs_post = deps[deps.name == "deploy_old_1"].prs[0]
+    deploy_new_prs_post = deps[DeploymentFacts.f.prs][
+        deps[DeploymentFacts.f.name] == "deploy_new"
+    ][0]
+    deploy_old1_prs_post = deps[DeploymentFacts.f.prs][
+        deps[DeploymentFacts.f.name] == "deploy_old_1"
+    ][0]
 
     # the two deployments must not share any PR
     assert len(deploy_new_prs_post)
@@ -4548,7 +4569,9 @@ async def test_invalidate_newer_deploys_smoke(
     assert not common
 
     if old_notifications_mode != "1":
-        deploy_old2_prs_post = deps[deps.name == "deploy_old_2"].prs[0]
+        deploy_old2_prs_post = deps[DeploymentFacts.f.prs][
+            deps[DeploymentFacts.f.name] == "deploy_old_2"
+        ][0]
         assert len(deploy_old2_prs_post)
         common = set(deploy_new_prs_post) & set(deploy_old2_prs_post)
         assert not common
@@ -4694,12 +4717,12 @@ def _validate_deployments(deps, count, with_2016, eager):
     assert len(deps) == count * 2
     for env in ("staging", "production"):
         assert (
-            deps.loc[f"{env}_2018_01_11"]["conclusion"]
+            deps["conclusion"][deps.index.get_level_values(0) == f"{env}_2018_01_11"]
             == DeploymentNotification.CONCLUSION_SUCCESS
         )
         if not eager:
             assert (
-                deps.loc[f"{env}_2018_01_12"]["conclusion"]
+                deps["conclusion"][deps.index.get_level_values(0) == f"{env}_2018_01_12"]
                 == DeploymentNotification.CONCLUSION_FAILURE
             )
     assert (deps["environment"] == "production").sum() == count
@@ -4709,25 +4732,25 @@ def _validate_deployments(deps, count, with_2016, eager):
         assert len(c) == 1
         assert c.iloc[0]["repository_node_id"] == 40550
         assert c.iloc[0]["resolved_commit_node_id"] > 0
-    assert components["production_2018_01_11"].iloc[0]["reference"] == "4.0.0"
-    assert components["staging_2018_01_11"].iloc[0]["reference"] == "4.0.0"
+    assert components[deps.index.values == "production_2018_01_11"][0]["reference"] == "4.0.0"
+    assert components[deps.index.values == "staging_2018_01_11"][0]["reference"] == "4.0.0"
     commits_overall = deps["commits_overall"]
     if with_2016:
-        assert commits_overall["production_2016_07_06"] == [168]
-        assert commits_overall["production_2016_12_01"] == [14]
-    assert commits_overall["production_2018_01_10"] == [832]
-    assert commits_overall["production_2018_01_11"] == [832]
+        assert commits_overall[deps.index.values == "production_2016_07_06"] == [168]
+        assert commits_overall[deps.index.values == "production_2016_12_01"] == [14]
+    assert commits_overall[deps.index.values == "production_2018_01_10"] == [832]
+    assert commits_overall[deps.index.values == "production_2018_01_11"] == [832]
     if not eager:
-        assert commits_overall["production_2018_01_12"] == [0]
-    assert commits_overall["production_2018_08_01"] == [122]
-    assert commits_overall["production_2018_12_01"] == [198]
+        assert commits_overall[deps.index.values == "production_2018_01_12"] == [0]
+    assert commits_overall[deps.index.values == "production_2018_08_01"] == [122]
+    assert commits_overall[deps.index.values == "production_2018_12_01"] == [198]
     if not eager:
-        assert commits_overall["production_2018_12_02"] == [0]
-    assert commits_overall["production_2019_11_01"] == [176]
-    pdeps = deps[deps["environment"] == "production"].copy()
+        assert commits_overall[deps.index.values == "production_2018_12_02"] == [0]
+    assert commits_overall[deps.index.values == "production_2019_11_01"] == [176]
+    pdeps = deps.take(deps["environment"] == "production").copy()
     releases = pdeps["releases"]
     if with_2016:
-        assert set(releases["production_2016_07_06"]["tag"]) == {
+        assert set(releases[pdeps.index.values == "production_2016_07_06"][0]["tag"]) == {
             "v2.2.0",
             "v3.1.0",
             "v3.0.3",
@@ -4742,8 +4765,11 @@ def _validate_deployments(deps, count, with_2016, eager):
             "v2.1.3",
             "v2.1.0",
         }
-        assert set(releases["production_2016_12_01"]["tag"]) == {"v3.2.0", "v3.1.1"}
-    assert set(releases["production_2018_01_10"]["tag"]) == {
+        assert set(releases[pdeps.index.values == "production_2016_12_01"][0]["tag"]) == {
+            "v3.2.0",
+            "v3.1.1",
+        }
+    assert set(releases[pdeps.index.values == "production_2018_01_10"][0]["tag"]) == {
         "v4.0.0-rc10",
         "v4.0.0-rc1",
         "v4.0.0-rc6",
@@ -4761,7 +4787,7 @@ def _validate_deployments(deps, count, with_2016, eager):
         "v4.0.0-rc4",
         "v4.0.0-rc11",
     }
-    assert set(releases["production_2018_01_11"]["tag"]) == {
+    assert set(releases[pdeps.index.values == "production_2018_01_11"][0]["tag"]) == {
         "v4.0.0-rc10",
         "v4.0.0-rc1",
         "v4.0.0-rc6",
@@ -4780,8 +4806,8 @@ def _validate_deployments(deps, count, with_2016, eager):
         "v4.0.0-rc11",
     }
     if not eager:
-        assert releases["production_2018_01_12"].empty
-    assert set(releases["production_2018_08_01"]["tag"]) == {
+        assert len(releases[pdeps.index.values == "production_2018_01_12"][0]) == 0
+    assert set(releases[pdeps.index.values == "production_2018_08_01"][0]["tag"]) == {
         "v4.3.1",
         "v4.5.0",
         "v4.4.0",
@@ -4792,7 +4818,7 @@ def _validate_deployments(deps, count, with_2016, eager):
         "v4.1.0",
         "v4.1.1",
     }
-    assert set(releases["production_2018_12_01"]["tag"]) == {
+    assert set(releases[pdeps.index.values == "production_2018_12_01"][0]["tag"]) == {
         "v4.7.1",
         "v4.6.0",
         "v4.8.0",
@@ -4800,8 +4826,8 @@ def _validate_deployments(deps, count, with_2016, eager):
         "v4.7.0",
     }
     if not eager:
-        assert releases["production_2018_12_02"].empty
-    assert set(releases["production_2019_11_01"]["tag"]) == {
+        assert len(releases[pdeps.index.values == "production_2018_12_02"][0]) == 0
+    assert set(releases[pdeps.index.values == "production_2019_11_01"][0]["tag"]) == {
         "v4.13.0",
         "v4.12.0",
         "v4.13.1",
@@ -4810,19 +4836,19 @@ def _validate_deployments(deps, count, with_2016, eager):
         "v4.11.0",
         "v4.10.0",
     }
-    del pdeps["name"]
-    del pdeps["environment"]
     pdeps.sort_index(inplace=True)
-    pdeps.reset_index(drop=True, inplace=True)
-    sdeps = deps[deps["environment"] == "staging"].copy()
-    del sdeps["name"]
-    del sdeps["environment"]
+    pdeps.reset_index(inplace=True, drop=True)
+    del pdeps["environment"]
+    sdeps = deps.take(deps["environment"] == "staging").copy()
     sdeps.sort_index(inplace=True)
-    sdeps.reset_index(drop=True, inplace=True)
-    for pdf, sdf in zip(pdeps["releases"].values, sdeps["releases"].values):
-        assert_frame_equal(pdf, sdf)
-    del pdeps["releases"]
-    del sdeps["releases"]
+    sdeps.reset_index(inplace=True, drop=True)
+    del sdeps["environment"]
+    for topic in ("releases", "components", "labels"):
+        for pdf, sdf in zip(pdeps[topic], sdeps[topic]):
+            assert_frame_equal(pdf, sdf)
+    for df in (pdeps, sdeps):
+        for col in ("releases", "components", "labels"):
+            del df[col]
     assert_frame_equal(pdeps, sdeps)
 
 
@@ -5007,7 +5033,7 @@ class TestHideOutlierFirstDeployments:
         await hide_outlier_first_deployments(df, 1, (DEFAULT_MD_ACCOUNT_ID,), mdb, pdb, 1.1)
 
     @classmethod
-    def _mk_deployments_df(cls, *rows) -> pd.DataFrame:
+    def _mk_deployments_df(cls, *rows) -> md.DataFrame:
         df_columns = [
             DeploymentNotification.name.name,
             DeploymentNotification.environment.name,
@@ -5015,7 +5041,16 @@ class TestHideOutlierFirstDeployments:
             DeploymentNotification.conclusion.name,
             "repositories",
         ]
-        return pd.DataFrame.from_records(rows, columns=df_columns)
+        arrays = [[] for _ in df_columns]
+        for r in rows:
+            for i, v in enumerate(r):
+                if i == 2:
+                    v = v.replace(tzinfo=None)
+                arrays[i].append(v)
+        repos = np.empty(len(rows), object)
+        repos[:] = arrays[-1]
+        arrays[-1] = repos
+        return md.DataFrame(dict(zip(df_columns, arrays)))
 
     @classmethod
     def _mine_common_kwargs(cls, **extra: Any) -> dict:
@@ -5227,8 +5262,8 @@ proper_deployments = {
         conclusion=DeploymentConclusion.SUCCESS,
         environment="production",
         url=None,
-        started_at=pd.Timestamp(datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc)),
-        finished_at=pd.Timestamp(datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc)),
+        started_at=np.datetime64(datetime(2019, 11, 1, 12, 0), "us"),
+        finished_at=np.datetime64(datetime(2019, 11, 1, 12, 15), "us"),
         components=[
             DeployedComponentStruct(
                 repository_full_name="src-d/go-git",
@@ -5264,7 +5299,7 @@ async def test_mine_release_by_name_deployments(
         None,
     )
     assert deps == proper_deployments
-    assert releases.iloc[0].deployments == ["Dummy deployment"]
+    assert releases.iloc[0][ReleaseFacts.f.deployments] == ["Dummy deployment"]
 
 
 @with_defer
@@ -5303,6 +5338,6 @@ async def test_mine_releases_deployments(
     assert deps == proper_deployments
     assert len(releases) == 53
     ndeps = 0
-    for rd in releases[ReleaseFacts.f.deployments].values:
+    for rd in releases[ReleaseFacts.f.deployments]:
         ndeps += rd is not None and rd[0] == "Dummy deployment"
     assert ndeps == 51

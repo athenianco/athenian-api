@@ -1,3 +1,4 @@
+from datetime import timezone
 import logging
 from lzma import LZMAFile
 from pathlib import Path
@@ -5,8 +6,8 @@ import shutil
 from tempfile import NamedTemporaryFile
 
 from freezegun import freeze_time
+import medvedi as md
 import numpy as np
-import pandas as pd
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -40,6 +41,7 @@ from athenian.api.models.metadata.github import (
     PushCommit,
     RepositoryMixin,
 )
+from athenian.api.serialization import deserialize_datetime
 from tests.conftest import connect_to_db
 
 Base = declarative_base()
@@ -78,12 +80,26 @@ class _NodeCommitParent(
 
 def insert_table(file_name, model, date_columns, engine, preprocess):
     with LZMAFile(Path(__file__).with_name(file_name)) as fin:
-        df = pd.read_csv(fin, parse_dates=date_columns, infer_datetime_format=True)
+        column_names = fin.readline().decode().rstrip().split(",")
+        column_values = [[] for _ in column_names]
+        date_columns = {column_names.index(c) for c in date_columns}
+        int_columns = {i for i, c in enumerate(column_names) if c.endswith("_id")}
+        for line in fin:
+            for i, v in enumerate(line.decode().rstrip().split(",")):
+                if i in date_columns:
+                    if v:
+                        v = deserialize_datetime(v)
+                    else:
+                        v = None
+                elif i in int_columns:
+                    v = int(v)
+                column_values[i].append(v)
+        df = md.DataFrame(dict(zip(column_names, column_values)))
         if preprocess is not None:
             df = preprocess(df)
         batch = []
-        for i, t in enumerate(df.itertuples(index=False)):
-            batch.append(t)
+        for i, row in enumerate(df.iterrows(*column_names)):
+            batch.append(dict(zip(column_names, row)))
             if len(batch) == 1000 or i == len(df) - 1:
                 with engine.begin() as conn:
                     conn.execute(insert(model).values(batch))
@@ -91,10 +107,8 @@ def insert_table(file_name, model, date_columns, engine, preprocess):
 
 
 def _fill_fetched_at_from_committed_date(df):
-    nulls = df[_NodeCommit.fetched_at.name].isnull().values
-    df[_NodeCommit.fetched_at.name].values[nulls] = df[_NodeCommit.committed_date.name].values[
-        nulls
-    ]
+    nulls = df.isnull(_NodeCommit.fetched_at.name)
+    df[_NodeCommit.fetched_at.name][nulls] = df[_NodeCommit.committed_date.name][nulls]
     return df
 
 
@@ -212,7 +226,7 @@ async def _test_consistency_torture(
     await truncate(preserve_node_commit=preserve_node_commit)
     dags = await fetch_repository_commits(
         {"org/repo": (True, _empty_dag())},
-        pd.DataFrame(
+        md.DataFrame(
             {
                 PushCommit.sha.name: np.array(
                     [row[_NodeCommit.oid.name] for row in rows], dtype="S40",
@@ -259,7 +273,7 @@ async def test_consistency_torture_base(mdb_torture, disable_full_mode, pdb):
 
 @pytest.mark.parametrize(
     "mdb_torture",
-    [pd.Timestamp("2022-10-07 16:16:00+00")],
+    [np.datetime64("2022-10-07 16:16:00", "us").item().replace(tzinfo=timezone.utc)],
     indirect=["mdb_torture"],
 )
 @pytest.mark.parametrize("disable_full_mode", [False, True])
@@ -279,7 +293,7 @@ async def test_consistency_torture_pure(mdb_torture, disable_full_mode, pdb):
 
 @pytest.mark.parametrize(
     "mdb_torture",
-    [pd.Timestamp("2022-10-07 16:16:00+00")],
+    [np.datetime64("2022-10-07 16:16:00", "us").item().replace(tzinfo=timezone.utc)],
     indirect=["mdb_torture"],
 )
 @pytest.mark.parametrize("disable_full_mode", [False, True])
@@ -314,7 +328,7 @@ async def test_consistency_torture_oct7(mdb_torture, disable_full_mode, pdb):
 
 @pytest.mark.parametrize(
     "mdb_torture",
-    [pd.Timestamp("2022-10-07 16:16:00+00")],
+    [np.datetime64("2022-10-07 16:16:00", "us").item().replace(tzinfo=timezone.utc)],
     indirect=["mdb_torture"],
 )
 @pytest.mark.parametrize("disable_full_mode", [False, True])

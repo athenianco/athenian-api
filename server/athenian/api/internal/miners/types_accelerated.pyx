@@ -20,8 +20,7 @@ from athenian.api.native.cpython cimport (
     PyBytes_Check,
     PyLong_AsLong,
     PyMemberDef,
-    PyObject_GetAttr,
-    PyObject_GetItem,
+    PyTypeObject,
 )
 from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_heap_allocator_from_capsule,
@@ -36,6 +35,8 @@ from athenian.api.native.numpy cimport (
     npy_intp,
 )
 from athenian.api.native.optional cimport optional
+
+from medvedi import DataFrame
 
 from athenian.api.internal.miners.participation import PRParticipationKind
 from athenian.api.models.metadata.github import (
@@ -79,7 +80,9 @@ cdef enum MinedPullRequestFields:
     MinedPullRequest_reviews = 10
 
 
-empty_set = set()
+cdef :
+    set empty_set = set()
+    Py_ssize_t df_columns_offset = (<PyTypeObject *> DataFrame).tp_members[0].offset
 
 
 def extract_participant_nodes(mpr, alloc_capsule=None) -> dict:
@@ -87,47 +90,47 @@ def extract_participant_nodes(mpr, alloc_capsule=None) -> dict:
     cdef:
         optional[mi_heap_destroy_stl_allocator[char]] alloc
         optional[mi_unordered_set[int64_t]] boilerplate
-        PyMemberDef *slots = Py_TYPE(<PyObject *> mpr).tp_members
+        PyMemberDef *mpr_slots = Py_TYPE(<PyObject *> mpr).tp_members
         PyObject *pr = dereference(
-            <PyObject **> ((<char *><PyObject *> mpr) + slots[<int>MinedPullRequest_pr].offset)
+            <PyObject **> ((<char *><PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_pr].offset)
         )
         PyObject *commits = dereference(
-            <PyObject **> ((<char *><PyObject *> mpr) + slots[<int>MinedPullRequest_commits].offset)
+            <PyObject **> ((<char *><PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_commits].offset)
         )
-        PyObject *commit_committers = PyObject_GetAttr(
-            PyObject_GetItem(commits, <PyObject *> commit_committer_user_id_col),
-            <PyObject *> values_attr,
+        PyObject *commits_dict = dereference(
+            <PyObject **> ((<char *><PyObject *> commits) + df_columns_offset)
         )
-        PyObject *commit_authors = PyObject_GetAttr(
-            PyObject_GetItem(commits, <PyObject *> commit_author_user_id_col),
-            <PyObject *> values_attr,
+        PyObject *commit_committers = PyDict_GetItem(
+            <object>commits_dict, commit_committer_user_id_col,
         )
-        PyObject *reviews = PyObject_GetAttr(
-            PyObject_GetItem(
-                dereference(
-                    <PyObject **> ((<char *><PyObject *> mpr) + slots[<int>MinedPullRequest_reviews].offset)
-                ),
-                <PyObject *> review_user_node_id_col,
+        PyObject *commit_authors = PyDict_GetItem(
+            <object>commits_dict,  commit_author_user_id_col,
+        )
+
+        PyObject *reviews = PyDict_GetItem(
+            <object> dereference(
+                <PyObject **> ((<char *> dereference(
+                    <PyObject **> ((<char *><PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_reviews].offset)
+                )) + df_columns_offset)
             ),
-            <PyObject *> values_attr,
+            review_user_node_id_col,
         )
-        PyObject *comments = PyObject_GetAttr(
-            PyObject_GetItem(
-                dereference(
-                    <PyObject **> ((<char *><PyObject *> mpr) + slots[<int>MinedPullRequest_comments].offset)
-                ),
-                <PyObject *> comment_user_node_id_col,
+        PyObject *comments = PyDict_GetItem(
+            <object> dereference(
+                <PyObject **> ((<char *> dereference(
+                        <PyObject **> ((<char *><PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_comments].offset)
+                )) + df_columns_offset)
             ),
-            <PyObject *> values_attr,
+            comment_user_node_id_col,
         )
         PyObject *release = dereference(
-            <PyObject **> ((<char *> <PyObject *> mpr) + slots[<int>MinedPullRequest_release].offset)
+            <PyObject **> ((<char *> <PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_release].offset)
         )
         PyObject *author = PyDict_GetItem(<object> pr, pr_user_node_id_col)
         PyObject *merger = PyDict_GetItem(<object> pr, pr_merged_by_id_col)
         PyObject *releaser = PyDict_GetItem(
             <object> dereference(
-                <PyObject **> ((<char *><PyObject *> mpr) + slots[<int>MinedPullRequest_release].offset)
+                <PyObject **> ((<char *><PyObject *> mpr) + mpr_slots[<int>MinedPullRequest_release].offset)
             ),
             release_author_node_id_col,
         )
@@ -233,7 +236,7 @@ def find_truncated_datetime(facts, offsets, time_from) -> list:
     if PyBytes_Check(data_obj):
         data = PyBytes_AS_STRING(data_obj)
     elif PyMemoryView_Check(<object> data_obj):
-        struct_data = <char *>PyMemoryView_GET_BUFFER(<object> data_obj).buf
+        data = <char *>PyMemoryView_GET_BUFFER(<object> data_obj).buf
     elif PyByteArray_CheckExact(data_obj):
         data = PyByteArray_AS_STRING(data_obj)
     else:

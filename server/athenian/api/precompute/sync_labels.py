@@ -26,8 +26,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         [NodePullRequest.id, NodePullRequest.acc_id],
     )
     log.info("There are %d PRs in mdb", len(all_prs))
-    all_node_ids = all_prs[NodePullRequest.id.name].values
-    gh_all_accounts = all_prs[NodePullRequest.acc_id.name].values
+    all_node_ids = all_prs[NodePullRequest.id.name]
+    gh_all_accounts = all_prs[NodePullRequest.acc_id.name]
     del all_prs
     order = np.argsort(all_node_ids)
     all_node_ids = all_node_ids[order]
@@ -121,10 +121,10 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     unique_prs = np.unique(
         np.concatenate(
             [
-                all_pr_times_labels[GitHubDonePullRequestFacts.pr_node_id.name].values,
-                all_pr_times_empty[GitHubDonePullRequestFacts.pr_node_id.name].values,
-                all_merged_labels[GitHubMergedPullRequestFacts.pr_node_id.name].values,
-                all_merged_empty[GitHubMergedPullRequestFacts.pr_node_id.name].values,
+                all_pr_times_labels[GitHubDonePullRequestFacts.pr_node_id.name],
+                all_pr_times_empty[GitHubDonePullRequestFacts.pr_node_id.name],
+                all_merged_labels[GitHubMergedPullRequestFacts.pr_node_id.name],
+                all_merged_empty[GitHubMergedPullRequestFacts.pr_node_id.name],
             ],
         ),
     )
@@ -163,7 +163,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         for acc_id, node_ids in zip(gh_unique_acc_ids, node_id_by_gh_acc_id)
     ]
     del node_id_by_gh_acc_id
-    max_account = acc_map_df[AccountGitHubAccount.account_id.name].values.max()
+    max_account = acc_map_df[AccountGitHubAccount.account_id.name].max()
     dfs_acc_counts = []
     for col in (
         all_pr_times_labels[GitHubDonePullRequestFacts.acc_id.name],
@@ -184,14 +184,14 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         actual_labels = defaultdict(dict)
         for df in dfs:
             for pr_node_id, label in zip(
-                df[PullRequestLabel.pull_request_node_id.name].values,
-                df[PullRequestLabel.name.name].values,
+                df[PullRequestLabel.pull_request_node_id.name],
+                df[PullRequestLabel.name.name],
             ):
                 actual_labels[pr_node_id][label] = ""
         log.info("Loaded labels for %d PRs", len(actual_labels))
         gh_acc_ids = gh_unique_acc_ids[batch : batch + batch_size]
-        acc_ids = acc_map_df[AccountGitHubAccount.account_id.name].values[
-            np.searchsorted(acc_map_df[AccountGitHubAccount.id.name].values, gh_acc_ids)
+        acc_ids = acc_map_df[AccountGitHubAccount.account_id.name][
+            np.searchsorted(acc_map_df[AccountGitHubAccount.id.name], gh_acc_ids)
         ]
         for (df, model), df_acc_size in zip(
             (
@@ -202,15 +202,15 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
             ),
             dfs_acc_counts,
         ):
-            indexes = np.searchsorted(df[model.acc_id.name].values, acc_ids)
+            indexes = np.searchsorted(df[model.acc_id.name], acc_ids)
             lengths = df_acc_size[acc_ids]
             indexes = np.repeat(indexes + lengths - lengths.cumsum(), lengths) + np.arange(
                 lengths.sum(),
             )
             for acc_id, pr_node_id, labels in zip(
-                df[model.acc_id.name].values[indexes],
-                df[model.pr_node_id.name].values[indexes],
-                df[model.labels.name].values[indexes],
+                df[model.acc_id.name][indexes],
+                df[model.pr_node_id.name][indexes],
+                df[model.labels.name][indexes],
             ):
                 assert isinstance(labels, dict)
                 if (

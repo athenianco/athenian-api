@@ -49,7 +49,7 @@ setup(
                 code_root / "sorted_ops.pyx",
                 code_root / "object_arrays.pyx",
                 code_root / "unordered_unique.pyx",
-                code_root / "pandas_io.pyx",
+                code_root / "io.pyx",
                 code_root / "sentry_native.pyx",
                 code_root / "models" / "sql_builders.pyx",
                 code_root / "models" / "web_model_io.pyx",

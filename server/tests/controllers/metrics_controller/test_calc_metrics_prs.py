@@ -1,11 +1,10 @@
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from functools import partial
 from typing import Any
 from unittest import mock
 
 import numpy as np
-import pandas as pd
 import pytest
 import sqlalchemy as sa
 
@@ -184,29 +183,29 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
                 for m, t in zip(cm.metrics, val.values):
                     if t is None:
                         continue
-                    assert pd.to_timedelta(t) >= timedelta(0), "Metric: %s\nValues: %s" % (
-                        m,
-                        val.values,
-                    )
-                    nonzero[m] += pd.to_timedelta(t) > timedelta(0)
+                    t = int(t[:-1])
+                    assert t >= 0, "Metric: %s\nValues: %s" % (m, val.values)
+                    nonzero[m] += t > 0
                 if val.confidence_mins is not None:
                     cmins += 1
                     for t, v in zip(val.confidence_mins, val.values):
                         if t is None:
                             assert v is None
                             continue
-                        assert pd.to_timedelta(t) >= timedelta(
-                            0,
-                        ), "Metric: %s\nConfidence mins: %s" % (m, val.confidence_mins)
+                        assert int(t[:-1]) >= 0, "Metric: %s\nConfidence mins: %s" % (
+                            m,
+                            val.confidence_mins,
+                        )
                 if val.confidence_maxs is not None:
                     cmaxs += 1
                     for t, v in zip(val.confidence_maxs, val.values):
                         if t is None:
                             assert v is None
                             continue
-                        assert pd.to_timedelta(t) >= timedelta(
-                            0,
-                        ), "Metric: %s\nConfidence maxs: %s" % (m, val.confidence_maxs)
+                        assert int(t[:-1]) >= 0, "Metric: %s\nConfidence maxs: %s" % (
+                            m,
+                            val.confidence_maxs,
+                        )
                 if val.confidence_scores is not None:
                     cscores += 1
                     for s, v in zip(val.confidence_scores, val.values):

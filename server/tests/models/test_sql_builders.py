@@ -1,5 +1,5 @@
+import medvedi as md
 import numpy as np
-import pandas as pd
 import pytest
 
 from athenian.api.models import in_any_values_inline
@@ -111,7 +111,12 @@ def test_in_inline_list(values, result):
 @pytest.mark.parametrize("method", [in_inline, in_any_values_inline])
 @pytest.mark.parametrize(
     "container",
-    [{"a", "b"}, {"a": 1, "b": 2}, pd.Index([1, 2, 3]), np.array(["a", "b"], dtype=object)],
+    [
+        {"a", "b"},
+        {"a": 1, "b": 2},
+        md.DataFrame({"a": [0, 1, 2]}).index,
+        np.array(["a", "b"], dtype=object),
+    ],
 )
 def test_in_wrong_type(method, container):
     with pytest.raises(ValueError):

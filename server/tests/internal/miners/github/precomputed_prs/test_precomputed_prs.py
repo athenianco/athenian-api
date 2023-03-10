@@ -4,7 +4,8 @@ import math
 from typing import Sequence
 
 from freezegun import freeze_time
-import pandas as pd
+import medvedi as md
+import numpy as np
 import pytest
 from sqlalchemy import func, insert, literal, select, update
 
@@ -46,10 +47,14 @@ from athenian.api.models.precomputed.models import (
 from tests.controllers.conftest import FakeFacts, with_only_master_branch
 
 
-def gen_dummy_df(dt: datetime) -> pd.DataFrame:
-    return pd.DataFrame.from_records(
-        [["vmarkovtsev", 40020, dt, dt]],
-        columns=["user_login", "user_node_id", "created_at", "submitted_at"],
+def gen_dummy_df(dt: datetime) -> md.DataFrame:
+    return md.DataFrame(
+        {
+            "user_login": ["vmarkovtsev"],
+            "user_node_id": [40020],
+            "created_at": [dt],
+            "submitted_at": [dt],
+        },
     )
 
 
@@ -93,21 +98,20 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts
                 Release.node_id.name: i,
             },
             comments=gen_dummy_df(s.first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcarmonaa", "mcarmonaa", 39818, 39818, s.first_commit]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committer_user_id.name,
-                    PullRequestCommit.author_user_id.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcarmonaa"],
+                    PullRequestCommit.author_login.name: ["mcarmonaa"],
+                    PullRequestCommit.committer_user_id.name: [39818],
+                    PullRequestCommit.author_user_id.name: [39818],
+                    PullRequestCommit.committed_date.name: [s.first_commit],
+                },
             ),
             reviews=gen_dummy_df(s.first_comment_on_first_review),
             review_comments=gen_dummy_df(s.first_comment_on_first_review),
             review_requests=gen_dummy_df(s.first_review_request),
-            labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
-            jiras=pd.DataFrame(),
+            labels=md.DataFrame({"name": (["bug"], ["feature"])[i % 2]}),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         )
@@ -215,24 +219,24 @@ async def test_load_store_precomputed_done_filters(
                 Release.node_id.name: i,
             },
             comments=gen_dummy_df(s.first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcuadros", "mcuadros", 39789, 39789, s.first_commit]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committer_user_id.name,
-                    PullRequestCommit.author_user_id.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcuadros"],
+                    PullRequestCommit.author_login.name: ["mcuadros"],
+                    PullRequestCommit.committer_user_id.name: [39789],
+                    PullRequestCommit.author_user_id.name: [39789],
+                    PullRequestCommit.committed_date.name: [s.first_commit],
+                },
             ),
             reviews=gen_dummy_df(s.first_comment_on_first_review),
             review_comments=gen_dummy_df(s.first_comment_on_first_review),
             review_requests=gen_dummy_df(s.first_review_request),
-            labels=pd.DataFrame.from_records(
-                ([["bug"]], [["feature"]], [["bug"], ["bad"]], [["feature"], ["bad"]])[i % 4],
-                columns=["name"],
+            labels=md.DataFrame(
+                {
+                    "name": (["bug"], ["feature"], ["bug", "bad"], ["feature", "bad"])[i % 4],
+                },
             ),
-            jiras=pd.DataFrame(),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         )
@@ -551,21 +555,20 @@ async def test_load_store_precomputed_done_exclude_inactive(
                 Release.node_id.name: 777,
             },
             comments=gen_dummy_df(s.first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcuadros", "mcuadros", 39789, 39789, s.first_comment_on_first_review]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committer_user_id.name,
-                    PullRequestCommit.author_user_id.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcuadros"],
+                    PullRequestCommit.author_login.name: ["mcuadros"],
+                    PullRequestCommit.committer_user_id.name: [39789],
+                    PullRequestCommit.author_user_id.name: [39789],
+                    PullRequestCommit.committed_date.name: [s.first_comment_on_first_review],
+                },
             ),
             reviews=gen_dummy_df(s.first_comment_on_first_review),
             review_comments=gen_dummy_df(s.first_comment_on_first_review),
             review_requests=gen_dummy_df(s.first_comment_on_first_review),
-            labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-            jiras=pd.DataFrame(),
+            labels=md.DataFrame({"name": ["bug"]}),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         )
@@ -659,21 +662,20 @@ async def test_load_precomputed_done_times_reponums_smoke(
                 Release.node_id.name: i,
             },
             comments=gen_dummy_df(s.first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcuadros", "mcuadros", 39789, 39789, s.first_commit]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committer_user_id.name,
-                    PullRequestCommit.author_user_id.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcuadros"],
+                    PullRequestCommit.author_login.name: ["mcuadros"],
+                    PullRequestCommit.committer_user_id.name: [39789],
+                    PullRequestCommit.author_user_id.name: [39789],
+                    PullRequestCommit.committed_date.name: [s.first_commit],
+                },
             ),
             reviews=gen_dummy_df(s.first_comment_on_first_review),
             review_comments=gen_dummy_df(s.first_comment_on_first_review),
             review_requests=gen_dummy_df(s.first_review_request),
-            labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
-            jiras=pd.DataFrame(),
+            labels=md.DataFrame({"name": (["bug"], ["feature"])[i % 2]}),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         )
@@ -809,21 +811,20 @@ def _gen_one_pr(pr_samples):
                 Release.node_id.name: 777,
             },
             comments=gen_dummy_df(s.first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcarmonaa", "mcarmonaa", 39818, 39818, s.first_commit]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committer_user_id.name,
-                    PullRequestCommit.author_user_id.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcarmonaa"],
+                    PullRequestCommit.author_login.name: ["mcarmonaa"],
+                    PullRequestCommit.committer_user_id.name: [39818],
+                    PullRequestCommit.author_user_id.name: [39818],
+                    PullRequestCommit.committed_date.name: [s.first_commit],
+                },
             ),
             reviews=gen_dummy_df(s.first_comment_on_first_review),
             review_comments=gen_dummy_df(s.first_comment_on_first_review),
             review_requests=gen_dummy_df(s.first_review_request),
-            labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-            jiras=pd.DataFrame(),
+            labels=md.DataFrame({"name": ["bug"]}),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         ),
@@ -955,7 +956,7 @@ async def test_load_precomputed_pr_releases_smoke(
     )
 
     def df_from_prs():
-        df = pd.DataFrame()
+        df = md.DataFrame()
         df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
         df[PullRequest.repository_full_name.name] = [
             pr.pr[PullRequest.repository_full_name.name] for pr in prs
@@ -980,7 +981,9 @@ async def test_load_precomputed_pr_releases_smoke(
         )
         await wait_deferred()
         for s, pr in zip(samples, prs):
-            rpr = released_prs.loc[pr.pr[PullRequest.node_id.name], "src-d/go-git"]
+            rpr = released_prs.take(
+                released_prs.index.get_level_values(0) == pr.pr[PullRequest.node_id.name],
+            ).iloc[0]
             for col in (
                 Release.author.name,
                 Release.url.name,
@@ -988,7 +991,7 @@ async def test_load_precomputed_pr_releases_smoke(
                 matched_by_column,
             ):
                 assert rpr[col] == pr.release[col], i
-            assert rpr[Release.published_at.name].replace(tzinfo=None) == s.released, i
+            assert rpr[Release.published_at.name] == s.released, i
 
 
 async def test_load_precomputed_pr_releases_time_to(
@@ -1018,7 +1021,7 @@ async def test_load_precomputed_pr_releases_time_to(
     )
 
     def df_from_prs():
-        df = pd.DataFrame()
+        df = md.DataFrame()
         df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
         df[PullRequest.repository_full_name.name] = [
             pr.pr[PullRequest.repository_full_name.name] for pr in prs
@@ -1069,7 +1072,7 @@ async def test_load_precomputed_pr_releases_release_mismatch(
     )
 
     def df_from_prs():
-        df = pd.DataFrame()
+        df = md.DataFrame()
         df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
         df[PullRequest.repository_full_name.name] = [
             pr.pr[PullRequest.repository_full_name.name] for pr in prs
@@ -1130,7 +1133,7 @@ async def test_load_precomputed_pr_releases_tag(
     )
 
     def df_from_prs():
-        df = pd.DataFrame()
+        df = md.DataFrame()
         df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
         df[PullRequest.repository_full_name.name] = [
             pr.pr[PullRequest.repository_full_name.name] for pr in prs
@@ -1191,7 +1194,7 @@ async def test_discover_update_unreleased_prs_smoke(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs[prs[PullRequest.merged_at.name].isnull()] = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    prs.fillna(datetime(2021, 1, 1), PullRequest.merged_at.name, inplace=True)
     utc = timezone.utc
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -1293,7 +1296,7 @@ async def test_discover_update_unreleased_prs_smoke(
         1,
         pdb,
     )
-    assert set(prs.index) - set(skipped) == set(unreleased_prs)
+    assert set(zip(*prs.index.levels())) - set(skipped) == set(unreleased_prs)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
         None,
@@ -1384,8 +1387,8 @@ async def test_discover_update_unreleased_prs_released(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
-    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
+    prs[PullRequest.dead] = False
+    prs.fillna(datetime.utcnow(), PullRequest.merged_at.name, inplace=True)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
@@ -1409,7 +1412,7 @@ async def test_discover_update_unreleased_prs_released(
         prs,
         releases,
         matched_bys,
-        pd.DataFrame(columns=[Branch.commit_id.name]),
+        md.DataFrame(columns=[Branch.commit_id.name]),
         default_branches,
         time_to,
         dag,
@@ -1492,8 +1495,8 @@ async def precomputed_merged_unreleased(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
-    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
+    prs[PullRequest.dead] = False
+    prs.fillna(datetime.utcnow(), PullRequest.merged_at.name, inplace=True)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
@@ -1517,7 +1520,7 @@ async def precomputed_merged_unreleased(
         prs,
         releases,
         matched_bys,
-        pd.DataFrame(columns=[Branch.commit_id.name]),
+        md.DataFrame(columns=[Branch.commit_id.name]),
         default_branches,
         time_to,
         dag,
@@ -1727,9 +1730,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    assert (
-        unreleased_prs[PullRequest.merged_at.name] > datetime(2018, 10, 17, tzinfo=timezone.utc)
-    ).all()
+    assert (unreleased_prs[PullRequest.merged_at.name] > datetime(2018, 10, 17)).all()
     unreleased_prs = await discover_inactive_merged_unreleased_prs(
         unreleased_time_from,
         unreleased_time_to,
@@ -1767,12 +1768,12 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         cache,
     )
     await wait_deferred()
-    unreleased_prs["dead"] = False
+    unreleased_prs[PullRequest.dead] = False
     released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
         unreleased_prs,
         releases,
         matched_bys,
-        pd.DataFrame(columns=[Branch.commit_id.name]),
+        md.DataFrame(columns=[Branch.commit_id.name]),
         default_branches,
         unreleased_time_to,
         dag,
@@ -1905,19 +1906,18 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
                 Release.node_id.name: 777,
             },
             comments=gen_dummy_df(samples[0].first_comment_on_first_review),
-            commits=pd.DataFrame.from_records(
-                [["mcuadros", "mcuadros", samples[0].first_commit]],
-                columns=[
-                    PullRequestCommit.committer_login.name,
-                    PullRequestCommit.author_login.name,
-                    PullRequestCommit.committed_date.name,
-                ],
+            commits=md.DataFrame(
+                {
+                    PullRequestCommit.committer_login.name: ["mcuadros"],
+                    PullRequestCommit.author_login.name: ["mcuadros"],
+                    PullRequestCommit.committed_date.name: [samples[0].first_commit],
+                },
             ),
             reviews=gen_dummy_df(samples[0].first_comment_on_first_review),
             review_comments=gen_dummy_df(samples[0].first_comment_on_first_review),
             review_requests=gen_dummy_df(samples[0].first_review_request),
-            labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-            jiras=pd.DataFrame(),
+            labels=md.DataFrame({"name": ["bug"]}),
+            jiras=md.DataFrame(),
             deployments=None,
             check_run={PullRequestCheckRun.f.name: None},
         ),
@@ -1970,10 +1970,9 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     for pr in prs:
         if pr.pr[PullRequest.merged_at.name] is None:
             pr.pr[PullRequest.merged_at.name] = datetime.now(tz=timezone.utc)
-    dfs.prs.loc[
-        dfs.prs[PullRequest.merged_at.name].isnull(),
-        PullRequest.merged_at.name,
-    ] = datetime.now(tz=timezone.utc)
+    dfs.prs.fillna(
+        np.datetime64(datetime.utcnow(), "us"), PullRequest.merged_at.name, inplace=True,
+    )
     event = asyncio.Event()
     await update_unreleased_prs(
         dfs.prs,

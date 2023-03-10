@@ -1,14 +1,13 @@
 import asyncio
-from datetime import datetime, timezone
 from itertools import chain
 import logging
 import textwrap
 from typing import Any, Awaitable, Iterable, Optional, Sequence, Type, Union
 
+import medvedi as md
+from medvedi.accelerators import is_not_null, is_null
 import numpy as np
-import pandas as pd
-from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
-from pandas.core.internals.managers import BlockManager
+from numpy import typing as npt
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import REAL, BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
@@ -22,9 +21,8 @@ from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
-from athenian.api.object_arrays import is_null, to_object_arrays_split
+from athenian.api.object_arrays import to_object_arrays
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
-from athenian.api.typing_utils import create_data_frame_from_arrays, make_block
 
 
 async def read_sql_query(
@@ -40,7 +38,7 @@ async def read_sql_query(
     ],
     index: Optional[Union[str, Sequence[str], InstrumentedAttribute]] = None,
     soft_limit: Optional[int] = None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Read SQL query into a DataFrame.
 
     Returns a DataFrame corresponding to the result set of the query.
@@ -67,9 +65,9 @@ async def read_sql_query(
     """
     if isinstance(index, InstrumentedAttribute):
         index = index.name
+    if not isinstance(columns, Sequence):
+        columns = columns.__table__.columns
     if await is_postgresql(con):
-        if not isinstance(columns, Sequence):
-            columns = columns.__table__.columns
         return await _read_sql_query_numpy(sql, con, columns, index=index, soft_limit=soft_limit)
     return await _read_sql_query_records(sql, con, columns, index=index, soft_limit=soft_limit)
 
@@ -77,11 +75,11 @@ async def read_sql_query(
 async def _read_sql_query_numpy(
     sql: GenerativeSelect,
     con: DatabaseLike,
-    columns: Union[Sequence[str], Sequence[InstrumentedAttribute]],
+    columns: Sequence[str] | Sequence[InstrumentedAttribute],
     index: Optional[Union[str, Sequence[str]]] = None,
     soft_limit: Optional[int] = None,
-) -> pd.DataFrame:
-    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = _build_dtype(
+) -> md.DataFrame:
+    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = infer_dtype(
         columns,
     )
     sql.dtype = dtype
@@ -89,18 +87,37 @@ async def _read_sql_query_numpy(
         data, nulls = await _fetch_query(sql, con)
     finally:
         sql.dtype = None
-    blocks = {}
-    rows_count = len(data[0]) if len(data) else 0
-    ndarray = np.ndarray
-    for i, arr in enumerate(data):
-        # we need this check to support the local query cache
-        if isinstance(arr.base, ndarray) and arr.ndim == 2:
-            base = arr.base
-        else:
-            base = arr[None, :]
-        blocks.setdefault((arr.dtype, id(base)), [base, []])[1].append(i)
-    if nulls and (int_erase_nulls or int_reset_nulls or str_erase_nulls or str_reset_nulls):
-        null_items, null_cols = np.unravel_index(nulls, (rows_count, len(dtype)))
+    rows_count = len(data[0]) if len(columns) else 0
+    return _columns_to_dataframe(
+        dict(zip(dtype.names, data)),
+        rows_count,
+        dtype,
+        int_erase_nulls,
+        int_reset_nulls,
+        str_erase_nulls,
+        str_reset_nulls,
+        *np.unravel_index(np.asarray(nulls, dtype=int), (rows_count, len(dtype))),
+        index,
+        soft_limit,
+    )
+
+
+def _columns_to_dataframe(
+    columns: dict[str, np.ndarray],
+    rows_count: int,
+    dtype: np.dtype,
+    int_erase_nulls: set[str],
+    int_reset_nulls: set[str],
+    str_erase_nulls: set[str],
+    str_reset_nulls: set[str],
+    null_items: npt.NDArray[int],
+    null_cols: npt.NDArray[int],
+    index: Optional[Union[str, Sequence[str]]],
+    soft_limit: Optional[int],
+) -> md.DataFrame:
+    if len(null_items) and (
+        int_erase_nulls or int_reset_nulls or str_erase_nulls or str_reset_nulls
+    ):
         order = np.argsort(null_cols)
         null_items = null_items[order]
         null_cols = null_cols[order]
@@ -120,33 +137,22 @@ async def _read_sql_query_numpy(
             for col in reset_cols:
                 pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
                 if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
-                    data[col][null_items[offsets[pos] : offsets[pos] + counts[pos]]] = reset_val
+                    columns[col][null_items[offsets[pos] : offsets[pos] + counts[pos]]] = reset_val
         if remain_mask is not None:
-            for ptrs in blocks.values():
-                ptrs[0] = ptrs[0][:, remain_mask]
+            for key, column in columns.items():
+                columns[key] = column[remain_mask]
             rows_count = remain_mask.sum()
     if soft_limit is not None and rows_count > soft_limit:
-        rows_count = soft_limit
-        for ptrs in blocks.values():
-            ptrs[0] = ptrs[0][:, :soft_limit]
-    pd_blocks = [make_block(block, placement=indexes) for block, indexes in blocks.values()]
-    dtype_names = dtype.names
-    block_mgr = BlockManager(pd_blocks, [pd.Index(dtype_names), pd.RangeIndex(stop=rows_count)])
-    frame = pd.DataFrame(block_mgr, columns=dtype_names, copy=False)
-    for column, (child_dtype, _) in dtype.fields.items():
-        if child_dtype.kind == "M":
-            try:
-                frame[column] = frame[column].dt.tz_localize(timezone.utc)
-            except (AttributeError, TypeError):
-                continue
-    if index is not None:
-        frame.set_index(index, inplace=True)
-    return frame
+        for key, column in columns.items():
+            columns[key] = column[:soft_limit]
+
+    return md.DataFrame(columns, index=index)
 
 
-def _build_dtype(
+def infer_dtype(
     columns: Sequence[InstrumentedAttribute],
 ) -> tuple[np.dtype, tuple[set[str], set[str], set[str], set[str]]]:
+    """Detect the joint structured dtype of the specified columns."""
     body = []
     int_erase_nulls = set()
     int_reset_nulls = set()
@@ -159,7 +165,7 @@ def _build_dtype(
         if isinstance(c.type, DateTime) or (
             isinstance(c.type, type) and issubclass(c.type, DateTime)
         ):
-            body.append((c.name, "datetime64[ns]"))
+            body.append((c.name, "datetime64[us]"))
         elif isinstance(c.type, Boolean) or (
             isinstance(c.type, type) and issubclass(c.type, Boolean)
         ):
@@ -207,21 +213,51 @@ def _build_dtype(
 async def _read_sql_query_records(
     sql: GenerativeSelect,
     con: DatabaseLike,
-    columns: Union[
-        Sequence[str],
-        Sequence[InstrumentedAttribute],
-        MetadataBase,
-        PerdataBase,
-        PrecomputedBase,
-        StateBase,
-    ],
+    columns: Sequence[str] | Sequence[InstrumentedAttribute],
     index: Optional[Union[str, Sequence[str]]] = None,
     soft_limit: Optional[int] = None,
-) -> pd.DataFrame:
-    data = await _fetch_query(sql, con)
-    if soft_limit is not None and len(data) > soft_limit:
-        data = data[:soft_limit]
-    return _wrap_sql_query(data, columns, index)
+) -> md.DataFrame:
+    rows = await _fetch_query(sql, con)
+
+    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = infer_dtype(
+        columns,
+    )
+
+    data = to_object_arrays(rows, len(columns))
+    nulls = np.flatnonzero(is_null(data.ravel()))
+
+    columns = {}
+    for (name, (column_dtype, *_)), arr in zip(dtype.fields.items(), data):
+        if arr_len := len(arr):
+            try:
+                if column_dtype.kind in ("S", "U"):
+                    raise TypeError
+                casted = arr.astype(column_dtype)
+            except TypeError:
+                if column_dtype.kind in ("f", "M", "m"):
+                    casted = np.full(arr_len, None, column_dtype)
+                else:
+                    casted = np.zeros(arr_len, column_dtype)
+                if (mask := is_not_null(arr)).any():
+                    casted[mask] = arr[mask].astype(column_dtype)
+        else:
+            casted = np.array([], dtype=column_dtype)
+        columns[name] = casted
+
+    null_cols, null_items = np.unravel_index(nulls, (len(dtype), len(rows)))
+    return _columns_to_dataframe(
+        columns,
+        len(rows),
+        dtype,
+        int_erase_nulls,
+        int_reset_nulls,
+        str_erase_nulls,
+        str_reset_nulls,
+        null_items,
+        null_cols,
+        index,
+        soft_limit,
+    )
 
 
 async def _fetch_query(
@@ -229,7 +265,7 @@ async def _fetch_query(
     con: DatabaseLike,
 ) -> Union[list[Sequence[Any]], tuple[np.ndarray, list[int]]]:
     try:
-        data = await con.fetch_all(query=sql)
+        rows = await con.fetch_all(query=sql)
     except Exception as e:
         sql.dtype = None
         try:
@@ -241,148 +277,7 @@ async def _fetch_query(
             "%s: %s; %s", type(e).__name__, e, sql,
         )
         raise e from None
-    return data
-
-
-def _wrap_sql_query(
-    data: list[Sequence[Any]],
-    columns: Union[Sequence[str], Sequence[InstrumentedAttribute], MetadataBase, StateBase],
-    index: Optional[Union[str, Sequence[str]]] = None,
-) -> pd.DataFrame:
-    """Turn the fetched DB records to a pandas DataFrame."""
-    try:
-        columns = columns.__table__.columns
-    except AttributeError:
-        pass
-    dt_columns = _extract_datetime_columns(columns)
-    int_columns = _extract_integer_columns(columns)
-    bool_columns = _extract_boolean_columns(columns)
-    fixed_str_columns = _extract_fixed_string_columns(columns)
-    float32_typed_columns = _extract_float32_typed_columns(columns)
-    columns = [(c.name if not isinstance(c, str) else c) for c in columns]
-
-    typed_cols_indexes = []
-    typed_cols_names = []
-    obj_cols_indexes = []
-    obj_cols_names = []
-    for i, column in enumerate(columns):
-        if (
-            column in dt_columns
-            or column in int_columns
-            or column in bool_columns
-            or column in fixed_str_columns
-            or column in float32_typed_columns
-        ):
-            cols_indexes = typed_cols_indexes
-            cols_names = typed_cols_names
-        else:
-            cols_indexes = obj_cols_indexes
-            cols_names = obj_cols_names
-        cols_indexes.append(i)
-        cols_names.append(column)
-    log = logging.getLogger(f"{metadata.__package__}.wrap_sql_query")
-    # we used to have pd.DataFrame.from_records + bunch of convert_*() in relevant columns
-    # the current approach is faster for several reasons:
-    # 1. avoid an expensive copy of the object dtype columns in the BlockManager construction
-    # 2. call tslib.array_to_datetime directly without surrounding Pandas bloat
-    # 3. convert to int in the numpy domain and thus do not have to mess with indexes
-    #
-    # an ideal conversion would be loading columns directly from asyncpg but that requires
-    # quite some changes in their internals
-    with sentry_sdk.start_span(op="wrap_sql_query/convert", description=str(size := len(data))):
-        data_typed, data_obj = to_object_arrays_split(data, typed_cols_indexes, obj_cols_indexes)
-        converted_typed = []
-        remain_mask = None
-        for column, values in zip(typed_cols_names, data_typed):
-            if column in dt_columns:
-                converted_typed.append(_convert_datetime(values))
-            elif column in int_columns:
-                values, discarded = _convert_integer(values, column, *int_columns[column], log)
-                converted_typed.append(values)
-                if discarded is not None:
-                    if remain_mask is None:
-                        remain_mask = np.ones(len(data), dtype=bool)
-                    remain_mask[discarded] = False
-            elif column in bool_columns:
-                converted_typed.append(values.astype(bool))
-            elif column in fixed_str_columns:
-                values[is_null(values)] = np.dtype(fixed_str_columns[column]).type()
-                converted_typed.append(values.astype(fixed_str_columns[column]))
-            elif column in float32_typed_columns:
-                converted_typed.append(np.array(values, dtype=np.float32))
-            else:
-                raise AssertionError("impossible: typed columns are either dt or int")
-        if remain_mask is not None:
-            size = remain_mask.sum()
-            converted_typed = [arr[remain_mask] for arr in converted_typed]
-            data_obj = data_obj[:, remain_mask]
-    with sentry_sdk.start_span(op="wrap_sql_query/pd.DataFrame()", description=str(size)):
-        frame = create_data_frame_from_arrays(
-            converted_typed, data_obj, typed_cols_names, obj_cols_names, size,
-        )
-        for column in dt_columns:
-            try:
-                frame[column] = frame[column].dt.tz_localize(timezone.utc)
-            except (AttributeError, TypeError):
-                continue
-        if index is not None:
-            frame.set_index(index, inplace=True)
-    return frame
-
-
-def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
-    return {
-        c.name
-        for c in columns
-        if not isinstance(c, str)
-        and (
-            isinstance(c.type, DateTime)
-            or (isinstance(c.type, type) and issubclass(c.type, DateTime))
-        )
-    }
-
-
-def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
-    return {
-        c.name
-        for c in columns
-        if not isinstance(c, str)
-        and (
-            isinstance(c.type, Boolean)
-            or (isinstance(c.type, type) and issubclass(c.type, Boolean))
-        )
-    }
-
-
-def _extract_integer_columns(
-    columns: Iterable[Union[Column, str]],
-) -> dict[str, tuple[bool, bool]]:
-    return {
-        c.name: (info.get("erase_nulls", False), info.get("reset_nulls", False))
-        for c in columns
-        if not isinstance(c, str)
-        and (
-            isinstance(c.type, Integer)
-            or (isinstance(c.type, type) and issubclass(c.type, Integer))
-        )
-        and (
-            (info := _get_col_info(c)).get("erase_nulls", False)
-            or info.get("reset_nulls", False)
-            or (
-                not getattr(c, "nullable", False)
-                and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
-            )
-        )
-    }
-
-
-def _extract_float32_typed_columns(columns: Iterable[Union[Column, str]]) -> set[str]:
-    return {
-        c.name
-        for c in columns
-        if not isinstance(c, str)
-        and (isinstance(c.type, REAL) or (isinstance(c.type, type) and issubclass(c.type, REAL)))
-    }
+    return rows
 
 
 def _extract_col_property(col: Column, prop: str, default: Any) -> Any:
@@ -404,93 +299,6 @@ def _get_col_info(col: Column):
 def _get_col_nullable(col: Column):
     """Get the `nullable` attribute of the column, unwrapping Label and Alias if needed."""
     return _extract_col_property(col, "nullable", False)
-
-
-def _extract_fixed_string_columns(
-    columns: Iterable[Union[Column, str]],
-) -> dict[str, bool | str]:
-    return {
-        c.name: info["dtype"]
-        for c in columns
-        if (
-            not isinstance(c, str)
-            and (
-                isinstance(c.type, String)
-                or (isinstance(c.type, type) and issubclass(c.type, String))
-            )
-            and (info := _get_col_info(c)).get("dtype", False)
-        )
-    }
-
-
-def _convert_datetime(arr: np.ndarray) -> np.ndarray:
-    # None converts to NaT
-    try:
-        ts, offset = tslib.array_to_datetime(arr, utc=True, errors="raise")
-        assert offset is None
-    except OutOfBoundsDatetime:
-        # TODO(vmarkovtsev): copy the function and set OOB values to NaT
-        # this comparison is very slow but still faster than removing tzinfo and taking np.array()
-        arr[arr == datetime(1, 1, 1)] = None
-        arr[arr == datetime(1, 1, 1, tzinfo=timezone.utc)] = None
-        try:
-            return _convert_datetime(arr)
-        except OutOfBoundsDatetime as e:
-            raise e from None
-    # 0 converts to 1970-01-01T00:00:00
-    ts[ts == np.zeros(1, ts.dtype)[0]] = None
-    return ts
-
-
-def postprocess_datetime(
-    frame: pd.DataFrame,
-    columns: Optional[Iterable[str]] = None,
-) -> pd.DataFrame:
-    """Ensure *inplace* that all the timestamps inside the dataframe are valid UTC or NaT.
-
-    :return: Fixed dataframe - the same instance as `frame`.
-    """
-    utc_dt1 = datetime(1, 1, 1, tzinfo=timezone.utc)
-    dt1 = datetime(1, 1, 1)
-    if columns is not None:
-        obj_cols = dt_cols = columns
-    else:
-        obj_cols = frame.select_dtypes(include=[object])
-        dt_cols = frame.select_dtypes(include=["datetime"])
-    for col in obj_cols:
-        fc = frame[col]
-        if utc_dt1 in fc:
-            fc.replace(utc_dt1, pd.NaT, inplace=True)
-        if dt1 in fc:
-            fc.replace(dt1, pd.NaT, inplace=True)
-    for col in dt_cols:
-        fc = frame[col]
-        if 0 in fc:
-            fc.replace(0, pd.NaT, inplace=True)
-        try:
-            frame[col] = fc.dt.tz_localize(timezone.utc)
-        except (AttributeError, TypeError):
-            continue
-    return frame
-
-
-def _convert_integer(
-    arr: np.ndarray,
-    name: str,
-    erase_null: bool,
-    reset_null: bool,
-    log: logging.Logger,
-) -> tuple[np.ndarray, Optional[np.ndarray]]:
-    nulls = None
-    while True:
-        try:
-            return arr.astype(int), nulls if not reset_null else None
-        except TypeError as e:
-            nulls = is_null(arr)
-            if not (nulls.any() and (erase_null or reset_null)):
-                raise ValueError(f"Column {name} is not all-integer") from e
-            log.warning("fetched nulls instead of integers in %s", name)
-            arr[nulls] = 0
 
 
 class CatchNothing(Exception):
@@ -552,7 +360,7 @@ async def read_sql_query_with_join_collapse(
     ],
     index: Optional[Union[str, Sequence[str]]] = None,
     soft_limit: Optional[int] = None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
     query = query.with_statement_hint("set(join_collapse_limit 1)")
     return await read_sql_query(query, db, columns=columns, index=index, soft_limit=soft_limit)

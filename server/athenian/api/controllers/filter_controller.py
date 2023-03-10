@@ -8,8 +8,8 @@ from typing import Any, Callable, Generator, Iterable, Mapping, Optional, Sequen
 from aiohttp import web
 import aiomcache
 from dateutil.parser import parse as parse_datetime
+import medvedi as md
 import numpy as np
-import pandas as pd
 import sentry_sdk
 
 from athenian.api import metadata
@@ -548,7 +548,6 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         ),
     )
     users = model.include.users
-    utc = timezone.utc
     repo_name_map, user_login_map = (
         prefixer.repo_name_to_prefixed_name,
         prefixer.user_login_to_prefixed_login,
@@ -575,27 +574,27 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             commit_date,
             author_avatar_url,
             committer_avatar_url,
-        ) in zip(
-            commits[PushCommit.author_login.name].values,
-            commits[PushCommit.committer_login.name].values,
-            commits[PushCommit.repository_full_name.name].values,
-            commits[PushCommit.sha.name].values,
-            commits["children"].values,
-            commits["deployments"].values,
-            commits[PushCommit.message.name].values,
-            commits[PushCommit.additions.name].values,
-            commits[PushCommit.deletions.name].values,
-            commits[PushCommit.changed_files.name].values,
-            commits[PushCommit.author_name.name].values,
-            commits[PushCommit.author_email.name].values,
-            commits[PushCommit.authored_date.name],
-            commits[PushCommit.committer_name.name].values,
-            commits[PushCommit.committer_email.name].values,
-            commits[PushCommit.committed_date.name],
-            commits[PushCommit.author_date.name],
-            commits[PushCommit.commit_date.name],
-            commits[PushCommit.author_avatar_url.name],
-            commits[PushCommit.committer_avatar_url.name],
+        ) in commits.iterrows(
+            PushCommit.author_login.name,
+            PushCommit.committer_login.name,
+            PushCommit.repository_full_name.name,
+            PushCommit.sha.name,
+            "children",
+            "deployments",
+            PushCommit.message.name,
+            PushCommit.additions.name,
+            PushCommit.deletions.name,
+            PushCommit.changed_files.name,
+            PushCommit.author_name.name,
+            PushCommit.author_email.name,
+            PushCommit.authored_date.name,
+            PushCommit.committer_name.name,
+            PushCommit.committer_email.name,
+            PushCommit.committed_date.name,
+            PushCommit.author_date.name,
+            PushCommit.commit_date.name,
+            PushCommit.author_avatar_url.name,
+            PushCommit.committer_avatar_url.name,
         ):
             obj = Commit(
                 repository=repo_name_map[repository_full_name],
@@ -610,14 +609,14 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
                     login=(user_login_map[author_login]) if author_login else None,
                     name=author_name,
                     email=author_email,
-                    timestamp=authored_date.replace(tzinfo=utc),
+                    timestamp=authored_date,
                     timezone=0,
                 ),
                 committer=CommitSignature(
                     login=(user_login_map[committer_login]) if committer_login else None,
                     name=committer_name,
                     email=committer_email,
-                    timestamp=committed_date.replace(tzinfo=utc),
+                    timestamp=committed_date,
                     timezone=0,
                 ),
             )
@@ -709,20 +708,20 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 
 
 async def _load_jira_issues_for_releases(
-    releases: pd.DataFrame,
+    releases: md.DataFrame,
     jira_ids: Optional[JIRAConfig],
     mdb: Database,
 ) -> dict[str, LinkedJIRAIssue]:
     if releases.empty or jira_ids is None:
         return {}
-    issue_keys = unordered_unique(np.concatenate(releases["jira_ids"].values))
+    issue_keys = unordered_unique(np.concatenate(releases["jira_ids"]))
     rows = await fetch_jira_issues_rows_by_keys(issue_keys, jira_ids, mdb)
     issues = {row["id"]: LinkedJIRAIssue(**row) for row in rows}
     return issues
 
 
 async def _build_release_set_response(
-    releases: pd.DataFrame,
+    releases: md.DataFrame,
     avatars: Iterable[tuple[int, str]],
     deployments: dict[str, Deployment],
     prefixer: Prefixer,
@@ -752,7 +751,7 @@ async def _build_release_set_response(
     return model_response(model, native=True)
 
 
-def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[FilteredRelease]:
+def _filtered_releases_from_df(df: md.DataFrame, prefixer: Prefixer) -> list[FilteredRelease]:
     if df.empty:
         return []
     repo_name_to_prefixed_name = prefixer.prefix_logical_repo
@@ -764,7 +763,7 @@ def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[Fil
             repository=repo_name_to_prefixed_name(repo),
             url=url,
             publisher=user_node_to_prefixed_login(publisher),
-            published=pd.Timestamp(published, tzinfo=timezone.utc),
+            published=published,
             age=age,
             added_lines=additions,
             deleted_lines=deletions,
@@ -787,27 +786,27 @@ def _filtered_releases_from_df(df: pd.DataFrame, prefixer: Prefixer) -> list[Fil
             commit_authors,
             *prs_columns,
             deployments,
-        ) in zip(
-            df[ReleaseFacts.f.name].values,
-            df[ReleaseFacts.f.sha].values,
-            df[ReleaseFacts.f.repository_full_name].values,
-            df[ReleaseFacts.f.url].values,
-            df[ReleaseFacts.f.publisher].values,
-            df[ReleaseFacts.f.published].values,
-            df[ReleaseFacts.f.age].values,
-            df[ReleaseFacts.f.additions].values,
-            df[ReleaseFacts.f.deletions].values,
-            df[ReleaseFacts.f.commits_count].values,
-            df[ReleaseFacts.f.commit_authors].values,
-            df["prs_" + PullRequest.number.name].values,
-            df["prs_" + PullRequest.title.name].values,
-            df["prs_" + PullRequest.created_at.name].values,
-            df["prs_" + PullRequest.additions.name].values,
-            df["prs_" + PullRequest.deletions.name].values,
-            df["prs_" + PullRequest.user_node_id.name].values,
-            df["jira_ids"].values,
-            df["jira_pr_offsets"].values,
-            df[ReleaseFacts.f.deployments].values,
+        ) in df.iterrows(
+            ReleaseFacts.f.name,
+            ReleaseFacts.f.sha,
+            ReleaseFacts.f.repository_full_name,
+            ReleaseFacts.f.url,
+            ReleaseFacts.f.publisher,
+            ReleaseFacts.f.published,
+            ReleaseFacts.f.age,
+            ReleaseFacts.f.additions,
+            ReleaseFacts.f.deletions,
+            ReleaseFacts.f.commits_count,
+            ReleaseFacts.f.commit_authors,
+            "prs_" + PullRequest.number.name,
+            "prs_" + PullRequest.title.name,
+            "prs_" + PullRequest.created_at.name,
+            "prs_" + PullRequest.additions.name,
+            "prs_" + PullRequest.deletions.name,
+            "prs_" + PullRequest.user_node_id.name,
+            "jira_ids",
+            "jira_pr_offsets",
+            ReleaseFacts.f.deployments,
         )
     ]
 
@@ -1072,7 +1071,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         request.cache,
     )
     if all_diffs := [r[-1] for rr in releases.values() for r in rr]:
-        all_diffs = pd.concat(all_diffs, ignore_index=True)
+        all_diffs = md.concat(*all_diffs, ignore_index=True)
         issues = await _load_jira_issues_for_releases(all_diffs, jira_ids, request.mdb)
     else:
         issues = {}
@@ -1220,7 +1219,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
 
 async def _build_deployments_response(
-    df: pd.DataFrame,
+    df: md.DataFrame,
     people: list[tuple[str, str]],
     issues: dict[str, PullRequestJIRAIssueItem],
     prefixer: Prefixer,
@@ -1240,16 +1239,16 @@ async def _build_deployments_response(
                 conclusion=conclusion,
                 components=[
                     WebDeployedComponent(repository=prefix_logical_repo(repo_name), reference=ref)
-                    for repo_name, ref in zip(
-                        components_df[DeployedComponent.repository_full_name].values,
-                        components_df[DeployedComponent.reference.name].values,
+                    for repo_name, ref in components_df.iterrows(
+                        DeployedComponent.repository_full_name,
+                        DeployedComponent.reference.name,
                     )
                 ],
                 labels={
                     key: val
-                    for key, val in zip(
-                        labels_df[DeployedLabel.key.name].values,
-                        labels_df[DeployedLabel.value.name].values,
+                    for key, val in labels_df.iterrows(
+                        DeployedLabel.key.name,
+                        DeployedLabel.value.name,
                     )
                 }
                 if not labels_df.empty
@@ -1339,19 +1338,19 @@ async def _build_deployments_response(
                         rel_commits_count,
                         rel_commit_authors,
                         rel_pr_numbers,
-                    ) in zip(
-                        releases_df[Release.name.name].values,
-                        releases_df[Release.sha.name].values,
-                        releases_df.index.get_level_values(1).values,
-                        releases_df[Release.url.name].values,
-                        releases_df[Release.author.name].values,
-                        releases_df[Release.published_at.name].values,
-                        releases_df[ReleaseFacts.f.age].values,
-                        releases_df[ReleaseFacts.f.additions].values,
-                        releases_df[ReleaseFacts.f.deletions].values,
-                        releases_df[ReleaseFacts.f.commits_count].values,
-                        releases_df[ReleaseFacts.f.commit_authors].values,
-                        releases_df["prs_" + PullRequest.number.name].values,
+                    ) in releases_df.iterrows(
+                        Release.name.name,
+                        Release.sha.name,
+                        releases_df.index.names[1],
+                        Release.url.name,
+                        Release.author.name,
+                        Release.published_at.name,
+                        ReleaseFacts.f.age,
+                        ReleaseFacts.f.additions,
+                        ReleaseFacts.f.deletions,
+                        ReleaseFacts.f.commits_count,
+                        ReleaseFacts.f.commit_authors,
+                        "prs_" + PullRequest.number.name,
                     )
                 ]
                 if not releases_df.empty
@@ -1384,33 +1383,33 @@ async def _build_deployments_response(
                 pr_jira_offsets,
                 jira_by_repo,
                 jira_repo_offsets,
-            ) in zip(
-                df.index.values,
-                df[DeploymentNotification.environment.name].values,
-                df["components"].values,
-                df[DeploymentNotification.url.name].values,
-                df[DeploymentNotification.started_at.name].values,
-                df[DeploymentNotification.finished_at.name].values,
-                df[DeploymentNotification.conclusion.name].values,
-                df["labels"].values,
-                df["releases"].values,
-                df[DeploymentFacts.f.repositories].values,
-                df[DeploymentFacts.f.prs].values,
-                df[DeploymentFacts.f.prs_offsets].values,
-                df[DeploymentFacts.f.lines_prs].values,
-                df[DeploymentFacts.f.lines_overall].values,
-                df[DeploymentFacts.f.commits_prs].values,
-                df[DeploymentFacts.f.commits_overall].values,
-                df[DeploymentFacts.f.prs_number].values,
-                df[DeploymentFacts.f.prs_title].values,
-                df[DeploymentFacts.f.prs_created_at].values,
-                df[DeploymentFacts.f.prs_additions].values,
-                df[DeploymentFacts.f.prs_deletions].values,
-                df[DeploymentFacts.f.prs_user_node_id].values,
-                df[DeploymentFacts.f.prs_jira_ids].values,
-                df[DeploymentFacts.f.prs_jira_offsets].values,
-                df[DeploymentFacts.f.jira_ids].values,
-                df[DeploymentFacts.f.jira_offsets].values,
+            ) in df.iterrows(
+                df.index.name,
+                DeploymentNotification.environment.name,
+                "components",
+                DeploymentNotification.url.name,
+                DeploymentNotification.started_at.name,
+                DeploymentNotification.finished_at.name,
+                DeploymentNotification.conclusion.name,
+                "labels",
+                "releases",
+                DeploymentFacts.f.repositories,
+                DeploymentFacts.f.prs,
+                DeploymentFacts.f.prs_offsets,
+                DeploymentFacts.f.lines_prs,
+                DeploymentFacts.f.lines_overall,
+                DeploymentFacts.f.commits_prs,
+                DeploymentFacts.f.commits_overall,
+                DeploymentFacts.f.prs_number,
+                DeploymentFacts.f.prs_title,
+                DeploymentFacts.f.prs_created_at,
+                DeploymentFacts.f.prs_additions,
+                DeploymentFacts.f.prs_deletions,
+                DeploymentFacts.f.prs_user_node_id,
+                DeploymentFacts.f.prs_jira_ids,
+                DeploymentFacts.f.prs_jira_offsets,
+                DeploymentFacts.f.jira_ids,
+                DeploymentFacts.f.jira_offsets,
             )
         ],
         include=ReleaseSetInclude(

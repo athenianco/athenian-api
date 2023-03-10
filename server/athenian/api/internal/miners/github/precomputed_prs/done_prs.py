@@ -6,10 +6,10 @@ import pickle
 from typing import Any, Callable, Collection, Iterable, KeysView, Mapping, Optional
 
 import aiomcache
+import medvedi as md
 import morcilla
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import (
     and_,
@@ -54,7 +54,12 @@ from athenian.api.internal.miners.github.release_load import (
     group_repos_by_release_match,
     match_groups_to_sql,
 )
-from athenian.api.internal.miners.github.released_pr import matched_by_column, new_released_prs_df
+from athenian.api.internal.miners.github.released_pr import (
+    matched_by_column,
+    new_released_prs_df,
+    release_columns,
+    release_index_name,
+)
 from athenian.api.internal.miners.participation import PRParticipants, PRParticipationKind
 from athenian.api.internal.miners.types import (
     MinedPullRequest,
@@ -490,7 +495,7 @@ class DonePRFactsLoader:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda prs, time_to, default_branches, release_settings, **_: (
-            ",".join(map(str, sorted(prs.index.values))),
+            ",".join(map(str, sorted(zip(*prs.index.levels())))),
             time_to,
             sorted(default_branches.items()),
             release_settings,
@@ -499,7 +504,7 @@ class DonePRFactsLoader:
     )
     async def load_precomputed_pr_releases(
         cls,
-        prs: pd.DataFrame,
+        prs: md.DataFrame,
         time_to: datetime,
         matched_bys: dict[str, ReleaseMatch],
         default_branches: dict[str, str],
@@ -508,7 +513,7 @@ class DonePRFactsLoader:
         account: int,
         pdb: morcilla.Database,
         cache: Optional[aiomcache.Client],
-    ) -> pd.DataFrame:
+    ) -> md.DataFrame:
         """
         Load the releases mentioned in the specified PRs.
 
@@ -519,8 +524,8 @@ class DonePRFactsLoader:
         assert time_to.tzinfo is not None
         assert prs.index.nlevels == 2
         ghprt = GitHubDonePullRequestFacts
-        pr_node_ids = prs.index.get_level_values(0).values
-        query = select(
+        pr_node_ids = prs.index.get_level_values(0)
+        query_columns = [
             ghprt.pr_node_id,
             ghprt.pr_done_at,
             ghprt.releaser,
@@ -528,39 +533,36 @@ class DonePRFactsLoader:
             ghprt.release_node_id,
             ghprt.repository_full_name,
             ghprt.release_match,
-        ).where(
+        ]
+        query = select(*query_columns).where(
             ghprt.acc_id == account,
             ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.releaser.isnot(None),
             ghprt.pr_done_at < time_to,
-            ghprt.repository_full_name.in_(prs.index.get_level_values(1).unique()),
+            ghprt.repository_full_name.in_(np.unique(prs.index.get_level_values(1))),
             ghprt.pr_node_id.in_(pr_node_ids)
             if len(pr_node_ids) < 500
             else ghprt.pr_node_id.in_any_values(pr_node_ids),
         )
         with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
-            rows = await pdb.fetch_all(query)
-        records = []
-        utc = timezone.utc
+            df = await read_sql_query(query, pdb, query_columns)
         force_push_dropped = set()
         user_node_to_login_get = prefixer.user_node_to_login.get
         alternative_matched = []
-        repository_full_name_col = ghprt.repository_full_name.name
-        pr_node_id_col = ghprt.pr_node_id.name
-        release_match_col = ghprt.release_match.name
-        pr_done_at_col = ghprt.pr_done_at.name
-        releaser_col = ghprt.releaser.name
-        release_url_col = ghprt.release_url.name
-        release_node_id_col = ghprt.release_node_id.name
         force_push_drop_name = ReleaseMatch.force_push_drop.name
         force_push_drop_match = ReleaseMatch.force_push_drop
         event_name = ReleaseMatch.event.name
         event_match = ReleaseMatch.event
-        for row in rows:
-            repo = row[repository_full_name_col]
-            node_id = row[pr_node_id_col]
-            release_match = row[release_match_col]
-            author_node_id = row[releaser_col]
+        columns = [[] for _ in range(len(release_columns) + 1)]
+        for (
+            node_id,
+            pr_done_at,
+            author_node_id,
+            release_url,
+            release_node_id,
+            repo,
+            release_match,
+        ) in df.iterrows(*(c.name for c in query_columns)):
             if release_match == force_push_drop_name or release_match == event_name:
                 if release_match == force_push_drop_name:
                     if node_id in force_push_dropped:
@@ -569,18 +571,19 @@ class DonePRFactsLoader:
                     release_match = force_push_drop_match
                 else:
                     release_match = event_match
-                records.append(
+                for i, v in enumerate(
                     (
                         node_id,
-                        row[pr_done_at_col].replace(tzinfo=utc),
+                        pr_done_at,
                         user_node_to_login_get(author_node_id),
                         author_node_id,
-                        row[release_url_col],
-                        row[release_node_id_col],
-                        row[repository_full_name_col],
+                        release_url,
+                        release_node_id,
+                        repo,
                         release_match,
                     ),
-                )
+                ):
+                    columns[i].append(v)
                 continue
             try:
                 release_setting = release_settings.native[repo].with_match(matched_bys[repo])
@@ -593,25 +596,26 @@ class DonePRFactsLoader:
                 release_match, default_branches[drop_logical_repo(repo)],
             ):
                 continue
-            records.append(
+            for i, v in enumerate(
                 (
                     node_id,
-                    row[pr_done_at_col].replace(tzinfo=utc),
+                    pr_done_at,
                     user_node_to_login_get(author_node_id),
                     author_node_id,
-                    row[release_url_col],
-                    row[release_node_id_col],
-                    row[repository_full_name_col],
+                    release_url,
+                    release_node_id,
+                    repo,
                     release_setting.match,
                 ),
-            )
+            ):
+                columns[i].append(v)
         if alternative_matched:
             log.warning(
                 "Alternative release matching detected in %d PRs: %s",
                 len(alternative_matched),
                 alternative_matched,
             )
-        return new_released_prs_df(records)
+        return new_released_prs_df(dict(zip([release_index_name] + release_columns, columns)))
 
     @classmethod
     @sentry_span
@@ -638,7 +642,7 @@ class DonePRFactsLoader:
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
-        if not isinstance(repos, (set, KeysView)):
+        if not isinstance(repos, (set, frozenset, KeysView)):
             repos = set(repos)
         postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
@@ -1005,7 +1009,7 @@ async def store_precomputed_done_facts(
     log = logging.getLogger("%s.store_precomputed_done_facts" % metadata.__package__)
     inserted = []
     sqlite = pdb.url.dialect == "sqlite"
-    time_to = pd.Timestamp(time_to).to_numpy()
+    time_to = np.datetime64(time_to.replace(tzinfo=None), "us")
     for pr, facts in zip(prs, pr_facts):
         if facts is None or facts.closed and facts.closed > time_to:
             # ImpossiblePullRequest
@@ -1063,7 +1067,7 @@ async def store_precomputed_done_facts(
                 commit_committers={
                     str(k): "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]
                 },
-                labels={label: "" for label in pr.labels[PullRequestLabel.name.name].values},
+                labels={label: "" for label in pr.labels[PullRequestLabel.name.name]},
                 activity_days=collect_activity_days(pr, facts, sqlite),
                 data=facts.data,
             )
@@ -1102,7 +1106,7 @@ async def store_precomputed_done_facts(
 @sentry_span
 async def detect_force_push_dropped_prs(
     repos: Iterable[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     account: int,
     meta_ids: tuple[int, ...],
     mdb: Database,
@@ -1132,7 +1136,7 @@ async def detect_force_push_dropped_prs(
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
         op="fetch prs + branches + dags",
     )
-    pr_node_ids = prs_df[ghdprf.pr_node_id.name].values
+    pr_node_ids = prs_df[ghdprf.pr_node_id.name]
     del prs_df
     node_commit = aliased(NodeCommit, name="c")
     node_pr = aliased(NodePullRequest, name="pr")
@@ -1167,14 +1171,14 @@ async def detect_force_push_dropped_prs(
         accessible_hashes = np.unique(np.concatenate([dag[1][0] for dag in dags.values()]))
     else:
         accessible_hashes = np.array([], dtype="S40")
-    merge_hashes = pr_merges[node_commit.sha.name].values
+    merge_hashes = pr_merges[node_commit.sha.name]
     if len(accessible_hashes) > 0:
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
         dead_indexes = np.flatnonzero(accessible_hashes[found] != merge_hashes)
     else:
         log.error("all these repositories have empty commit DAGs: %s", sorted(dags))
         dead_indexes = np.arange(len(merge_hashes))
-    dead_pr_node_ids = pr_merges[node_pr.node_id.name].values[dead_indexes]
+    dead_pr_node_ids = pr_merges[node_pr.node_id.name][dead_indexes]
     if len(dead_indexes) == 0:
         return dead_pr_node_ids
     del pr_merges

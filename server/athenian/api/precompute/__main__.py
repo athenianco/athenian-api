@@ -12,7 +12,6 @@ import sentry_sdk
 
 from athenian.api.__main__ import check_schema_versions, setup_context
 import athenian.api.db
-from athenian.api.faster_pandas import patch_pandas
 from athenian.api.precompute import (
     accounts,
     discover_accounts,
@@ -174,7 +173,6 @@ def _parse_args() -> argparse.Namespace:
 
 def _main() -> int:
     athenian.api.is_testing = True
-    patch_pandas()
     log = logging.getLogger("precomputer")
     args = _parse_args()
 

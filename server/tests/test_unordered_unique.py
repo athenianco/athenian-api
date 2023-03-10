@@ -1,8 +1,9 @@
+from medvedi.accelerators import in1d_str
 import numpy as np
 from numpy.testing import assert_array_equal
 import pytest
 
-from athenian.api.unordered_unique import in1d_str, map_array_values
+from athenian.api.unordered_unique import map_array_values
 
 
 @pytest.mark.parametrize("dtype", ["S", "U"])

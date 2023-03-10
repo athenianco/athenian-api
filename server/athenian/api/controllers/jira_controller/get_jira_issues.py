@@ -2,8 +2,8 @@ from typing import Container, Sequence
 
 from aiohttp import web
 import aiomcache
+import medvedi as md
 import numpy as np
-import pandas as pd
 import sqlalchemy as sa
 
 from athenian.api.controllers.jira_controller.common import (
@@ -82,14 +82,14 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
 
 
 async def _get_issue_type_names_mapping(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     jira_acc_id: int,
     mdb: Database,
 ) -> dict[tuple[bytes, bytes], str]:
     columns = [IssueType.name, IssueType.id, IssueType.project_id]
 
-    project_ids = issues[Issue.project_id.name].values
-    type_ids = issues[Issue.type_id.name].values
+    project_ids = issues[Issue.project_id.name]
+    type_ids = issues[Issue.type_id.name]
 
     types_by_project: dict[bytes, set[bytes]] = {}
 
@@ -109,26 +109,26 @@ async def _get_issue_type_names_mapping(
 
 
 async def _fetch_prs(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     account_info: AccountInfo,
     req: AthenianWebRequest,
 ) -> list[PullRequestListItem]:
-    ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
+    ids = np.concatenate(issues[ISSUE_PR_IDS], dtype=int, casting="unsafe")
     prs, _ = await fetch_issues_prs(
         ids, account_info, req.sdb, req.mdb, req.pdb, req.rdb, req.cache,
     )
     return prs
 
 
-def _sort_issues(issues: pd.DataFrame, request_keys: list[str]) -> pd.DataFrame:
+def _sort_issues(issues: md.DataFrame, request_keys: list[str]) -> md.DataFrame:
     # order the issues the same as they were requested
     order = {k: i for i, k in enumerate(request_keys)}
-    order_indexes = np.argsort([order[k] for k in issues[Issue.key.name].values])
-    return issues.iloc[order_indexes]
+    order_indexes = np.argsort([order[k] for k in issues[Issue.key.name]])
+    return issues.take(order_indexes)
 
 
 async def _build_include(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     prs: Sequence[PullRequestListItem],
     include: Container[str],
     account_info: AccountInfo,

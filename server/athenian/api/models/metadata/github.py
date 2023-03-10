@@ -301,6 +301,7 @@ class PullRequest(
     merged_by_login = Column(Text, info={"dtype": "U40"})
     number = Column(BigInteger, nullable=False)
     title = Column(Text)
+    dead = "dead"
 
 
 class PushCommit(Base, GitHubSchemaMixin, IDMixin, RepositoryMixin):

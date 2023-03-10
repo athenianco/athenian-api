@@ -20,7 +20,6 @@ import sys
 import traceback
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
-import warnings
 
 from aiohttp import web_log
 import aiohttp.web
@@ -33,11 +32,6 @@ import freezegun
 import jinja2
 import morcilla
 import numpy
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    import pandas
-
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.executing import ExecutingIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -52,7 +46,6 @@ from athenian.api.application import AthenianApp
 from athenian.api.auth import Auth0
 from athenian.api.balancing import endpoint_weights
 from athenian.api.db import check_schema_versions
-from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal.refetcher import Refetcher
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
@@ -233,21 +226,6 @@ def setup_context(log: logging.Logger) -> None:
 
     app_env = _ApplicationEnvironment.discover(log)
 
-    pandas.set_option("display.max_rows", 20)
-    pandas.set_option("display.large_repr", "info")
-    pandas.set_option("display.memory_usage", False)
-    info = pandas.io.formats.info.BaseInfo.info
-
-    def _short_info_df(self) -> None:
-        info(self)
-        text = self.buf.getvalue()
-        if len(text) > 512:
-            text = "\n".join(text.split("\n")[:3]).rstrip(":")
-        self.buf.seek(0)
-        self.buf.truncate(0)
-        self.buf.write(text)
-
-    pandas.io.formats.info.BaseInfo.info = _short_info_df
     numpy.set_printoptions(threshold=10, edgeitems=1)
     if (level := log.getEffectiveLevel()) >= logging.INFO:
         morcilla.core.logger.setLevel(level + 10)
@@ -642,7 +620,6 @@ def main(args: argparse.Namespace | dict[str, Any]) -> Optional[aiohttp.web.Appl
         args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log,
     ):
         return None
-    patch_pandas()
     set_endpoint_weights(args.weights, log)
     pgdb_opts = {
         "pgbouncer_statement": args.pgbouncer_transaction,

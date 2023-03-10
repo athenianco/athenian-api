@@ -10,7 +10,7 @@ from typing import Collection, Iterable, Mapping, Optional, Union
 from aiohttp import web
 import aiomcache
 import asyncpg
-import pandas as pd
+import medvedi as md
 from sqlalchemy import (
     and_,
     delete,
@@ -287,7 +287,7 @@ async def _drop_precomputed_deployments(
     prefixer: Prefixer,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: dict[str, str],
     request: AthenianWebRequest,
     meta_ids: tuple[int, ...],
@@ -363,7 +363,7 @@ async def _drop_precomputed_event_releases(
     prefixer: Prefixer,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: dict[str, str],
     request: AthenianWebRequest,
     meta_ids: tuple[int, ...],

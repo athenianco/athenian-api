@@ -192,6 +192,7 @@ RUN apt-get update && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
+    rm /usr/local/lib/python*/dist-packages/medvedi/libmimalloc.so* && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     apt-get purge -y patch gcc g++ && \
     apt-get autoremove -y --purge && \

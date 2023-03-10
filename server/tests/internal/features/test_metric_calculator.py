@@ -1,6 +1,6 @@
+import medvedi as md
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
 
 from athenian.api.internal.features.metric_calculator import (
     JIRAGrouping,
@@ -13,7 +13,7 @@ from athenian.api.models.metadata.jira import Issue
 
 
 def test_group_by_repo_single_repos():
-    df = pd.DataFrame({"repo": ["one", "two", "one", "one", "one", "two"]})
+    df = md.DataFrame({"repo": ["one", "two", "one", "one", "one", "two"]})
     groups = group_by_repo("repo", [["one"], ["two"], ["one", "two"]], df)
     assert len(groups) == 3
     assert_array_equal(groups[0], [0, 2, 3, 4])
@@ -22,7 +22,7 @@ def test_group_by_repo_single_repos():
 
 
 def test_group_by_repo_few_groups():
-    df = pd.DataFrame({"repo": ["one", "two", "one", "one", "one", "two"]})
+    df = md.DataFrame({"repo": ["one", "two", "one", "one", "one", "two"]})
     groups = group_by_repo("repo", [["one"]], df)
     assert len(groups) == 1
     assert_array_equal(groups[0], [0, 2, 3, 4])
@@ -143,14 +143,18 @@ class TestGroupPRFactsByJIRA:
         assert_array_equal(res[0], np.array([0]))
         assert_array_equal(res[1], np.array([0, 2, 3]))
 
-    def _make_df(self, *rows: tuple) -> pd.DataFrame:
+    def _make_df(self, *rows: tuple) -> md.DataFrame:
+        column_names = [self.PROJECTS, self.PRIORITIES, self.TYPES, self.LABELS]
         dtypes = ("S", "S", "S", "U")
-        data = [
-            tuple(np.array(field, dtype=dtype) for field, dtype in zip(r, dtypes)) for r in rows
-        ]
-        return pd.DataFrame.from_records(
-            data, columns=[self.PROJECTS, self.PRIORITIES, self.TYPES, self.LABELS],
-        )
+        columns = {k: [] for k in column_names}
+        for r in rows:
+            for i, v in enumerate(r):
+                columns[column_names[i]].append(np.array(v, dtype=dtypes[i]))
+        for k, v in columns.items():
+            arr = np.empty(len(v), object)
+            arr[:] = v
+            columns[k] = arr
+        return md.DataFrame(columns)
 
 
 class TestGroupJIRAFactsByJIRA:
@@ -219,7 +223,7 @@ class TestGroupJIRAFactsByJIRA:
             (None, None, b"t2", None),
             (None, None, b"t0", None),
         )
-        df = df.drop(Issue.project_id.name, axis="columns")
+        del df[Issue.project_id.name]
         res = group_jira_facts_by_jira(jira_groups, df)
         assert len(res) == 1
         assert_array_equal(res[0], np.array([0, 1, 3]))
@@ -237,9 +241,24 @@ class TestGroupJIRAFactsByJIRA:
         assert_array_equal(res[0], np.array([0, 3]))
 
     @classmethod
-    def _make_df(cls, *rows: tuple) -> pd.DataFrame:
-        columns = [Issue.project_id, Issue.type_id, Issue.priority_id, Issue.labels]
+    def _make_df(cls, *rows: tuple) -> md.DataFrame:
+        column_names = [
+            Issue.project_id.name,
+            Issue.type_id.name,
+            Issue.priority_id.name,
+            Issue.labels.name,
+        ]
+        columns = {k: [] for k in column_names}
+        for r in rows:
+            for i, v in enumerate(r):
+                columns[column_names[i]].append(v)
 
-        df = pd.DataFrame.from_records(rows, columns=[c.name for c in columns])
-        types = {"project_id": "S", "type_id": "S", "priority_id": "S"}
-        return df.astype(types)
+        df = md.DataFrame(
+            columns,
+            dtype={
+                Issue.project_id.name: "S",
+                Issue.type_id.name: "S",
+                Issue.priority_id.name: "S",
+            },
+        )
+        return df

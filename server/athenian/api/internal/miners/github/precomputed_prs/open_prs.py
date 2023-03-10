@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from itertools import repeat
 from typing import Collection, Iterable, Mapping, Set, Tuple
 
+import medvedi as md
+from medvedi.accelerators import in1d_str, unordered_unique
 import morcilla
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import case, select
 
@@ -23,7 +24,6 @@ from athenian.api.internal.miners.types import (
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
-from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 class OpenPRFactsLoader:
@@ -33,7 +33,7 @@ class OpenPRFactsLoader:
     @sentry_span
     async def load_open_pull_request_facts(
         cls,
-        prs: pd.DataFrame,
+        prs: md.DataFrame,
         repositories: Set[str],
         account: int,
         pdb: morcilla.Database,
@@ -43,9 +43,9 @@ class OpenPRFactsLoader:
 
         We filter open PRs inplace so the user does not have to worry about that.
         """
-        open_indexes = np.flatnonzero(prs[PullRequest.closed_at.name].isnull().values)
-        node_ids = prs.index.get_level_values(0).values[open_indexes]
-        authors = dict(zip(node_ids, prs[PullRequest.user_login.name].values[open_indexes]))
+        open_indexes = np.flatnonzero(prs.isnull(PullRequest.closed_at.name))
+        node_ids = prs.index.get_level_values(0)[open_indexes]
+        authors = dict(zip(node_ids, prs[PullRequest.user_login.name][open_indexes]))
         ghoprf = GitHubOpenPullRequestFacts
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         selected = [
@@ -64,7 +64,7 @@ class OpenPRFactsLoader:
         )
         if not rows:
             return {}
-        updated_ats = prs[PullRequest.updated_at.name].values[open_indexes]
+        updated_ats = prs[PullRequest.updated_at.name][open_indexes]
         found_node_ids = np.fromiter((r[ghoprf.pr_node_id.name] for r in rows), int, len(rows))
         found_updated_ats = np.fromiter(
             (r[ghoprf.pr_updated_at.name] for r in rows), updated_ats.dtype, len(rows),
@@ -90,7 +90,7 @@ class OpenPRFactsLoader:
     @sentry_span
     async def load_open_pull_request_facts_unfresh(
         cls,
-        prs: pd.Index,
+        prs: md.Index,
         time_from: datetime,
         time_to: datetime,
         exclude_inactive: bool,
@@ -110,10 +110,10 @@ class OpenPRFactsLoader:
         ghoprf = GitHubOpenPullRequestFacts
         selected = {ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data}
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-        prs_repos_bytes = prs.get_level_values(1).values.astype("S")
+        prs_repos_bytes = prs.get_level_values(1).astype("S")
         filters = [
             ghoprf.acc_id == account,
-            ghoprf.pr_node_id.in_(prs.get_level_values(0).unique()),
+            ghoprf.pr_node_id.in_(np.unique(prs.get_level_values(0))),
             ghoprf.repository_full_name.in_(unordered_unique(prs_repos_bytes)),
             ghoprf.format_version == default_version,
         ]
@@ -126,16 +126,16 @@ class OpenPRFactsLoader:
         if df.empty:
             return {}
         haystack = np.char.add(
-            int_to_str(df[ghoprf.pr_node_id.name].values),
-            df[ghoprf.repository_full_name.name].values.astype("S"),
+            int_to_str(df[ghoprf.pr_node_id.name]),
+            df[ghoprf.repository_full_name.name].astype("S"),
         )
-        needle = np.char.add(int_to_str(prs.get_level_values(0).values), prs_repos_bytes)
+        needle = np.char.add(int_to_str(prs.get_level_values(0)), prs_repos_bytes)
         matched_mask = in1d_str(haystack, needle, skip_leading_zeros=True)
-        fetched_node_ids = df[ghoprf.pr_node_id.name].values
-        fetched_repos = df[ghoprf.repository_full_name.name].values
-        fetched_datas = df[ghoprf.data.name].values
+        fetched_node_ids = df[ghoprf.pr_node_id.name]
+        fetched_repos = df[ghoprf.repository_full_name.name]
+        fetched_datas = df[ghoprf.data.name]
         if exclude_inactive and not postgres:
-            fetched_activity_days = df[ghoprf.activity_days.name].values
+            fetched_activity_days = df[ghoprf.activity_days.name]
         else:
             fetched_activity_days = repeat(True)
         if not matched_mask.all():
@@ -232,9 +232,11 @@ async def store_open_pull_request_facts(
                 acc_id=account,
                 pr_node_id=pr.pr[PullRequest.node_id.name],
                 repository_full_name=pr.pr[PullRequest.repository_full_name.name],
-                pr_created_at=pr.pr[PullRequest.created_at.name],
+                pr_created_at=pr.pr[PullRequest.created_at.name]
+                .item()
+                .replace(tzinfo=timezone.utc),
                 number=pr.pr[PullRequest.number.name],
-                pr_updated_at=updated_at,
+                pr_updated_at=updated_at.item().replace(tzinfo=timezone.utc),
                 activity_days=collect_activity_days(pr, facts, not postgres),
                 data=facts.data,
             )

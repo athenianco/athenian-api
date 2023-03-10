@@ -1,8 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 import pytest
 from sqlalchemy import delete, select
 
@@ -1643,8 +1643,8 @@ def check_pr_deployments(
             conclusion=DeploymentConclusion.SUCCESS,
             environment="production",
             url=None,
-            started_at=pd.Timestamp(datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc)),
-            finished_at=pd.Timestamp(datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc)),
+            started_at=np.datetime64(datetime(2019, 11, 1, 12, 0), "us"),
+            finished_at=np.datetime64(datetime(2019, 11, 1, 12, 15), "us"),
             components=[
                 DeployedComponent(
                     repository_full_name="src-d/go-git",
@@ -1681,8 +1681,8 @@ class TestGetPRFactsStagesMasks:
         self._assert_mask_stages(masks[4], prs_facts.iloc[4], PullRequestStage.REVIEWING)
 
     @classmethod
-    def _mk_facts(cls, *rows: tuple) -> pd.DataFrame:
-        columns = [
+    def _mk_facts(cls, *rows: tuple) -> md.DataFrame:
+        column_names = [
             PullRequestFacts.f.done,
             PullRequestFacts.f.force_push_dropped,
             PullRequestFacts.f.release_ignored,
@@ -1690,17 +1690,25 @@ class TestGetPRFactsStagesMasks:
             PullRequestFacts.f.approved,
             PullRequestFacts.f.first_review_request,
         ]
-        df = pd.DataFrame.from_records(rows, columns=columns)
-        df.merged = df.merged.astype(np.dtype("datetime64[s]"))
-        df.approved = df.approved.astype(np.dtype("datetime64[s]"))
-        df.first_review_request = df.first_review_request.astype(np.dtype("datetime64[s]"))
+        columns = {k: [] for k in column_names}
+        for r in rows:
+            for i, v in enumerate(r):
+                columns[column_names[i]].append(v)
+        df = md.DataFrame(columns).astype(
+            {
+                PullRequestFacts.f.merged: "datetime64[s]",
+                PullRequestFacts.f.approved: "datetime64[s]",
+                PullRequestFacts.f.first_review_request: "datetime64[s]",
+            },
+            copy=False,
+        )
         return df
 
     @classmethod
     def _assert_mask_stages(
         cls,
         mask: int,
-        pr_series: pd.Series,
+        pr_series: dict[str, np.ndarray],
         *stages: PullRequestStage,
     ) -> None:
         expected_mask = 0
@@ -1712,11 +1720,20 @@ class TestGetPRFactsStagesMasks:
         # pr_fact = PullRequestFactsFactory(**pr_series.to_dict())
         pr_facts = PullRequestFactsFactory(
             **{
-                f: getattr(pr_series, f) for f in ("done", "force_push_dropped", "release_ignored")
+                f: pr_series[f]
+                for f in (
+                    PullRequestFacts.f.done,
+                    PullRequestFacts.f.force_push_dropped,
+                    PullRequestFacts.f.release_ignored,
+                )
             },
             **{
-                f: None if pd.isnull(v := getattr(pr_series, f)) else v
-                for f in ("merged", "approved", "first_review_request")
+                f: None if ((v := pr_series[f]) is None or v != v) else v
+                for f in (
+                    PullRequestFacts.f.merged,
+                    PullRequestFacts.f.approved,
+                    PullRequestFacts.f.first_review_request,
+                )
             },
         )
         hard_events = {f: False for f in PullRequestEvent}

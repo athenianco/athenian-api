@@ -10,13 +10,12 @@ from aiohttp import web
 import aiomcache
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, list_with_yield, read_sql_query
+from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
 from athenian.api.controllers.filter_controller import webify_deployment
@@ -32,15 +31,9 @@ from athenian.api.controllers.jira_controller.get_jira_issues import get_jira_is
 from athenian.api.db import Database
 from athenian.api.internal.datetime_utils import split_to_time_intervals
 from athenian.api.internal.features.entries import UnsupportedMetricError, make_calculator
-from athenian.api.internal.features.github.pull_request_filter import (
-    PullRequestListMiner,
-    fetch_pr_deployments,
-)
 from athenian.api.internal.features.histogram import HistogramParameters, Scale
 from athenian.api.internal.jira import JIRAConfig, normalize_issue_type, normalize_priority
-from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
 from athenian.api.internal.miners.jira.epic import filter_epics
 from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
@@ -54,10 +47,7 @@ from athenian.api.internal.miners.jira.issue import (
     resolve_work_began,
 )
 from athenian.api.internal.miners.types import Deployment
-from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.internal.with_ import resolve_jira_with
-from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import (
     AthenianIssue,
     Component,
@@ -280,8 +270,6 @@ async def _epic_flow(
         extra_columns=extra_columns,
     )
     with sentry_sdk.start_span(op="materialize models", description=str(len(epics_df))):
-        children_columns = {k: children_df[k].values for k in children_df.columns}
-        children_columns[Issue.id.name] = children_df.index.values
         epics = []
         issue_by_id = {}
         issue_type_ids = {}
@@ -290,12 +278,12 @@ async def _epic_flow(
         now = np.datetime64(datetime.utcnow())
 
         epics_work_began = resolve_work_began(
-            epics_df[AthenianIssue.work_began.name].values, epics_df[ISSUE_PRS_BEGAN].values,
+            epics_df[AthenianIssue.work_began.name], epics_df[ISSUE_PRS_BEGAN],
         )
         epics_resolved = resolve_resolved(
-            epics_df[AthenianIssue.resolved.name].values,
-            epics_df[ISSUE_PRS_BEGAN].values,
-            epics_df[ISSUE_PRS_RELEASED].values,
+            epics_df[AthenianIssue.resolved.name],
+            epics_df[ISSUE_PRS_BEGAN],
+            epics_df[ISSUE_PRS_RELEASED],
         )
         for (
             epic_id,
@@ -318,7 +306,7 @@ async def _epic_flow(
         ) in zip(
             epics_df.index.values,
             *(
-                epics_df[column].values
+                epics_df[column]
                 for column in (
                     Issue.project_id.name,
                     Issue.key.name,
@@ -369,13 +357,13 @@ async def _epic_flow(
             project_type_ids.add(epic_type)
 
             children_work_began = resolve_work_began(
-                children_columns[AthenianIssue.work_began.name][children_indexes],
-                children_columns[ISSUE_PRS_BEGAN][children_indexes],
+                children_df[AthenianIssue.work_began.name][children_indexes],
+                children_df[ISSUE_PRS_BEGAN][children_indexes],
             )
             children_resolved = resolve_resolved(
-                children_columns[AthenianIssue.resolved.name][children_indexes],
-                children_columns[ISSUE_PRS_BEGAN][children_indexes],
-                children_columns[ISSUE_PRS_RELEASED][children_indexes],
+                children_df[AthenianIssue.resolved.name][children_indexes],
+                children_df[ISSUE_PRS_BEGAN][children_indexes],
+                children_df[ISSUE_PRS_RELEASED][children_indexes],
             )
 
             for (
@@ -397,7 +385,7 @@ async def _epic_flow(
                 child_resolved,
             ) in zip(
                 *(
-                    children_columns[column][children_indexes]
+                    children_df[column][children_indexes]
                     for column in (
                         Issue.id.name,
                         Issue.key.name,
@@ -474,8 +462,8 @@ async def _epic_flow(
         priority_ids = unordered_unique(
             np.concatenate(
                 [
-                    epics_df[Issue.priority_id.name].values,
-                    children_columns[Issue.priority_id.name],
+                    epics_df[Issue.priority_id.name],
+                    children_df[Issue.priority_id.name],
                 ],
             ),
         )
@@ -486,20 +474,19 @@ async def _epic_flow(
         status_ids = unordered_unique(
             np.concatenate(
                 [
-                    epics_df[Issue.status_id.name].values,
-                    children_columns[Issue.status_id.name],
+                    epics_df[Issue.status_id.name],
+                    children_df[Issue.status_id.name],
                 ],
             ),
         )
         status_project_map = defaultdict(set)
         for status_id, project_id in chain(
-            zip(
-                epics_df[Issue.status_id.name].values,
-                epics_df[Issue.project_id.name].values,
-            ),
-            zip(
-                children_columns[Issue.status_id.name],
-                children_columns[Issue.project_id.name],
+            *(
+                df.iterrows(
+                    Issue.status_id.name,
+                    Issue.project_id.name,
+                )
+                for df in (epics_df, children_df)
             ),
         ):
             status_project_map[status_id].add(project_id)
@@ -683,19 +670,19 @@ async def _issue_flow(
             distinct=True,
         )
     if JIRAFilterReturn.LABELS in return_:
-        components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name].values)))
+        components = Counter(chain.from_iterable(_nonzero(issues[Issue.components.name])))
     else:
         components = []
     if JIRAFilterReturn.PRIORITIES in return_:
-        priorities = issues[Issue.priority_id.name].unique()
+        priorities = issues.unique(Issue.priority_id.name, unordered=True)
     else:
         priorities = []
     if JIRAFilterReturn.STATUSES in return_:
-        statuses = issues[Issue.status_id.name].unique()
+        statuses = issues.unique(Issue.status_id.name, unordered=True)
         status_project_map = defaultdict(set)
-        for status_id, project_id in zip(
-            issues[Issue.status_id.name].values,
-            issues[Issue.project_id.name].values,
+        for status_id, project_id in issues.iterrows(
+            Issue.status_id.name,
+            Issue.project_id.name,
         ):
             status_project_map[status_id].add(project_id)
     else:
@@ -705,9 +692,9 @@ async def _issue_flow(
         issue_type_counts = defaultdict(int)
         issue_type_projects = defaultdict(set)
         for project_id, issue_type_id, count in zip(
-            issues[Issue.project_id.name].values,
-            issues[Issue.type_id.name].values,
-            repeat(1) if full_fetch else issues["count"].values,
+            issues[Issue.project_id.name],
+            issues[Issue.type_id.name],
+            repeat(1) if full_fetch else issues["count"],
         ):
             issue_type_projects[project_id].add(issue_type_id)
             issue_type_counts[(project_id, issue_type_id)] += count
@@ -716,7 +703,7 @@ async def _issue_flow(
 
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         if not issues.empty:
-            pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
+            pr_ids = np.concatenate(issues[ISSUE_PR_IDS], dtype=int, casting="unsafe")
         else:
             pr_ids = []
     else:
@@ -741,16 +728,16 @@ async def _issue_flow(
     @sentry_span
     async def extract_labels():
         if JIRAFilterReturn.LABELS in return_:
-            labels_column = issues[Issue.labels.name].values
+            labels_column = issues[Issue.labels.name]
             if label_filter:
                 labels_column = (ils for ils in labels_column if label_filter.match(ils))
             labels = Counter(chain.from_iterable(labels_column))
             if None in labels:
                 del labels[None]
             last_useds = {}
-            for updated, issue_labels in zip(
-                issues[Issue.updated.name],
-                issues[Issue.labels.name].values,
+            for updated, issue_labels in issues.iterrows(
+                Issue.updated.name,
+                Issue.labels.name,
             ):
                 for label in issue_labels or ():
                     if last_useds.setdefault(label, updated) < updated:
@@ -759,9 +746,6 @@ async def _issue_flow(
                 k: JIRALabel(title=k, kind="regular", issues_count=v, last_used=last_useds[k])
                 for k, v in labels.items()
             }
-            if mdb.url.dialect == "sqlite":
-                for label in labels.values():
-                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
         else:
             labels = []
         return labels
@@ -826,9 +810,9 @@ async def _issue_flow(
     ]
     if JIRAFilterReturn.LABELS in return_:
         last_useds = {}
-        for updated, issue_components in zip(
-            issues[Issue.updated.name],
-            issues[Issue.components.name].values,
+        for updated, issue_components in issues.iterrows(
+            Issue.updated.name,
+            Issue.components.name,
         ):
             for component in issue_components or ():
                 if last_useds.setdefault(component, updated) < updated:
@@ -842,10 +826,6 @@ async def _issue_flow(
             )
             for row in component_names
         }
-        if mdb.url.dialect == "sqlite":
-            for label in components.values():
-                label.last_used = label.last_used.replace(tzinfo=timezone.utc)
-
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_models = build_issue_web_models(issues, prs, issue_types)

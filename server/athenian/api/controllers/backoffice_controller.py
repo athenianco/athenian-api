@@ -15,6 +15,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.internal.account import (
+    get_account_name,
     get_account_organizations,
     get_installation_event_ids,
     get_metadata_account_ids,
@@ -126,7 +127,7 @@ async def _reset_commits(
         for repo, (_, dag) in dags.items()
     ]
     df = await read_sql_query(union_all(*queries), mdb, [NodeCommit.node_id])
-    commit_ids = df[NodeCommit.node_id.name].values
+    commit_ids = df[NodeCommit.node_id.name]
     await gather(
         pdb.execute(
             delete(GitHubCommitHistory).where(
@@ -179,7 +180,8 @@ async def _reset_metadata_account(
     await gather(
         get_metadata_account_ids.reset_cache(account, sdb, cache),
         get_installation_event_ids.reset_cache(account, sdb, mdb, cache),
-        get_account_organizations(account, sdb, mdb, cache),
+        get_account_organizations.reset_cache(account, sdb, mdb, cache),
+        get_account_name.reset_cache(account, sdb, mdb, cache),
     )
 
 
@@ -547,7 +549,7 @@ async def get_account_health(
                 request.sdb,
                 [Account.id],
             )
-        )[Account.id.name].values
+        )[Account.id.name]
     datetimes = list(rrule(HOURLY, dtstart=since, until=until))
     return model_response(
         AccountsHealth(

@@ -21,9 +21,10 @@ from typing import (
 )
 import warnings
 
+import medvedi as md
+from medvedi.accelerators import in1d_str, unordered_unique
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
 import sentry_sdk
 
 from athenian.api.int_to_str import int_to_str
@@ -48,7 +49,6 @@ from athenian.api.models.metadata.jira import Issue
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass_asdict
-from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 DEFAULT_QUANTILE_STRIDE = 14
 
@@ -123,7 +123,7 @@ class MetricCalculator(Generic[T], ABC):
 
     def __call__(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         quantiles_mounted_at: Optional[int],
@@ -143,16 +143,16 @@ class MetricCalculator(Generic[T], ABC):
         :param groups_mask: len(groups) * len(facts) boolean array that chooses the elements \
                             of each group.
         """
-        assert isinstance(facts, pd.DataFrame)
+        assert isinstance(facts, md.DataFrame)
         assert isinstance(min_times, np.ndarray)
         assert isinstance(max_times, np.ndarray)
         assert min_times.shape == max_times.shape
         assert min_times.dtype == max_times.dtype
         assert len(min_times.shape) == 1
         try:
-            assert np.datetime_data(min_times.dtype)[0] == "ns"
+            assert np.datetime_data(min_times.dtype)[0] == "us"
         except TypeError:
-            raise AssertionError("min_times must be of datetime64[ns] dtype")
+            raise AssertionError("min_times must be of datetime64[s] dtype")
         if has_quantiles := self._quantiles != (0, 1):
             assert quantiles_mounted_at is not None
         if quantiles_mounted_at is not None:
@@ -271,7 +271,7 @@ class MetricCalculator(Generic[T], ABC):
     @abstractmethod
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -503,7 +503,7 @@ class Counter(MetricCalculator[int], ABC):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -627,7 +627,7 @@ class MetricCalculatorEnsemble:
     @sentry_span
     def __call__(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         groups: Sequence[Sequence[int]],
@@ -699,7 +699,7 @@ class ThresholdComparisonRatioCalculator(AggregationMetricCalculator[float]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -818,7 +818,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     @sentry_span
     def __call__(
         self,
-        items: pd.DataFrame,
+        items: md.DataFrame,
         time_intervals: Sequence[Sequence[datetime]],
         groups: np.ndarray,
         agg_kwargs: Iterable[Mapping[str, Any]],
@@ -840,7 +840,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
                  x metrics; \
                  3D numpy array of list[list[Metric]]] (dtype object).
         """
-        assert isinstance(items, pd.DataFrame)
+        assert isinstance(items, md.DataFrame)
         assert isinstance(groups, np.ndarray)
         min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
         if groups.dtype != object:
@@ -887,7 +887,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
             assert size >= 2, "Each time interval series must contain at least two elements."
         flat_time_intervals = np.fromiter(
             chain.from_iterable((dt.replace(tzinfo=None) for dt in ts) for ts in time_intervals),
-            dtype="datetime64[ns]",
+            dtype="datetime64[us]",
             count=sizes.sum(),
         )
         offsets = np.cumsum(sizes)
@@ -935,7 +935,7 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
 
     def __call__(
         self,
-        items: pd.DataFrame,
+        items: md.DataFrame,
         time_intervals: Sequence[Sequence[datetime]],
         groups: np.ndarray,
     ) -> np.ndarray:
@@ -979,8 +979,8 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
 
 
 def group_to_indexes(
-    items: pd.DataFrame,
-    *groupers: Callable[[pd.DataFrame], list[np.ndarray]],
+    items: md.DataFrame,
+    *groupers: Callable[[md.DataFrame], list[np.ndarray]],
     deduplicate_key: Optional[str] = None,
     deduplicate_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
@@ -1016,7 +1016,7 @@ def group_to_indexes(
 
 def deduplicate_groups(
     indexes: np.ndarray,
-    items: pd.DataFrame,
+    items: md.DataFrame,
     deduplicate_key: Optional[str],
     deduplicate_mask: Optional[np.ndarray],
 ) -> np.ndarray:
@@ -1030,7 +1030,7 @@ def deduplicate_groups(
         return indexes
     deduped_indexes = np.empty_like(indexes)
     deduped_indexes_flat = deduped_indexes.ravel()
-    key_arr = items[deduplicate_key].values
+    key_arr = items[deduplicate_key]
     if deduplicate_mask is not None and len(key_arr):
         key_arr = int_to_str(key_arr, deduplicate_mask)
     for i, group in enumerate(indexes.ravel()):
@@ -1046,12 +1046,12 @@ def deduplicate_groups(
 def group_by_repo(
     repository_full_name_column_name: str,
     repos: Sequence[Collection[str]],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> list[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
     if df.empty:
         return [np.array([], dtype=int)] * len(repos)
-    df_repos = df[repository_full_name_column_name].values.astype("S")
+    df_repos = df[repository_full_name_column_name].astype("S")
     repos = [
         np.array(
             repo_group if not isinstance(repo_group, (set, KeysView)) else list(repo_group),
@@ -1135,7 +1135,7 @@ class JIRAGrouping:
 
 def group_pr_facts_by_jira(
     jira_groups: Sequence[JIRAGrouping],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> list[np.ndarray]:
     """Build the groups according to the JIRA information expressed by the `jira_groups`.
 
@@ -1184,7 +1184,7 @@ group_release_facts_by_jira = group_pr_facts_by_jira
 
 def group_jira_facts_by_jira(
     jira_groups: Sequence[JIRAGrouping],
-    df: pd.Dataframe,
+    df: md.DataFrame,
 ) -> list[np.ndarray]:
     """Build the groups according to `jira_groups`.
 
@@ -1211,7 +1211,7 @@ def group_jira_facts_by_jira(
                 if group_props is not None:
                     # lazy access the dataframe column since it could be missing
                     # when no grouping is needed for the property
-                    values = df[df_col].values
+                    values = df[df_col]
                     required_n_matches += 1
                     filter_values = np.array(list(group_props), dtype=dtype)
                     if df_col == Issue.labels.name:
@@ -1336,7 +1336,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,

@@ -14,8 +14,8 @@ from typing import Callable, Optional, Sequence
 from urllib.parse import urlparse
 
 import aiomcache
+import medvedi as md
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
@@ -326,14 +326,14 @@ async def precompute_reposet(
             if (releases_count := len(releases)) > 0:
                 ignored_first_releases = discover_first_outlier_releases(releases)
             else:
-                ignored_first_releases = pd.DataFrame()
+                ignored_first_releases = md.DataFrame()
             del releases
             _release_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings, matches,
             )
         else:
             _release_settings = release_settings
-            ignored_first_releases = pd.DataFrame()
+            ignored_first_releases = md.DataFrame()
         if not args.skip_prs:
             if reposet.precomputed:
                 log.info("Scanning for force push dropped PRs")
@@ -538,7 +538,7 @@ async def insert_new_repositories(
         [AccountRepository.repo_graph_id],
     )
     existing = np.fromiter((r.node_id for r in filtered_refs), int, len(filtered_refs))
-    registered = repo_node_ids[AccountRepository.repo_graph_id.name].values
+    registered = repo_node_ids[AccountRepository.repo_graph_id.name]
     new_nodes = np.setdiff1d(registered, existing)
     if len(new_nodes) == 0:
         return filtered_names, filtered_refs
