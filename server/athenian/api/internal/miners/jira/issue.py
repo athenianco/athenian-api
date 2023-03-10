@@ -1285,6 +1285,8 @@ async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -
     The `issues` dataframe must have `acc_id` and `components` (with components ids) columns.
 
     """
+    if issues.empty:
+        return
     components = (
         issues[[Issue.acc_id.name, Issue.components.name]]
         .groupby(Issue.acc_id.name, sort=False)
