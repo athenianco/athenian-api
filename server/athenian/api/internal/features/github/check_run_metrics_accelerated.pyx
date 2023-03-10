@@ -27,7 +27,7 @@ import numpy as np
 # __builtin_clzl is a compiler built-in that counts the number of leading zeros
 cdef extern int __builtin_clzl(unsigned long)
 
-cdef int _leading_zero_bits(unsigned long n):
+cdef inline int _leading_zero_bits(unsigned long n):
    if n == 0:
        # __builtin_clzl is undefined when called with 0
        return sizeof(n) * 8
