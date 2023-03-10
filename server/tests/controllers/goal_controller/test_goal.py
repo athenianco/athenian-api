@@ -309,6 +309,23 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert tg_row[TeamGoal.target.name] == 42
         assert tg_row[TeamGoal.repositories.name] is None
 
+    async def test_float_target(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=10), TeamFactory(id=11), TeamFactory(id=12))
+
+        body = self._body(team_goals=[(10, 0.42), (11, 42), (12, 1.0)])
+        new_goal_id = (await self._request(json=body))["id"]
+
+        # goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
+        tg10_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+        assert tg10_row[TeamGoal.target.name] == 0.42
+
+        tg11_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=11)
+        assert tg11_row[TeamGoal.target.name] == 42
+        assert type(tg11_row[TeamGoal.target.name]) is int
+
+        tg12_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=12)
+        assert tg12_row[TeamGoal.target.name] == 1.0
+
     async def test_create_multiple_team_goals(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(owner_id=1, id=10), TeamFactory(owner_id=1, id=20))
 
