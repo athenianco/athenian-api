@@ -1916,7 +1916,7 @@ async def _fetch_commit_stats(
             selected.append(NodePullRequest.title)
     commits_df, rebased_prs = await gather(
         read_sql_query(
-            select(selected)
+            select(*selected)
             .select_from(
                 join(
                     join(
@@ -2178,7 +2178,7 @@ async def _fetch_commit_stats(
 
         rebased_pr_rows, already_deployed_rebased = await gather(
             mdb.fetch_all(
-                select(selected).where(
+                select(*selected).where(
                     NodePullRequest.acc_id.in_(meta_ids),
                     NodePullRequest.node_id.in_(rebased_map),
                 ),

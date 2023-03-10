@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from itertools import chain
-from typing import Collection, FrozenSet, Iterable, List, Optional, Set, Tuple, Type, Union
+from typing import Collection, FrozenSet, Iterable, Optional, Set, Tuple, Type, Union
 
 import aiomcache
 import morcilla
@@ -149,7 +149,7 @@ async def _mine_commits(
             (PushCommit.additions + PushCommit.deletions).label(developer_changed_lines_column),
         )
     query = (
-        select(columns)
+        select(*columns)
         .where(
             PushCommit.acc_id.in_(meta_ids),
             PushCommit.committed_date.between(time_from, time_to),
@@ -538,7 +538,7 @@ async def mine_developer_activities(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> List[Tuple[FrozenSet[DeveloperTopic], pd.DataFrame]]:
+) -> list[Tuple[FrozenSet[DeveloperTopic], pd.DataFrame]]:
     """Extract pandas DataFrame-s for each topic relationship group."""
     zerotd = timedelta(0)
     assert (

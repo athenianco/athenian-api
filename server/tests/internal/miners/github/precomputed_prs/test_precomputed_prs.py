@@ -2180,7 +2180,7 @@ async def test_rescan_prs_mark_force_push_dropped(
     ).label(GitHubDonePullRequestFacts.release_match.name)
     await pdb.execute(
         insert(GitHubDonePullRequestFacts).from_select(
-            GitHubDonePullRequestFacts.__table__.columns, select(columns),
+            GitHubDonePullRequestFacts.__table__.columns, select(*columns),
         ),
     )
     node_ids = await detect_force_push_dropped_prs(

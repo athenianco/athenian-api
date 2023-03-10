@@ -514,7 +514,7 @@ class ReleaseLoader:
         or_items, _ = match_groups_to_sql(match_groups, ghrts, False)
         if pdb.url.dialect == "sqlite":
             query = select(
-                [ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to],
+                ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to,
             ).where(ghrts.acc_id == account, or_(*or_items) if or_items else true)
         else:
             query = union_all(

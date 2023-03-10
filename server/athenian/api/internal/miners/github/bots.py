@@ -6,7 +6,7 @@ from time import time
 from typing import Optional
 
 import aiomcache
-from sqlalchemy import and_, select
+from sqlalchemy import select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
@@ -54,12 +54,7 @@ class Bots:
     async def team(self, account: int, sdb: Database) -> Optional[list[int]]:
         """Return the "Bots" team members."""
         return await sdb.fetch_val(
-            select([Team.members]).where(
-                and_(
-                    Team.owner_id == account,
-                    Team.name == Team.BOTS,
-                ),
-            ),
+            select(Team.members).where(Team.owner_id == account, Team.name == Team.BOTS),
         )
 
     @cached(

@@ -342,7 +342,7 @@ async def mine_contributors(
     cols = [User.login, User.email, User.avatar_url, User.name, User.node_id]
     with sentry_sdk.start_span(op="SELECT FROM github.api_users"):
         user_details = await mdb.fetch_all(
-            select(cols).where(User.acc_id.in_(meta_ids), User.login.in_(stats.keys())),
+            select(*cols).where(User.acc_id.in_(meta_ids), User.login.in_(stats.keys())),
         )
 
     contribs = []

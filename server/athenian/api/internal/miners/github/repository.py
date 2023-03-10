@@ -158,7 +158,7 @@ async def mine_repositories(
 
     @sentry_span
     async def fetch_commits_comments_reviews():
-        query_comments = select([distinct(PullRequestComment.repository_full_name)]).where(
+        query_comments = select(distinct(PullRequestComment.repository_full_name)).where(
             PullRequestComment.acc_id.in_(meta_ids),
             PullRequestComment.repository_node_id.in_(repo_ids),
             PullRequestComment.created_at.between(time_from, time_to),
@@ -257,7 +257,7 @@ async def mine_repositories(
     repos = coerce_logical_repos(r[0] for r in chain.from_iterable(results))
     with sentry_sdk.start_span(op="SELECT FROM github.api_repositories"):
         physical_repos = await mdb.fetch_all(
-            select([Repository.full_name])
+            select(Repository.full_name)
             .where(
                 Repository.acc_id.in_(meta_ids),
                 Repository.full_name.in_(repos),

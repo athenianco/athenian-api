@@ -17,7 +17,7 @@ from dateutil.relativedelta import relativedelta
 import morcilla.core
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, delete, func, insert, select, text, update
+from sqlalchemy import delete, func, insert, select, text, update
 
 from athenian.api import metadata
 from athenian.api.align.goals.dbaccess import create_default_goal_templates
@@ -215,13 +215,11 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             async with sdb_conn.transaction():
                 inv = await sdb_conn.fetch_one(
                     select(
-                        [
-                            Invitation.id,
-                            Invitation.account_id,
-                            Invitation.accepted,
-                            Invitation.is_active,
-                        ],
-                    ).where(and_(Invitation.id == iid, Invitation.salt == salt)),
+                        Invitation.id,
+                        Invitation.account_id,
+                        Invitation.accepted,
+                        Invitation.is_active,
+                    ).where(Invitation.id == iid, Invitation.salt == salt),
                 )
                 if inv is None:
                     raise ResponseError(NotFoundError(detail="Invitation was not found."))
