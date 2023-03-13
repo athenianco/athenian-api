@@ -1,4 +1,4 @@
-aiohttp[speedups]==3.8.3
+aiohttp[speedups]==3.8.4
 especifico[aiohttp,swagger-ui]==3.0.29
 jsonschema==4.17.3
 aiohttp_cors==0.7.0
