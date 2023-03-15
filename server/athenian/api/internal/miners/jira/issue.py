@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
+from functools import partial
 from itertools import chain
 import logging
 import pickle
@@ -398,7 +399,9 @@ async def _fetch_jira_issues(
 ) -> tuple[pd.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
-    issues = await query_jira_raw(
+
+    query_raw = partial(
+        query_jira_raw,
         [
             Issue.id,
             Issue.created,
@@ -408,17 +411,40 @@ async def _fetch_jira_issues(
             Status.category_name,
             *extra_columns,
         ],
-        time_from,
-        time_to,
-        jira_filter,
-        exclude_inactive,
-        reporters,
-        assignees,
-        commenters,
-        nested_assignees,
-        mdb,
-        cache,
+        time_to=time_to,
+        jira_filter=jira_filter,
+        exclude_inactive=exclude_inactive,
+        reporters=reporters,
+        assignees=assignees,
+        commenters=commenters,
+        nested_assignees=nested_assignees,
+        mdb=mdb,
+        cache=cache,
     )
+    fetch_tasks = []
+    if time_from and time_to:
+        # `query_jira_raw` applies `time_from` considering only jira resolution time, we need to
+        # extend this by considering also done time of any linked PRs.
+        # In order to do so we first retrieve node ids for PR released in the interval, then we
+        # execute query_jira_raw again with no `time_from` but filtering the issues resolved
+        # before `time_from` and mapped to those PRs
+        async def _fetch_by_pr_release():
+            pr_ids = await _fetch_released_pr_ids(
+                time_from, time_to, default_branches, release_settings, account, pdb,
+            )
+            if len(pr_ids) == 0:
+                return None
+            return await query_raw(
+                time_from=None, resolved_before=time_from, mapped_to_prs=pr_ids, meta_ids=meta_ids,
+            )
+
+        fetch_tasks.append(_fetch_by_pr_release())
+    fetch_tasks.append(query_raw(time_from=time_from))
+
+    results = await gather(*fetch_tasks, op="_fetch_jira_issues_fetches")
+    results = [r for r in results if r is not None]
+    issues = results[0] if len(results) == 1 else pd.concat(results)
+
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
         if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
@@ -712,6 +738,45 @@ async def _fetch_released_prs(
 
 
 @sentry_span
+async def _fetch_released_pr_ids(
+    time_from: datetime,
+    time_to: datetime,
+    default_branches: dict[str, str],
+    release_settings: ReleaseSettings,
+    account: int,
+    pdb: Database,
+) -> Sequence[str]:
+    """Fetch the node ids of the PR released in the interval."""
+    ghdprf = GitHubDonePullRequestFacts
+    selected = [ghdprf.pr_node_id, ghdprf.repository_full_name, ghdprf.release_match]
+    where = [ghdprf.acc_id == account, ghdprf.pr_done_at >= time_from]
+
+    # TODO: reduce code duplication with _fetch_released_prs
+    df = await read_sql_query(sa.select(*selected).where(*where), pdb, selected)
+    repos_col = df[ghdprf.repository_full_name.name].values
+    match_col = df[ghdprf.release_match.name].values
+    order_col = np.char.add(repos_col.astype("U"), match_col.astype("U"))
+    order = np.argsort(order_col)
+    _, group_counts = np.unique(order_col[order], return_counts=True)
+    pos = 0
+    take_mask = np.full(len(df.index.values), True, bool)
+
+    for group_count in group_counts:
+        indexes = order[pos : pos + group_count]
+        pos += group_count
+        repo = repos_col[indexes[0]]
+        match = match_col[indexes[0]]
+        ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+        if repo in release_settings.native:
+            ok = triage_by_release_match(
+                repo, match, release_settings, default_branches, df, ambiguous,
+            )
+            if ok is None:
+                take_mask[indexes] = False
+    return df[ghdprf.pr_node_id.name].values[take_mask]
+
+
+@sentry_span
 async def query_jira_raw(
     columns: list[InstrumentedAttribute],
     time_from: Optional[datetime],
@@ -725,6 +790,9 @@ async def query_jira_raw(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     distinct: bool = False,
+    resolved_before: datetime | None = None,
+    mapped_to_prs: Sequence[int] | None = None,
+    meta_ids: tuple[int, ...] | None = None,
 ) -> pd.DataFrame:
     """
     Fetch arbitrary columns from Issue or any joined tables according to the filters.
@@ -744,6 +812,9 @@ async def query_jira_raw(
     if time_from is not None:
         filter_by_athenian_issue = True
         and_filters.append(sql.func.coalesce(AthenianIssue.resolved, far_away_future) >= time_from)
+    if resolved_before is not None:
+        filter_by_athenian_issue = True
+        and_filters.append(AthenianIssue.resolved < resolved_before)
     if time_to is not None:
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
@@ -764,6 +835,16 @@ async def query_jira_raw(
         and_filters.append(epic.key.in_(jira_filter.epics))
     if jira_filter.status_categories:
         and_filters.append(Status.category_name.in_(jira_filter.status_categories))
+
+    if mapped_to_prs is not None:
+        assert meta_ids
+        PRIssues = NodePullRequestJiraIssues
+        subselect = sa.select(PRIssues.jira_id).where(
+            PRIssues.jira_acc == jira_filter.account,
+            PRIssues.node_acc.in_(meta_ids),
+            PRIssues.node_id.progressive_in(mapped_to_prs),
+        )
+        and_filters.append(Issue.id.in_(subselect))
 
     or_filters = []
     if jira_filter.labels:

@@ -31,11 +31,13 @@ from athenian.api.internal.miners.types import (
     PullRequestCheckRun,
     PullRequestFacts,
 )
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import (
     LogicalRepositorySettings,
     ReleaseMatch,
     ReleaseMatchSetting,
     ReleaseSettings,
+    Settings,
 )
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
 from athenian.api.models.metadata.jira import Issue, Status
@@ -47,7 +49,12 @@ from tests.testutils.factory.common import (
     DEFAULT_MD_ACCOUNT_ID,
 )
 from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory
-from tests.testutils.factory.wizards import pr_jira_issue_mappings
+from tests.testutils.factory.wizards import (
+    insert_repo,
+    jira_issue_models,
+    pr_jira_issue_mappings,
+    pr_models,
+)
 from tests.testutils.time import dt
 
 
@@ -171,7 +178,6 @@ class TestFetchJIRAIssues:
             release_settings=release_match_setting_tag,
             mdb=mdb,
             pdb=pdb,
-            # jira_filter=jira_filter
         )
         all_issues = await fetch_jira_issues(**kwargs)
         assert len(all_issues) == 125
@@ -187,6 +193,75 @@ class TestFetchJIRAIssues:
         )
         in_progress_issues = await fetch_jira_issues(**kwargs)
         assert len(in_progress_issues) == 9
+
+    @with_defer
+    async def test_time_from_handle_pr_release_time(
+        self,
+        sdb,
+        mdb_rw,
+        pdb,
+        default_branches,
+        pr_facts_calculator_factory,
+    ):
+        kwargs = self._kwargs(
+            time_from=dt(2023, 2, 1),
+            time_to=dt(2023, 3, 1),
+            jira_filter=JIRAFilter.empty().replace(
+                account=DEFAULT_JIRA_ACCOUNT_ID, projects=["1"],
+            ),
+            default_branches=default_branches,
+            mdb=mdb_rw,
+            pdb=pdb,
+        )
+
+        issue_kwargs = {"project_id": "1", "created": dt(2023, 1, 1)}
+        pr_kwargs = {
+            "repository_full_name": "org/repo",
+            "created_at": dt(2023, 1, 1),
+        }
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="org/repo")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            models = [
+                md_factory.JIRAProjectFactory(id="1", key="P1"),
+                *jira_issue_models("1", resolved=dt(2023, 1, 30), **issue_kwargs),
+                *jira_issue_models("2", resolved=dt(2023, 2, 2), **issue_kwargs),
+                *jira_issue_models("3", resolved=dt(2023, 2, 5), **issue_kwargs),
+                *jira_issue_models("4", resolved=dt(2023, 1, 30), **issue_kwargs),
+                *pr_models(99, 1, 1, closed_at=dt(2023, 2, 2), **pr_kwargs),
+                *pr_models(99, 4, 4, closed_at=dt(2023, 1, 30), **pr_kwargs),
+                *pr_jira_issue_mappings((1, "1"), (4, "4")),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
+            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+            release_settings = await settings.list_release_matches()
+
+            pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (DEFAULT_MD_ACCOUNT_ID,))
+            # filtering by PR release time needs pdb, let facts calculator fill it
+            await pr_facts_calculator_no_cache(
+                dt(2022, 10, 1),
+                dt(2024, 3, 1),
+                {"org/repo"},
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                {},
+                release_settings,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                False,
+                0,
+            )
+            await wait_deferred()
+            kwargs["release_settings"] = release_settings
+            issues = await fetch_jira_issues(**kwargs)
+            # issue 1 is included because its PR is released on Feb.
+            # issue 4 is excluded because its PR is released on Jan.
+            assert sorted(issues.index.values) == [b"1", b"2", b"3"]
 
     @classmethod
     def _kwargs(cls, **extra) -> dict[str, Any]:
