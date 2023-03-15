@@ -507,10 +507,6 @@ async def _fill_issues_with_mapped_prs_info(
 ) -> None:
     log = logging.getLogger("%s.jira" % metadata.__package__)
 
-    if len(issues) >= 20:
-        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index.values)
-    else:
-        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index.values)
     nullable_repository_id = NodePullRequest.repository_id
     nullable_repository_id = nullable_repository_id.label(nullable_repository_id.name)
     nullable_repository_id.nullable = True
@@ -544,7 +540,7 @@ async def _fill_issues_with_mapped_prs_info(
         .where(
             NodePullRequestJiraIssues.jira_acc == jira_account,
             NodePullRequestJiraIssues.node_acc.in_(meta_ids),
-            jira_id_cond,
+            NodePullRequestJiraIssues.jira_id.progressive_in(issues.index.values, threshold=20),
         )
         .with_statement_hint(
             f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
