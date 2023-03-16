@@ -194,7 +194,7 @@ async def fetch_repository_environments(
     if environments is not None:
         filters.append(DeploymentNotification.environment.in_(environments))
     rows = await rdb.fetch_all(
-        select([DeployedComponent.repository_node_id, DeploymentNotification.environment])
+        select(DeployedComponent.repository_node_id, DeploymentNotification.environment)
         .select_from(
             join(
                 DeployedComponent,
@@ -307,8 +307,8 @@ async def fetch_labels(
 ) -> pd.DataFrame:
     """Fetch the labels corresponding to the deployment notifications."""
     return await read_sql_query(
-        select([DeployedLabel]).where(
-            and_(DeployedLabel.account_id == account, DeployedLabel.deployment_name.in_(names)),
+        select(DeployedLabel).where(
+            DeployedLabel.account_id == account, DeployedLabel.deployment_name.in_(names),
         ),
         rdb,
         DeployedLabel,
@@ -411,7 +411,7 @@ async def _fetch_deployment_candidates(
     rdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> tuple[pd.DataFrame, Collection[str], Collection[DeploymentConclusion]]:
-    query = select([DeploymentNotification])
+    query = select(DeploymentNotification)
     filters = [
         DeploymentNotification.account_id == account,
         DeploymentNotification.started_at < time_to,

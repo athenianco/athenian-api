@@ -992,7 +992,7 @@ class ReleaseToPullRequestMapper:
             else:
                 filters.append(NodeCommit.sha.in_(unique_commits))
                 query = (
-                    select([NodePullRequest.node_id])
+                    select(NodePullRequest.node_id)
                     .select_from(
                         join(
                             NodeCommit,
@@ -1086,7 +1086,7 @@ class ReleaseToPullRequestMapper:
                 if expr is not None:
                     filters.append(expr)
         if not jira:
-            query = select([PullRequest]).where(*filters)
+            query = select(PullRequest).where(*filters)
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)

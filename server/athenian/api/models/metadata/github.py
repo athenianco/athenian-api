@@ -12,8 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
-from sqlalchemy.orm import synonym
+from sqlalchemy.orm import declarative_base, declared_attr, synonym
 
 Base = declarative_base()
 ShadowBase = declarative_base()  # used in unit tests

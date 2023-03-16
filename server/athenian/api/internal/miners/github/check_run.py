@@ -151,7 +151,7 @@ async def mine_check_runs(
         else:
             embedded_labels_query = False
         if not jira:
-            query = select([CheckRun]).where(and_(*filters))
+            query = select(CheckRun).where(and_(*filters))
         else:
             query = await generate_jira_prs_query(
                 filters,
@@ -298,7 +298,7 @@ async def _disambiguate_pull_requests(
     unique_pr_ids = np.unique(pr_node_ids)  # with 0, but that's fine
     pr_lifetimes, pr_commit_counts, *pr_labels = await gather(
         read_sql_query(
-            select(pr_cols).where(
+            select(*pr_cols).where(
                 NodePullRequest.acc_id.in_(meta_ids),
                 NodePullRequest.id.in_any_values(unique_pr_ids),
             ),
@@ -308,10 +308,8 @@ async def _disambiguate_pull_requests(
         ),
         read_sql_query(
             select(
-                [
-                    NodePullRequestCommit.pull_request_id,
-                    func.count(NodePullRequestCommit.commit_id).label("count"),
-                ],
+                NodePullRequestCommit.pull_request_id,
+                func.count(NodePullRequestCommit.commit_id).label("count"),
             )
             .where(
                 NodePullRequestCommit.acc_id.in_(meta_ids),

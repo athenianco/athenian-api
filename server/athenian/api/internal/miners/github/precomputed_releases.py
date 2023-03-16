@@ -99,13 +99,11 @@ async def load_precomputed_release_facts(
         total_ids += len(ids)
         queries.append(
             select(
-                [
-                    GitHubReleaseFacts.id,
-                    GitHubReleaseFacts.repository_full_name,
-                    GitHubReleaseFacts.data,
-                ],
+                GitHubReleaseFacts.id,
+                GitHubReleaseFacts.repository_full_name,
+                GitHubReleaseFacts.data,
             )
-            .where(and_(*filters))
+            .where(*filters)
             .with_statement_hint("HashJoin(release_facts *VALUES*)")
             .with_statement_hint(f"Rows(release_facts *VALUES* #{len(ids)})"),
         )
@@ -214,7 +212,7 @@ async def fetch_precomputed_releases_by_name(
     prel = PrecomputedRelease
     if pdb.url.dialect == "sqlite":
         query = (
-            select([prel])
+            select(prel)
             .where(
                 or_(
                     *(

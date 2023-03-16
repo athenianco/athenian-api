@@ -1296,7 +1296,7 @@ async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sd
     await assert_missing_row(
         pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git/alpha",
     )
-    row = pdb.fetch_one(
+    row = await pdb.fetch_one(
         select(GitHubDonePullRequestFacts).where(
             GitHubDonePullRequestFacts.repository_full_name == "src-d/go-git/beta",
         ),
@@ -1307,7 +1307,7 @@ async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sd
     await assert_missing_row(
         pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git/alpha",
     )
-    row = pdb.fetch_one(
+    row = await pdb.fetch_one(
         select(GitHubOpenPullRequestFacts).where(
             GitHubOpenPullRequestFacts.repository_full_name == "src-d/go-git2",
         ),

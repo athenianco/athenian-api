@@ -80,7 +80,7 @@ async def generate_jira_prs_query(
         filters.append(on[1].in_(meta_ids))
     if jira.unmapped:
         return (
-            sql.select(columns)
+            sql.select(*columns)
             .select_from(
                 sql.outerjoin(
                     seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
@@ -104,7 +104,7 @@ async def generate_jira_prs_query(
     if not jira.epics:
         filters.extend([_issue.acc_id == jira.account, _issue.project_id.in_(jira.projects)])
         return (
-            sql.select(columns)
+            sql.select(*columns)
             .select_from(
                 sql.join(
                     seed,
@@ -135,7 +135,7 @@ async def generate_jira_prs_query(
     )
 
     return (
-        sql.select(columns)
+        sql.select(*columns)
         .select_from(
             sql.join(
                 sql.join(
@@ -523,7 +523,7 @@ async def _fill_issues_with_mapped_prs_info(
         NodeRepository.name_with_owner.label(PullRequest.repository_full_name.name),
     ]
     prs = await read_sql_query(
-        sql.select(pr_cols)
+        sql.select(*pr_cols)
         .select_from(
             sql.outerjoin(
                 sql.outerjoin(
@@ -1285,6 +1285,8 @@ async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -
     The `issues` dataframe must have `acc_id` and `components` (with components ids) columns.
 
     """
+    if issues.empty:
+        return
     components = (
         issues[[Issue.acc_id.name, Issue.components.name]]
         .groupby(Issue.acc_id.name, sort=False)

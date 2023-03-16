@@ -170,7 +170,8 @@ async def extract_commits(
                 continue
         sql_filters.append(PushCommit.committer_user_id.in_(committer_ids))
     if columns is None:
-        cols_query = cols_df = PushCommit
+        cols_query = [PushCommit]
+        cols_df = cols_query[0]  # cannot be a list to make read_sql_query work
     else:
         for col in (PushCommit.node_id, PushCommit.repository_full_name, PushCommit.sha):
             if col not in columns:
@@ -179,11 +180,11 @@ async def extract_commits(
     match prop:
         case FilterCommitsProperty.NO_PR_MERGES:
             sql_filters.append(PushCommit.committer_email != "noreply@github.com")
-            commits_task = read_sql_query(select(cols_query).where(*sql_filters), mdb, cols_df)
+            commits_task = read_sql_query(select(*cols_query).where(*sql_filters), mdb, cols_df)
         case FilterCommitsProperty.BYPASSING_PRS:
             sql_filters.append(PushCommit.committer_email != "noreply@github.com")
             commits_task = read_sql_query(
-                select(cols_query)
+                select(*cols_query)
                 .select_from(
                     outerjoin(
                         PushCommit,
@@ -199,7 +200,7 @@ async def extract_commits(
                 cols_df,
             )
         case FilterCommitsProperty.EVERYTHING:
-            commits_task = read_sql_query(select(cols_query).where(*sql_filters), mdb, cols_df)
+            commits_task = read_sql_query(select(*cols_query).where(*sql_filters), mdb, cols_df)
         case _:
             raise AssertionError('Unsupported primary commit filter "%s"' % prop)
     commits, (dags, branches, default_branches) = await gather(
@@ -998,7 +999,7 @@ async def _fetch_commits_for_dags(
     if not commits:
         return pd.DataFrame()
     queries = [
-        select(COMMIT_FETCH_COMMITS_COLUMNS).where(
+        select(*COMMIT_FETCH_COMMITS_COLUMNS).where(
             PushCommit.acc_id.in_(meta_ids),
             PushCommit.repository_full_name == repo,
             PushCommit.node_id.in_any_values(nodes),
