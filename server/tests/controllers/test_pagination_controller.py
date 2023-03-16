@@ -128,13 +128,13 @@ async def test_paginate_prs_no_done(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
 
     body = {"request": main_request, "batch": 5}
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
     obj = await response.json()
     model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
@@ -142,7 +142,7 @@ async def test_paginate_prs_no_done(client, headers):
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
     obj = await response.json()
     model = PullRequestPaginationPlan.from_dict(obj)
     # exactly the same even though there should be 0 PRs
@@ -205,7 +205,7 @@ async def test_paginate_prs_same_day(client, headers, sdb):
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
     obj = await response.json()
     model = PullRequestPaginationPlan.from_dict(obj)
     assert model.updated == [date(2015, 10, 23), date(2015, 10, 23)]
@@ -233,7 +233,7 @@ async def test_paginate_prs_deps(client, headers, precomputed_sample_deployments
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
     obj = await response.json()
     model = PullRequestPaginationPlan.from_dict(obj)
     assert model.to_dict() == {
