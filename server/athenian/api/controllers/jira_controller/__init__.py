@@ -103,11 +103,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     return_ = set(filt.return_ or JIRAFilterReturn)
     if not filt.return_:
         return_.remove(JIRAFilterReturn.ONLY_FLYING)
-    account_info = await collect_account_info(
-        filt.account,
-        request,
-        JIRAFilterReturn.ISSUE_BODIES in return_ or JIRAFilterReturn.EPICS in return_,
-    )
+    account_info = await collect_account_info(filt.account, request)
     if filt.projects is not None:
         jira_conf = account_info.jira_conf
         projects = jira_conf.project_ids_map(filt.projects)
@@ -953,7 +949,7 @@ async def _calc_linear_entry(
     request: AthenianWebRequest,
     metrics_req: JIRAMetricsRequest,
 ) -> tuple[list[list[datetime]], timedelta, np.ndarray, np.ndarray]:
-    account_info = await collect_account_info(metrics_req.account, request, True)
+    account_info = await collect_account_info(metrics_req.account, request)
     time_intervals, tzoffset = _request_time_intervals(metrics_req)
     participants = await resolve_jira_with(
         metrics_req.with_, metrics_req.account, request.sdb, request.mdb, request.cache,
@@ -982,7 +978,7 @@ async def _calc_histogram_entry(
     request: AthenianWebRequest,
     hist_req: JIRAHistogramsRequest,
 ) -> tuple[dict[HistogramParameters, list[str]], np.ndarray]:
-    account_info = await collect_account_info(hist_req.account, request, True)
+    account_info = await collect_account_info(hist_req.account, request)
     meta_ids = account_info.meta_ids
     jira_conf = account_info.jira_conf
     time_intervals, tzoffset = _request_time_intervals(hist_req)

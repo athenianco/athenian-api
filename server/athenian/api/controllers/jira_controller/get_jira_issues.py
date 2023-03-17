@@ -34,7 +34,7 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
     """Retrieve jira issues."""
     issues_req = model_from_body(GetJIRAIssuesRequest, body)
     sdb, mdb = request.sdb, request.mdb
-    account_info = await collect_account_info(issues_req.account, request, True)
+    account_info = await collect_account_info(issues_req.account, request)
     extra_columns = [
         Issue.key,
         Issue.title,
