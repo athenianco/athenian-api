@@ -83,7 +83,7 @@ async def collect_account_info(account: int, request: AthenianWebRequest) -> Acc
         ),
         settings.list_logical_repositories(repos),
         settings.list_release_matches(),
-        op="sdb/branches, logical settings",
+        op="sdb/branches, logical settings, release settings",
     )
     return AccountInfo(
         account,
