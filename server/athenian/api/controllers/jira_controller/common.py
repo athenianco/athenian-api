@@ -57,18 +57,14 @@ class AccountInfo:
     account: int
     meta_ids: tuple[int, ...]
     jira_conf: JIRAConfig
-    branches: pd.DataFrame | None
-    default_branches: dict[str, str] | None
-    release_settings: ReleaseSettings | None
-    logical_settings: LogicalRepositorySettings | None
+    branches: pd.DataFrame
+    default_branches: dict[str, str]
+    release_settings: ReleaseSettings
+    logical_settings: LogicalRepositorySettings
     prefixer: Prefixer
 
 
-async def collect_account_info(
-    account: int,
-    request: AthenianWebRequest,
-    with_branches_and_settings: bool,
-) -> AccountInfo:
+async def collect_account_info(account: int, request: AthenianWebRequest) -> AccountInfo:
     """Collect the AccountInfo from the request."""
     sdb, mdb, pdb, cache = request.sdb, request.mdb, request.pdb, request.cache
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
@@ -79,20 +75,16 @@ async def collect_account_info(
         op="sdb/ids",
     )
     repos = [str(r) for r in repos]
-    if with_branches_and_settings:
-        settings = Settings.from_request(request, account, prefixer)
-        (branches, default_branches), logical_settings = await gather(
-            BranchMiner.load_branches(
-                repos, prefixer, account, meta_ids, mdb, pdb, cache, strip=True,
-            ),
-            settings.list_logical_repositories(repos),
-            op="sdb/branches and releases",
-        )
-        repos = logical_settings.append_logical_prs(repos)
-        release_settings = await settings.list_release_matches(repos)
-    else:
-        branches = release_settings = logical_settings = None
-        default_branches = {}
+
+    settings = Settings.from_request(request, account, prefixer)
+    (branches, default_branches), logical_settings, release_settings = await gather(
+        BranchMiner.load_branches(
+            repos, prefixer, account, meta_ids, mdb, pdb, cache, strip=True,
+        ),
+        settings.list_logical_repositories(repos),
+        settings.list_release_matches(),
+        op="sdb/branches, logical settings, release settings",
+    )
     return AccountInfo(
         account,
         meta_ids,
