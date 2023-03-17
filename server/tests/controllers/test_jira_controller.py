@@ -28,6 +28,15 @@ from athenian.api.models.web import (
     JIRAUser,
 )
 from athenian.api.serialization import FriendlyJson
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.wizards import (
+    insert_repo,
+    jira_issue_models,
+    pr_jira_issue_mappings,
+    pr_models,
+)
+from tests.testutils.time import dt
 
 
 # TODO: fix response validation against the schema
@@ -614,6 +623,47 @@ async def test_filter_jira_epics_no_time(client, headers):
     assert len(model.epics) == 60
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
+
+
+@with_defer
+async def test_missing_release_settings(client, headers, mdb_rw, sdb):
+    body = {
+        "date_from": "2023-02-01",
+        "date_to": "2023-03-01",
+        "timezone": 0,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["issues", "users"],
+    }
+
+    issue_kwargs = {"project_id": "1", "created": dt(2023, 1, 1)}
+    pr_kwargs = {"repository_full_name": "org/repo", "created_at": dt(2023, 1, 1)}
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="org/repo")
+        await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+        models = [
+            md_factory.JIRAProjectFactory(id="1", key="P1"),
+            md_factory.JIRAUserFactory(id="u0", display_name="U 0", avatar_url="http://a.co/0"),
+            *jira_issue_models("1", resolved=dt(2023, 1, 30), assignee_id="u0", **issue_kwargs),
+            *pr_models(99, 1, 1, closed_at=dt(2023, 2, 2), **pr_kwargs),
+            *pr_jira_issue_mappings((1, "1"), (4, "4")),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+
+        # let precompute, mapped prs are read only from pdb
+        search_body = {"date_from": "2023-02-01", "date_to": "2023-03-01", "account": 1}
+        await client.request(
+            method="POST", path="/private/search/pull_requests", headers=headers, json=search_body,
+        )
+        await wait_deferred()
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+    assert response.status == 200
+    res_body = await response.json()
+    assert len(res_body["users"]) == 1
+    assert res_body["users"][0]["name"] == "U 0"
 
 
 @with_defer
