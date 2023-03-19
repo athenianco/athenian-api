@@ -21,6 +21,7 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     fetch_jira_issues_by_keys,
     generate_jira_prs_query,
+    import_components_as_labels,
     resolve_resolved,
     resolve_work_began,
 )
@@ -676,3 +677,123 @@ class TestPullRequestJiraMapper:
         assert not facts[(10, "r0")].jira.projects.size
         assert not facts[(10, "r0")].jira.types.size
         assert not facts[(10, "r0")].jira.priorities.size
+
+
+class TestImportComponentAsLabels:
+    async def test_empty(self, mdb_rw: Database) -> None:
+        issues = self._mk_df()
+        await import_components_as_labels(issues, mdb_rw)
+
+    async def test_single_account(self, mdb_rw: Database) -> None:
+        issues = self._mk_df(
+            ([], []), ([], ["0"]), (["l0"], ["0", "1"]), (["l1", "l2"], ["1"]), (["l1"], []),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAComponentFactory(id="0", name="c0"),
+                md_factory.JIRAComponentFactory(id="1", name="c1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            await import_components_as_labels(issues, mdb_rw)
+
+        assert list(issues[Issue.labels.name]) == [
+            [],
+            ["c0"],
+            ["l0", "c0", "c1"],
+            ["l1", "l2", "c1"],
+            ["l1"],
+        ]
+
+    async def test_multi_account(self, mdb_rw: Database) -> None:
+        issues = self._mk_df(
+            (1, [], []),
+            (1, [], ["0"]),
+            (2, ["l0"], ["0", "1"]),
+            (1, ["l1", "l2"], ["1"]),
+            (2, ["l1"], []),
+            (1, ["l2"], ["0", "1"]),
+            (2, ["l3"], ["1"]),
+            (2, [], []),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAComponentFactory(acc_id=1, id="0", name="c0"),
+                md_factory.JIRAComponentFactory(acc_id=1, id="1", name="c1"),
+                md_factory.JIRAComponentFactory(acc_id=2, id="0", name="c00"),
+                md_factory.JIRAComponentFactory(acc_id=2, id="1", name="c11"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            await import_components_as_labels(issues, mdb_rw)
+
+        assert list(issues[Issue.labels.name]) == [
+            [],
+            ["c0"],
+            ["l0", "c00", "c11"],
+            ["l1", "l2", "c1"],
+            ["l1"],
+            ["l2", "c0", "c1"],
+            ["l3", "c11"],
+            [],
+        ]
+
+    async def test_many_components(self, mdb_rw: Database) -> None:
+        issues = self._mk_df(
+            (1, [], ["0", "1"]),
+            (2, ["l0"], ["0", "1"]),
+            (1, ["l1", "l2"], ["1", "2"]),
+            (1, ["l2"], ["0", "1"]),
+            (2, ["l3"], ["1", "2"]),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [
+                md_factory.JIRAComponentFactory(acc_id=1, id="0", name="c0"),
+                md_factory.JIRAComponentFactory(acc_id=1, id="1", name="c1"),
+                md_factory.JIRAComponentFactory(acc_id=1, id="2", name="c2"),
+                md_factory.JIRAComponentFactory(acc_id=2, id="0", name="c00"),
+                md_factory.JIRAComponentFactory(acc_id=2, id="1", name="c11"),
+                md_factory.JIRAComponentFactory(acc_id=2, id="2", name="c22"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+            await import_components_as_labels(issues, mdb_rw)
+
+        assert list(issues[Issue.labels.name]) == [
+            ["c0", "c1"],
+            ["l0", "c00", "c11"],
+            ["l1", "l2", "c1", "c2"],
+            ["l2", "c0", "c1"],
+            ["l3", "c11", "c22"],
+        ]
+
+    async def test_no_components(self, mdb_rw: Database) -> None:
+        issues = self._mk_df(([], []), (["l1"], []))
+        await import_components_as_labels(issues, mdb_rw)
+        assert list(issues[Issue.labels.name]) == [[], ["l1"]]
+
+    async def test_none_components(self, mdb_rw: Database) -> None:
+        issues = self._mk_df(([], None), (["l1"], []))
+        await import_components_as_labels(issues, mdb_rw)
+        assert list(issues[Issue.labels.name]) == [[], ["l1"]]
+
+    @classmethod
+    def _mk_df(
+        cls,
+        *labels_comps: tuple[list[str], list[str] | None]
+        | tuple[int, list[str] | None, list[str]],
+    ) -> md.DataFrame:
+        sanitized_input = [
+            v if len(v) == 3 else [DEFAULT_JIRA_ACCOUNT_ID, *v] for v in labels_comps
+        ]
+        labels = np.empty(shape=len(sanitized_input), dtype=object)
+        labels[:] = [v[1] for v in sanitized_input]
+        components = np.empty(shape=len(sanitized_input), dtype=object)
+        components[:] = [v[2] for v in sanitized_input]
+        return md.DataFrame(
+            {
+                Issue.acc_id.name: np.array([v[0] for v in sanitized_input], dtype=int),
+                Issue.labels.name: labels,
+                Issue.components.name: components,
+            },
+        )

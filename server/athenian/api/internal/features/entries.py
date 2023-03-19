@@ -1324,8 +1324,6 @@ class MetricEntriesCalculator:
 
         # do not consider components as labels when split_by_label to keep historical behavior
         if not split_by_label and Issue.labels in extra_columns:
-            # pandas warning during groupby without this, doesn't like the bytes index
-            issues.reset_index(drop=True, inplace=True)
             await import_components_as_labels(issues, self._mdb)
         calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
 
