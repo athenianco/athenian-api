@@ -51,3 +51,8 @@ per-file-ignores = [
 ignore_missing_imports = true
 plugins = ["sqlmypy"]
 exclude = ["athenian/api/sentry_native.*"]
+
+[tool.bandit]
+exclude_dirs = [
+    "athenian/api/internal/pentest_data.py"
+]
