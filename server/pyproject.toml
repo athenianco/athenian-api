@@ -54,5 +54,9 @@ exclude = ["athenian/api/sentry_native.*"]
 
 [tool.bandit]
 exclude_dirs = [
-    "athenian/api/internal/pentest_data.py"
+    "athenian/api/internal/pentest_data.py",
+    "athenian/api/align/spec",
+    "athenian/api/mimalloc",
+    "athenian/api/openapi",
+    "athenian/api/sentry_native"
 ]
