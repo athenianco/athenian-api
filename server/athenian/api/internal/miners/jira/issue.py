@@ -554,38 +554,17 @@ async def _fill_issues_with_mapped_prs_info(
         nullable_repository_id,
         NodeRepository.name_with_owner.label(PullRequest.repository_full_name.name),
     ]
-    prs = await read_sql_query(
-        sql.select(*pr_cols)
-        .select_from(
-            sql.outerjoin(
-                sql.outerjoin(
-                    NodePullRequestJiraIssues,
-                    NodePullRequest,
-                    sql.and_(
-                        NodePullRequestJiraIssues.node_acc == NodePullRequest.acc_id,
-                        NodePullRequestJiraIssues.node_id == NodePullRequest.graph_id,
-                    ),
-                ),
-                NodeRepository,
-                sql.and_(
-                    NodePullRequest.acc_id == NodeRepository.acc_id,
-                    NodePullRequest.repository_id == NodeRepository.graph_id,
-                ),
-            ),
-        )
-        .where(
-            NodePullRequestJiraIssues.jira_acc == jira_account,
-            NodePullRequestJiraIssues.node_acc.in_(meta_ids),
-            NodePullRequestJiraIssues.jira_id.progressive_in(issues.index.values, threshold=20),
-        )
-        .with_statement_hint(
-            f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
-            f"{NodePullRequest.__tablename__})",
-        ),
-        mdb,
-        pr_cols,
-        index=NodePullRequestJiraIssues.node_id.name,
+    selects = [
+        _mapped_prs_select(issues.index.values, pr_cols, jira_account, meta_id)
+        for meta_id in meta_ids
+    ]
+    stmt = sa.union_all(*selects)
+    stmt = stmt.with_statement_hint(
+        f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
+        f"{NodePullRequest.__tablename__})",
     )
+    prs = await read_sql_query(stmt, mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name)
+
     # TODO(vmarkovtsev): load the "fresh" released PRs
     existing_repos = np.flatnonzero(prs.notnull(PullRequest.repository_full_name.name))
     if len(existing_repos) < len(prs):
@@ -677,6 +656,35 @@ async def _fill_issues_with_mapped_prs_info(
             issues.index.values[negative].tolist(),
         )
         issues[ISSUE_RESOLVED][negative] = issues[ISSUE_CREATED][negative]
+
+
+def _mapped_prs_select(issue_ids: Iterable[str], cols, jira_id: int, meta_id: int) -> sql.Select:
+    """Return the select statement to select mapped PRs belonging to a single meta account."""
+    return (
+        sql.select(*cols)
+        .select_from(
+            sql.outerjoin(
+                sql.outerjoin(
+                    NodePullRequestJiraIssues,
+                    NodePullRequest,
+                    sql.and_(
+                        NodePullRequestJiraIssues.node_acc == NodePullRequest.acc_id,
+                        NodePullRequestJiraIssues.node_id == NodePullRequest.graph_id,
+                    ),
+                ),
+                NodeRepository,
+                sql.and_(
+                    NodePullRequest.acc_id == NodeRepository.acc_id,
+                    NodePullRequest.repository_id == NodeRepository.graph_id,
+                ),
+            ),
+        )
+        .where(
+            NodePullRequestJiraIssues.jira_acc == jira_id,
+            NodePullRequestJiraIssues.node_acc == meta_id,
+            NodePullRequestJiraIssues.jira_id.progressive_in(issue_ids, threshold=20),
+        )
+    )
 
 
 def _fill_issues_with_empty_prs_info(issues: md.DataFrame) -> None:
