@@ -263,6 +263,74 @@ class TestFetchJIRAIssues:
             # issue 4 is excluded because its PR is released on Jan.
             assert sorted(issues.index.values) == [b"1", b"2", b"3"]
 
+    @with_defer
+    async def test_mapped_prs_from_multiple_accounts(
+        self,
+        sdb,
+        mdb_rw,
+        pdb,
+        default_branches,
+        pr_facts_calculator_factory,
+    ):
+        meta_ids = (DEFAULT_MD_ACCOUNT_ID, 10)
+        kwargs = self._kwargs(
+            time_from=dt(2023, 2, 1),
+            time_to=dt(2023, 3, 1),
+            jira_filter=JIRAFilter.empty().replace(
+                account=DEFAULT_JIRA_ACCOUNT_ID, projects=["1"],
+            ),
+            default_branches=default_branches,
+            meta_ids=meta_ids,
+            mdb=mdb_rw,
+            pdb=pdb,
+        )
+
+        issue_kwargs = {"project_id": "1", "created": dt(2023, 1, 1)}
+        pr_kwargs = {"created_at": dt(2023, 1, 1)}
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=98, full_name="org/r")
+            repo1 = md_factory.RepositoryFactory(node_id=99, acc_id=10, full_name="org1/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            await insert_repo(repo1, mdb_cleaner, mdb_rw, sdb, md_acc_id=10)
+            models = [
+                md_factory.JIRAProjectFactory(id="1", key="P1"),
+                *jira_issue_models("1", resolved=dt(2023, 2, 15), **issue_kwargs),
+                *pr_models(98, 1, 1, repository_full_name="org/r", **pr_kwargs),
+                *pr_models(99, 2, 2, acc_id=10, repository_full_name="org1/r", **pr_kwargs),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=1, jira_id="1"),
+                md_factory.NodePullRequestJiraIssuesFactory(node_id=2, jira_id="1", node_acc=10),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            prefixer = await Prefixer.load(meta_ids, mdb_rw, None)
+            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+            release_settings = await settings.list_release_matches()
+
+            pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, meta_ids)
+            await pr_facts_calculator_no_cache(
+                dt(2022, 10, 1),
+                dt(2024, 3, 1),
+                {"org/r", "org1/r"},
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                {},
+                release_settings,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                False,
+                0,
+            )
+
+            await wait_deferred()
+            kwargs["release_settings"] = release_settings
+            issues = await fetch_jira_issues(**kwargs)
+
+        assert len(issues.pr_ids.values) == 1
+        assert sorted(issues.pr_ids.values[0]) == [1, 2]
+
     @classmethod
     def _kwargs(cls, **extra) -> dict[str, Any]:
         return {

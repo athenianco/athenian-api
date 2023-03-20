@@ -13,6 +13,7 @@ from athenian.api.models.metadata.github import Repository
 from athenian.api.models.state.models import RepositorySet
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import LogicalRepositoryFactory, ReleaseSettingFactory
 
 
@@ -21,6 +22,8 @@ async def insert_repo(
     mdb_cleaner: DBCleaner,
     mdb: Database,
     sdb: Database,
+    *,
+    md_acc_id: int = DEFAULT_MD_ACCOUNT_ID,
 ) -> None:
     """Insert rows in sdb and mdb in order to have a valid repository.
 
@@ -30,6 +33,7 @@ async def insert_repo(
         sdb, ReleaseSettingFactory(repo_id=repository.node_id, match=ReleaseMatch.tag),
     )
     repository_node = md_factory.NodeRepositoryFactory(
+        acc_id=md_acc_id,
         name=repository.full_name.split("/", 1)[1],
         name_with_owner=repository.full_name,
         url=repository.html_url,
@@ -42,7 +46,9 @@ async def insert_repo(
         repository_node,
         # AccountRepository rows are needed to pass GitHubAccessChecker
         md_factory.AccountRepositoryFactory(
-            repo_full_name=repository.full_name, repo_graph_id=repository.node_id,
+            repo_full_name=repository.full_name,
+            repo_graph_id=repository.node_id,
+            acc_id=md_acc_id,
         ),
     ]
     mdb_cleaner.add_models(*md_models)
@@ -110,8 +116,10 @@ def pr_models(
     if closed_at is not None:
         pr_kwargs["closed_at"] = closed_at
         kwargs.setdefault("closed", True)
-    if "created_at" in kwargs:
-        pr_kwargs["created_at"] = kwargs.pop("created_at")
+
+    for f in ("created_at", "acc_id"):
+        if f in kwargs:
+            pr_kwargs[f] = kwargs.pop(f)
 
     models = [
         md_factory.PullRequestFactory(repository_node_id=repo_id, **pr_kwargs, **kwargs),
