@@ -229,6 +229,13 @@ class TestSearchPRs(BaseSearchPRsTest):
             ns = await self._fetch_pr_numbers(json=body)
             assert ns == (2,)
 
+    async def test_empty_jira_object_jira_not_installed(self, sdb: Database) -> None:
+        await sdb.execute(
+            sa.delete(AccountJiraInstallation).where(AccountJiraInstallation.account_id == 1),
+        )
+        body = self._body(jira={"epics": [], "issue_types": []})
+        await self.post_json(200, json=body)
+
 
 class TestSearchPRsOrderByMetric(BaseSearchPRsTest):
     _from: dict = {"date_from": date(2019, 10, 1), "date_to": date(2019, 12, 1)}

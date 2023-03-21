@@ -110,7 +110,7 @@ async def _build_filter(
 ) -> _SearchPRsFilter:
     dt_from, dt_to = closed_dates_interval_to_datetimes(search_req.date_from, search_req.date_to)
 
-    async def _resolve_repos():
+    async def _resolve_repos() -> Collection[RepositoryName] | None:
         if search_req.repositories is None:
             return None
         repos, _ = await resolve_repos_with_request(
@@ -123,7 +123,7 @@ async def _build_filter(
         )
         return repos
 
-    async def _resolve_participants():
+    async def _resolve_participants() -> PRParticipants | None:
         if search_req.participants is None:
             return None
         groups = await resolve_withgroups(
@@ -139,8 +139,8 @@ async def _build_filter(
         )
         return groups[0] if groups else {}
 
-    async def _resolve_jira():
-        if search_req.jira is None:
+    async def _resolve_jira() -> JIRAFilter | None:
+        if not search_req.jira:
             return None
         jira_conf = await get_jira_installation(
             account_info.account, request.sdb, request.mdb, request.cache,
@@ -163,8 +163,8 @@ async def _build_filter(
 class _SearchPRsFilter:
     time_from: datetime
     time_to: datetime
-    repositories: Optional[Collection[RepositoryName]] = None
-    participants: Optional[PRParticipants] = None
+    repositories: Collection[RepositoryName] | None = None
+    participants: PRParticipants | None = None
     jira: Optional[JIRAFilter] = None
     stages: Optional[list[str]] = None
     extra_filters: Optional[list[SearchPullRequestsFilter]] = None
