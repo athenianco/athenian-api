@@ -41,6 +41,11 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": "432000s"},
     },
     {
+        "metric": JIRAMetricID.JIRA_LIFE_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Ensure quick response time to restore from bugs",
+        "metric_params": {"threshold": "432000s"},
+    },
+    {
         "metric": PullRequestMetricID.PR_WIP_TIME,
         "name": "Reduce WIP time",
     },
