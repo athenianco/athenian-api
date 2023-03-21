@@ -23,11 +23,11 @@ import warnings
 
 import medvedi as md
 from medvedi.accelerators import in1d_str, unordered_unique
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 from numpy import typing as npt
 import sentry_sdk
 
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.features.histogram import Histogram, Scale, calculate_histogram
 from athenian.api.internal.features.metric import (
     Metric,
@@ -1032,7 +1032,7 @@ def deduplicate_groups(
     deduped_indexes_flat = deduped_indexes.ravel()
     key_arr = items[deduplicate_key]
     if deduplicate_mask is not None and len(key_arr):
-        key_arr = int_to_str(key_arr, deduplicate_mask)
+        key_arr = merge_to_str(key_arr, deduplicate_mask)
     for i, group in enumerate(indexes.ravel()):
         _, group_indexes = np.unique(key_arr[group], return_index=True)
         if len(group_indexes) < len(group):

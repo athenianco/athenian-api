@@ -171,7 +171,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
         all_merged_labels[GitHubMergedPullRequestFacts.acc_id.name],
         all_merged_empty[GitHubMergedPullRequestFacts.acc_id.name],
     ):
-        accs, counts = np.unique(col.values, return_counts=True)
+        accs, counts = np.unique(col, return_counts=True)
         dfs_acc_counts.append(np.zeros(max_account + 1, dtype=int))
         dfs_acc_counts[-1][accs] = counts
     batch_size = 20

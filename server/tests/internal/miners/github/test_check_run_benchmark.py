@@ -3,11 +3,11 @@ import logging
 from pathlib import Path
 import pickle
 
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.miners.github.check_run import (
     _calculate_check_suite_started,
     _finalize_check_runs,
@@ -138,7 +138,7 @@ def _disambiguate_pull_requests(
     df.drop_duplicates([CheckRun.check_run_node_id.name, CheckRun.pull_request_node_id.name],
                        inplace=True, ignore_index=True)
     """
-    dupe_arr = int_to_str(
+    dupe_arr = merge_to_str(
         df[CheckRun.check_run_node_id.name], df[CheckRun.pull_request_node_id.name],
     )
     _, not_dupes = np.unique(dupe_arr, return_index=True)
@@ -204,7 +204,7 @@ def _disambiguate_pull_requests(
         # there can be check runs mapped to both a PR and None; remove None-s
         pr_node_ids[reset_indexes] = -1
         pr_node_ids[pr_node_ids == 0] = -1
-        joint = int_to_str(check_run_node_ids, pr_node_ids)
+        joint = merge_to_str(check_run_node_ids, pr_node_ids)
         order = np.argsort(joint)
         _, first_encounters = np.unique(check_run_node_ids[order], return_index=True)
         first_encounters = order[first_encounters]

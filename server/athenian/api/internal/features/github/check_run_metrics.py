@@ -2,10 +2,10 @@ from datetime import timedelta
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 import medvedi as md
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 from numpy import typing as npt
 
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.features.github.check_run_metrics_accelerated import (
     calculate_interval_intersections,
 )
@@ -422,7 +422,7 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
             structs = structs[:quantiles_mounted_at]
         sizes = structs["size"].astype("S")
         repos = facts[CheckRun.repository_node_id.name]
-        repos_sizes = np.char.add(int_to_str(repos), np.char.add(b"|", sizes))
+        repos_sizes = np.char.add(merge_to_str(repos), np.char.add(b"|", sizes))
         self._metrics = metrics = []
         for group_mask in meaningful_groups_mask.dense():
             group_repos_sizes = repos_sizes[:, group_mask]
@@ -585,8 +585,9 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
             statuses, conclusions, check_suite_conclusions, True, True, False,
         )
         commits = facts[CheckRun.commit_node_id.name].copy()
-        check_run_names = objects_to_pyunicode_bytes(facts[CheckRun.name.name])
-        commits_with_names = np.char.add(int_to_str(commits), check_run_names)
+        commits_with_names = merge_to_str(
+            commits, objects_to_pyunicode_bytes(facts[CheckRun.name.name]),
+        )
         _, unique_map = np.unique(commits_with_names, return_inverse=True)
         unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
         flaky_mask = np.in1d(unique_map, unique_flaky_indexes)
@@ -637,8 +638,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         df.set_index(np.arange(len(df), dtype=int), inplace=True)
         df = df.sort_values(CheckRun.started_at.name, ascending=False)  # no inplace=True, yes
         pull_requests = df[CheckRun.pull_request_node_id.name]
-        names = objects_to_pyunicode_bytes(df[CheckRun.name.name])
-        joint = np.char.add(int_to_str(pull_requests), names)
+        joint = merge_to_str(pull_requests, objects_to_pyunicode_bytes(df[CheckRun.name.name]))
         _, first_encounters = np.unique(joint, return_index=True)
         statuses = df[CheckRun.status.name]
         conclusions = df[CheckRun.conclusion.name]

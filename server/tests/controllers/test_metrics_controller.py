@@ -53,6 +53,7 @@ async def test_code_bypassing_prs_smoke(client, headers):
         assert ms[i].date < ms[i + 1].date
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 async def test_code_bypassing_prs_only_default_branch(client, headers):
     body = {
         "account": 1,

@@ -7,6 +7,7 @@ import warnings
 
 import aiomcache
 import medvedi as md
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 from sqlalchemy import BigInteger, and_, exists, func, select, type_coerce, union_all
 from xxhash import xxh3_64_intdigest
@@ -15,7 +16,6 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import Database, DatabaseLike
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.features.github.check_run_metrics_accelerated import (
     mark_check_suite_types,
 )
@@ -447,7 +447,7 @@ async def _disambiguate_pull_requests(
         # there can be check runs mapped to both a PR and None; remove None-s
         pr_node_ids[reset_indexes] = -1
         pr_node_ids[pr_node_ids == 0] = -1
-        joint = int_to_str(check_run_node_ids, pr_node_ids)
+        joint = merge_to_str(check_run_node_ids, pr_node_ids)
         order = np.argsort(joint)
         _, first_encounters = np.unique(check_run_node_ids[order], return_index=True)
         first_encounters = order[first_encounters]
@@ -677,7 +677,7 @@ def _merge_status_contexts(df: md.DataFrame) -> md.DataFrame:
     # 2. check run status, PENDING must be the first - for merges
     # 3. check run name - for splits
     names32 = objects_to_pyunicode_bytes(df[CheckRun.name.name], 128)
-    order = np.argsort(np.char.add(np.char.add(int_to_str(starteds.view(int)), statuses), names32))
+    order = np.argsort(merge_to_str(starteds.view(int), statuses, names32))
     df.take(order, inplace=True)
     df.reset_index(inplace=True)
     statuses = statuses[order]
@@ -693,7 +693,7 @@ def _merge_status_contexts(df: md.DataFrame) -> md.DataFrame:
     empty_url_names = df[CheckRun.name.name][no_finish[empty_url_mask]].astype("U")
     no_finish_urls[empty_url_mask] = empty_url_names.view(f"S{empty_url_names.dtype.itemsize}")
     no_finish_parents = df[CheckRun.check_suite_node_id.name][no_finish].astype(int, copy=False)
-    no_finish_seeds = np.char.add(int_to_str(no_finish_parents), no_finish_urls)
+    no_finish_seeds = merge_to_str(no_finish_parents, no_finish_urls)
     _, indexes, counts = np.unique(no_finish_seeds, return_inverse=True, return_counts=True)
     firsts = np.zeros(len(counts), dtype=int)
     np.cumsum(counts[:-1], out=firsts[1:])

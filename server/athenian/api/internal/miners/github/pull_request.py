@@ -32,7 +32,6 @@ from athenian.api.db import (
     dialect_specific_insert,
 )
 from athenian.api.defer import AllEvents, defer
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.check_run import (
@@ -212,9 +211,9 @@ class PullRequestMiner:
             if df.index.nlevels > 1:
                 # the second level adds determinism to the iteration order
                 second_level = df.index.get_level_values(1)
-                node_ids_bytes = int_to_str(node_ids)
+                node_ids_bytes = merge_to_str(node_ids)
                 if second_level.dtype == int:
-                    order_keys = np.char.add(node_ids_bytes, int_to_str(second_level))
+                    order_keys = np.char.add(node_ids_bytes, merge_to_str(second_level))
                 else:
                     order_keys = np.char.add(node_ids_bytes, second_level.astype("S", copy=False))
             else:
@@ -1039,21 +1038,21 @@ class PullRequestMiner:
             else:
                 merged_mask = anyhow_merged_mask
             if len(unreleased):
-                prs_index = np.char.add(
-                    int_to_str(prs.index.values),
+                prs_index = merge_to_str(
+                    prs.index.values,
                     (prs_repos := prs[PullRequest.repository_full_name.name].astype("S")),
                 )
                 if isinstance(unreleased, np.ndarray):
-                    unreleased_index = np.char.add(
-                        int_to_str(unreleased[:, 0].astype(int)),
+                    unreleased_index = merge_to_str(
+                        unreleased[:, 0].astype(int),
                         unreleased[:, 1].astype(prs_repos.dtype),
                     )
                 else:
-                    unreleased_index = np.char.add(
-                        int_to_str(np.fromiter((p[0] for p in unreleased), int, len(unreleased))),
+                    unreleased_index = merge_to_str(
+                        np.fromiter((p[0] for p in unreleased), int, len(unreleased)),
                         np.array([p[1] for p in unreleased], dtype=prs_repos.dtype),
                     )
-                merged_mask &= np.in1d(prs_index, unreleased_index, invert=True)
+                merged_mask &= ~in1d_str(prs_index, unreleased_index, skip_leading_zeros=True)
             merged_prs = prs.take(merged_mask)
             nonlocal releases
             if extra_releases_task is not None:

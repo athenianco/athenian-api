@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 import medvedi as md
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 from numpy.testing import assert_array_equal
 import pytest
 
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.features.github.check_run_metrics_accelerated import (
     mark_check_suite_types,
 )
@@ -221,7 +221,7 @@ def alternative_facts(alternative_check_run_facts) -> md.DataFrame:
 
 
 def test_mark_check_suite_types_real_world(alternative_facts):
-    repos = int_to_str(alternative_facts[CheckRun.repository_node_id.name])
+    repos = merge_to_str(alternative_facts[CheckRun.repository_node_id.name])
     names = np.char.add(
         repos, np.char.encode(alternative_facts[CheckRun.name.name].astype("U"), "UTF-8"),
     )
