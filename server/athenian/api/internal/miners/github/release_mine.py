@@ -10,6 +10,7 @@ from typing import Any, Callable, Collection, Iterable, Mapping, Optional, Seque
 import aiomcache
 import medvedi as md
 from medvedi.accelerators import in1d_str, unordered_unique
+from medvedi.merge_to_str import merge_to_str
 import numpy as np
 import numpy.typing as npt
 import sentry_sdk
@@ -28,7 +29,6 @@ from athenian.api.db import (
     dialect_specific_insert,
 )
 from athenian.api.defer import defer
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     drop_logical_repo,
@@ -268,7 +268,7 @@ def _triage_flags(
         jira,
         release_settings,
         logical_settings,
-        repr(bytes(int_to_str(releases_in_time_range[Release.node_id.name]).data))
+        repr(bytes(merge_to_str(releases_in_time_range[Release.node_id.name]).data))
         if releases_in_time_range is not None
         else "",
     ),
@@ -473,25 +473,23 @@ async def _mine_releases(
             description="mine_releases/commits",
         )
 
-        unfiltered_precomputed_facts_keys = np.char.add(
-            int_to_str(
-                np.fromiter(
-                    (i for i, _ in unfiltered_precomputed_facts),
-                    int,
-                    len(unfiltered_precomputed_facts),
-                ),
+        unfiltered_precomputed_facts_keys = merge_to_str(
+            np.fromiter(
+                (i for i, _ in unfiltered_precomputed_facts),
+                int,
+                len(unfiltered_precomputed_facts),
             ),
             np.array([r for _, r in unfiltered_precomputed_facts], dtype="S"),
         )
 
         required_release_ids = np.sort(
-            np.char.add(
-                int_to_str(releases_in_time_range[Release.node_id.name]),
+            merge_to_str(
+                releases_in_time_range[Release.node_id.name],
                 releases_in_time_range[Release.repository_full_name.name].astype("S"),
             ),
         )
-        release_ids = np.char.add(
-            int_to_str(releases[Release.node_id.name]),
+        release_ids = merge_to_str(
+            releases[Release.node_id.name],
             release_repos := releases[Release.repository_full_name.name].astype("S"),
         )
         precomputed_mask = in1d_str(
@@ -691,7 +689,11 @@ async def _mine_releases(
                     my_commit_ids = commit_ids[found_indexes]
                     if len(prs_commit_ids):
                         if has_logical_prs:
-                            my_commit_ids = np.char.add(int_to_str(my_commit_ids), repo.encode())
+                            repo_bytes = repo.encode()
+                            my_commit_ids = merge_to_str(
+                                my_commit_ids,
+                                np.full(len(my_commit_ids), repo_bytes, f"S{len(repo_bytes)}"),
+                            )
                         my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
                         if len(my_prs_indexes):
                             my_prs_indexes = my_prs_indexes[
@@ -995,10 +997,12 @@ def _build_mined_releases(
     with_avatars: bool,
 ) -> tuple[list[ReleaseFacts], Optional[np.ndarray], np.ndarray]:
     release_repos = releases[Release.repository_full_name.name].astype("S", copy=False)
-    release_keys = np.char.add(int_to_str(releases[Release.node_id.name]), release_repos)
-    precomputed_keys = np.char.add(
-        int_to_str(np.fromiter((i for i, _ in precomputed_facts), int, len(precomputed_facts))),
-        np.array([r for _, r in precomputed_facts], dtype=release_repos.dtype),
+    release_keys = merge_to_str(releases[Release.node_id.name], release_repos)
+    precomputed_keys = merge_to_str(
+        np.fromiter((i for i, _ in precomputed_facts), int, len(precomputed_facts)),
+        np.fromiter(
+            (r for _, r in precomputed_facts), release_repos.dtype, len(precomputed_facts),
+        ),
     )
     del release_repos
     has_precomputed_facts = np.in1d(release_keys, precomputed_keys)
@@ -1344,8 +1348,8 @@ async def _load_prs_by_ids(
         prs_commit_ids[is_null(prs_commit_ids)] = 0
         prs_commit_ids = prs_commit_ids.astype(int, copy=False)
         if has_logical_prs and logical_sort:
-            prs_commit_ids = np.char.add(
-                int_to_str(prs_commit_ids),
+            prs_commit_ids = merge_to_str(
+                prs_commit_ids,
                 df_prs[PullRequest.repository_full_name.name].astype("S"),
             )
             order = np.argsort(prs_commit_ids)
@@ -1391,8 +1395,8 @@ async def _load_rebased_prs(
     ]
     df[PullRequest.merge_commit_id.name] = prs_commit_ids
     if logical_settings.has_logical_prs():
-        prs_commit_ids = np.char.add(
-            int_to_str(prs_commit_ids),
+        prs_commit_ids = merge_to_str(
+            prs_commit_ids,
             df[PullRequest.repository_full_name.name].astype("S"),
         )
         order = np.argsort(prs_commit_ids)

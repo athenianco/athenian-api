@@ -4,6 +4,7 @@ from typing import Collection, Iterable, Mapping, Set, Tuple
 
 import medvedi as md
 from medvedi.accelerators import in1d_str, unordered_unique
+from medvedi.merge_to_str import merge_to_str
 import morcilla
 import numpy as np
 import sentry_sdk
@@ -11,7 +12,6 @@ from sqlalchemy import case, select
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.db import dialect_specific_insert
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.miners.github.precomputed_prs.utils import (
     append_activity_days_filter,
     collect_activity_days,
@@ -125,12 +125,11 @@ class OpenPRFactsLoader:
         df = await read_sql_query(select(*selected).where(*filters), pdb, selected)
         if df.empty:
             return {}
-        haystack = np.char.add(
-            int_to_str(df[ghoprf.pr_node_id.name]),
-            df[ghoprf.repository_full_name.name].astype("S"),
+        joint = merge_to_str(
+            np.concatenate([df[ghoprf.pr_node_id.name], prs.get_level_values(0)]),
+            np.concatenate([df[ghoprf.repository_full_name.name].astype("S"), prs_repos_bytes]),
         )
-        needle = np.char.add(int_to_str(prs.get_level_values(0)), prs_repos_bytes)
-        matched_mask = in1d_str(haystack, needle, skip_leading_zeros=True)
+        matched_mask = in1d_str(joint[: len(df)], joint[len(df) :], verbatim=True)
         fetched_node_ids = df[ghoprf.pr_node_id.name]
         fetched_repos = df[ghoprf.repository_full_name.name]
         fetched_datas = df[ghoprf.data.name]

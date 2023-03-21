@@ -11,6 +11,7 @@ from typing import Iterable, Iterator, KeysView, Mapping, Optional, Sequence
 import aiomcache
 import medvedi as md
 from medvedi.accelerators import in1d_str
+from medvedi.merge_to_str import merge_to_str
 import morcilla
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +34,6 @@ from athenian.api.db import (
     least,
 )
 from athenian.api.defer import defer
-from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.account import get_installation_url_prefix
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
@@ -1099,8 +1099,8 @@ def _deduplicate_tags(releases: md.DataFrame, logical: bool) -> npt.NDArray[bool
     if logical:
         repos = releases[Release.repository_full_name.name][tag_notnull_indexes].astype("S")
     else:
-        repos = int_to_str(releases[Release.repository_node_id.name][tag_notnull_indexes])
-    tag_names = np.char.add(
+        repos = releases[Release.repository_node_id.name][tag_notnull_indexes]
+    tag_names = merge_to_str(
         repos,
         objects_to_pyunicode_bytes(releases[Release.tag.name][tag_notnull_indexes]),
     )
@@ -1417,14 +1417,22 @@ class ReleaseMatcher:
                     self._mdb,
                     [Release.repository_node_id, Release.tag],
                 )
-            release_ids = np.char.add(
-                int_to_str(releases[Release.repository_node_id.name]), release_tags,
+            joint_ids = merge_to_str(
+                np.concatenate(
+                    [
+                        releases[Release.repository_node_id.name],
+                        extra_releases[Release.repository_node_id.name],
+                    ],
+                ),
+                np.concatenate(
+                    [release_tags, objects_to_pyunicode_bytes(extra_releases[Release.tag.name])],
+                ),
             )
-            extra_ids = np.char.add(
-                int_to_str(extra_releases[Release.repository_node_id.name]),
-                objects_to_pyunicode_bytes(extra_releases[Release.tag.name]),
-            )
-            if (removed := in1d_str(release_ids, extra_ids, skip_leading_zeros=True)).any():
+            if (
+                removed := in1d_str(
+                    joint_ids[: len(releases)], joint_ids[len(releases) :], verbatim=True,
+                )
+            ).any():
                 left = np.flatnonzero(~removed)
                 releases = releases.take(left)
                 log.info("removed %d secondary releases", len(removed) - len(left))
