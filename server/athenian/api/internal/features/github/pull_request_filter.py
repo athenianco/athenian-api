@@ -948,7 +948,7 @@ async def _filter_pull_requests(
         if bad_prs:
             left_dfs_mask = np.ones(len(prs), dtype=bool)
             left_dfs_mask[bad_prs] = False
-            new_dfs = {key: df for key, df in pr_miner.dfs.items()}
+            new_dfs = dict(pr_miner.dfs.items())
             new_dfs["prs"] = pr_miner.dfs.prs.take(np.flatnonzero(left_dfs_mask))
             pr_miner = PullRequestMiner(PRDataFrames(**new_dfs))
             # the order is already reversed

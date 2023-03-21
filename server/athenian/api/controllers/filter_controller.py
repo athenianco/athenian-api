@@ -1223,7 +1223,7 @@ async def _build_deployments_response(
     people: list[tuple[str, str]],
     issues: dict[str, PullRequestJIRAIssueItem],
     prefixer: Prefixer,
-) -> [FilteredDeployment]:
+) -> FilteredDeployments:
     if df.empty:
         return []
     prefix_logical_repo = prefixer.prefix_logical_repo
@@ -1244,13 +1244,7 @@ async def _build_deployments_response(
                         DeployedComponent.reference.name,
                     )
                 ],
-                labels={
-                    key: val
-                    for key, val in labels_df.iterrows(
-                        DeployedLabel.key.name,
-                        DeployedLabel.value.name,
-                    )
-                }
+                labels=dict(labels_df.iterrows(DeployedLabel.key.name, DeployedLabel.value.name))
                 if not labels_df.empty
                 else None,
                 code=DeploymentAnalysisCode(

@@ -196,7 +196,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
     session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs
-    commit_ids = {h: n for h, n in session.query(PushCommit.sha, PushCommit.node_id)}
+    commit_ids = dict(session.query(PushCommit.sha, PushCommit.node_id))
     for pr in session.query(PullRequest).filter(PullRequest.merge_commit_sha.isnot(None)):
         pr.merge_commit_id = commit_ids[pr.merge_commit_sha]
 

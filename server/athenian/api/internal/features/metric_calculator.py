@@ -973,7 +973,7 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
         kwargs: Iterable[Mapping[str, Any]],
     ) -> list[dict[str, list[list[Histogram]]]]:
         return [
-            {k: v for k, v in ensemble.histograms(**dataclass_asdict(ekw)).items()}
+            dict(ensemble.histograms(**dataclass_asdict(ekw)).items())
             for ensemble, ekw in zip(self.ensembles, kwargs)
         ]
 
