@@ -172,12 +172,10 @@ class PullRequestToReleaseMapper:
         add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
         add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
         pr_releases = precomputed_pr_releases
-        prs_index = merge_to_str(
-            prs.index.get_level_values(0), prs.index.get_level_values(1).astype("S"),
-        )
-        pr_released_index = merge_to_str(
+        joint_index = merge_to_str(
             np.concatenate(
                 [
+                    prs.index.get_level_values(0),
                     pr_releases.index.get_level_values(0).astype(int, copy=False),
                     np.fromiter((n for n, _ in unreleased_prs), int, len(unreleased_prs)),
                 ],
@@ -185,12 +183,15 @@ class PullRequestToReleaseMapper:
             ),
             np.concatenate(
                 [
+                    prs.index.get_level_values(1).astype("S"),
                     pr_releases.index.get_level_values(1).astype("S"),
                     np.array([r for _, r in unreleased_prs], dtype="S"),
                 ],
             ),
         )
-        merged_prs = prs.take(np.in1d(prs_index, pr_released_index, invert=True))
+        merged_prs = prs.take(
+            ~in1d_str(joint_index[: len(prs)], joint_index[len(prs) :], verbatim=True),
+        )
         if merged_prs.empty:
             unreleased_prs_event.set()
             return pr_releases, unreleased_prs, unreleased_prs_event
@@ -202,15 +203,22 @@ class PullRequestToReleaseMapper:
         )
         assert missed_released_prs.index.nlevels == 2
         assert dead_prs.index.nlevels == 2
-        # PRs may wrongly classify as dead although they are really released; remove the conflicts
-        dead_prs_index = merge_to_str(
-            dead_prs.index.get_level_values(0), dead_prs.index.get_level_values(1).astype("S"),
+        # PRs may wrongly classify as dead, although they are really released; remove the conflicts
+        joint_index = merge_to_str(
+            np.concatenate(
+                [
+                    dead_prs.index.get_level_values(0),
+                    missed_released_prs.index.get_level_values(0),
+                ],
+            ),
+            np.concatenate(
+                [
+                    dead_prs.index.get_level_values(1).astype("S"),
+                    missed_released_prs.index.get_level_values(1).astype("S"),
+                ],
+            ),
         )
-        missed_released_prs_index = merge_to_str(
-            missed_released_prs.index.get_level_values(0),
-            missed_released_prs.index.get_level_values(1).astype("S"),
-        )
-        mask = np.in1d(dead_prs_index, missed_released_prs_index, invert=True)
+        mask = ~in1d_str(joint_index[: len(dead_prs)], joint_index[len(dead_prs) :], verbatim=True)
         if not mask.all():
             dead_prs.take(mask, inplace=True)
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
