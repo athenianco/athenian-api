@@ -5,12 +5,23 @@ from functools import partial
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Sequence, Type
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Coroutine,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    Type,
+)
 
 import aiomcache
 import medvedi as md
 from medvedi.accelerators import array_of_objects, is_not_null
 import numpy as np
+from numpy import typing as npt
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import BigInteger, func, sql
@@ -692,24 +703,16 @@ async def _fetch_released_prs(
         ghdprf.release_match,
     ]
     released_df = await read_sql_query(
-        sql.select(*selected).where(
-            ghdprf.acc_id == account,
-            ghdprf.pr_node_id.in_(pr_node_ids),
-        ),
+        sql.select(*selected).where(ghdprf.acc_id == account, ghdprf.pr_node_id.in_(pr_node_ids)),
         pdb,
         selected,
     )
     pr_node_ids_col = released_df[ghdprf.pr_node_id.name]
     pr_done_at_col = released_df[ghdprf.pr_done_at.name]
-    repos_col = released_df[ghdprf.repository_full_name.name]
-    match_col = released_df[ghdprf.release_match.name]
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-    for indexes in released_df.groupby(
-        ghdprf.repository_full_name.name, ghdprf.release_match.name,
-    ):
-        repo = repos_col[indexes[0]]
-        match = match_col[indexes[0]]
+
+    for repo, match, indexes in _iter_released_prs_by_match(released_df):
         if repo not in release_settings.native:
             for node_id, pr_done_at in zip(pr_node_ids_col[indexes], pr_done_at_col[indexes]):
                 key = (node_id, repo)
@@ -746,15 +749,11 @@ async def _fetch_released_pr_ids(
     selected = [ghdprf.pr_node_id, ghdprf.repository_full_name, ghdprf.release_match]
     where = [ghdprf.acc_id == account, ghdprf.pr_done_at >= time_from]
 
-    # TODO: reduce code duplication with _fetch_released_prs
     df = await read_sql_query(sa.select(*selected).where(*where), pdb, selected)
-    repos_col = df[ghdprf.repository_full_name.name]
-    match_col = df[ghdprf.release_match.name]
     take_mask = np.full(len(df), True, bool)
-    for indexes in df.groupby(ghdprf.repository_full_name.name, ghdprf.release_match.name):
-        repo = repos_col[indexes[0]]
-        match = match_col[indexes[0]]
-        ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+    for repo, match, indexes in _iter_released_prs_by_match(df):
         if repo in release_settings.native:
             ok = triage_by_release_match(
                 repo, match, release_settings, default_branches, df, ambiguous,
@@ -762,6 +761,22 @@ async def _fetch_released_pr_ids(
             if ok is None:
                 take_mask[indexes] = False
     return df[ghdprf.pr_node_id.name][take_mask]
+
+
+def _iter_released_prs_by_match(df: md.DataFrame) -> Iterator[tuple[npt.NDArray[int], str, str]]:
+    """Iterate over the released PRs dataframe grouped by release match.
+
+    Emits a tuple for every groups of PRs with the same release match and repo; each tuple has
+    - the string of the release match
+    - the repository
+    - indexes of `df` composing the group
+
+    """
+    ghdprf = GitHubDonePullRequestFacts
+    repos_col = df[ghdprf.repository_full_name.name]
+    match_col = df[ghdprf.release_match.name]
+    for indexes in df.groupby(ghdprf.repository_full_name.name, ghdprf.release_match.name):
+        yield repos_col[indexes[0]], match_col[indexes[0]], indexes
 
 
 @sentry_span
