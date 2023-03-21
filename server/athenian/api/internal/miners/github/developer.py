@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from itertools import chain
-from typing import Collection, FrozenSet, Iterable, Optional, Set, Tuple, Type, Union
+from typing import Collection, Iterable, Optional, Set, Tuple, Type, Union
 
 import aiomcache
+import medvedi as md
 import morcilla
 import numpy as np
-import pandas as pd
 from sqlalchemy import exists, func, not_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -127,12 +127,12 @@ async def _mine_commits(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     if labels or jira:
         # TODO(vmarkovtsev): filter PRs, take merge commits, load the DAGs, find the PR commits
         # We cannot rely on PullRequestCommit because there can be duplicates after force pushes;
         # on the other hand, "rebase/squash and merge" erases information about individual commits
-        return pd.DataFrame(
+        return md.DataFrame(
             columns=[
                 developer_identity_column,
                 developer_repository_column,
@@ -187,7 +187,7 @@ async def _mine_prs(
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
     hints: Iterable[str] = (),
-) -> pd.DataFrame:
+) -> md.DataFrame:
     selected = [
         attr_user.label(developer_identity_column),
         NodePullRequest.repository_id.label(developer_repository_column),
@@ -233,7 +233,7 @@ async def _mine_prs(
 
 
 @sentry_span
-async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
+async def _mine_prs_created(*args, **kwargs) -> md.DataFrame:
     return await _mine_prs(
         NodePullRequest.user_node_id,
         NodePullRequest.created_at,
@@ -247,7 +247,7 @@ async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
 
 
 @sentry_span
-async def _mine_prs_merged(*args, **kwargs) -> pd.DataFrame:
+async def _mine_prs_merged(*args, **kwargs) -> md.DataFrame:
     return await _mine_prs(
         NodePullRequest.merged_by_id,
         NodePullRequest.merged_at,
@@ -280,9 +280,9 @@ async def _mine_releases(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     if labels or jira:
-        return pd.DataFrame(
+        return md.DataFrame(
             columns=[
                 developer_identity_column + _dereferenced_suffix,
                 developer_repository_column + _dereferenced_suffix,
@@ -308,18 +308,14 @@ async def _mine_releases(
         rdb,
         cache,
     )
-    release_authors = releases[Release.author.name].values.astype("U")
+    release_authors = releases[Release.author.name].astype("U", copy=False)
     matched_devs_mask = np.in1d(release_authors, dev_names)
-    return pd.DataFrame(
+    return md.DataFrame(
         {
             developer_identity_column + _dereferenced_suffix: release_authors[matched_devs_mask],
             developer_repository_column
-            + _dereferenced_suffix: releases[Release.repository_full_name.name].values[
-                matched_devs_mask
-            ],
-            Release.published_at.name: releases[Release.published_at.name].values[
-                matched_devs_mask
-            ],
+            + _dereferenced_suffix: releases[Release.repository_full_name.name][matched_devs_mask],
+            Release.published_at.name: releases[Release.published_at.name][matched_devs_mask],
         },
     )
 
@@ -344,7 +340,7 @@ async def _mine_reviews(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     selected = [
         NodePullRequestReview.user_node_id.label(developer_identity_column),
         NodePullRequestReview.repository_node_id.label(developer_repository_column),
@@ -414,7 +410,7 @@ async def _mine_pr_comments(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     selected = [
         model.user_node_id.label(developer_identity_column),
         model.repository_node_id.label(developer_repository_column),
@@ -460,12 +456,12 @@ async def _mine_pr_comments(
 
 
 @sentry_span
-async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
+async def _mine_pr_comments_regular(*args, **kwargs) -> md.DataFrame:
     return await _mine_pr_comments(PullRequestComment, *args, **kwargs)
 
 
 @sentry_span
-async def _mine_pr_comments_review(*args, **kwargs) -> pd.DataFrame:
+async def _mine_pr_comments_review(*args, **kwargs) -> md.DataFrame:
     return await _mine_pr_comments(NodePullRequestReviewComment, *args, **kwargs)
 
 
@@ -538,7 +534,7 @@ async def mine_developer_activities(
     pdb: morcilla.Database,
     rdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> list[Tuple[FrozenSet[DeveloperTopic], pd.DataFrame]]:
+) -> list[tuple[frozenset[DeveloperTopic], md.DataFrame]]:
     """Extract pandas DataFrame-s for each topic relationship group."""
     zerotd = timedelta(0)
     assert (
@@ -580,10 +576,10 @@ async def mine_developer_activities(
     for key, df in df_by_topic.items():
         try:
             df[developer_identity_column] = dev_names[
-                np.searchsorted(dev_ids, df[developer_identity_column].values)
+                np.searchsorted(dev_ids, df[developer_identity_column])
             ]
             df[developer_repository_column] = repo_names[
-                np.searchsorted(repo_ids, df[developer_repository_column].values)
+                np.searchsorted(repo_ids, df[developer_repository_column])
             ]
         except IndexError as e:
             raise AssertionError(str(key)) from e
@@ -607,7 +603,7 @@ async def mine_developer_activities(
             new_df_by_topic[key] = val
     df_by_topic = new_df_by_topic
     if DeveloperTopic.worked in topics:
-        df_by_topic[frozenset((DeveloperTopic.worked,))] = pd.concat(worked_dfs)
+        df_by_topic[frozenset((DeveloperTopic.worked,))] = md.concat(*worked_dfs, strict=False)
     if DeveloperTopic.pr_comments in topics:
         regular_pr_comments = df_by_topic[
             (key := frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments)))
@@ -621,8 +617,8 @@ async def mine_developer_activities(
         del df_by_topic[key]
         if DeveloperTopic.review_pr_comments in topics:
             df_by_topic[frozenset((DeveloperTopic.review_pr_comments,))] = review_pr_comments
-        df_by_topic[frozenset((DeveloperTopic.pr_comments,))] = pd.concat(
-            [regular_pr_comments, review_pr_comments],
+        df_by_topic[frozenset((DeveloperTopic.pr_comments,))] = md.concat(
+            regular_pr_comments, review_pr_comments, strict=False,
         )
     effective_df_by_topic = {}
     for key, df in df_by_topic.items():

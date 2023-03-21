@@ -6,8 +6,8 @@ import logging
 from typing import Sequence
 
 import aiomcache
+import medvedi as md
 import numpy as np
-import pandas as pd
 import sqlalchemy as sa
 
 from athenian.api import metadata
@@ -57,7 +57,7 @@ class AccountInfo:
     account: int
     meta_ids: tuple[int, ...]
     jira_conf: JIRAConfig
-    branches: pd.DataFrame
+    branches: md.DataFrame
     default_branches: dict[str, str]
     release_settings: ReleaseSettings
     logical_settings: LogicalRepositorySettings
@@ -99,7 +99,7 @@ async def collect_account_info(account: int, request: AthenianWebRequest) -> Acc
 
 @sentry_span
 def build_issue_web_models(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     prs: dict[str, WebPullRequest],
     issue_types: list[Row],
 ) -> list[WebJIRAIssue]:
@@ -113,10 +113,10 @@ def build_issue_web_models(
         for r in issue_types
     }
 
-    prs_began = issues[ISSUE_PRS_BEGAN].values
-    issues_work_began = resolve_work_began(issues[AthenianIssue.work_began.name].values, prs_began)
+    prs_began = issues[ISSUE_PRS_BEGAN]
+    issues_work_began = resolve_work_began(issues[AthenianIssue.work_began.name], prs_began)
     issues_resolved = resolve_resolved(
-        issues[AthenianIssue.resolved.name].values, prs_began, issues[ISSUE_PRS_RELEASED].values,
+        issues[AthenianIssue.resolved.name], prs_began, issues[ISSUE_PRS_RELEASED],
     )
 
     for (
@@ -138,7 +138,7 @@ def build_issue_web_models(
         issue_resolved,
     ) in zip(
         *(
-            issues[column].values
+            issues[column]
             for column in (
                 Issue.key.name,
                 Issue.title.name,
@@ -221,7 +221,7 @@ async def fetch_issues_prs(
             index=PullRequest.node_id.name,
         )
         PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
-        closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
+        closed_pr_mask = prs_df.notnull(PullRequest.closed_at.name)
         check_runs_task = asyncio.create_task(
             PullRequestMiner.fetch_pr_check_runs(
                 prs_df.index.values[closed_pr_mask],
@@ -234,7 +234,7 @@ async def fetch_issues_prs(
             ),
             name=f"_issue_flow/fetch_issues_prs/fetch_pr_check_runs({len(prs_df)})",
         )
-        merged_pr_ids = prs_df.index.values[prs_df[PullRequest.merged_at.name].notnull().values]
+        merged_pr_ids = prs_df.index.values[prs_df.notnull(PullRequest.merged_at.name)]
         deployments_task = asyncio.create_task(
             fetch_pr_deployments(
                 merged_pr_ids,
@@ -269,28 +269,21 @@ async def fetch_issues_prs(
         bots(account_info.account, account_info.meta_ids, mdb, sdb, cache),
     )
     assert account_info.release_settings is not None
-    existing_mask = (
-        prs_df[PullRequest.repository_full_name.name]
-        .isin(account_info.release_settings.native)
-        .values
+    existing_mask = prs_df.isin(
+        PullRequest.repository_full_name.name, account_info.release_settings.native,
     )
     if not existing_mask.all():
         prs_df = prs_df.take(np.flatnonzero(existing_mask))
-    found_repos_arr = prs_df[PullRequest.repository_full_name.name].unique()
+    found_repos_arr = prs_df.unique(PullRequest.repository_full_name.name, unordered=True)
     found_repos_set = set(found_repos_arr)
-    if ambiguous.keys() - found_repos_set:
+    if ambiguous_diff := (ambiguous.keys() - found_repos_set):
         # there are archived or disabled repos
-        ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos_set}
+        ambiguous = {k: ambiguous[k] for k in ambiguous_diff}
 
     branches = account_info.branches
     assert branches is not None
     related_branches = branches.take(
-        np.flatnonzero(
-            np.in1d(
-                branches[Branch.repository_full_name.name].values.astype("U"),
-                found_repos_arr.astype("U"),
-            ),
-        ),
+        branches.isin(Branch.repository_full_name.name, found_repos_arr),
     )
     (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
         unwrap_pull_requests(
@@ -314,7 +307,7 @@ async def fetch_issues_prs(
             cache,
         ),
         fetch_repository_environments(
-            prs_df[PullRequest.repository_full_name.name].unique(),
+            prs_df.unique(PullRequest.repository_full_name.name, unordered=True),
             None,
             account_info.prefixer,
             account_info.account,
@@ -362,7 +355,7 @@ def web_prs_map_from_struct(
 
 @sentry_span
 async def fetch_issues_users(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     account_info: AccountInfo,
     sdb: Database,
     mdb: Database,
@@ -375,9 +368,9 @@ async def fetch_issues_users(
     user_ids = np.unique(
         np.concatenate(
             [
-                _nonzero(issues[Issue.reporter_id.name].values),
-                _nonzero(issues[Issue.assignee_id.name].values),
-                list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.name].values))),
+                _nonzero(issues[Issue.reporter_id.name]),
+                _nonzero(issues[Issue.assignee_id.name]),
+                list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.name]))),
             ],
         ),
     )

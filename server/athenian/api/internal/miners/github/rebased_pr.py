@@ -1,11 +1,10 @@
 from collections import defaultdict
-from datetime import timedelta
 import re
 from typing import Collection, Optional
 
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 from sqlalchemy import and_, join, select, sql
 
 from athenian.api.async_utils import gather, read_sql_query
@@ -56,21 +55,21 @@ async def match_rebased_prs(
     pdb: Database,
     commit_ids: Optional[npt.NDArray[int]] = None,
     commit_shas: Optional[npt.NDArray[bytes]] = None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Perform inverse rebased PR matching: from alive commits to PRs."""
     assert commit_ids is not None or commit_shas is not None
     if commit_ids is not None:
         commit_ids = unordered_unique(commit_ids)
         if len(commit_ids) == 0:
-            return pd.DataFrame()
+            return md.DataFrame()
     else:
         commit_shas = unordered_unique(commit_shas)
         if len(commit_shas) == 0:
-            return pd.DataFrame()
+            return md.DataFrame()
     batch_size = 100_000
 
     @sentry_span
-    async def fetch_precomputed_rebased_prs() -> pd.DataFrame:
+    async def fetch_precomputed_rebased_prs() -> md.DataFrame:
         tasks = []
         for p in range(0, len(commit_ids if commit_ids is not None else commit_shas), batch_size):
             batch = slice(p * batch_size, (p + 1) * batch_size)
@@ -92,7 +91,7 @@ async def match_rebased_prs(
         if len(prs) == 1:
             prs = prs[0]
         else:
-            prs = pd.concat(prs, ignore_index=True)
+            prs = md.concat(*prs, ignore_index=True)
         prs = drop_undead_duplicates(prs)
         del prs[GitHubRebasedPullRequest.acc_id.name]
         del prs[GitHubRebasedPullRequest.updated_at.name]
@@ -123,9 +122,9 @@ async def match_rebased_prs(
             )
         checked = await gather(*tasks, op="fetch_checked_commits/sql")
         if len(checked) == 1:
-            checked = checked[0][column.name].values
+            checked = checked[0][column.name]
         else:
-            checked = np.concatenate([df[column.name].values for df in checked], casting="unsafe")
+            checked = np.concatenate([df[column.name] for df in checked], casting="unsafe")
         add_pdb_hits(pdb, "rebase_checked_commits", len(checked))
         return checked
 
@@ -142,7 +141,7 @@ async def match_rebased_prs(
                         if commit_ids is not None
                         else GitHubRebasedPullRequest.matched_merge_commit_sha
                     ).name
-                ].values,
+                ],
                 checked_commits,
             ],
         )
@@ -168,8 +167,10 @@ async def match_rebased_prs(
         repo_ids, account, meta_ids, mdb, pdb, commit_ids=commit_ids, commit_shas=commit_shas,
     )
     if not new_prs.empty:
-        rebased_prs = pd.concat(
-            [new_prs, precomputed_rebased_prs[new_prs.columns]], ignore_index=True,
+        rebased_prs = md.concat(
+            new_prs,
+            precomputed_rebased_prs[list(new_prs.columns)].reset_index(inplace=True, drop=True),
+            ignore_index=True,
         )
         del new_prs
     else:
@@ -188,7 +189,7 @@ async def _match_rebased_prs_from_scratch(
     pdb: Database,
     commit_ids: Optional[npt.NDArray[int]] = None,
     commit_shas: Optional[npt.NDArray[bytes]] = None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     tasks = []
     batch_size = 100_000
     workload = len(commit_ids if commit_ids is not None else commit_shas)
@@ -240,7 +241,7 @@ async def _match_rebased_prs_from_scratch(
     if len(searched_commits) == 1:
         searched_commits = searched_commits[0]
     else:
-        searched_commits = pd.concat(searched_commits, ignore_index=True)
+        searched_commits = md.concat(*searched_commits, ignore_index=True)
     prefixes = []
     message_commit_map = defaultdict(lambda: defaultdict(list))
     message_pr_merge_map = defaultdict(lambda: defaultdict(list))
@@ -249,22 +250,17 @@ async def _match_rebased_prs_from_scratch(
 
     # required if we search by commit hash - we may match more than one repo
     # do not push this down to SQL, the query is already very heavy
-    repo_matched = np.flatnonzero(
-        np.in1d(
-            searched_commits[NodeCommit.repository_id.name].values,
-            np.asarray(repo_ids if not isinstance(repo_ids, (set, frozenset)) else list(repo_ids)),
-        ),
-    )
+    repo_matched = np.flatnonzero(searched_commits.isin(NodeCommit.repository_id.name, repo_ids))
     if len(repo_matched) == 0:
-        return pd.DataFrame()
+        return md.DataFrame()
 
     if len(repo_matched) < len(searched_commits):
         searched_commits = searched_commits.take(repo_matched)
 
     for i, (msg, repo_id) in enumerate(
         zip(
-            searched_commits[NodeCommit.message.name].values,
-            searched_commits[NodeCommit.repository_id.name].values,
+            searched_commits[NodeCommit.message.name],
+            searched_commits[NodeCommit.repository_id.name],
         ),
     ):
         prefixes.append(msg[:commit_message_substr_len])
@@ -358,19 +354,19 @@ async def _match_rebased_prs_from_scratch(
     if len(rough_matches) == 1:
         rough_matches = rough_matches[0]
     else:
-        rough_matches = pd.concat(rough_matches, ignore_index=True)
+        rough_matches = md.concat(*rough_matches, ignore_index=True)
     matched_commits = []
     if not rough_matches.empty:
         matched_pr_node_ids = []
-        searched_commit_ids = searched_commits[NodeCommit.node_id.name].values
-        searched_committed_ats = searched_commits[NodeCommit.committed_date.name].values
+        searched_commit_ids = searched_commits[NodeCommit.node_id.name]
+        searched_committed_ats = searched_commits[NodeCommit.committed_date.name]
         for pr_node_id, pr_number, merge_commit_id, merged_at, repo_id, message in zip(
-            rough_matches[NodePullRequest.node_id.name].values,
-            rough_matches[NodePullRequest.number.name].values,
-            rough_matches[NodePullRequest.merge_commit_id.name].values,
-            rough_matches[NodePullRequest.merged_at.name].values,
-            rough_matches[NodePullRequest.repository_id.name].values,
-            rough_matches[NodeCommit.message.name].values,
+            rough_matches[NodePullRequest.node_id.name],
+            rough_matches[NodePullRequest.number.name],
+            rough_matches[NodePullRequest.merge_commit_id.name],
+            rough_matches[NodePullRequest.merged_at.name],
+            rough_matches[NodePullRequest.repository_id.name],
+            rough_matches[NodeCommit.message.name],
         ):
             if not (f"#{pr_number}" in message or jira_key_re.search(message)):
                 # last resort: there are possible merge commits which changed the message
@@ -381,8 +377,7 @@ async def _match_rebased_prs_from_scratch(
             if indexes := lookup_map[repo_id][message]:
                 if (searched_commit_ids[indexes] != merge_commit_id).all():
                     indexes = np.array(indexes)[
-                        searched_committed_ats[indexes]
-                        > (pd.Timestamp(merged_at) - timedelta(seconds=10)).to_numpy()
+                        searched_committed_ats[indexes] > (merged_at - np.timedelta64(10, "s"))
                     ]
                     matched_commits.extend(indexes)
                     matched_pr_node_ids.extend(pr_node_id for _ in indexes)
@@ -390,35 +385,37 @@ async def _match_rebased_prs_from_scratch(
     unmatched_mask[matched_commits] = False
     await defer(
         _store_rebase_checked_commits(
-            searched_commits[NodeCommit.node_id.name].values[unmatched_mask],
-            searched_commits[NodeCommit.sha.name].values[unmatched_mask],
+            searched_commits[NodeCommit.node_id.name][unmatched_mask],
+            searched_commits[NodeCommit.sha.name][unmatched_mask],
             account,
             pdb,
         ),
         "_store_rebase_checked_commits",
     )
     if not matched_commits:
-        return pd.DataFrame()
-    extra_rebased_prs = searched_commits[
-        [
-            c.name
-            for c in (
-                NodeCommit.node_id,
-                NodeCommit.sha,
-                NodeCommit.committed_date,
-                NodeCommit.pushed_date,
+        return md.DataFrame()
+    node_commit_cols = (
+        NodeCommit.node_id,
+        NodeCommit.sha,
+        NodeCommit.committed_date,
+        NodeCommit.pushed_date,
+    )
+    extra_rebased_prs = searched_commits[[c.name for c in node_commit_cols]].take(matched_commits)
+    extra_rebased_prs.rename(
+        {
+            cc.name: prc.name
+            for cc, prc in zip(
+                node_commit_cols,
+                (
+                    GitHubRebasedPullRequest.matched_merge_commit_id,
+                    GitHubRebasedPullRequest.matched_merge_commit_sha,
+                    GitHubRebasedPullRequest.matched_merge_commit_committed_date,
+                    GitHubRebasedPullRequest.matched_merge_commit_pushed_date,
+                ),
             )
-        ]
-    ].take(matched_commits)
-    extra_rebased_prs.columns = [
-        c.name
-        for c in (
-            GitHubRebasedPullRequest.matched_merge_commit_id,
-            GitHubRebasedPullRequest.matched_merge_commit_sha,
-            GitHubRebasedPullRequest.matched_merge_commit_committed_date,
-            GitHubRebasedPullRequest.matched_merge_commit_pushed_date,
-        )
-    ]
+        },
+        inplace=True,
+    )
     extra_rebased_prs[GitHubRebasedPullRequest.pr_node_id.name] = matched_pr_node_ids
     await defer(store_undead_prs(extra_rebased_prs, account, pdb), "match_rebased_prs/store_extra")
     return extra_rebased_prs

@@ -1,10 +1,11 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from sqlite3 import OperationalError
 
+import medvedi as md
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
-from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, func, select, sql
 from sqlalchemy.schema import CreateTable
@@ -51,7 +52,7 @@ async def test_map_prs_to_releases_cache(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
+    prs[PullRequest.dead] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     release_settings = _generate_repo_settings(prs)
@@ -95,8 +96,8 @@ async def test_map_prs_to_releases_cache(
         assert len(cache.mem) > 0
         assert len(released_prs) == 1, str(i)
         assert released_prs.iloc[0][Release.url.name] == tag
-        assert released_prs.iloc[0][Release.published_at.name] == pd.Timestamp(
-            "2019-06-18 22:57:34+0000", tzinfo=timezone.utc,
+        assert released_prs.iloc[0][Release.published_at.name] == np.datetime64(
+            "2019-06-18 22:57:34", "us",
         )
         assert released_prs.iloc[0][Release.author.name] == "mcuadros"
     released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
@@ -137,7 +138,7 @@ async def test_map_prs_to_releases_pdb(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
+    prs[PullRequest.dead] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     release_settings = _generate_repo_settings(prs)
@@ -228,7 +229,7 @@ async def test_map_prs_to_releases_empty(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
+    prs[PullRequest.dead] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     release_settings = _generate_repo_settings(prs)
@@ -330,8 +331,12 @@ async def test_map_prs_to_releases_precomputed_released(
     facts_miner = PullRequestFactsMiner(SAMPLE_BOTS)
     true_prs = [pr for pr in miner if pr.release[Release.published_at.name] is not None]
     facts = [facts_miner(pr) for pr in true_prs]
-    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(
-        [PullRequest.node_id.name, PullRequest.repository_full_name.name],
+    columns = defaultdict(list)
+    for pr in true_prs:
+        for k, v in pr.pr.items():
+            columns[k].append(v)
+    prs = md.DataFrame(columns).set_index(
+        [PullRequest.node_id.name, PullRequest.repository_full_name.name], inplace=True,
     )
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -430,7 +435,7 @@ async def test_map_prs_to_releases_smoke_metrics(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
+    prs[PullRequest.dead] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     release_settings = _generate_repo_settings(prs)
@@ -466,7 +471,7 @@ async def test_map_prs_to_releases_smoke_metrics(
         pdb,
         None,
     )
-    assert set(released_prs[Release.url.name].unique()) == {
+    assert set(released_prs.unique(Release.url.name, unordered=True)) == {
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc13",
@@ -495,15 +500,17 @@ async def test__find_dead_merged_prs_smoke(mdb):
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs["dead"] = False
-    prs.loc[prs[PullRequest.number.name].isin(force_push_dropped_go_git_pr_numbers), "dead"] = True
+    prs[PullRequest.dead] = False
+    prs[PullRequest.dead][
+        prs.isin(PullRequest.number.name, force_push_dropped_go_git_pr_numbers)
+    ] = True
     dead_prs = await PullRequestToReleaseMapper._find_dead_merged_prs(prs)
     assert len(dead_prs) == len(force_push_dropped_go_git_pr_numbers)
-    assert dead_prs[Release.published_at.name].isnull().all()
+    assert dead_prs.isnull(Release.published_at.name).all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
     dead_prs = await mdb.fetch_all(
         select(PullRequest.number).where(
-            PullRequest.node_id.in_(dead_prs.index.get_level_values(0).values),
+            PullRequest.node_id.in_(dead_prs.index.get_level_values(0)),
         ),
     )
     assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
@@ -542,17 +549,17 @@ async def test__extract_released_commits_4_0_0(
         None,
     )
     assert len(releases) == 29
-    time_boundary = pd.Timestamp(time_boundary).to_numpy()
+    time_boundary = np.datetime64(time_boundary, "us")
     hashes1 = ReleaseToPullRequestMapper._extract_released_commits(
-        releases[Release.published_at.name].values,
-        releases[Release.sha.name].values,
+        releases[Release.published_at.name],
+        releases[Release.sha.name],
         dag,
         time_boundary,
     )
     releases = releases.iloc[:2]
     hashes2 = ReleaseToPullRequestMapper._extract_released_commits(
-        releases[Release.published_at.name].values,
-        releases[Release.sha.name].values,
+        releases[Release.published_at.name],
+        releases[Release.sha.name],
         dag,
         time_boundary,
     )
@@ -576,18 +583,18 @@ async def test_map_prs_to_releases_miguel(
         ["src-d/go-git"], None, None, time_from, time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     released_prs, *_ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
+        miguel_pr, releases, matched_bys, md.DataFrame(), {}, time_to,
         release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, cache)
     assert len(released_prs) == 1
 """
 
 
-def _generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
+def _generate_repo_settings(prs: md.DataFrame) -> ReleaseSettings:
     return ReleaseSettings(
         {
             "github.com/"
             + r: ReleaseMatchSetting(branches="", tags=".*", events=".*", match=ReleaseMatch.tag)
-            for r in prs.index.get_level_values(1).values
+            for r in prs.index.get_level_values(1)
         },
     )
 
@@ -627,9 +634,7 @@ async def test_map_releases_to_prs_early_merges(
     )
     assert len(releases) == 1
     assert len(prs) == 61
-    assert (
-        prs[PullRequest.merged_at.name] > datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)
-    ).all()
+    assert (prs[PullRequest.merged_at.name] > datetime(year=2017, month=9, day=4)).all()
     assert isinstance(dag, dict)
     dag = dag["src-d/go-git"][1]
     assert len(dag) == 3
@@ -686,14 +691,8 @@ async def test_map_releases_to_prs_smoke(
         await wait_deferred()
         assert len(prs) == 7
         assert len(dag["src-d/go-git"][1][0]) == 3308
-        assert (
-            prs[PullRequest.merged_at.name]
-            < pd.Timestamp("2019-07-31 00:00:00", tzinfo=timezone.utc)
-        ).all()
-        assert (
-            prs[PullRequest.merged_at.name]
-            > pd.Timestamp("2019-06-19 00:00:00", tzinfo=timezone.utc)
-        ).all()
+        assert (prs[PullRequest.merged_at.name] < np.datetime64("2019-07-31 00:00:00", "us")).all()
+        assert (prs[PullRequest.merged_at.name] > np.datetime64("2019-06-19 00:00:00", "us")).all()
         assert len(releases) == 2
         assert set(releases[Release.sha.name]) == {
             b"0d1a009cbb604db18be960db5f1525b99a55d727",
@@ -745,9 +744,9 @@ async def test_map_releases_to_prs_no_truncate(
     )
     assert len(prs) == 8
     assert len(releases) == 5 + 7
-    assert releases[Release.published_at.name].is_monotonic_decreasing
-    assert releases.index.is_monotonic
-    assert "v4.13.1" in releases[Release.tag.name].values
+    assert releases.set_index(Release.published_at.name).index.is_monotonic_decreasing
+    assert releases.index.names == ()
+    assert "v4.13.1" in releases[Release.tag.name]
 
 
 @with_defer
@@ -824,10 +823,10 @@ async def test_map_releases_to_prs_empty(
     assert prs.empty
     assert len(cache.mem) == 12
     assert len(releases) == 19
-    assert releases.iloc[0].to_dict() == {
+    assert releases.iloc[0] == {
         "node_id": 2755389,
         "repository_node_id": 40550,
-        "published_at": pd.Timestamp("2019-11-01 09:08:16+0000", tz="UTC"),
+        "published_at": np.datetime64("2019-11-01 09:08:16", "us"),
         "sha": b"1a7db85bca7027d90afdb5ce711622aaac9feaed",
         "commit_id": 2755389,
         "repository_full_name": "src-d/go-git",

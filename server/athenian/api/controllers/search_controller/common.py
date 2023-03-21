@@ -3,9 +3,9 @@ import abc
 from datetime import datetime
 from typing import Sequence, Type, TypeVar
 
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 
 from athenian.api.internal.features.metric_calculator import (
     DEFAULT_QUANTILE_STRIDE,
@@ -117,7 +117,7 @@ CalcualtorT = TypeVar("CalcualtorT", bound=MetricCalculatorEnsemble)
 
 
 def build_metrics_calculator_ensemble(
-    facts: pd.DataFrame,
+    facts: md.DataFrame,
     metrics: Sequence[str],
     time_from: datetime,
     time_to: datetime,
@@ -130,7 +130,7 @@ def build_metrics_calculator_ensemble(
     if not metrics:
         return None
     min_times, max_times = (
-        np.array([t.replace(tzinfo=None)], dtype="datetime64[ns]") for t in (time_from, time_to)
+        np.array([t.replace(tzinfo=None)], dtype="datetime64[us]") for t in (time_from, time_to)
     )
     calc_ensemble = Calculator(*metrics, quantiles=(0, 1), quantile_stride=DEFAULT_QUANTILE_STRIDE)
     groups = np.full((1, len(facts)), True, bool)

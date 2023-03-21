@@ -7,9 +7,10 @@ from zipfile import ZipFile, ZipInfo
 
 from aiohttp import web
 from aiohttp.abc import AbstractStreamWriter
+import medvedi as md
 from names_matcher import NamesMatcher
 import numpy as np
-import pandas as pd
+from pyarrow.parquet import write_table as pyarrow_to_parquet
 from sqlalchemy import select
 
 from athenian.api import metadata
@@ -103,14 +104,12 @@ class RemovingFileResponse(web.FileResponse):
             os.remove(self._path)
 
 
-def _df_to_parquet(df: pd.DataFrame, fout) -> None:
-    zero = pd.Timestamp(0)
+def _df_to_parquet(df: md.DataFrame, fout) -> None:
+    zero = np.datetime64(0, "s")
     for col in df:
-        if df[col].dtype.type is np.datetime64:
-            df[col] = df[col].dt.tz_localize(None)
-        elif df[col].dtype.type is np.timedelta64:
+        if df[col].dtype.kind == "m":  # timedelta64
             df[col] = zero + df[col]
-    df.to_parquet(fout, engine="pyarrow", version="2.6")
+    pyarrow_to_parquet(df.to_arrow(), fout, version="2.6")
 
 
 _get_everything_formats = {

@@ -5,7 +5,7 @@ import logging
 from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
-import pandas as pd
+import medvedi as md
 from sqlalchemy import distinct, select
 
 from athenian.api import metadata
@@ -64,7 +64,7 @@ class MineTopic(Enum):
 @sentry_span
 async def mine_all_prs(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -77,7 +77,7 @@ async def mine_all_prs(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
     done_facts, raw_done_rows = await DonePRFactsLoader.load_precomputed_done_facts_all(
@@ -136,21 +136,21 @@ async def mine_all_prs(
         for stage, timings in stage_timings.items():
             if stage == "deploy":
                 for env, val in zip(envs, timings):
-                    df_facts[f"stage_time_{stage}_{env}"] = pd.to_timedelta(val, unit="s")
+                    df_facts[f"stage_time_{stage}_{env}"] = val
             else:
-                df_facts[f"stage_time_{stage}"] = pd.to_timedelta(timings[0], unit="s")
+                df_facts[f"stage_time_{stage}"] = timings[0]
         del stage_timings
         df_facts.set_index(PullRequest.node_id.name, inplace=True)
-    for col in df_prs:
+    for col in set(df_prs) - set(df_prs.index.names):
         if col in df_facts:
             del df_facts[col]
-    return {"": df_prs.join(df_facts)}
+    return {"": md.join(df_prs, df_facts)}
 
 
 @sentry_span
 async def mine_all_developers(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -163,7 +163,7 @@ async def mine_all_developers(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about developers."""
     contributors = await mine_contributors(
         repos,
@@ -206,7 +206,7 @@ async def mine_all_developers(
         ),
     )
     return {
-        "_jira_mapping": pd.DataFrame(
+        "_jira_mapping": md.DataFrame(
             {
                 "login": logins,
                 "jira_user": [mapped_jira.get(u[User.node_id.name]) for u in contributors],
@@ -219,7 +219,7 @@ async def mine_all_developers(
 @sentry_span
 async def mine_all_releases(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -232,7 +232,7 @@ async def mine_all_releases(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about releases."""
     result = (
         await mine_releases(
@@ -260,14 +260,14 @@ async def mine_all_releases(
     result.set_index(Release.node_id.name, inplace=True)
     user_node_to_login = prefixer.user_node_to_login.get
     for col in ("commit_authors", "prs_user_node_id"):
-        result[col] = [[user_node_to_login(u) for u in subarr] for subarr in result[col].values]
+        result[col] = [[user_node_to_login(u) for u in subarr] for subarr in result[col]]
     return {"": result}
 
 
 @sentry_span
 async def mine_all_check_runs(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -280,7 +280,7 @@ async def mine_all_check_runs(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about CI check runs."""
     df = await mine_check_runs(
         datetime(1970, 1, 1, tzinfo=timezone.utc),
@@ -300,7 +300,7 @@ async def mine_all_check_runs(
 @sentry_span
 async def mine_all_jira_issues(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -313,7 +313,7 @@ async def mine_all_jira_issues(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about JIRA issues."""
     if jira_ids is None:
         return {}
@@ -343,7 +343,7 @@ async def mine_all_jira_issues(
 @sentry_span
 async def mine_all_deployments(
     repos: Collection[str],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -356,7 +356,7 @@ async def mine_all_deployments(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, md.DataFrame]:
     """Extract everything we know about deployments."""
     now = datetime.now(timezone.utc)
     envs = await rdb.fetch_all(
@@ -394,9 +394,8 @@ async def mine_all_deployments(
     if deps.empty:
         return {}
     result = {"": deps}
-    del deps[DeploymentNotification.name.name]  # it is the index
     split_cols = ["releases", "components", "labels"]
-    for name, *dfs in zip(deps.index.values, *(deps[col].values for col in split_cols)):
+    for name, *dfs in deps.iterrows(deps.index.name, *split_cols):
         for df in dfs:
             df["deployment_name"] = name
             try:
@@ -404,13 +403,13 @@ async def mine_all_deployments(
             except KeyError:
                 pass
     for col in split_cols:
-        children = deps[col].values
+        children = deps[col]
         del deps[col]
         children = children[[not child.empty for child in children]]
         if len(children):
-            df = pd.concat(children)
+            df = md.concat(*children)
             if col == "labels":
-                df["value"] = [json.dumps(v) for v in df["value"].values]
+                df["value"] = [json.dumps(v) for v in df["value"]]
             result["_" + col] = df
     return result
 
@@ -437,7 +436,7 @@ async def mine_everything(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[MineTopic, Dict[str, pd.DataFrame]]:
+) -> Dict[MineTopic, Dict[str, md.DataFrame]]:
     """Mine all the specified data topics."""
     repos = release_settings.native.keys()
     (branches, default_branches), jira_ids = await gather(

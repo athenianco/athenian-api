@@ -5,10 +5,10 @@ from sqlite3 import OperationalError
 from typing import Optional
 
 from freezegun import freeze_time
+import medvedi as md
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
-from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, insert, select
 
@@ -54,18 +54,24 @@ from tests.testutils.factory.persistentdata import ReleaseNotificationFactory
 from tests.testutils.time import dt
 
 
-def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, time_to: datetime):
+def check_branch_releases(releases: md.DataFrame, n: int, time_from: datetime, time_to: datetime):
     assert len(releases) == n
     assert "mcuadros" in set(releases[Release.author.name])
-    assert len(releases[Release.commit_id.name].unique()) == n
+    assert len(releases.unique(Release.commit_id.name)) == n
     assert releases[Release.node_id.name].all()
     assert all(len(n) == 40 for n in releases[Release.name.name])
-    assert releases[Release.published_at.name].between(time_from, time_to).all()
+    assert (
+        (
+            releases[Release.published_at.name]
+            >= np.datetime64(time_from.replace(tzinfo=None), "us")
+        )
+        & (releases[Release.published_at.name] < np.datetime64(time_to.replace(tzinfo=None), "us"))
+    ).all()
     assert (releases[Release.repository_full_name.name] == "src-d/go-git").all()
     assert all(len(n) == 40 for n in releases[Release.sha.name])
-    assert len(releases[Release.sha.name].unique()) == n
-    assert (~releases[Release.tag.name].values.astype(bool)).all()
-    assert releases[Release.url.name].str.startswith("http").all()
+    assert len(releases.unique(Release.sha.name)) == n
+    assert (~releases[Release.tag.name].astype(bool)).all()
+    assert all(s.startswith("http") for s in releases[Release.url.name])
 
 
 @pytest.mark.parametrize("branches_", ["{{default}}", "master", "m.*"])
@@ -660,7 +666,7 @@ async def test_load_releases_uncertain(
         index=Release.node_id.name,
     )
     assert len(releases)
-    assert "v4.3.1" not in releases[Release.tag.name].values
+    assert "v4.3.1" not in releases[Release.tag.name]
 
 
 @with_defer
@@ -729,19 +735,20 @@ async def test_load_releases_events_settings(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
     assert (releases[matched_by_column] == ReleaseMatch.event).all()
     assert len(releases) == 1
-    assert releases.index[0] == 2756775
-    assert releases.iloc[0].to_dict() == {
+    assert releases.index.values[0] == 2756775
+    assert releases.iloc[0] == {
         Release.repository_full_name.name: "src-d/go-git",
         Release.repository_node_id.name: 40550,
         Release.author.name: "vmarkovtsev",
         Release.author_node_id.name: 40020,
         Release.name.name: "Pushed!",
-        Release.published_at.name: pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
+        Release.published_at.name: np.datetime64("2020-01-01 00:00:00", "us"),
         Release.tag.name: None,
         Release.url.name: "www",
         Release.sha.name: b"8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         Release.commit_id.name: 2756775,
         matched_by_column: ReleaseMatch.event,
+        Release.node_id.name: 2756775,
     }
     rows = await rdb.fetch_all(select(ReleaseNotification))
     assert len(rows) == 1
@@ -815,7 +822,7 @@ async def test_load_releases_events_url_none(
     )
     await wait_deferred()
     assert len(releases) == 1
-    assert releases.index[0] == 2756775
+    assert releases.index.values[0] == 2756775
     assert (
         releases.iloc[0]["url"]
         == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
@@ -880,24 +887,32 @@ async def test_load_releases_events_unresolved(
 
 @pytest.fixture(scope="module")
 def heads_df1():
-    df = pd.DataFrame(
-        [(b"5d7303c49ac984a9fec60523f2d5297682e16646", 2756216, 525, "src-d/go-git")],
-        columns=["1", "2", "3", "4"],
+    df = md.DataFrame(
+        {
+            "1": [b"5d7303c49ac984a9fec60523f2d5297682e16646"],
+            "2": [2756216],
+            "3": [525],
+            "4": ["src-d/go-git"],
+        },
     )
-    df["1"] = df["1"].values.astype("S40")
+    df["1"] = df["1"].astype("S40")
     return df
 
 
 @pytest.fixture(scope="module")
 def heads_df2():
-    df = pd.DataFrame(
-        [
-            (b"d2a38b4a5965d529566566640519d03d2bd10f6c", 2757677, 525, "src-d/go-git"),
-            (b"31eae7b619d166c366bf5df4991f04ba8cebea0a", 2755667, 611, "src-d/go-git"),
-        ],
-        columns=["1", "2", "3", "4"],
+    df = md.DataFrame(
+        {
+            "1": [
+                b"d2a38b4a5965d529566566640519d03d2bd10f6c",
+                b"31eae7b619d166c366bf5df4991f04ba8cebea0a",
+            ],
+            "2": [2757677, 2755667],
+            "3": [525, 611],
+            "4": ["src-d/go-git", "src-d/go-git"],
+        },
     )
-    df["1"] = df["1"].values.astype("S40")
+    df["1"] = df["1"].astype("S40")
     return df
 
 
@@ -951,9 +966,9 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, disable_full_mod
         None,
     )
     assert pickle.dumps(dags2) == pickle.dumps(dags)
-    heads_df = heads_df2.copy(deep=True)
-    heads_df["1"].values[0] = b"1353ccd6944ab41082099b79979ded3223db98ec"
-    heads_df["2"].values[0] = 2755667
+    heads_df = heads_df2.copy()
+    heads_df["1"][0] = b"1353ccd6944ab41082099b79979ded3223db98ec"
+    heads_df["2"][0] = 2755667
     with pytest.raises(OperationalError):
         await fetch_repository_commits(
             dags,
@@ -1143,7 +1158,7 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][1][0]) == 1919
-    branches = branches[branches[Branch.branch_name.name] == "master"]
+    branches = branches.take(branches[Branch.branch_name.name] == "master")
     commits = await fetch_repository_commits(
         commits, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, 1, (6366825,), mdb, pdb, cache,
     )
@@ -1412,8 +1427,8 @@ async def test_mark_dag_parents_smoke(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.name].values
-    release_dates = releases[Release.published_at.name].values
+    release_hashes = releases[Release.sha.name]
+    release_dates = releases[Release.published_at.name]
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     array = np.array
@@ -1509,8 +1524,8 @@ async def test_mark_dag_parents_empty(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.name].values
-    release_dates = releases[Release.published_at.name].values
+    release_hashes = releases[Release.sha.name]
+    release_dates = releases[Release.published_at.name]
     hashes = np.array([], dtype="S40")
     vertexes = np.array([0], dtype=np.uint32)
     edges = np.array([], dtype=np.uint32)
@@ -1540,20 +1555,46 @@ class TestMineReleases:
         assert len(releases) == 53
         assert len(avatars) == 125
         assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-        for facts in releases.itertuples():
-            assert facts.name
-            assert facts.url
-            assert facts.repository_full_name == "src-d/go-git"
-            assert len(facts.commit_authors) > 0
-            assert all(a >= 0 for a in facts.commit_authors)
-            assert facts.age
-            assert facts.publisher >= 0
-            assert facts.additions > 0
-            assert facts.deletions > 0
-            assert facts.commits_count > 0
-            assert len(facts.prs_number) or facts.published <= pd.Timestamp("2017-02-01 09:51:10")
-            assert time_from < facts.published.replace(tzinfo=timezone.utc) < time_to
-            assert facts.matched_by == ReleaseMatch.tag
+        for (
+            name,
+            url,
+            repository_full_name,
+            commit_authors,
+            age,
+            publisher,
+            additions,
+            deletions,
+            commits_count,
+            prs_number,
+            published,
+            matched_by,
+        ) in releases.iterrows(
+            ReleaseFacts.f.name,
+            ReleaseFacts.f.url,
+            ReleaseFacts.f.repository_full_name,
+            ReleaseFacts.f.commit_authors,
+            ReleaseFacts.f.age,
+            ReleaseFacts.f.publisher,
+            ReleaseFacts.f.additions,
+            ReleaseFacts.f.deletions,
+            ReleaseFacts.f.commits_count,
+            ReleaseFacts.f.prs_number,
+            ReleaseFacts.f.published,
+            ReleaseFacts.f.matched_by,
+        ):
+            assert name
+            assert url
+            assert repository_full_name == "src-d/go-git"
+            assert len(commit_authors) > 0
+            assert all(a >= 0 for a in commit_authors)
+            assert age
+            assert publisher >= 0
+            assert additions > 0
+            assert deletions > 0
+            assert commits_count > 0
+            assert len(prs_number) or published <= np.datetime64("2017-02-01 09:51:10", "s")
+            assert time_from < published.item().replace(tzinfo=timezone.utc) < time_to
+            assert matched_by == ReleaseMatch.tag
 
     @with_defer
     async def test_precomputed_smoke(
@@ -1651,11 +1692,15 @@ class TestMineReleases:
         kwargs["time_from"] = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
         kwargs["time_to"] = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
         releases, avatars, _, _ = await mine_releases(**kwargs)
-        for f in releases.itertuples():
-            assert time_from <= f.published.replace(tzinfo=timezone.utc) < time_to
-            for col in released_prs_columns(PullRequest):
-                assert len(getattr(f, "prs_" + col.name)) > 0
-            assert f.commits_count > 0
+        for published, commits_count, *prs in releases.iterrows(
+            ReleaseFacts.f.published,
+            ReleaseFacts.f.commits_count,
+            *("prs_" + col.name for col in released_prs_columns(PullRequest)),
+        ):
+            assert time_from <= published.item().replace(tzinfo=timezone.utc) < time_to
+            for pr in prs:
+                assert len(pr) > 0
+            assert commits_count > 0
         assert len(releases) == 22
         assert len(avatars) == 93
 
@@ -1679,10 +1724,14 @@ class TestMineReleases:
         kwargs["time_from"] = time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
         kwargs["time_to"] = time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
         releases, avatars, _, _ = await mine_releases(**kwargs)
-        for f in releases.itertuples():
-            assert time_from <= f.published.replace(tzinfo=timezone.utc) < time_to
-            assert len(getattr(f, "prs_" + PullRequest.number.name)) > 0
-            assert f.commits_count > 0
+        for published, prs_number, commits_count in releases.iterrows(
+            ReleaseFacts.f.published,
+            "prs_" + PullRequest.number.name,
+            ReleaseFacts.f.commits_count,
+        ):
+            assert time_from <= published.item().replace(tzinfo=timezone.utc) < time_to
+            assert len(prs_number) > 0
+            assert commits_count > 0
         assert len(releases) == 22
         assert len(avatars) == 93
 
@@ -1928,14 +1977,26 @@ async def test_mine_releases_labels(mdb, pdb, rdb, release_match_setting_tag, pr
     )
     assert len(releases3) == 22
     reduced = defaultdict(int)
-    for facts1, facts2 in zip(releases1.itertuples(), releases3.itertuples()):
-        assert facts1.name == facts2.name
-        assert facts1.url == facts2.url
-        assert facts1.repository_full_name == facts2.repository_full_name
-        assert facts1.sha == facts2.sha
-        for col in released_prs_columns(PullRequest):
-            key = "prs_" + col.name
-            reduced[key] += len(getattr(facts1, key)) > len(getattr(facts2, key))
+    cols = (
+        ReleaseFacts.f.name,
+        ReleaseFacts.f.url,
+        ReleaseFacts.f.repository_full_name,
+        ReleaseFacts.f.sha,
+        *("prs_" + col.name for col in released_prs_columns(PullRequest)),
+    )
+    for (name1, url1, repository_full_name1, sha1, *prs1), (
+        name2,
+        url2,
+        repository_full_name2,
+        sha2,
+        *prs2,
+    ) in zip(releases1.iterrows(*cols), releases3.iterrows(*cols)):
+        assert name1 == name2
+        assert url1 == url2
+        assert repository_full_name1 == repository_full_name2
+        assert sha1 == sha2
+        for pr1, pr2, col in zip(prs1, prs2, released_prs_columns(PullRequest)):
+            reduced["prs_" + col.name] += len(pr1) > len(pr2)
     vals = np.array(list(reduced.values()))
     assert (vals == vals[0]).all()
     assert vals[0] == 3
@@ -2123,9 +2184,12 @@ async def test_mine_releases_logical_title(
             "src-d/go-git/beta": 0,
         }
         prs = counts.copy()
-        for f in releases.itertuples():
-            counts[(repo := f.repository_full_name)] += 1
-            prs[repo] += len(getattr(f, "prs_" + PullRequest.number.name))
+        for repository_full_name, prs_numbers in releases.iterrows(
+            ReleaseFacts.f.repository_full_name,
+            "prs_" + PullRequest.number.name,
+        ):
+            counts[(repo := repository_full_name)] += 1
+            prs[repo] += len(prs_numbers)
         assert counts == {
             "src-d/go-git/alpha": 44,
             "src-d/go-git/beta": 28,
@@ -2178,11 +2242,23 @@ async def test_mine_releases_logical_label(
         prs = counts.copy()
         deltas = counts.copy()
         commits = counts.copy()
-        for f in releases.itertuples():
-            counts[(repo := f.repository_full_name)] += 1
-            prs[repo] += len(getattr(f, "prs_" + PullRequest.number.name))
-            deltas[repo] += f.additions + f.deletions
-            commits[repo] += f.commits_count
+        for (
+            repository_full_name,
+            prs_numbers,
+            additions,
+            deletions,
+            commits_count,
+        ) in releases.iterrows(
+            ReleaseFacts.f.repository_full_name,
+            "prs_" + PullRequest.number.name,
+            ReleaseFacts.f.additions,
+            ReleaseFacts.f.deletions,
+            ReleaseFacts.f.commits_count,
+        ):
+            counts[(repo := repository_full_name)] += 1
+            prs[repo] += len(prs_numbers)
+            deltas[repo] += additions + deletions
+            commits[repo] += commits_count
         assert counts == {
             "src-d/go-git/alpha": 53,
             "src-d/go-git/beta": 37,
@@ -2256,12 +2332,16 @@ async def test_mine_releases_twins(
         )
         assert len(releases) == count
         passed = False
-        for facts in releases.itertuples():
-            if facts.node_id != 41518:
+        for node_id, commit_authors, pr_numbers in releases.iterrows(
+            ReleaseFacts.f.node_id,
+            ReleaseFacts.f.commit_authors,
+            "prs_" + PullRequest.number.name,
+        ):
+            if node_id != 41518:
                 continue
             passed = True
-            assert len(facts.commit_authors)
-            assert len(getattr(facts, "prs_" + PullRequest.number.name))
+            assert len(commit_authors)
+            assert len(pr_numbers)
         assert passed
     finally:
         await mdb_rw.execute(delete(Release).where(Release.node_id == 100500))
@@ -2469,8 +2549,8 @@ async def test_precomputed_releases_low_level(
     )
     await wait_deferred()
     assert_array_equal(
-        releases[Release.author.name].values == "",
-        releases[Release.author_node_id.name].values == 0,
+        releases[Release.author.name] == "",
+        releases[Release.author_node_id.name] == 0,
     )
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
@@ -2777,11 +2857,12 @@ async def test_mine_releases_by_name(
     )
     await wait_deferred()
     assert len(releases) == 2
-    for facts in releases.itertuples():
-        assert len(getattr(facts, "prs_" + PullRequest.title.name)) == len(
-            getattr(facts, "prs_" + PullRequest.node_id.name),
-        )
-    releases_dict = {name: i for i, name in enumerate(releases[ReleaseFacts.f.name].values)}
+    for prs_titles, prs_node_ids in releases.iterrows(
+        "prs_" + PullRequest.title.name,
+        "prs_" + PullRequest.node_id.name,
+    ):
+        assert len(prs_titles) == len(prs_node_ids)
+    releases_dict = {name: i for i, name in enumerate(releases[ReleaseFacts.f.name])}
     assert releases_dict.keys() == names
     assert (
         len(
@@ -2838,7 +2919,7 @@ async def test_change_release_settings_event_branch_hole(
     default_branches,
     prefixer,
 ):
-    branches = pd.DataFrame(
+    branches = md.DataFrame(
         {
             Branch.branch_name.name: ["master"],
             Branch.repository_full_name.name: ["src-d/go-git"],
@@ -2871,7 +2952,7 @@ async def test_change_release_settings_event_branch_hole(
 
     time_from = datetime(2019, 6, 19, 12, 0, 0, tzinfo=timezone.utc)
     time_to = datetime(2019, 9, 1, 12, 0, 0, tzinfo=timezone.utc)
-    branches = pd.DataFrame(
+    branches = md.DataFrame(
         {
             Branch.branch_name.name: ["master"],
             Branch.repository_full_name.name: ["src-d/go-git"],

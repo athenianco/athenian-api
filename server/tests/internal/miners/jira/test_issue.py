@@ -2,10 +2,10 @@ import dataclasses
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
+import medvedi as md
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
-from pandas._testing import assert_frame_equal
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
@@ -102,11 +102,11 @@ class TestFetchJIRAIssues:
         )
         issues = await fetch_jira_issues(**kwargs)
 
-        assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55  # 56 without cleaning
-        assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 54  # 55 without cleaning
+        assert issues.notnull(ISSUE_PRS_BEGAN).sum() == 55  # 56 without cleaning
+        assert issues.notnull(ISSUE_PRS_RELEASED).sum() == 54  # 55 without cleaning
         assert (
-            issues[ISSUE_PRS_RELEASED][issues[ISSUE_PRS_RELEASED].notnull()]
-            > issues[ISSUE_PRS_BEGAN][issues[ISSUE_PRS_RELEASED].notnull()]
+            issues[ISSUE_PRS_RELEASED][issues.notnull(ISSUE_PRS_RELEASED)]
+            > issues[ISSUE_PRS_BEGAN][issues.notnull(ISSUE_PRS_RELEASED)]
         ).all()
 
         await wait_deferred()
@@ -127,8 +127,8 @@ class TestFetchJIRAIssues:
             ),
         )
         issues = await fetch_jira_issues(**kwargs)
-        assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55
-        assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 55
+        assert issues.notnull(ISSUE_PRS_BEGAN).sum() == 55
+        assert issues.notnull(ISSUE_PRS_RELEASED).sum() == 55
 
     @with_defer
     async def test_no_times(self, mdb, pdb, default_branches, release_match_setting_tag, cache):
@@ -327,8 +327,8 @@ class TestFetchJIRAIssuesByKeys:
         )
         issues = await fetch_jira_issues_by_keys(**kwargs)
         issues.sort_values("key", inplace=True)  # no order is guaranteed
-        assert list(issues.key) == ["DEV-1012", "DEV-69", "DEV-729", "DEV-90"]
-        assert list(issues.index) == [b"12465", b"10101", b"12110", b"10308"]
+        assert issues[Issue.key.name].tolist() == ["DEV-1012", "DEV-69", "DEV-729", "DEV-90"]
+        assert issues.index.values.tolist() == [b"12465", b"10101", b"12110", b"10308"]
 
     @classmethod
     def _kwargs(cls, **extra) -> dict[str, Any]:
@@ -382,23 +382,20 @@ class TestFetchReleasedPRs:
                     Release.node_id.name: i,
                 },
                 comments=self._gen_dummy_df(s.first_comment_on_first_review),
-                commits=pd.DataFrame.from_records(
-                    [["mcuadros", "mcuadros", 39789, 39789, s.first_commit]],
-                    columns=[
-                        PullRequestCommit.committer_login.name,
-                        PullRequestCommit.author_login.name,
-                        PullRequestCommit.committer_user_id.name,
-                        PullRequestCommit.author_user_id.name,
-                        PullRequestCommit.committed_date.name,
-                    ],
+                commits=md.DataFrame(
+                    {
+                        PullRequestCommit.committer_login.name: ["mcuadros"],
+                        PullRequestCommit.author_login.name: ["mcuadros"],
+                        PullRequestCommit.committer_user_id.name: [39789],
+                        PullRequestCommit.author_user_id.name: [39789],
+                        PullRequestCommit.committed_date.name: [s.first_commit],
+                    },
                 ),
                 reviews=self._gen_dummy_df(s.first_comment_on_first_review),
                 review_comments=self._gen_dummy_df(s.first_comment_on_first_review),
                 review_requests=self._gen_dummy_df(s.first_review_request),
-                labels=pd.DataFrame.from_records(
-                    ([["bug"]], [["feature"]])[i % 2], columns=["name"],
-                ),
-                jiras=pd.DataFrame(),
+                labels=md.DataFrame({"name": (["bug"], ["feature"])[i % 2]}),
+                jiras=md.DataFrame(),
                 deployments=None,
                 check_run={PullRequestCheckRun.f.name: None},
             )
@@ -434,10 +431,14 @@ class TestFetchReleasedPRs:
         assert len(new_prs) == len(samples)
 
     @classmethod
-    def _gen_dummy_df(cls, dt: datetime) -> pd.DataFrame:
-        return pd.DataFrame.from_records(
-            [["vmarkovtsev", 40020, dt, dt]],
-            columns=["user_login", "user_node_id", "created_at", "submitted_at"],
+    def _gen_dummy_df(cls, dt: datetime) -> md.DataFrame:
+        return md.DataFrame(
+            {
+                "user_login": ["vmarkovtsev"],
+                "user_node_id": [40020],
+                "created_at": [dt],
+                "submitted_at": [dt],
+            },
         )
 
 

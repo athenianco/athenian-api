@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
 
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
-from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, select, update
 
@@ -52,9 +51,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     assert len(facts_fresh) == 230
     assert (facts_fresh["repository_full_name"] == "src-d/go-git").all()
     facts_fresh = facts_fresh.take(
-        np.flatnonzero(
-            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
-        ),
+        ~(facts_fresh[PullRequestFacts.f.closed] > np.datetime64(time_to, "s")),
     )
     facts_fresh.reset_index(inplace=True, drop=True)
     orig_threshold = entries.unfresh_prs_threshold
@@ -199,8 +196,9 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     facts_fresh = facts_fresh.take(
-        np.flatnonzero(
-            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
+        ~(
+            facts_fresh[PullRequestFacts.f.closed]
+            > np.datetime64(time_to.replace(tzinfo=None), "s")
         ),
     )
     facts_fresh.reset_index(inplace=True, drop=True)
@@ -225,17 +223,26 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         assert len(facts_unfresh) == 35
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
         for i in (5, 23):
-            facts_unfresh.loc[i, PullRequestFacts.f.releaser] = "mcuadros"
+            facts_unfresh[PullRequestFacts.f.releaser][i] = "mcuadros"
         assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold
 
-    pr_facts = facts_unfresh[facts_unfresh.node_id == 163168]
+    pr_facts = facts_unfresh.take(facts_unfresh[PullRequestFacts.f.node_id] == 163168)
 
-    assert_array_equal(pr_facts.jira_ids.iloc[0], np.array(["DEV-261"], dtype="U"))
-    assert_array_equal(pr_facts.jira_projects.values[0], np.array([b"10009"], dtype="S"))
-    assert_array_equal(pr_facts.jira_types.values[0], np.array([b"10016"], dtype="S"))
-    assert_array_equal(pr_facts.jira_priorities.values[0], np.array([b"3"], dtype="S"))
+    assert_array_equal(
+        pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][0], np.array(["DEV-261"], dtype="U"),
+    )
+    assert_array_equal(
+        pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_PROJECTS][0],
+        np.array([b"10009"], dtype="S"),
+    )
+    assert_array_equal(
+        pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_TYPES][0], np.array([b"10016"], dtype="S"),
+    )
+    assert_array_equal(
+        pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_PRIORITIES][0], np.array([b"3"], dtype="S"),
+    )
 
 
 @pytest.mark.parametrize(
@@ -286,14 +293,15 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
         ignore_index=True,
     )
     facts_fresh = facts_fresh.take(
-        np.flatnonzero(
-            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
+        ~(
+            facts_fresh[PullRequestFacts.f.closed]
+            > np.datetime64(time_to.replace(tzinfo=None), "s")
         ),
     )
     facts_fresh.reset_index(inplace=True, drop=True)
     await wait_deferred()
     assert len(facts_fresh) == count
-    assert facts_fresh["repository_full_name"].isin(repos).all()
+    assert facts_fresh.isin(PullRequestFacts.f.repository_full_name, repos).all()
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:

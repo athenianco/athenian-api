@@ -1,7 +1,8 @@
-from datetime import date, timedelta
-from typing import List, Sequence
+from datetime import date
+from typing import Sequence
 
-import pandas as pd
+import medvedi as md
+import numpy as np
 
 from athenian.api.internal.features.code import CodeStats
 from athenian.api.models.metadata.github import PushCommit
@@ -10,10 +11,10 @@ from athenian.api.tracing import sentry_span
 
 @sentry_span
 def calc_code_stats(
-    queried_commits: pd.DataFrame,
-    total_commits: pd.DataFrame,
+    queried_commits: md.DataFrame,
+    total_commits: md.DataFrame,
     time_intervals: Sequence[date],
-) -> List[CodeStats]:
+) -> list[CodeStats]:
     """
     Calculate the commit statistics grouped by the given time intervals.
 
@@ -22,19 +23,28 @@ def calc_code_stats(
     :param time_intervals: Series of time boundaries, both ends inclusive.
     :return: List with the calculated stats of length (len(time_intervals) - 1).
     """
-    adkeys = [PushCommit.additions.name, PushCommit.deletions.name]
-    time_intervals = [pd.Timestamp(d) for d in time_intervals]
-    time_intervals[-1] += timedelta(days=1)  # pd.cut will not include the end otherwise
+    time_intervals = np.array(time_intervals, dtype="datetime64[us]")
+    time_intervals[-1] += np.timedelta64(1, "D")  # pd.cut will not include the end otherwise
     all_stats = []
     for commits in (queried_commits, total_commits):
         if commits.empty:
-            all_stats.append([0 for _ in time_intervals[1:]])
-            all_stats.append([0 for _ in time_intervals[1:]])
+            for _ in range(2):
+                all_stats.append(np.zeros(len(time_intervals) - 1, dtype=int))
             continue
-        cut = pd.cut(commits[PushCommit.committed_date.name], time_intervals, right=False)
-        grouped = commits[adkeys].groupby(cut)
-        all_stats.append(grouped.count()[adkeys[0]])
-        ad_lines = grouped.sum()
-        all_stats.append(ad_lines[adkeys[0]] + ad_lines[adkeys[1]])
+        assert commits[PushCommit.committed_date.name].dtype == time_intervals.dtype
+        cut = np.searchsorted(time_intervals, commits[PushCommit.committed_date.name])
+        grouper = commits.groupby(cut)
+        group_indexes = cut[grouper.group_indexes()]
+        commit_stats = np.zeros(len(time_intervals) - 1, dtype=int)
+        line_stats = np.zeros(len(time_intervals) - 1, dtype=int)
+        commit_stats[group_indexes] = grouper.counts
+        line_stats[group_indexes] = np.add.reduceat(
+            (commits[PushCommit.additions.name] + commits[PushCommit.deletions.name])[
+                grouper.order
+            ],
+            grouper.reduceat_indexes(),
+        )
+        all_stats.append(commit_stats)
+        all_stats.append(line_stats)
     result = [CodeStats(*x) for x in zip(*all_stats)]
     return result

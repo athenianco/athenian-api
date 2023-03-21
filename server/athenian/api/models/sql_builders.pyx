@@ -235,10 +235,8 @@ cdef str in_any_values_inline_list(list values):
             return _in_any_values_inline_list_u(values)
         elif PyBytes_Check(item):
             return _in_any_values_inline_list_s(values)
-        elif PyLong_CheckExact(item):
-            return _in_any_values_inline_list_int64(values, False)
-        elif PyObject_TypeCheck(item, &PyIntegerArrType_Type):
-            return _in_any_values_inline_list_int64(values, True)
+        elif PyLong_CheckExact(item) or PyObject_TypeCheck(item, &PyIntegerArrType_Type):
+            return _in_any_values_inline_list_int64(values)
         else:
             raise ValueError(f"Unsupported type of list item #{i}: {type(values[i])}")
 
@@ -398,7 +396,7 @@ cdef str _in_any_values_inline_list_s(list values):
 
 
 @cython.cdivision(True)
-cdef str _in_any_values_inline_list_int64(list values, bint numpy):
+cdef str _in_any_values_inline_list_int64(list values):
     cdef:
         Py_ssize_t i, length = len(values), pos = 7, nulls = 0, result_len, valstart
         long val = 0, max_val = 0
@@ -413,10 +411,10 @@ cdef str _in_any_values_inline_list_int64(list values, bint numpy):
         if item == Py_None:
             nulls += 1
             continue
-        if numpy:
-            PyArray_ScalarAsCtype(item, &val)
-        else:
+        if PyLong_CheckExact(item):
             val = PyLong_AsLong(item)
+        else:
+            PyArray_ScalarAsCtype(item, &val)
         if val > max_val:
             max_val = val
 
@@ -433,10 +431,10 @@ cdef str _in_any_values_inline_list_int64(list values, bint numpy):
             item = PyList_GET_ITEM(<PyObject *> values, i)
             if item == Py_None:
                 continue
-            if numpy:
-                PyArray_ScalarAsCtype(item, &val)
-            else:
+            if PyLong_CheckExact(item):
                 val = PyLong_AsLong(item)
+            else:
+                PyArray_ScalarAsCtype(item, &val)
             output[pos] = b"("
             pos += 1
             valstart = pos
@@ -666,10 +664,8 @@ cdef str in_inline_list(list values):
             return _in_inline_list_u(values)
         elif PyBytes_Check(item):
             return _in_inline_list_s(values)
-        elif PyLong_CheckExact(item):
-            return _in_inline_list_int64(values, False)
-        elif PyObject_TypeCheck(item, &PyIntegerArrType_Type):
-            return _in_inline_list_int64(values, True)
+        elif PyLong_CheckExact(item) or PyObject_TypeCheck(item, &PyIntegerArrType_Type):
+            return _in_inline_list_int64(values)
         else:
             raise ValueError(f"Unsupported type of list item #{i}: {type(values[i])}")
 
@@ -822,7 +818,7 @@ cdef str _in_inline_list_s(list values):
 
 
 @cython.cdivision(True)
-cdef str _in_inline_list_int64(list values, bint numpy):
+cdef str _in_inline_list_int64(list values):
     cdef:
         Py_ssize_t i, length = len(values), pos = 0, nulls = 0, result_len, valstart
         long val = 0, max_val = 0
@@ -837,10 +833,10 @@ cdef str _in_inline_list_int64(list values, bint numpy):
         if item == Py_None:
             nulls += 1
             continue
-        if numpy:
-            PyArray_ScalarAsCtype(item, &val)
-        else:
+        if PyLong_CheckExact(item):
             val = PyLong_AsLong(item)
+        else:
+            PyArray_ScalarAsCtype(item, &val)
         if val > max_val:
             max_val = val
 
@@ -856,10 +852,10 @@ cdef str _in_inline_list_int64(list values, bint numpy):
             item = PyList_GET_ITEM(<PyObject *> values, i)
             if item == Py_None:
                 continue
-            if numpy:
-                PyArray_ScalarAsCtype(item, &val)
-            else:
+            if PyLong_CheckExact(item):
                 val = PyLong_AsLong(item)
+            else:
+                PyArray_ScalarAsCtype(item, &val)
             valstart = pos
             pos += digits - 1
             qr.quot = val

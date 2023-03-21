@@ -1356,7 +1356,7 @@ async def test_filter_jira_issue_prs_deployments(
     for issue in model.issues:
         if issue.id == "DEV-100":
             prs += 1
-            assert len(issue.prs) == 2
+            assert issue.prs and len(issue.prs) == 2
             assert {issue.prs[i].number for i in range(2)} == {1160, 880}
     assert prs == 1
     assert model.deployments == {

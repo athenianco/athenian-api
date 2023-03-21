@@ -8,9 +8,9 @@ import pickle
 from typing import Any, Callable, Collection, Coroutine, Iterable, Optional, Sequence, Type
 
 import aiomcache
+import medvedi as md
+from medvedi.accelerators import array_of_objects, is_not_null
 import numpy as np
-import pandas as pd
-from pandas.core.common import flatten
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import BigInteger, func, sql
@@ -49,7 +49,6 @@ from athenian.api.models.metadata.jira import (
     Status,
 )
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
-from athenian.api.object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
@@ -301,8 +300,8 @@ async def fetch_jira_issues(
     cache: Optional[aiomcache.Client],
     extra_columns: Iterable[InstrumentedAttribute] = (),
     adjust_timestamps_using_prs=True,
-    on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]] = None,
-) -> pd.DataFrame | tuple[pd.DataFrame, Any]:
+    on_raw_fetch_complete: Optional[Callable[[md.DataFrame], Coroutine]] = None,
+) -> md.DataFrame | tuple[md.DataFrame, Any]:
     """
     Load JIRA issues following the specified filters.
 
@@ -347,10 +346,10 @@ async def fetch_jira_issues(
 
 
 def _postprocess_fetch_jira_issues(
-    result: tuple[pd.DataFrame, Any, bool],
+    result: tuple[md.DataFrame, Any, bool],
     adjust_timestamps_using_prs=True,
     **_,
-) -> tuple[pd.DataFrame, Any, bool]:
+) -> tuple[md.DataFrame, Any, bool]:
     if adjust_timestamps_using_prs and not result[-1]:
         raise CancelCache()
     return result
@@ -395,8 +394,8 @@ async def _fetch_jira_issues(
     cache: Optional[aiomcache.Client],
     extra_columns: Iterable[InstrumentedAttribute],
     adjust_timestamps_using_prs: bool,
-    on_raw_fetch_complete: Optional[Callable[[pd.DataFrame], Coroutine]],
-) -> tuple[pd.DataFrame, Any, bool]:
+    on_raw_fetch_complete: Optional[Callable[[md.DataFrame], Coroutine]],
+) -> tuple[md.DataFrame, Any, bool]:
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
 
@@ -443,11 +442,11 @@ async def _fetch_jira_issues(
 
     results = await gather(*fetch_tasks, op="_fetch_jira_issues_fetches")
     results = [r for r in results if r is not None]
-    issues = results[0] if len(results) == 1 else pd.concat(results)
+    issues = md.concat(*results, copy=False)
 
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
-        if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
+        if (missing_updated := issues.isnull(AthenianIssue.updated.name)).any():
             log.error(
                 "JIRA issues are missing in jira.athenian_issue: %s",
                 ", ".join(map(str, issues.index.values[missing_updated])),
@@ -490,7 +489,7 @@ async def fetch_jira_issues_by_keys(
     pdb: Database,
     cache: Optional[aiomcache.Client],
     extra_columns: Iterable[InstrumentedAttribute] = (),
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Load JIRA issues based on their key. Result dataframe order is undetermined."""
     columns = [
         Issue.id,
@@ -521,7 +520,7 @@ async def fetch_jira_issues_by_keys(
 
 @sentry_span
 async def _fill_issues_with_mapped_prs_info(
-    issues: pd.DataFrame,
+    issues: md.DataFrame,
     default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
@@ -577,22 +576,20 @@ async def _fill_issues_with_mapped_prs_info(
         index=NodePullRequestJiraIssues.node_id.name,
     )
     # TODO(vmarkovtsev): load the "fresh" released PRs
-    existing_repos = np.flatnonzero(
-        is_not_null(prs[PullRequest.repository_full_name.name].values),
-    )
+    existing_repos = np.flatnonzero(prs.notnull(PullRequest.repository_full_name.name))
     if len(existing_repos) < len(prs):
         log.error(
             "Repositories referenced by github.node_pullrequest do not exist in "
             "github.node_repository on GitHub account %s: %s",
             meta_ids,
             np.unique(
-                prs[NodePullRequest.repository_id.name].values[
+                prs[NodePullRequest.repository_id.name][
                     np.setdiff1d(np.arange(len(prs)), existing_repos, assume_unique=True)
                 ],
             ).tolist(),
         )
         prs = prs.take(existing_repos)
-    unique_pr_node_ids = prs.index.unique()
+    unique_pr_node_ids = prs.unique(prs.index.name, unordered=True)
     released_prs, labels = await gather(
         _fetch_released_prs(unique_pr_node_ids, default_branches, release_settings, account, pdb),
         fetch_labels_to_filter(unique_pr_node_ids, meta_ids, mdb)
@@ -602,25 +599,27 @@ async def _fill_issues_with_mapped_prs_info(
     prs = split_logical_prs(
         prs,
         labels,
-        logical_settings.with_logical_prs(prs[PullRequest.repository_full_name.name].unique()),
+        logical_settings.with_logical_prs(
+            prs.unique(PullRequest.repository_full_name.name, unordered=True),
+        ),
         logical_settings,
     )
     pr_to_issue = {
-        key: ji
-        for key, ji in zip(
-            prs.index.values,
-            prs[NodePullRequestJiraIssues.jira_id.name].values,
+        (node_id, repo): ji
+        for node_id, repo, ji in prs.iterrows(
+            *prs.index.names,
+            NodePullRequestJiraIssues.jira_id.name,
         )
     }
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
 
-    pr_node_ids = prs.index.get_level_values(0).values
-    jira_ids = prs[NodePullRequestJiraIssues.jira_id.name].values
+    pr_node_ids = prs.index.get_level_values(0)
+    jira_ids = prs[NodePullRequestJiraIssues.jira_id.name]
     unique_jira_ids, index_map, counts = np.unique(
         jira_ids, return_inverse=True, return_counts=True,
     )
     split_pr_node_ids = np.split(pr_node_ids[np.argsort(index_map)], np.cumsum(counts[:-1]))
-    issue_prs = [[]] * len(issues)  # yes, the references to the same list
+    issue_prs = array_of_objects(len(issues), [])  # yes, the references to the same list
     issue_indexes = []
     for issue, node_ids in zip(unique_jira_ids, split_pr_node_ids):
         issue_index = issue_to_index[issue]
@@ -630,15 +629,15 @@ async def _fill_issues_with_mapped_prs_info(
     prs_count[issue_indexes] = counts
 
     nat = np.datetime64("nat")
-    work_began = np.full(len(issues), nat, "datetime64[ns]")
+    work_began = np.full(len(issues), nat, "datetime64[us]")
     released = work_began.copy()
 
-    for key, pr_created_at in zip(
-        prs.index.values,
-        prs[NodePullRequest.created_at.name].values,
+    for node_id, repo, pr_created_at in prs.iterrows(
+        *prs.index.names,
+        NodePullRequest.created_at.name,
     ):
+        key = node_id, repo
         i = issue_to_index[pr_to_issue[key]]
-        node_id, repo = key
         if pr_created_at is not None:
             if pr_created_at == pr_created_at:
                 key_work_began = work_began[i]
@@ -661,15 +660,15 @@ async def _fill_issues_with_mapped_prs_info(
     ISSUE_RESOLVED = AthenianIssue.resolved.name
     ISSUE_CREATED = Issue.created.name
 
-    if (negative := issues[ISSUE_RESOLVED].values < issues[ISSUE_CREATED].values).any():
+    if (negative := issues[ISSUE_RESOLVED] < issues[ISSUE_CREATED]).any():
         log.error(
             "JIRA issues have resolved < created: %s",
             issues.index.values[negative].tolist(),
         )
-        issues[ISSUE_RESOLVED].values[negative] = issues[ISSUE_CREATED].values[negative]
+        issues[ISSUE_RESOLVED][negative] = issues[ISSUE_CREATED][negative]
 
 
-def _fill_issues_with_empty_prs_info(issues: pd.DataFrame) -> None:
+def _fill_issues_with_empty_prs_info(issues: md.DataFrame) -> None:
     for col in (ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED, AthenianIssue.resolved.name):
         issues[col] = np.full(len(issues), np.datetime64("nat"), "datetime64[s]")
 
@@ -700,19 +699,15 @@ async def _fetch_released_prs(
         pdb,
         selected,
     )
-    pr_node_ids_col = released_df[ghdprf.pr_node_id.name].values
-    pr_done_at_col = released_df[ghdprf.pr_done_at.name].values
-    repos_col = released_df[ghdprf.repository_full_name.name].values
-    match_col = released_df[ghdprf.release_match.name].values
-    order_col = np.char.add(repos_col.astype("U"), match_col.astype("U"))
-    order = np.argsort(order_col)
-    _, group_counts = np.unique(order_col[order], return_counts=True)
+    pr_node_ids_col = released_df[ghdprf.pr_node_id.name]
+    pr_done_at_col = released_df[ghdprf.pr_done_at.name]
+    repos_col = released_df[ghdprf.repository_full_name.name]
+    match_col = released_df[ghdprf.release_match.name]
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-    pos = 0
-    for group_count in group_counts:
-        indexes = order[pos : pos + group_count]
-        pos += group_count
+    for indexes in released_df.groupby(
+        ghdprf.repository_full_name.name, ghdprf.release_match.name,
+    ):
         repo = repos_col[indexes[0]]
         match = match_col[indexes[0]]
         if repo not in release_settings.native:
@@ -753,17 +748,10 @@ async def _fetch_released_pr_ids(
 
     # TODO: reduce code duplication with _fetch_released_prs
     df = await read_sql_query(sa.select(*selected).where(*where), pdb, selected)
-    repos_col = df[ghdprf.repository_full_name.name].values
-    match_col = df[ghdprf.release_match.name].values
-    order_col = np.char.add(repos_col.astype("U"), match_col.astype("U"))
-    order = np.argsort(order_col)
-    _, group_counts = np.unique(order_col[order], return_counts=True)
-    pos = 0
-    take_mask = np.full(len(df.index.values), True, bool)
-
-    for group_count in group_counts:
-        indexes = order[pos : pos + group_count]
-        pos += group_count
+    repos_col = df[ghdprf.repository_full_name.name]
+    match_col = df[ghdprf.release_match.name]
+    take_mask = np.full(len(df), True, bool)
+    for indexes in df.groupby(ghdprf.repository_full_name.name, ghdprf.release_match.name):
         repo = repos_col[indexes[0]]
         match = match_col[indexes[0]]
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -773,7 +761,7 @@ async def _fetch_released_pr_ids(
             )
             if ok is None:
                 take_mask[indexes] = False
-    return df[ghdprf.pr_node_id.name].values[take_mask]
+    return df[ghdprf.pr_node_id.name][take_mask]
 
 
 @sentry_span
@@ -793,7 +781,7 @@ async def query_jira_raw(
     resolved_before: datetime | None = None,
     mapped_to_prs: Sequence[int] | None = None,
     meta_ids: tuple[int, ...] | None = None,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """
     Fetch arbitrary columns from Issue or any joined tables according to the filters.
 
@@ -1000,22 +988,24 @@ async def query_jira_raw(
                     for q in query
                 ),
             )
-            df = pd.concat(df, copy=False)
-            df.disable_consolidate()
-            _, unique = np.unique(df.index.values, return_index=True)
-            df = df.take(unique)
+            df = md.concat(*df, copy=False)
+            df.drop_duplicates(df.index.names, inplace=True)
         else:
             df = await read_sql_query(
                 query, mdb, columns, index=Issue.id.name if not distinct else None,
             )
     else:
         # SQLite does not allow to use parameters multiple times
-        df = pd.concat(
-            await gather(
-                *(
-                    read_sql_query(q, mdb, columns, index=Issue.id.name if not distinct else None)
-                    for q in query
-                ),
+        df = md.concat(
+            *(
+                await gather(
+                    *(
+                        read_sql_query(
+                            q, mdb, columns, index=Issue.id.name if not distinct else None,
+                        )
+                        for q in query
+                    ),
+                )
             ),
         )
 
@@ -1027,27 +1017,28 @@ async def query_jira_raw(
         return df
     passed = np.full(len(df), False)
     if reporters:
-        passed |= df["_reporter"].isin(reporters).values
+        passed |= df.isin("_reporter", reporters)
     if assignees:
         if nested_assignees:
             assignees = set(assignees)
-            passed |= (
-                df[AthenianIssue.nested_assignee_display_names.name]
-                .apply(lambda obj: bool(obj.keys() & assignees))
-                .values
+            passed |= np.fromiter(
+                (
+                    bool(obj.keys() & assignees)
+                    for obj in df[AthenianIssue.nested_assignee_display_names.name]
+                ),
+                bool,
+                len(df),
             )
         else:
-            passed |= df["_assignee"].isin(assignees).values
+            passed |= df.isin("_assignee", assignees)
         if None in assignees:
-            passed |= df["_assignee"].isnull().values
+            passed |= df.isnull("_assignee")
     if commenters:
         # don't go hardcore vectorized here, we don't have to with SQLite
-        for i, issue_commenters in enumerate(df["commenters"].values):
+        for i, issue_commenters in enumerate(df["commenters"]):
             if len(np.intersect1d(issue_commenters, commenters)):
                 passed[i] = True
-    df.disable_consolidate()
-    df = df.take(np.flatnonzero(passed))
-    return df
+    return df.take(passed, inplace=True)
 
 
 @sentry_span
@@ -1057,7 +1048,7 @@ async def _query_jira_raw_by_keys(
     jira_config: JIRAConfig,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     where = [
         Issue.acc_id == jira_config.acc_id,
         Issue.project_id.in_(jira_config.projects),
@@ -1081,11 +1072,11 @@ async def _query_jira_raw_by_keys(
     return _validate_and_clean_issues(issues, jira_config.acc_id)
 
 
-def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
-    in_progress = df[Status.category_name.name].values == Status.CATEGORY_IN_PROGRESS
-    done = df[Status.category_name.name].values == Status.CATEGORY_DONE
-    no_work_began = df[AthenianIssue.work_began.name].isnull().values
-    no_resolved = df[AthenianIssue.resolved.name].isnull().values
+def _validate_and_clean_issues(df: md.DataFrame, acc_id: int) -> md.DataFrame:
+    in_progress = df[Status.category_name.name] == Status.CATEGORY_IN_PROGRESS
+    done = df[Status.category_name.name] == Status.CATEGORY_DONE
+    no_work_began = df.isnull(AthenianIssue.work_began.name)
+    no_resolved = df.isnull(AthenianIssue.resolved.name)
     in_progress_no_work_began = in_progress & no_work_began
     done_no_work_began = done & no_work_began
     done_no_resolved = done & no_resolved
@@ -1188,12 +1179,10 @@ class PullRequestJiraMapper:
     def append_from_df(
         cls,
         existing: dict[int, LoadedJIRADetails],
-        df: pd.DataFrame,
+        df: md.DataFrame,
     ) -> None:
         """Add the JIRA details in `df` to `existing` mapping from PR node IDs to JIRA."""
-        pr_node_ids = df.index.get_level_values(0).values
-        order = np.argsort(pr_node_ids)
-        unique_pr_ids, group_counts = np.unique(pr_node_ids[order], return_counts=True)
+        pr_node_ids = df.index.get_level_values(0)
         empty_cols = {}
         payload_columns = []
         for col in JIRAEntityToFetch.to_columns(JIRAEntityToFetch.EVERYTHING()):
@@ -1202,19 +1191,16 @@ class PullRequestJiraMapper:
                 empty_cols[df_name] = np.array([], dtype=dtype)
             else:
                 payload_columns.append(col)
-        pos = 0
-        for pr_id, group_count in zip(unique_pr_ids, group_counts):
-            indexes = order[pos : pos + group_count]
-            pos += group_count
+        for indexes in df.groupby(df.index.names[0]):
             # we can deduplicate. shall we? must benchmark the profit.
-            existing[pr_id] = LoadedJIRADetails(
+            existing[pr_node_ids[indexes[0]]] = LoadedJIRADetails(
                 # labels are handled differently since they are already an array for each issue
                 **{
                     PR_JIRA_DETAILS_COLUMN_MAP[c][0]: np.concatenate(
-                        df[c.name].values[indexes], dtype="U", casting="unsafe",
+                        df[c.name][indexes], dtype="U", casting="unsafe",
                     )
                     if c is Issue.labels
-                    else df[c.name].values[indexes]
+                    else df[c.name][indexes]
                     for c in payload_columns
                 },
                 **empty_cols,
@@ -1331,7 +1317,7 @@ async def fetch_jira_issues_by_prs(
     jira_ids: JIRAConfig,
     meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Load brief information about JIRA issues mapped to the given PRs."""
     assert jira_ids is not None
     regiss = aliased(Issue, name="regular")
@@ -1379,7 +1365,7 @@ async def fetch_jira_issues_by_prs(
 
 
 @sentry_span
-async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -> None:
+async def import_components_as_labels(issues: md.DataFrame, mdb: DatabaseLike) -> None:
     """Import the components names as labels in the issues dataframe.
 
     The `issues` dataframe must have `acc_id` and `components` (with components ids) columns.
@@ -1387,26 +1373,29 @@ async def import_components_as_labels(issues: pd.DataFrame, mdb: DatabaseLike) -
     """
     if issues.empty:
         return
-    components = (
-        issues[[Issue.acc_id.name, Issue.components.name]]
-        .groupby(Issue.acc_id.name, sort=False)
-        .aggregate(lambda s: set(flatten(s)))
-    )
-    conditions = (
-        sql.and_(Component.id.in_(vals), Component.acc_id == int(acc))
-        for acc, vals in zip(components.index.values, components[Issue.components.name].values)
-    )
-    rows = await mdb.fetch_all(
+    conditions = []
+    accounts_col = issues[Issue.acc_id.name]
+    components_col = issues[Issue.components.name]
+    for indexes in issues.groupby(Issue.acc_id.name):
+        acc = accounts_col[indexes[0]]
+        components = components_col[indexes]
+        vals = set(chain.from_iterable(components[is_not_null(components)]))
+        conditions.append(sql.and_(Component.id.in_(vals), Component.acc_id == int(acc)))
+    df = await read_sql_query(
         sql.select(Component.acc_id, Component.id, func.lower(Component.name)).where(
             sql.or_(*conditions),
         ),
+        mdb,
+        [Component.acc_id, Component.id, Component.name],
     )
     cmap: dict[int, dict[str, str]] = {}
-    for r in rows:
-        cmap.setdefault(r[0], {})[r[1]] = r[2]
-    labels_col = issues[Issue.labels.name].values
+    for indexes in df.groupby(Component.acc_id.name):
+        cmap.setdefault(df[Component.acc_id.name][indexes[0]], {}).update(
+            zip(df[Component.id.name][indexes], df[Component.name.name][indexes]),
+        )
+    labels_col = issues[Issue.labels.name]
     for i, (acc_id, row_labels, row_components) in enumerate(
-        zip(issues[Issue.acc_id.name].values, labels_col, issues[Issue.components.name].values),
+        issues.iterrows(Issue.acc_id.name, Issue.labels.name, Issue.components.name),
     ):
         if row_labels is None:
             labels_col[i] = row_labels = []

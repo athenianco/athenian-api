@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 import itertools
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 import pytest
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
@@ -18,7 +18,7 @@ from athenian.api.typing_utils import df_from_structs
 
 
 def dt64arr(dt: datetime) -> np.ndarray:
-    return np.array([dt], dtype="datetime64[ns]")
+    return np.array([dt], dtype="datetime64[us]")
 
 
 class DummyAverageMetricCalculator(AverageMetricCalculator):
@@ -26,7 +26,7 @@ class DummyAverageMetricCalculator(AverageMetricCalculator):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **_,
@@ -146,7 +146,7 @@ def test_median_confidence_interval_empty():
                 (DummyAverageMetricCalculator, True),
                 (MedianMetricCalculator, False),
             ],
-            [datetime, pd.Timestamp],
+            [datetime, "datetime64[us]"],
         )
     ),
 )
@@ -162,7 +162,7 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
             max_time: np.ndarray,
         ) -> np.ndarray:
             return np.repeat(
-                (facts["released"] - facts["work_began"]).values[None, :], len(min_times), axis=0,
+                (facts["released"] - facts["work_began"])[None, :], len(min_times), axis=0,
             )
 
     calc = LeadTimeCalculator(quantiles=(0, 0.99))

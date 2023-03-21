@@ -1,7 +1,7 @@
 from enum import IntEnum, auto
 import marshal
 import pickle
-from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Collection, Iterable, Mapping, Optional
 
 import aiomcache
 import morcilla
@@ -21,10 +21,10 @@ from athenian.api.tracing import sentry_span
 )
 async def mine_users(
     logins: Collection[str],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """
     Fetch details about each GitHub user in the given list of `logins`.
 
@@ -49,12 +49,12 @@ class UserAvatarKeys(IntEnum):
 @sentry_span
 async def mine_user_avatars(
     keys: UserAvatarKeys,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
     logins: Optional[Iterable[str]] = None,
     nodes: Optional[Iterable[int]] = None,
-) -> List[Tuple[Union[str, int], str]]:
+) -> list[tuple[str | int, str]]:
     """Fetch the user profile picture URL for each login."""
     assert logins is not None or nodes is not None
     if logins is not None:
@@ -85,10 +85,10 @@ async def mine_user_avatars(
 )
 async def _mine_user_avatars_logins(
     logins: Iterable[str],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> List[Tuple[int, str, str]]:
+) -> list[tuple[int, str, str]]:
     rows = await mdb.fetch_all(
         select(User.node_id, User.html_url, User.avatar_url).where(
             User.acc_id.in_(meta_ids), User.login.in_(logins),
@@ -109,10 +109,10 @@ async def _mine_user_avatars_logins(
 )
 async def _mine_user_avatars_nodes(
     nodes: Iterable[int],
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> List[Tuple[int, str, str]]:
+) -> list[tuple[int, str, str]]:
     rows = await mdb.fetch_all(
         select(User.node_id, User.html_url, User.avatar_url).where(
             User.acc_id.in_(meta_ids), User.node_id.in_(nodes), User.login.isnot(None),

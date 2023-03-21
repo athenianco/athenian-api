@@ -17,8 +17,9 @@ from typing import (
 )
 
 import aiomcache
+import medvedi as md
 import numpy as np
-import pandas as pd
+from numpy import typing as npt
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -336,12 +337,12 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
 
     def match(
         self,
-        prs: pd.DataFrame,
-        labels: pd.DataFrame,
+        prs: md.DataFrame,
+        labels: md.DataFrame,
         pr_indexes: Sequence[int],
         id_column: str,
         title_column: str,
-    ) -> dict[str, list[int]]:
+    ) -> dict[str, npt.NDArray[int]]:
         """
         Map PRs to logical repositories.
 
@@ -350,14 +351,14 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
         :param pr_indexes: only consider PRs indexed in `prs`.
         :return: mapping from logical repository names to indexes in `prs`.
         """
-        assert isinstance(prs, pd.DataFrame)
-        assert isinstance(labels, pd.DataFrame)
+        assert isinstance(prs, md.DataFrame)
+        assert isinstance(labels, md.DataFrame)
         matched = {}
-        titles = prs[title_column].values
+        titles = prs[title_column]
         if len(pr_indexes):
             titles = titles[pr_indexes]
         else:
-            pr_indexes = np.arange(len(prs))
+            pr_indexes = np.arange(len(prs), dtype=int)
         if self.has_titles:
             lengths = nested_lengths(titles) + 1
             offsets = np.zeros(len(lengths), dtype=int)
@@ -368,18 +369,18 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                 found = pr_indexes[np.in1d(offsets, found, assume_unique=True)]
                 matched[repo] = found
         if not labels.empty and self.has_labels:
-            assert not isinstance(labels.index, pd.RangeIndex)
+            assert labels.index != ()
             matched_by_label = defaultdict(list)
-            pr_ids = prs[id_column].values[pr_indexes]
+            pr_ids = prs[id_column][pr_indexes]
             order = np.argsort(pr_ids)
             pr_ids = pr_ids[order]
-            label_pr_ids = labels.index.get_level_values(0).values
+            label_pr_ids = labels.index.get_level_values(0)
             found_indexes = np.searchsorted(pr_ids, label_pr_ids)
             found_indexes[found_indexes == len(pr_ids)] = 0
             label_pr_indexes = np.flatnonzero(pr_ids[found_indexes] == label_pr_ids)
             if len(label_pr_indexes):
                 reverse_indexes = pr_indexes[order][found_indexes[label_pr_indexes]]
-                names = labels[PullRequestLabel.name.name].values[label_pr_indexes]
+                names = labels[PullRequestLabel.name.name][label_pr_indexes]
                 unique_names, name_map, counts = np.unique(
                     names, return_inverse=True, return_counts=True,
                 )
@@ -397,7 +398,9 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                         matched_by_label[repo].append(label_pr_indexes)
                 for repo, label_matches in matched_by_label.items():
                     matched[repo] = np.unique(
-                        np.concatenate([matched.get(repo, []), *label_matches]),
+                        np.concatenate(
+                            [matched.get(repo, np.array([], dtype=int)), *label_matches],
+                        ),
                     )
         try:
             concat_logical = np.unique(np.concatenate(list(matched.values())))
@@ -463,7 +466,7 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         """Return the label key values for the given logical repository."""
         return self._labels_inv[repo]
 
-    def match(self, notifications: pd.DataFrame, labels: pd.DataFrame) -> dict[str, set[str]]:
+    def match(self, notifications: md.DataFrame, labels: md.DataFrame) -> dict[str, set[str]]:
         """
         Split deployed components into logical parts.
 
@@ -471,8 +474,8 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         :param labels: labels of the deployment notifications.
         :return: logical repository names mapped to the deployment names.
         """
-        assert isinstance(notifications, pd.DataFrame)
-        assert isinstance(labels, pd.DataFrame)
+        assert isinstance(notifications, md.DataFrame)
+        assert isinstance(labels, md.DataFrame)
         assert notifications.index.name == DeploymentNotification.name.name
         matched = {}
         if self.has_titles:
@@ -498,8 +501,8 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                 indexes = label_order[label_pos : label_pos + group_size]
                 label_pos += group_size
                 for label, value in zip(
-                    labels[DeployedLabel.key.name].values[indexes],
-                    labels[DeployedLabel.value.name].values[indexes],
+                    labels[DeployedLabel.key.name][indexes],
+                    labels[DeployedLabel.value.name][indexes],
                 ):
                     try:
                         repo_labels = logical_labels[label]

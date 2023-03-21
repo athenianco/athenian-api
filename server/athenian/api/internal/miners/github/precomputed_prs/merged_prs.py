@@ -1,15 +1,15 @@
 import asyncio
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Iterable, KeysView, List, Optional, Set, Tuple, Union
+from typing import Collection, Iterable, KeysView, Optional
 
 import aiomcache
+import medvedi as md
 import morcilla
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, exists, false, join, not_, select, true, union_all
 from sqlalchemy.sql.functions import coalesce
@@ -51,11 +51,11 @@ class MergedPRFactsLoader:
     @sentry_span
     async def load_merged_unreleased_pull_request_facts(
         cls,
-        prs: pd.DataFrame | pd.Index,
-        time_to: datetime,
+        prs: md.DataFrame | md.Index,
+        time_to: datetime | np.datetime64,
         labels: LabelFilter,
-        matched_bys: Dict[str, ReleaseMatch],
-        default_branches: Dict[str, str],
+        matched_bys: dict[str, ReleaseMatch],
+        default_branches: dict[str, str],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
@@ -73,6 +73,8 @@ class MergedPRFactsLoader:
         """
         if time_to != time_to:
             return {}
+        if isinstance(time_to, np.datetime64):
+            time_to = time_to.item().replace(tzinfo=timezone.utc)
         assert time_to.tzinfo is not None
         if exclude_inactive:
             assert time_from is not None
@@ -90,17 +92,16 @@ class MergedPRFactsLoader:
         }
         default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         repos_by_match = defaultdict(list)
-        if isinstance(prs, pd.Index):
+        if isinstance(prs, md.Index):
             prs_index = prs
             assert prs.nlevels == 2
         else:
             prs_index = prs.index
         if prs_index.nlevels == 2:
-            nodes_col = prs_index.get_level_values(0).values
-            repos_col = prs_index.get_level_values(1).values
+            nodes_col, repos_col = prs_index.levels()
         else:
             nodes_col = prs_index.values
-            repos_col = prs[PullRequest.repository_full_name.name].values
+            repos_col = prs[PullRequest.repository_full_name.name]
         logical_repos, index_map, counts = np.unique(
             repos_col, return_inverse=True, return_counts=True,
         )
@@ -288,17 +289,17 @@ class MergedPRFactsLoader:
 
 @sentry_span
 async def update_unreleased_prs(
-    merged_prs: pd.DataFrame,
-    released_prs: pd.DataFrame,
+    merged_prs: md.DataFrame,
+    released_prs: md.DataFrame,
     time_to: datetime,
-    labels: Dict[int, List[str]],
-    matched_bys: Dict[str, ReleaseMatch],
-    default_branches: Dict[str, str],
+    labels: dict[int, list[str]],
+    matched_bys: dict[str, ReleaseMatch],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: morcilla.Database,
     unreleased_prs_event: asyncio.Event,
-) -> List[Tuple[int, str]]:
+) -> list[tuple[int, str]]:
     """
     Bump the last check timestamps for unreleased merged PRs.
 
@@ -310,36 +311,42 @@ async def update_unreleased_prs(
     """
     assert time_to.tzinfo is not None
     assert merged_prs.index.nlevels == 2
-    time_to = min(time_to, datetime.now(timezone.utc))
+    time_to = np.datetime64(min(time_to, datetime.now(timezone.utc)).replace(tzinfo=None), "us")
     ghmprf = GitHubMergedPullRequestFacts
     sqlite = pdb.url.dialect == "sqlite"
     values = []
     if not released_prs.empty:
         assert released_prs.index.nlevels == 2
-        release_times = dict(
-            zip(
-                released_prs.index.values,
-                released_prs[Release.published_at.name] - timedelta(minutes=1),
-            ),
-        )
+        release_times = {
+            (n, r): p
+            for n, r, p in zip(
+                *released_prs.index.levels(),
+                released_prs[Release.published_at.name] - np.timedelta64(1, "m"),
+            )
+        }
     else:
         release_times = {}
     skipped = []
+    node_id_col, repos_col = merged_prs.index.levels()
+    merged_at_col = merged_prs[PullRequest.merged_at.name]
+    user_node_id_col = merged_prs[PullRequest.user_node_id.name]
+    merged_by_id_col = merged_prs[PullRequest.merged_by_id.name]
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
-        for repo, repo_prs in merged_prs.groupby(level=1, sort=False):
+        for indexes in merged_prs.groupby(merged_prs.index.names[1]):
+            repo = repos_col[indexes[0]]
             if (
                 release_match := extract_release_match(
                     repo, matched_bys, default_branches, release_settings,
                 )
             ) is None:
                 # no new releases
-                skipped.extend(repo_prs.index.values)
+                skipped.extend(node_id_col[indexes])
                 continue
             for node_id, merged_at, author, merger in zip(
-                repo_prs.index.get_level_values(0).values,
-                repo_prs[PullRequest.merged_at.name],
-                repo_prs[PullRequest.user_node_id.name].values,
-                repo_prs[PullRequest.merged_by_id.name].values,
+                node_id_col[indexes],
+                merged_at_col[indexes],
+                user_node_id_col[indexes],
+                merged_by_id_col[indexes],
             ):
                 if merged_at > time_to:
                     # we can miss data
@@ -351,7 +358,7 @@ async def update_unreleased_prs(
                     checked_until = time_to
                 else:
                     if released_time == released_time:
-                        checked_until = min(time_to, released_time - timedelta(seconds=1))
+                        checked_until = min(time_to, released_time - np.timedelta64(1, "s"))
                     else:
                         checked_until = merged_at  # force_push_drop
                 values.append(
@@ -360,8 +367,8 @@ async def update_unreleased_prs(
                         pr_node_id=node_id,
                         release_match=release_match,
                         repository_full_name=repo,
-                        checked_until=checked_until,
-                        merged_at=merged_at,
+                        checked_until=checked_until.item().replace(tzinfo=timezone.utc),
+                        merged_at=merged_at.item().replace(tzinfo=timezone.utc),
                         author=author,
                         merger=merger,
                         activity_days={},
@@ -408,10 +415,10 @@ async def update_unreleased_prs(
 
 @sentry_span
 async def store_merged_unreleased_pull_request_facts(
-    merged_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
+    merged_prs_and_facts: Iterable[tuple[MinedPullRequest, PullRequestFacts]],
     time_to: datetime,
-    matched_bys: Dict[str, ReleaseMatch],
-    default_branches: Dict[str, str],
+    matched_bys: dict[str, ReleaseMatch],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: morcilla.Database,
@@ -427,7 +434,7 @@ async def store_merged_unreleased_pull_request_facts(
         assert pdb.url.dialect == "sqlite"
     values = []
     dt = datetime(2000, 1, 1, tzinfo=timezone.utc)
-    time_to = pd.Timestamp(time_to).to_numpy()
+    time_to = np.datetime64(time_to.replace(tzinfo=None), "us")
     for pr, facts in merged_prs_and_facts:
         assert facts.merged and not facts.released
         if facts.merged > time_to:
@@ -501,16 +508,16 @@ async def store_merged_unreleased_pull_request_facts(
 async def discover_inactive_merged_unreleased_prs(
     time_from: datetime,
     time_to: datetime,
-    repos: Union[Set[str], KeysView[str]],
+    repos: set[str] | KeysView[str],
     participants: PRParticipants,
     labels: LabelFilter,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     prefixer: Prefixer,
     account: int,
     pdb: morcilla.Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[int, List[str]]:
+) -> dict[int, list[str]]:
     """
     Discover PRs which were merged before `time_from` and still not released.
 

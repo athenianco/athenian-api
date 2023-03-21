@@ -7,9 +7,9 @@ import pickle
 from typing import Callable, Generator, Iterable, KeysView, Optional, Sequence
 
 import aiomcache
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import select, union_all
 
@@ -104,7 +104,6 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
-from athenian.api.object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -124,7 +123,7 @@ class PullRequestListMiner:
 
         def _analyze(
             self,
-            facts: pd.DataFrame,
+            facts: md.DataFrame,
             min_times: np.ndarray,
             max_times: np.ndarray,
             **kwargs,
@@ -294,17 +293,13 @@ class PullRequestListMiner:
             self._no_time_from,
         )
         author = pr.pr[self.PullRequest_user_login_name]
-        external_reviews_mask = pr.reviews[self.PullRequestReview_user_login_name].values != author
-        external_review_times = pr.reviews[self.PullRequestReview_created_at_name].values[
+        external_reviews_mask = pr.reviews[self.PullRequestReview_user_login_name] != author
+        external_review_times = pr.reviews[self.PullRequestReview_created_at_name][
             external_reviews_mask
         ]
-        first_review = (
-            pd.Timestamp(external_review_times.min(), tz=timezone.utc)
-            if len(external_review_times) > 0
-            else None
-        )
+        first_review = external_review_times.min() if len(external_review_times) > 0 else None
         review_comments = (
-            pr.review_comments[self.PullRequestReviewComment_user_login_name].values != author
+            pr.review_comments[self.PullRequestReviewComment_user_login_name] != author
         ).sum()
         delta_comments = len(pr.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
@@ -316,9 +311,9 @@ class PullRequestListMiner:
             labels = [
                 Label(name=name, description=description, color=color)
                 for name, description, color in zip(
-                    pr.labels[self.PullRequestLabel_name_name].values,
-                    pr.labels[self.PullRequestLabel_description_name].values,
-                    pr.labels[self.PullRequestLabel_color_name].values,
+                    pr.labels[self.PullRequestLabel_name_name],
+                    pr.labels[self.PullRequestLabel_description_name],
+                    pr.labels[self.PullRequestLabel_color_name],
                 )
             ]
         if pr.jiras.empty:
@@ -330,14 +325,14 @@ class PullRequestListMiner:
                 )
                 for (key, title, epic, labels, itype) in zip(
                     pr.jiras.index.values,
-                    pr.jiras[self.Issue_title_name].values,
-                    pr.jiras["epic"].values,
-                    pr.jiras[self.Issue_labels_name].values,
-                    pr.jiras[self.Issue_type_name].values,
+                    pr.jiras[self.Issue_title_name],
+                    pr.jiras["epic"],
+                    pr.jiras[self.Issue_labels_name],
+                    pr.jiras[self.Issue_type_name],
                 )
             ]
         deployments = (
-            pr.deployments.index.get_level_values(1).values if len(pr.deployments.index) else None
+            pr.deployments.index.get_level_values(1) if len(pr.deployments.index) else None
         )
         return PullRequestListItem(
             node_id=pr_node_id,
@@ -349,17 +344,17 @@ class PullRequestListMiner:
             files_changed=pr.pr[self.PullRequest_changed_files_name],
             created=pr.pr[self.PullRequest_created_at_name],
             updated=updated_at,
-            closed=self._dt64_to_pydt(facts_now.closed),
+            closed=facts_now.closed,
             comments=len(pr.comments) + delta_comments,
             commits=len(pr.commits),
-            review_requested=self._dt64_to_pydt(facts_now.first_review_request_exact),
+            review_requested=facts_now.first_review_request_exact,
             first_review=first_review,
-            approved=self._dt64_to_pydt(facts_now.approved),
+            approved=facts_now.approved,
             review_comments=review_comments,
             reviews=reviews,
-            merged=self._dt64_to_pydt(facts_now.merged),
+            merged=facts_now.merged,
             merged_with_failed_check_runs=facts_now.merged_with_failed_check_runs.tolist(),
-            released=self._dt64_to_pydt(facts_now.released),
+            released=facts_now.released,
             release_url=pr.release[self.Release_url_name],
             events_now=events_now,
             stages_now=stages_now,
@@ -424,7 +419,7 @@ class PullRequestListMiner:
     @sentry_span
     def calc_stage_timings(
         cls,
-        df_facts: pd.DataFrame,
+        df_facts: md.DataFrame,
         calcs: dict[str, dict[str, list[MetricCalculator[int]]]],
         counter_deps: Iterable[MetricCalculator],
     ) -> dict[str, list[np.ndarray]]:  # np.ndarray[int]
@@ -434,7 +429,7 @@ class PullRequestListMiner:
         :return: Map from PR node IDs to stage timings (in seconds).
         """
         now = datetime.now(tz=timezone.utc)
-        dtype = df_facts["created"].dtype
+        dtype = np.dtype("datetime64[us]")
         no_time_from = np.array([cls._no_time_from], dtype=dtype)
         now = np.array([now.replace(tzinfo=None)], dtype=dtype)
         stage_timings = {}
@@ -467,8 +462,8 @@ class PullRequestListMiner:
         time_from = np.datetime64(self._time_from)
         time_to = np.datetime64(self._time_to)
 
-        index = dfs.commits.index.get_level_values(0).values
-        committed_date = dfs.commits[PullRequestCommit.committed_date.name].values
+        index = dfs.commits.index.get_level_values(0)
+        committed_date = dfs.commits[PullRequestCommit.committed_date.name]
         events_now[PullRequestEvent.COMMITTED] = set(index[committed_date == committed_date])
         if self._with_time_machine:
             events_time_machine[PullRequestEvent.COMMITTED] = set(
@@ -477,30 +472,36 @@ class PullRequestListMiner:
 
         prr_ulk = PullRequestReview.user_login.name
         prr_sak = PullRequestReview.submitted_at.name
-        reviews = dfs.reviews[[prr_ulk, prr_sak]].droplevel(1)
+        reviews = dfs.reviews[[prr_ulk, prr_sak]].set_index(
+            dfs.reviews.index.names[0], inplace=True, drop=True,
+        )
         original_reviews_index = reviews.index.values
-        reviews = dfs.prs[[PullRequest.user_login.name, PullRequest.closed_at.name]].join(
-            reviews, on="node_id", lsuffix="_pr", how="inner",
+        reviews = md.join(
+            reviews,
+            dfs.prs[[PullRequest.user_login.name, PullRequest.closed_at.name]]
+            .set_index(dfs.prs.index.names[0], inplace=True, drop=True)
+            .drop_duplicates(dfs.prs.index.names[0], inplace=True),
+            suffixes=(None, "_pr"),
+            how="inner",
         )
         index = reviews.index.values
-        submitted_at = reviews[prr_sak].values
-        closed_at = reviews[PullRequest.closed_at.name].values
+        submitted_at = reviews[prr_sak]
+        closed_at = reviews[PullRequest.closed_at.name + "_pr"]
         not_closed_mask = closed_at != closed_at
         closed_at[not_closed_mask] = submitted_at[not_closed_mask]
-        closed_at = closed_at.astype(submitted_at.dtype)
+        closed_at = closed_at.astype(submitted_at.dtype, copy=False)
         mask = (submitted_at <= closed_at) & (
-            reviews[prr_ulk].values != reviews[PullRequest.user_login.name + "_pr"].values
+            reviews[prr_ulk] != reviews[PullRequest.user_login.name + "_pr"]
         )
         events_now[PullRequestEvent.REVIEWED] = set(index[mask])
         if self._with_time_machine:
             mask &= (submitted_at >= time_from) & (submitted_at < time_to)
             events_time_machine[PullRequestEvent.REVIEWED] = set(index[mask])
 
-        submitted_at = dfs.reviews[prr_sak].values
+        submitted_at = dfs.reviews[prr_sak]
         # no need to check submitted_at <= closed_at because GitHub disallows that
         mask = (
-            dfs.reviews[PullRequestReview.state.name].values
-            == ReviewResolution.CHANGES_REQUESTED.value
+            dfs.reviews[PullRequestReview.state.name] == ReviewResolution.CHANGES_REQUESTED.value
         )
         events_now[PullRequestEvent.CHANGES_REQUESTED] = set(original_reviews_index[mask])
         if self._with_time_machine:
@@ -519,9 +520,9 @@ class PullRequestListMiner:
         events_now[PullRequestEvent.DEPLOYED] = set()
         if self._environments:
             for dep_index in range(len(self._environments)):
-                prs = dfs.prs.index.values
+                prs = dfs.prs.index.get_level_values(0)
                 deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed(
-                    columns=(dfs.prs[PullRequest.merged_at.name].values, prs),
+                    columns=(dfs.prs[PullRequest.merged_at.name], prs),
                 )
                 events_time_machine[PullRequestEvent.DEPLOYED] |= set(
                     prs[deployed < np.array(self._time_to, dtype=deployed.dtype)],
@@ -529,12 +530,6 @@ class PullRequestListMiner:
                 events_now[PullRequestEvent.DEPLOYED] |= set(prs[deployed == deployed])
 
         return events_time_machine, events_now
-
-    @staticmethod
-    def _dt64_to_pydt(dt: Optional[np.datetime64]) -> Optional[datetime]:
-        if dt is None:
-            return None
-        return dt.item().replace(tzinfo=timezone.utc)
 
 
 @sentry_span
@@ -845,8 +840,8 @@ async def _filter_pull_requests(
     deployment_names = np.unique(
         np.concatenate(
             [
-                pr_miner.dfs.deployments.index.get_level_values(2).values,
-                done_deps.index.get_level_values(1).values,
+                pr_miner.dfs.deployments.index.get_level_values(2),
+                done_deps.index.get_level_values(1),
             ],
         ),
     )
@@ -1001,11 +996,11 @@ async def fetch_pr_deployments(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[pd.DataFrame, asyncio.Task]:
+) -> tuple[md.DataFrame, asyncio.Task]:
     """Load PR deployments by PR node IDs and schedule the task to load details about each \
     deployment."""
     deps = await PullRequestMiner.fetch_pr_deployments(pr_node_ids, account, pdb, rdb)
-    dep_names = deps.index.get_level_values(2).unique()
+    dep_names = np.unique(deps.index.get_level_values(2))
     included_task = asyncio.create_task(
         load_included_deployments(
             dep_names, logical_settings, prefixer, account, meta_ids, mdb, rdb, cache,
@@ -1071,8 +1066,8 @@ async def fetch_pull_requests(
         account,
         rdb,
         cache,
-        time_from=dfs.prs[PullRequest.created_at.name].min(),
-        time_to=dfs.prs[PullRequest.created_at.name].max(),
+        time_from=dfs.prs[PullRequest.created_at.name].min().item().replace(tzinfo=timezone.utc),
+        time_to=dfs.prs[PullRequest.created_at.name].max().item().replace(tzinfo=timezone.utc),
     )
     miner = PullRequestListMiner(
         mined_prs,
@@ -1136,7 +1131,7 @@ async def _fetch_pull_requests(
     )
 
     *prs_dfs, (facts, ambiguous) = await gather(*tasks)
-    prs_df = pd.concat(prs_dfs) if len(prs_dfs) > 1 else prs_dfs[0]
+    prs_df = md.concat(*prs_dfs)
     PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
 
     return await unwrap_pull_requests(
@@ -1163,13 +1158,13 @@ async def _fetch_pull_requests(
 
 
 async def unwrap_pull_requests(
-    prs_df: pd.DataFrame,
+    prs_df: md.DataFrame,
     precomputed_done_facts: PullRequestFactsMap,
     precomputed_ambiguous_done_facts: dict[str, list[int]],
     check_runs_task: Optional[asyncio.Task],
     deployments_task: Optional[asyncio.Task],
     with_jira: JIRAEntityToFetch | int,
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: dict[str, str],
     bots: set[str],
     release_settings: ReleaseSettings,
@@ -1214,14 +1209,14 @@ async def unwrap_pull_requests(
 
         return (
             [],
-            PRDataFrames(*(pd.DataFrame() for _ in dataclass_fields(PRDataFrames))),
+            PRDataFrames(*(md.DataFrame() for _ in dataclass_fields(PRDataFrames))),
             {},
             {},
             asyncio.create_task(noop(), name="noop"),
         )
 
     if check_runs_task is None:
-        closed_pr_mask = prs_df[PullRequest.closed_at.name].notnull().values
+        closed_pr_mask = prs_df.notnull(PullRequest.closed_at.name)
         check_runs_task = asyncio.create_task(
             PullRequestMiner.fetch_pr_check_runs(
                 prs_df.index.values[closed_pr_mask],
@@ -1235,7 +1230,7 @@ async def unwrap_pull_requests(
             name=f"unwrap_pull_requests/fetch_pr_check_runs({len(prs_df)})",
         )
     if deployments_task is None:
-        merged_pr_ids = prs_df.index.values[prs_df[PullRequest.merged_at.name].notnull().values]
+        merged_pr_ids = prs_df.index.values[prs_df.notnull(PullRequest.merged_at.name)]
         deployments_task = asyncio.create_task(
             fetch_pr_deployments(
                 merged_pr_ids,
@@ -1253,22 +1248,26 @@ async def unwrap_pull_requests(
 
     if repositories is None:
         repositories = logical_settings.with_logical_prs(
-            prs_df[PullRequest.repository_full_name.name].values,
+            prs_df[PullRequest.repository_full_name.name],
         )
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache,
+            prs_df.unique(PullRequest.repository_full_name.name, unordered=True),
+            account,
+            pdb,
+            cache,
         )
         dags = await fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
         )
+        prs_df.sort_index(0, inplace=True)
         prs_df = await PullRequestMiner.mark_dead_prs(
             prs_df, branches, dags, account, meta_ids, mdb, pdb, PullRequest,
         )
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
     now = datetime.now(timezone.utc)
-    if rel_time_from := prs_df[PullRequest.merged_at.name].nonemin():
-        milestone_prs = prs_df[
+    if rel_time_from := prs_df.nonemin(PullRequest.merged_at.name):
+        milestone_releases = prs_df[
             [
                 PullRequest.merge_commit_sha.name,
                 PullRequest.merge_commit_id.name,
@@ -1276,21 +1275,29 @@ async def unwrap_pull_requests(
                 PullRequest.repository_full_name.name,
             ]
         ]
-        milestone_prs.columns = [
-            Release.sha.name,
-            Release.commit_id.name,
-            Release.published_at.name,
-            Release.repository_full_name.name,
-        ]
-        milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
-        milestone_releases = milestone_releases.take(
-            np.flatnonzero(is_not_null(milestone_releases[Release.sha.name].values)),
+        milestone_releases.rename(
+            columns={
+                PullRequest.merge_commit_sha.name: Release.sha.name,
+                PullRequest.merge_commit_id.name: Release.commit_id.name,
+                PullRequest.merged_at.name: Release.published_at.name,
+                PullRequest.repository_full_name.name: Release.repository_full_name.name,
+            },
+            inplace=True,
         )
+        milestone_releases.take(
+            milestone_releases.notnull(Release.sha.name),
+            inplace=True,
+        )
+        milestone_releases.reset_index(drop=True, inplace=True)
+        dummy = dummy_releases_df()
+        for col in dummy.columns:
+            if col not in milestone_releases:
+                milestone_releases[col] = np.zeros(len(milestone_releases), dummy[col].dtype)
         releases, matched_bys = await ReleaseLoader.load_releases(
-            prs_df[PullRequest.repository_full_name.name].unique(),
+            prs_df.unique(PullRequest.repository_full_name.name, unordered=True),
             branches,
             default_branches,
-            rel_time_from,
+            rel_time_from.item().replace(tzinfo=timezone.utc),
             now,
             release_settings,
             logical_settings,
@@ -1309,9 +1316,9 @@ async def unwrap_pull_requests(
         )
         dags, unreleased = await gather(
             load_commit_dags(
-                releases.append(milestone_releases), account, meta_ids, mdb, pdb, cache,
+                md.concat(releases, milestone_releases), account, meta_ids, mdb, pdb, cache,
             ),
-            # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
+            # no nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs_df,
                 releases[Release.published_at.name].max(),
@@ -1327,7 +1334,10 @@ async def unwrap_pull_requests(
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache,
+            prs_df.unique(PullRequest.repository_full_name.name, unordered=True),
+            account,
+            pdb,
+            cache,
         )
     for k, v in unreleased.items():
         if k not in facts:
@@ -1396,7 +1406,7 @@ async def unwrap_pull_requests(
     return filtered_prs, dfs, facts, matched_bys, deployments_task
 
 
-def pr_facts_stages_masks(pr_facts: pd.DataFrame) -> npt.NDArray[int]:
+def pr_facts_stages_masks(pr_facts: md.DataFrame) -> npt.NDArray[int]:
     """Given a df of PullRequestFacts columns return the masks representing their stages.
 
     Each mask is an integer where the bit at position PullRequestEvent.STAGE.value is 1.
@@ -1410,25 +1420,29 @@ def pr_facts_stages_masks(pr_facts: pd.DataFrame) -> npt.NDArray[int]:
     if pr_facts.empty:
         return masks
 
-    force_push_dropped_mask = pr_facts.done.values & pr_facts.force_push_dropped.values
+    force_push_dropped_mask = (
+        pr_facts[PullRequestFacts.f.done] & pr_facts[PullRequestFacts.f.force_push_dropped]
+    )
     masks[force_push_dropped_mask] |= _pr_stage_enum_mask(PullRequestStage.FORCE_PUSH_DROPPED)
 
-    release_ignored_mask = pr_facts.done.values & pr_facts.release_ignored.values
+    release_ignored_mask = (
+        pr_facts[PullRequestFacts.f.done] & pr_facts[PullRequestFacts.f.release_ignored]
+    )
     # stages are prioritized, so update masks only when it's still 0
     masks[(masks == 0) & release_ignored_mask] |= _pr_stage_enum_mask(
         PullRequestStage.RELEASE_IGNORED,
     )
     # DONE is an exception, it lives together with FORCE_PUSH_DROPPED or RELEASE_IGNORED_MASK
-    masks[pr_facts.done.values] |= _pr_stage_enum_mask(PullRequestStage.DONE)
-    masks[(masks == 0) & ~np.isnat(pr_facts.merged.values)] |= _pr_stage_enum_mask(
+    masks[pr_facts[PullRequestFacts.f.done]] |= _pr_stage_enum_mask(PullRequestStage.DONE)
+    masks[(masks == 0) & pr_facts.notnull(PullRequestFacts.f.merged)] |= _pr_stage_enum_mask(
         PullRequestStage.RELEASING,
     )
-    masks[(masks == 0) & ~np.isnat(pr_facts.approved.values)] |= _pr_stage_enum_mask(
+    masks[(masks == 0) & pr_facts.notnull(PullRequestFacts.f.approved)] |= _pr_stage_enum_mask(
         PullRequestStage.MERGING,
     )
-    masks[(masks == 0) & ~np.isnat(pr_facts.first_review_request.values)] |= _pr_stage_enum_mask(
-        PullRequestStage.REVIEWING,
-    )
+    masks[
+        (masks == 0) & pr_facts.notnull(PullRequestFacts.f.first_review_request)
+    ] |= _pr_stage_enum_mask(PullRequestStage.REVIEWING)
     # everything is at least wip
     masks[masks == 0] = _pr_stage_enum_mask(PullRequestStage.WIP)
 

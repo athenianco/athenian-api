@@ -1,3 +1,4 @@
+from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
 import sqlalchemy as sa
@@ -68,10 +69,10 @@ class TestReadSQLQuery:
             df_non_alias = await read_sql_query(
                 sa.select(Issue.project_id), mdb_rw, columns=[Issue.project_id],
             )
-        assert df_alias.project_id.values.dtype.type == np.dtype("S").type
-        assert df_non_alias.project_id.values.dtype.type == np.dtype("S").type
+        assert df_alias[Issue.project_id.name].dtype.kind == "S"
+        assert df_non_alias[Issue.project_id.name].dtype.kind == "S"
 
-        assert_array_equal(df_alias, df_non_alias)
+        assert_frame_equal(df_alias, df_non_alias)
 
     async def test_column_label(self, mdb_rw: Database) -> None:
         from athenian.api.models.metadata.jira import Issue
@@ -87,7 +88,7 @@ class TestReadSQLQuery:
             df = await read_sql_query(stmt, mdb_rw, columns=[Issue.project_id.label("foo")])
 
         assert list(df.columns) == ["foo"]
-        assert list(df.foo.values) == [b"100"]
+        assert df["foo"].tolist() == [b"100"]
 
     async def test_nullable_bytes(self, mdb_rw: Database) -> None:
         from athenian.api.models.metadata.jira import Issue
@@ -104,4 +105,4 @@ class TestReadSQLQuery:
             df = await read_sql_query(stmt, mdb_rw, columns=[Issue.priority_id])
 
         assert list(df.columns) == ["priority_id"]
-        assert_array_equal(df.priority_id.values, np.array([b"", b"100"], dtype="S"))
+        assert_array_equal(df[Issue.priority_id.name], np.array([b"", b"100"], dtype="S"))

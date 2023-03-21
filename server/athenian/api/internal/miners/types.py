@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 from enum import IntEnum, auto
 from typing import Any, Optional, Sequence, Type, TypeVar, Union
 
+import medvedi as md
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.internal.miners.participation import PRParticipants
@@ -178,15 +178,15 @@ class MinedPullRequest:
     """
 
     pr: dict[str, Any]
-    commits: pd.DataFrame
-    reviews: pd.DataFrame
-    review_comments: pd.DataFrame
-    review_requests: pd.DataFrame
-    comments: pd.DataFrame
+    commits: md.DataFrame
+    reviews: md.DataFrame
+    review_comments: md.DataFrame
+    review_requests: md.DataFrame
+    comments: md.DataFrame
     release: dict[str, Any]
-    labels: pd.DataFrame
-    jiras: pd.DataFrame
-    deployments: pd.DataFrame
+    labels: md.DataFrame
+    jiras: md.DataFrame
+    deployments: md.DataFrame
     check_run: dict[str, Any]
 
     def participant_nodes(self, alloc=None) -> PRParticipants:
@@ -306,7 +306,7 @@ class PullRequestFacts:
         JIRA_TYPES = "jira_types"
         JIRA_LABELS = "jira_labels"
 
-    def max_timestamp(self) -> pd.Timestamp:
+    def max_timestamp(self) -> np.datetime64:
         """Find the maximum timestamp contained in the struct."""
         if self.released is not None:
             return self.released
@@ -382,18 +382,38 @@ PullRequestID = tuple[int, str]
 PullRequestFactsMap = dict[PullRequestID, PullRequestFacts]
 
 
-def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
+def nonemin(
+    *args: npt.NDArray[np.datetime64] | np.datetime64 | type(None),
+) -> Optional[np.datetime64]:
     """Find the minimum of several dates handling NaNs gracefully."""
-    if all(arg is None for arg in args):
+    if args and isinstance((v := args[0]), np.ndarray):
+        if len(v):
+            result = np.nanmin(v)
+        else:
+            return None
+        if result != result:
+            return None
+        return result
+    if all(arg is None or arg != arg for arg in args):
         return None
-    return min(arg for arg in args if arg)
+    return min(arg for arg in args if arg and arg == arg)
 
 
-def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
+def nonemax(
+    *args: npt.NDArray[np.datetime64] | np.datetime64 | type(None),
+) -> Optional[np.datetime64]:
     """Find the maximum of several dates handling NaNs gracefully."""
-    if all(arg is None for arg in args):
+    if args and isinstance((v := args[0]), np.ndarray):
+        if len(v):
+            result = np.nanmax(v)
+        else:
+            return None
+        if result != result:
+            return None
+        return result
+    if all(arg is None or arg != arg for arg in args):
         return None
-    return max(arg for arg in args if arg)
+    return max(arg for arg in args if arg and arg == arg)
 
 
 @dataclass(frozen=True, slots=True)

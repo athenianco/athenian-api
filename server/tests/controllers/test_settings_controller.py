@@ -349,7 +349,12 @@ class TestSetReleaseMatch(Requester):
         for r in repos:
             name = RepositoryName.from_prefixed(r)
             repo_id = prefixer.repo_name_to_node[name.unprefixed]
-            s = df.loc[(repo_id, name.logical or "", body["account"])]
+            mask = (
+                (df.index.get_level_values(0) == repo_id)
+                & (df.index.get_level_values(1) == (name.logical or ""))
+                & (df.index.get_level_values(2) == body["account"])
+            )
+            s = df.take(mask)
             assert s["branches"] == body["branches"]
             assert s["tags"] == body["tags"]
             assert s["match"] == (body["match"] == ReleaseMatchStrategy.TAG)
@@ -1405,9 +1410,7 @@ class TestSetLogicalRepository(Requester):
             False,
             0,
         )
-        assert (
-            df_post[PullRequest.repository_full_name.name].values == "src-d/go-git/alpha"
-        ).sum() == 90
+        assert (df_post[PullRequest.repository_full_name.name] == "src-d/go-git/alpha").sum() == 90
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)

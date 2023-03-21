@@ -5,12 +5,10 @@
 # distutils: runtime_library_dirs = /usr/local/lib
 # distutils: extra_compile_args = -std=c++17 -mavx2 -ftree-vectorize
 
-from typing import Any, Sequence
-
 cimport cython
 from cpython cimport Py_INCREF, PyObject
 from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_Check
-from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check, PyBytes_FromStringAndSize
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_Check
 from cpython.memoryview cimport PyMemoryView_Check, PyMemoryView_GET_BUFFER
 from cpython.unicode cimport PyUnicode_Check
 from cython.operator cimport dereference
@@ -64,79 +62,57 @@ import numpy as np
 
 import_array()
 
+
 cdef extern from "asyncpg_recordobj.h":
     PyObject *ApgRecord_GET_ITEM(PyObject *, int)
 
 
 @cython.boundscheck(False)
-def to_object_arrays_split(rows: list[Sequence[Any]],
-                           typed_indexes: Sequence[int],
-                           obj_indexes: Sequence[int],
-                           ) -> tuple[np.ndarray, np.ndarray]:
+def to_object_arrays(list rows not None, int columns) -> np.ndarray:
     """
-    Convert a list of tuples into an object array. Any subclass of
+    Convert a list of tuples or asyncpg.Record-s into an object array. Any subclass of
     tuple in `rows` will be casted to tuple.
 
     Parameters
     ----------
-    rows : 2-d array (N, K)
+    rows: 2-d array (N, K)
         list of tuples to be converted into an array. Each tuple must be of equal length,
         otherwise, the results are undefined.
-    typed_indexes : array of integers
-        Sequence of integer indexes in each tuple in `rows` that select the first result.
-    obj_indexes : array of integers
-        Sequence of integer indexes in each tuple in `rows` that select the second result.
+    columns: number of columns in each row.
 
     Returns
     -------
-    (np.ndarray[object, ndim=2], np.ndarray[object, ndim=2])
-    The first array is the concatenation of columns in `rows` chosen by `typed_indexes`.
-    The second array is the concatenation of columns in `rows` chosen by `object_indexes`.
+    np.ndarray[object, ndim=2]
     """
     cdef:
-        Py_ssize_t i, j, size, cols_typed, cols_obj
-        ndarray[object, ndim=2] result_typed
-        ndarray[object, ndim=2] result_obj
+        Py_ssize_t i, j, size
+        ndarray[object, ndim=2] result
         PyObject *record
-        long[:] typed_indexes_arr
-        long[:] obj_indexes_arr
 
-    assert isinstance(rows, list)
-    typed_indexes_arr = np.asarray(typed_indexes, dtype=int)
-    obj_indexes_arr = np.asarray(obj_indexes, dtype=int)
     size = len(rows)
-    cols_typed = len(typed_indexes_arr)
-    cols_obj = len(obj_indexes_arr)
 
-    result_typed = np.empty((cols_typed, size), dtype=object)
-    result_obj = np.empty((cols_obj, size), dtype=object)
+    result = np.empty((columns, size), dtype=object)
     if size == 0:
-        return result_typed, result_obj
+        return result
 
     if isinstance(rows[0], asyncpg.Record):
         for i in range(size):
             record = PyList_GET_ITEM(<PyObject *>rows, i)
-            for j in range(cols_typed):
-                result_typed[j, i] = <object>ApgRecord_GET_ITEM(record, typed_indexes_arr[j])
-            for j in range(cols_obj):
-                result_obj[j, i] = <object>ApgRecord_GET_ITEM(record, obj_indexes_arr[j])
+            for j in range(columns):
+                result[j, i] = <object>ApgRecord_GET_ITEM(record, j)
     elif isinstance(rows[0], tuple):
         for i in range(size):
             record = PyList_GET_ITEM(<PyObject *>rows, i)
-            for j in range(cols_typed):
-                result_typed[j, i] = <object>PyTuple_GET_ITEM(record, typed_indexes_arr[j])
-            for j in range(cols_obj):
-                result_obj[j, i] = <object>PyTuple_GET_ITEM(record, obj_indexes_arr[j])
+            for j in range(columns):
+                result[j, i] = <object>PyTuple_GET_ITEM(record, j)
     else:
         # convert to tuple
         for i in range(size):
             row = tuple(rows[i])
-            for j in range(cols_typed):
-                result_typed[j, i] = row[typed_indexes_arr[j]]
-            for j in range(cols_obj):
-                result_obj[j, i] = row[obj_indexes_arr[j]]
+            for j in range(columns):
+                result[j, i] = row[j]
 
-    return result_typed, result_obj
+    return result
 
 
 def as_bool(ndarray arr not None) -> np.ndarray:

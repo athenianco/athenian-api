@@ -6,7 +6,6 @@ from typing import Optional
 import dateutil.parser
 from dateutil.tz import tzutc
 import numpy as np
-import pandas as pd
 
 from athenian.api import typing_utils
 
@@ -134,9 +133,9 @@ def deserialize_date(
     """
     d = dateutil.parser.parse(string, ignoretz=True, yearfirst=True).date()
     if min_ is not None and d < min_:
-        raise pd.errors.OutOfBoundsDatetime(f"{d} is too far in the past")
+        raise ValueError(f"{d} is too far in the past")
     if max_future_delta is not None and d > date.today() + max_future_delta:
-        raise pd.errors.OutOfBoundsDatetime(f"{d} is too far in the future")
+        raise ValueError(f"{d} is too far in the future")
     return d
 
 
@@ -155,9 +154,9 @@ def deserialize_datetime(
     dt = dateutil.parser.isoparse(string)
 
     if min_ is not None and dt < min_.replace(tzinfo=dt.tzinfo):
-        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
+        raise ValueError(f"{dt} is too far in the past")
     if max_future_delta is not None and dt > datetime.now(dt.tzinfo) + max_future_delta:
-        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the future")
+        raise ValueError(f"{dt} is too far in the future")
     return dt
 
 
@@ -170,9 +169,13 @@ def deserialize_timedelta(string: str) -> timedelta:
     :return: datetime.
     """
     if not string.endswith("s"):
-        raise ValueError("Unsupported timedelta format: " + string)
-    pd.Timedelta(td := timedelta(seconds=int(string[:-1])))
-    return td
+        raise ValueError(f"Unsupported timedelta format: {string}")
+    seconds = int(string[:-1])
+    try:
+        np.timedelta64(seconds, "s")
+    except OverflowError as e:
+        raise ValueError(f"Unsupported timedelta: {seconds}") from e
+    return timedelta(seconds=seconds)
 
 
 def deserialize_model(data: dict, klass: typing.Type[T], path: str = "") -> T | dict:

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-import pandas as pd
-from pandas.testing import assert_frame_equal
+import medvedi as md
+from medvedi.testing import assert_frame_equal
 import pytest
 
 from athenian.api.defer import with_defer
@@ -13,6 +13,7 @@ from athenian.api.internal.miners.github.logical import (
 )
 from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -47,14 +48,14 @@ async def sample_prs(mdb, pdb, branches):
 
 @pytest.fixture(scope="function")
 def sample_deployments():
-    deployments = pd.DataFrame(
+    deployments = md.DataFrame(
         {
             DeploymentNotification.name.name: ["one", "two", "three", "four"],
             DeploymentNotification.environment.name: ["production"] * 4,
         },
     )
     deployments.set_index(DeploymentNotification.name.name, inplace=True)
-    components = pd.DataFrame(
+    components = md.DataFrame(
         {
             DeployedComponent.deployment_name.name: ["one", "one", "two", "two", "three", "four"],
             DeployedComponent.repository_full_name: [
@@ -68,7 +69,7 @@ def sample_deployments():
         },
     )
     components.set_index(DeployedComponent.deployment_name.name, inplace=True)
-    labels = pd.DataFrame(
+    labels = md.DataFrame(
         {
             DeployedLabel.deployment_name.name: [
                 "one",
@@ -115,14 +116,16 @@ async def test_split_logical_prs_title(sample_prs):
     assert len(result) == 326
     assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 188
     assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 138
-    for row in result.itertuples():
-        if row.Index[1] == "src-d/go-git/alpha":
-            assert "fix" in row.title or "Fix" in row.title
-        elif row.Index[1] == "src-d/go-git/beta":
-            assert "add" in row.title or "Add" in row.title
+    for index, title in result.iterrows(
+        PullRequest.repository_full_name.name, PullRequest.title.name,
+    ):
+        if index == "src-d/go-git/alpha":
+            assert "fix" in title or "Fix" in title
+        elif index == "src-d/go-git/beta":
+            assert "add" in title or "Add" in title
         else:
-            assert "fix" not in row.title and "Fix" not in row.title
-            assert "add" not in row.title and "Add" not in row.title
+            assert "fix" not in title and "Fix" not in title
+            assert "add" not in title and "Add" not in title
 
 
 async def test_split_logical_prs_labels(sample_prs):
@@ -196,7 +199,7 @@ async def test_split_logical_deployed_components_title_one(sample_deployments):
     split_components.reset_index(inplace=True)
     assert_frame_equal(
         split_components,
-        pd.DataFrame(
+        md.DataFrame(
             {
                 DeployedComponent.deployment_name.name: [
                     "one",
@@ -238,7 +241,7 @@ async def test_split_logical_deployed_components_title_two(sample_deployments):
     split_components.reset_index(inplace=True)
     assert_frame_equal(
         split_components,
-        pd.DataFrame(
+        md.DataFrame(
             {
                 DeployedComponent.deployment_name.name: [
                     "one",
@@ -278,7 +281,7 @@ async def test_split_logical_deployed_components_labels_one(sample_deployments):
     split_components.reset_index(inplace=True)
     assert_frame_equal(
         split_components,
-        pd.DataFrame(
+        md.DataFrame(
             {
                 DeployedComponent.deployment_name.name: [
                     "one",
@@ -320,7 +323,7 @@ async def test_split_logical_deployed_components_labels_two(sample_deployments):
     split_components.reset_index(inplace=True)
     assert_frame_equal(
         split_components,
-        pd.DataFrame(
+        md.DataFrame(
             {
                 DeployedComponent.deployment_name.name: [
                     "one",
@@ -362,7 +365,7 @@ async def test_split_logical_deployed_components_labels_mixture(sample_deploymen
     split_components.reset_index(inplace=True)
     assert_frame_equal(
         split_components,
-        pd.DataFrame(
+        md.DataFrame(
             {
                 DeployedComponent.deployment_name.name: [
                     "one",

@@ -7,14 +7,10 @@ import pickle
 import sys
 
 import numpy as np
-import pandas as pd
 
 
 def main():
     """Usage: `echo 'string after UUID'| python3 show_sql.py`."""
-    pd.set_option("display.max_rows", None)
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.max_colwidth", None)
     data = input()
     query, args = pickle.loads(lzma.decompress(base64.b64decode(data)))
     if not query.endswith(";"):
@@ -28,7 +24,7 @@ def main():
     for i, arg in reversed(args):
         if isinstance(arg, datetime):
             arg = "'%s'" % arg.isoformat(" ")
-        elif isinstance(arg, (list, np.ndarray, pd.Series)):
+        elif isinstance(arg, (list, np.ndarray)):
             if len(arg) == 0:
                 dtype = "text"  # the best we can do here
             elif isinstance(arg[0], datetime):

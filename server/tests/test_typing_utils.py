@@ -117,7 +117,7 @@ class TestDFFromStructs:
         df = df_from_structs([a])
 
         assert list(df.columns) == ["i"]
-        assert list(df.i.values) == [3]
+        assert list(df["i"]) == [3]
 
     def test_base_from_iterable(self) -> None:
         a = _SimpleStruct.from_fields(i=3)
@@ -125,7 +125,7 @@ class TestDFFromStructs:
         df = df_from_structs(iter([a, b]))
 
         assert list(df.columns) == ["i"]
-        assert list(df.i.values) == [3, 5]
+        assert list(df["i"]) == [3, 5]
 
     def test_nested_dataclass(self) -> None:
         a = _WithNestedDC.from_fields(i=1)
@@ -134,8 +134,8 @@ class TestDFFromStructs:
         a1.n = _NestedDC(20)
         df = df_from_structs([a, a1])
 
-        assert list(df.i.values) == [1, 10]
-        assert list(df.n_f.values) == [2, 20]
+        assert list(df["i"]) == [1, 10]
+        assert list(df["n_f"]) == [2, 20]
 
     def test_nested_dataclass_from_iterable(self) -> None:
         a = _WithNestedDC.from_fields(i=1)
@@ -144,8 +144,8 @@ class TestDFFromStructs:
         a1.n = _NestedDC(20)
         df = df_from_structs(iter([a, a1]))
         assert sorted(df.columns) == ["i", "n_f"]
-        assert list(df.i.values) == [1, 10]
-        assert list(df.n_f.values) == [2, 20]
+        assert list(df["i"]) == [1, 10]
+        assert list(df["n_f"]) == [2, 20]
 
 
 def test_numpy_struct_vectorize_scalar_field():

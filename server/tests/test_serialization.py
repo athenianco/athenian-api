@@ -3,8 +3,6 @@ from typing import Optional, Type
 
 from freezegun import freeze_time
 import numpy as np
-import pandas as pd
-from pandas.errors import OutOfBoundsDatetime
 import pytest
 
 from athenian.api.models.web.base_model_ import Model
@@ -28,7 +26,7 @@ class TestDeserializeDate:
     @freeze_time("2022-04-01")
     def test_out_of_bounds(self) -> None:
         for out_of_bounds_val in ("1492-01-12", "2025-04-02"):
-            with pytest.raises(OutOfBoundsDatetime):
+            with pytest.raises(ValueError):
                 deserialize_date(out_of_bounds_val)
 
 
@@ -41,7 +39,7 @@ class TestDeserializeDatetime:
     @freeze_time("2022-01-01")
     def test_deserialize_datatime_out_of_bounds(self) -> None:
         for out_of_bounds_val in ("2024-10-10T12:20:20Z", "1984-01-10T12:20:20Z"):
-            with pytest.raises(OutOfBoundsDatetime):
+            with pytest.raises(ValueError):
                 deserialize_datetime(out_of_bounds_val)
 
     @freeze_time("2022-01-01")
@@ -49,7 +47,7 @@ class TestDeserializeDatetime:
         assert deserialize_datetime("1901-07-30T05:00:00Z", min_=dt(1850, 1, 1)) == dt(
             1901, 7, 30, 5,
         )
-        with pytest.raises(OutOfBoundsDatetime):
+        with pytest.raises(ValueError):
             deserialize_datetime("1901-07-30T05:00:00Z", min_=dt(1950, 1, 1))
 
         assert deserialize_datetime("2070-01-30T05:00:00Z", max_future_delta=None) == dt(
@@ -59,7 +57,7 @@ class TestDeserializeDatetime:
             "2022-01-30T05:00:00Z", max_future_delta=timedelta(days=100),
         ) == dt(2022, 1, 30, 5)
 
-        with pytest.raises(OutOfBoundsDatetime):
+        with pytest.raises(ValueError):
             deserialize_datetime("2022-01-30T05:00:00Z", max_future_delta=timedelta(days=10))
 
     @freeze_time("2022-01-01")
@@ -171,11 +169,11 @@ class TestFriendlyJson:
 
     def test_serialize_datetime(self) -> None:
         obj = [
-            pd.Timestamp(0, tzinfo=timezone.utc),
-            pd.NaT,
+            np.datetime64(0, "us"),
+            np.datetime64("NaT"),
             datetime(year=2020, month=3, day=18, tzinfo=timezone.utc),
             date(year=2020, month=3, day=18),
-            pd.Timedelta(minutes=1),
+            np.timedelta64(1, "m"),
             timedelta(seconds=1),
         ]
         s = FriendlyJson.dumps(obj)
@@ -185,7 +183,7 @@ class TestFriendlyJson:
         )
 
     def test_serialize_datetime_no_utc(self) -> None:
-        obj = [pd.Timestamp(0)]
+        obj = [datetime(2020, 1, 1)]
         with pytest.raises(AssertionError):
             FriendlyJson.dumps(obj)
 

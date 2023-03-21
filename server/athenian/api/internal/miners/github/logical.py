@@ -1,7 +1,8 @@
 from typing import Collection, KeysView, Optional
 
+import medvedi as md
+from medvedi.accelerators import in1d_str
 import numpy as np
-import pandas as pd
 
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import (
@@ -14,8 +15,8 @@ from athenian.api.models.persistentdata.models import DeployedComponent
 
 
 def split_logical_prs(
-    prs: pd.DataFrame,
-    labels: Optional[pd.DataFrame],
+    prs: md.DataFrame,
+    labels: Optional[md.DataFrame],
     logical_repos: Collection[str],
     logical_settings: LogicalRepositorySettings,
     reindex: bool = True,
@@ -23,11 +24,11 @@ def split_logical_prs(
     repo_column: str = PullRequest.repository_full_name.name,
     id_column: str = PullRequest.node_id.name,
     title_column: str = PullRequest.title.name,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
-    assert isinstance(prs, pd.DataFrame)
+    assert isinstance(prs, md.DataFrame)
     if labels is None:
-        labels = pd.DataFrame()
+        labels = md.DataFrame()
     if reset_index:
         prs.reset_index(inplace=True)
     if isinstance(logical_repos, dict):
@@ -38,7 +39,7 @@ def split_logical_prs(
     if physical_repos.keys() != logical_repos:
         chunks = []
         for physical_repo, indexes in LogicalPRSettings.group_by_repo(
-            prs[repo_column].values, physical_repos,
+            prs[repo_column], physical_repos,
         ):
             try:
                 repo_settings = logical_settings.prs(physical_repo)
@@ -53,11 +54,11 @@ def split_logical_prs(
                 if len(logical_indexes) < len(prs):
                     sub_df = prs.take(logical_indexes)
                 else:
-                    sub_df = prs.copy()
+                    sub_df = prs.copy(shallow=True)
                 sub_df[repo_column] = repo
                 chunks.append(sub_df)
         if len(chunks):
-            prs = pd.concat(chunks, copy=False)
+            prs = md.concat(*chunks, copy=True)
         else:
             prs = prs.iloc[:0].copy()
     if reindex:
@@ -67,12 +68,12 @@ def split_logical_prs(
 
 
 def split_logical_deployed_components(
-    notifications: pd.DataFrame,
-    labels: pd.DataFrame,
-    components: pd.DataFrame,
+    notifications: md.DataFrame,
+    labels: md.DataFrame,
+    components: md.DataFrame,
     logical_repos: Collection[str],
     logical_settings: LogicalRepositorySettings,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Remove and clone deployed components according to the logical repository settings."""
     physical_repos = coerce_logical_repos(logical_repos)
     if physical_repos.keys() == logical_repos:
@@ -81,7 +82,7 @@ def split_logical_deployed_components(
     component_deployment_names = components.index.values.astype("U", copy=False)
     inspected_indexes = []
     for physical_repo, indexes in LogicalDeploymentSettings.group_by_repo(
-        components[DeployedComponent.repository_full_name].values, physical_repos,
+        components[DeployedComponent.repository_full_name], physical_repos,
     ):
         try:
             repo_settings = logical_settings.deployments(physical_repo)
@@ -96,7 +97,9 @@ def split_logical_deployed_components(
             deployment_names = np.array(
                 list(deployment_names), dtype=component_deployment_names.dtype,
             )
-            final_indexes = indexes[np.in1d(component_deployment_names[indexes], deployment_names)]
+            final_indexes = indexes[
+                in1d_str(component_deployment_names[indexes], deployment_names)
+            ]
             if len(final_indexes):
                 inspected_indexes.append(final_indexes)
                 sub_df = components.take(final_indexes)
@@ -114,7 +117,7 @@ def split_logical_deployed_components(
         chunks.append(components)
 
     if len(chunks):
-        components = pd.concat(chunks, copy=False)
+        components = md.concat(*chunks, copy=False)
     else:
         components = components.iloc[:0].copy()
     return components

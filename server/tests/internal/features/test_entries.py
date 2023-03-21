@@ -34,7 +34,7 @@ from athenian.api.internal.miners.participation import (
     PRParticipationKind,
     ReleaseParticipationKind,
 )
-from athenian.api.internal.miners.types import JIRAEntityToFetch
+from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
@@ -79,14 +79,26 @@ class TestPRFactsCalculator:
         assert metrics == MinePullRequestMetrics(
             count=33, done_count=29, merged_count=3, open_count=1, undead_count=1,
         )
-        last_review = facts[facts.node_id == 163078].last_review.values[0]
+        last_review = facts.take(facts[PullRequestFacts.f.node_id] == 163078)[
+            PullRequestFacts.f.last_review
+        ][0]
 
         await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 8, 20), **base_kwargs)
         facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
-        assert facts[facts.node_id == 163078].last_review.values[0] == last_review
+        assert (
+            facts.take(facts[PullRequestFacts.f.node_id] == 163078)[
+                PullRequestFacts.f.last_review
+            ][0]
+            == last_review
+        )
 
         facts = await calculator(time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs)
-        assert facts[facts.node_id == 163078].last_review.values[0] == last_review
+        assert (
+            facts.take(facts[PullRequestFacts.f.node_id] == 163078)[
+                PullRequestFacts.f.last_review
+            ][0]
+            == last_review
+        )
 
     @with_defer
     async def test_with_jira_map(
@@ -122,11 +134,20 @@ class TestPRFactsCalculator:
 
             facts = await calculator(**kwargs)
 
-        pr_facts = facts[facts.node_id == 162990]
-        assert sorted(pr_facts.jira_ids.iloc[0]) == ["I1", "I2"]
-        assert_array_equal(pr_facts.jira_projects.values[0], np.array([b"P1", b"P1"], dtype="S"))
-        assert_array_equal(pr_facts.jira_types.values[0], np.array(["T1", "T2"], dtype="S"))
-        assert_array_equal(pr_facts.jira_priorities.values[0], np.array(["", ""], dtype="S"))
+        pr_facts = facts.take(facts[PullRequestFacts.f.node_id] == 162990)
+        assert sorted(pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][0]) == ["I1", "I2"]
+        assert_array_equal(
+            pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_PROJECTS][0],
+            np.array([b"P1", b"P1"], dtype="S"),
+        )
+        assert_array_equal(
+            pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_TYPES][0],
+            np.array(["T1", "T2"], dtype="S"),
+        )
+        assert_array_equal(
+            pr_facts[PullRequestFacts.INDIRECT_FIELDS.JIRA_PRIORITIES][0],
+            np.array(["", ""], dtype="S"),
+        )
 
     @with_defer
     async def test_cache_with_jira_issues(
@@ -166,17 +187,29 @@ class TestPRFactsCalculator:
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
 
-                assert sorted(r_jira0[r_jira0.node_id == 162990].jira_ids.values[0]) == ["1", "2"]
-                assert r_jira0[r_jira0.node_id == 163027].jira_ids.values[0] == ["1"]
+                assert sorted(
+                    r_jira0[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                        r_jira0[PullRequestFacts.f.node_id] == 162990
+                    ][0],
+                ) == ["1", "2"]
+                assert r_jira0[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                    r_jira0[PullRequestFacts.f.node_id] == 163027
+                ][0] == ["1"]
 
                 r_jira1 = await calculator(**base_kw, with_jira=JIRAEntityToFetch.ISSUES)
                 await wait_deferred()
                 assert load_pdb_mock.call_count == 1
-                assert sorted(r_jira1[r_jira1.node_id == 162990].jira_ids.values[0]) == [
+                assert sorted(
+                    r_jira1[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                        r_jira1[PullRequestFacts.f.node_id] == 162990
+                    ][0],
+                ) == [
                     "1",
                     "2",
                 ]
-                assert r_jira1[r_jira1.node_id == 163027].jira_ids.values[0] == ["1"]
+                assert r_jira1[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                    r_jira1[PullRequestFacts.f.node_id] == 163027
+                ][0] == ["1"]
 
                 await calculator(**base_kw, with_jira=JIRAEntityToFetch.NOTHING)
                 assert load_pdb_mock.call_count == 1
@@ -228,11 +261,27 @@ class TestPRFactsCalculator:
                 assert load_pdb_mock.call_count == 1
 
             for r in (r_no_cache, r0, r1):
-                assert sorted(r[r.node_id == 163041].jira_ids.values[0]) == ["1", "2"]
-                assert sorted(r[r.node_id == 163041].jira_labels.values[0]) == ["l0", "l1", "l1"]
+                assert sorted(
+                    r[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                        r[PullRequestFacts.f.node_id] == 163041
+                    ][0],
+                ) == ["1", "2"]
+                assert sorted(
+                    r[PullRequestFacts.INDIRECT_FIELDS.JIRA_LABELS][
+                        r[PullRequestFacts.f.node_id] == 163041
+                    ][0],
+                ) == ["l0", "l1", "l1"]
 
-                assert sorted(r[r.node_id == 163040].jira_ids.values[0]) == ["1"]
-                assert sorted(r[r.node_id == 163040].jira_labels.values[0]) == ["l0", "l1"]
+                assert sorted(
+                    r[PullRequestFacts.INDIRECT_FIELDS.JIRA_IDS][
+                        r[PullRequestFacts.f.node_id] == 163040
+                    ][0],
+                ) == ["1"]
+                assert sorted(
+                    r[PullRequestFacts.INDIRECT_FIELDS.JIRA_LABELS][
+                        r[PullRequestFacts.f.node_id] == 163040
+                    ][0],
+                ) == ["l0", "l1"]
 
     async def _kwargs(self, meta_ids: tuple[int, ...], mdb: Database, sdb: Database) -> dict:
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)

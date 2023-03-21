@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 import numpy as np
-import pandas as pd
 import pytest
 from sqlalchemy import delete, insert
 
@@ -65,8 +64,8 @@ async def test_extract_commits_users(
             conclusion=DeploymentConclusion.SUCCESS,
             environment="production",
             url=None,
-            started_at=pd.Timestamp("2019-11-01 12:00:00+0000", tz="UTC"),
-            finished_at=pd.Timestamp("2019-11-01 12:15:00+0000", tz="UTC"),
+            started_at=np.datetime64("2019-11-01 12:00:00", "us"),
+            finished_at=np.datetime64("2019-11-01 12:15:00", "us"),
             components=[
                 DeployedComponent(
                     repository_full_name="src-d/go-git",
@@ -81,7 +80,7 @@ async def test_extract_commits_users(
     if property == FilterCommitsProperty.EVERYTHING:
         sum_children = none_children = 0
         checked_flag = False
-        for oid, hashes in zip(commits[PushCommit.sha.name].values, commits["children"].values):
+        for oid, hashes in zip(commits[PushCommit.sha.name], commits["children"]):
             assert hashes is None or isinstance(hashes, list)
             if hashes is None:
                 none_children += 1
@@ -97,7 +96,7 @@ async def test_extract_commits_users(
         assert none_children == 1
         assert sum_children == 675
     with_deps = 0
-    for dep in commits["deployments"].values:
+    for dep in commits["deployments"]:
         with_deps += dep == ["Dummy deployment"]
     if property != FilterCommitsProperty.BYPASSING_PRS:
         assert with_deps == 395

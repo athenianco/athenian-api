@@ -9,6 +9,7 @@ from typing import Any, Collection, Optional
 
 import aiomcache
 import morcilla
+import numpy as np
 import sentry_sdk
 from sqlalchemy import and_, false, func, not_, or_, select, union, union_all
 from sqlalchemy.sql.functions import coalesce
@@ -96,7 +97,7 @@ async def mine_contributors(
             [NodeRepository.node_id],
         ),
     )
-    repo_nodes = repo_id_df[NodeRepository.node_id.name].values
+    repo_nodes = repo_id_df[NodeRepository.node_id.name]
 
     @sentry_span
     async def fetch_author():
@@ -257,8 +258,7 @@ async def mine_contributors(
                 cache,
                 force_fresh=force_fresh_releases,
             )
-            counts = releases[Release.author.name].value_counts()
-            counts = list(zip(counts.index.values, counts.values))
+            counts = list(zip(*np.unique(releases[Release.author.name], return_counts=True)))
         else:
             # we may load 200,000 releases here, must optimize and sacrifice precision
             prel = PrecomputedRelease
@@ -309,7 +309,7 @@ async def mine_contributors(
                     mdb,
                     [OrganizationMember.child_id],
                 )
-            )[OrganizationMember.child_id.name].values
+            )[OrganizationMember.child_id.name]
         else:
             user_node_ids = []
         user_node_to_login = prefixer.user_node_to_login.get
@@ -390,7 +390,7 @@ async def load_organization_members(
             mdb,
             [OrganizationMember.child_id],
         )
-    )[OrganizationMember.child_id.name].values
+    )[OrganizationMember.child_id.name]
     log.info("Discovered %d organization members", len(user_ids))
     user_rows, bots = await gather(
         mdb.fetch_all(

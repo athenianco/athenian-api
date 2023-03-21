@@ -86,7 +86,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         np.fromiter((node_id for node_id, repo in done_ats), dtype=int, count=len(done_ats)),
     )
     del done_ats
-    deployed_node_ids = deployed_prs_task.result()[ghprd.pull_request_id.name].values
+    deployed_node_ids = deployed_prs_task.result()[ghprd.pull_request_id.name]
     del deployed_prs_task
     if len(deployed_node_ids):
         done_node_ids = np.union1d(deployed_node_ids, done_node_ids)
@@ -135,25 +135,25 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         )
     (other_prs, *_), done_updated_at, *passed_jira = await gather(*tasks)
     if jira:
-        done_updated_at = done_updated_at[NodePullRequest.updated_at.name].values[
-            np.in1d(
-                done_updated_at[NodePullRequest.node_id.name].values,
+        done_updated_at = done_updated_at[NodePullRequest.updated_at.name][
+            done_updated_at.isin(
+                NodePullRequest.node_id.name,
                 passed_jira[0].index.values,
                 assume_unique=True,
             )
         ]
     else:
-        done_updated_at = done_updated_at[NodePullRequest.updated_at.name].values
+        done_updated_at = done_updated_at[NodePullRequest.updated_at.name]
     add_pdb_misses(request.pdb, "paged_prs", len(other_prs))
     if len(done_updated_at):
         updateds = np.concatenate(
-            [other_prs[PullRequest.updated_at.name].values, done_updated_at],
+            [other_prs[PullRequest.updated_at.name], done_updated_at],
             casting="unsafe",
         )
     elif len(other_prs) > 0:
-        updateds = other_prs[PullRequest.updated_at.name].values
+        updateds = other_prs[PullRequest.updated_at.name]
     else:
-        updateds = np.array([time_from, filt.request.date_to], dtype="datetime64[ns]")
+        updateds = np.array([time_from, filt.request.date_to], dtype="datetime64[us]")
     updateds = np.sort(updateds.astype("datetime64[D]"))
     split = updateds[:: -filt.batch]
     split = np.concatenate([split, [updateds[0]]])  # append the other end

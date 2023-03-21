@@ -10,9 +10,9 @@ from typing import Optional, Sequence
 
 from aiohttp import web
 import aiomcache
+import medvedi as md
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
 import sentry_sdk
 
 from athenian.api.async_utils import gather
@@ -248,11 +248,11 @@ async def _search_pr_digests(
     if order_by:
         pr_facts = _apply_order_by(pr_facts, keep_mask, order_by, unchecked_calc_ens)
     else:
-        pr_facts = pr_facts.take(np.flatnonzero(keep_mask))
+        pr_facts.take(keep_mask, inplace=True)
 
     assert isinstance(pr_numbers_task, asyncio.Task)
     prs_numbers = _align_pr_numbers_to_ids(
-        await pr_numbers_task, pr_facts[PullRequestFacts.f.node_id].values,
+        await pr_numbers_task, pr_facts[PullRequestFacts.f.node_id],
     )
     known_mask = prs_numbers != 0
 
@@ -262,13 +262,13 @@ async def _search_pr_digests(
         pr_digests = [
             PullRequestDigest(number=number, repository=repo_mapping[repository_full_name])
             for node_id, repository_full_name, number in zip(
-                pr_facts[PullRequestFacts.f.node_id].values[known_mask],
-                pr_facts[PullRequestFacts.f.repository_full_name].values[known_mask],
+                pr_facts[PullRequestFacts.f.node_id][known_mask],
+                pr_facts[PullRequestFacts.f.repository_full_name][known_mask],
                 prs_numbers[known_mask],
             )
         ]
 
-    unknown_prs = pr_facts[PullRequestFacts.f.node_id].values[~known_mask]
+    unknown_prs = pr_facts[PullRequestFacts.f.node_id][~known_mask]
     if len(unknown_prs):
         log.error(
             "Cannot fetch PR numbers, probably missing entries in node_pullrequest table; PR node"
@@ -278,7 +278,7 @@ async def _search_pr_digests(
     return pr_digests
 
 
-def _align_pr_numbers_to_ids(df: pd.DataFrame, node_ids: npt.NDArray[int]) -> npt.NDArray[int]:
+def _align_pr_numbers_to_ids(df: md.DataFrame, node_ids: npt.NDArray[int]) -> npt.NDArray[int]:
     """Project each PR node ID to PR number mapped in `df`.
 
     The result array will have the same length of input array: unmatched PR will
@@ -287,17 +287,17 @@ def _align_pr_numbers_to_ids(df: pd.DataFrame, node_ids: npt.NDArray[int]) -> np
     if not len(df):
         return np.zeros(len(node_ids), dtype=int)
 
-    unsorted_db_node_ids = df[NodePullRequest.node_id.name].values
+    unsorted_db_node_ids = df[NodePullRequest.node_id.name]
     db_node_ids_sorted_indexes = np.argsort(unsorted_db_node_ids)
 
     db_node_ids = unsorted_db_node_ids[db_node_ids_sorted_indexes]
-    db_numbers = df[NodePullRequest.number.name].values[db_node_ids_sorted_indexes]
+    db_numbers = df[NodePullRequest.number.name][db_node_ids_sorted_indexes]
 
     return map_array_values(node_ids, db_node_ids, db_numbers, 0)
 
 
 def _build_pr_metrics_calculator(
-    pr_facts: pd.DataFrame,
+    pr_facts: md.DataFrame,
     search_filter: _SearchPRsFilter,
     order_by: Sequence[SearchPullRequestsOrderByExpression],
 ) -> PullRequestMetricCalculatorEnsemble | None:
@@ -309,14 +309,14 @@ def _build_pr_metrics_calculator(
     return build_metrics_calculator_ensemble(pr_facts, metrics, time_from, time_to, CalculatorCls)
 
 
-def _apply_stages_filter(pr_facts: pd.DataFrame, stages: Collection[str]) -> pd.DataFrame:
+def _apply_stages_filter(pr_facts: md.DataFrame, stages: Collection[str]) -> md.DataFrame:
     masks = pr_facts_stages_masks(pr_facts)
     filter_mask = pr_stages_mask(stages)
-    return pr_facts.take(np.flatnonzero(masks & filter_mask))
+    return pr_facts.take((masks & filter_mask).view(bool))
 
 
 def _apply_extra_filters(
-    pr_facts: pd.DataFrame,
+    pr_facts: md.DataFrame,
     filters: Sequence[SearchPullRequestsFilter],
     unchecked_metric_calc: Optional[PullRequestMetricCalculatorEnsemble],
 ) -> npt.NDArray[bool]:
@@ -343,7 +343,7 @@ class _Filter(metaclass=abc.ABCMeta):
     def apply(
         self,
         filt: SearchPullRequestsFilter,
-        pr_facts: pd.DataFrame,
+        pr_facts: md.DataFrame,
         current_mask: npt.NDArray,
     ) -> npt.NDArray[bool]:
         """Return the mask to select pull requests satisfying the filter."""
@@ -366,7 +366,7 @@ class _FilterByMetrics(_Filter):
     def apply(
         self,
         filt: SearchPullRequestsFilter,
-        pr_facts: pd.DataFrame,
+        pr_facts: md.DataFrame,
         current_mask: npt.NDArray[bool],
     ) -> npt.NDArray[bool]:
         calc = self._calc_ensemble[filt.field][0]
@@ -385,11 +385,11 @@ class _FilterByMetrics(_Filter):
 
 @sentry_span
 def _apply_order_by(
-    pr_facts: pd.DataFrame,
+    pr_facts: md.DataFrame,
     keep_mask: npt.NDArray[bool],
     order_by: Sequence[SearchPullRequestsOrderByExpression],
     unchecked_metric_calc: Optional[PullRequestMetricCalculatorEnsemble],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     assert order_by
     if not len(pr_facts):
         return pr_facts
@@ -449,7 +449,7 @@ class _OrderByStageTimings(OrderBy):
     @classmethod
     def build(
         cls,
-        pr_facts: pd.DataFrame,
+        pr_facts: md.DataFrame,
         order_by: Sequence[OrderByExpression],
     ) -> _OrderByStageTimings:
         fields = [expr.field for expr in order_by if expr.field in cls.FIELDS]
@@ -492,14 +492,14 @@ class _OrderByStageTimings(OrderBy):
 class _OrderByTraits(OrderByValues):
     FIELDS = [f.value for f in SearchPullRequestsOrderByPRTrait]
 
-    def __init__(self, pr_facts: pd.DataFrame):
+    def __init__(self, pr_facts: md.DataFrame):
         self._pr_facts = pr_facts
 
     def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchPullRequestsOrderByPRTrait.WORK_BEGAN.value:
-            return self._pr_facts[PullRequestFacts.f.work_began].values
+            return self._pr_facts[PullRequestFacts.f.work_began]
         if expr.field == SearchPullRequestsOrderByPRTrait.FIRST_REVIEW_REQUEST.value:
-            return self._pr_facts[PullRequestFacts.f.first_review_request].values
+            return self._pr_facts[PullRequestFacts.f.first_review_request]
         raise RuntimeError(f"Cannot order by pr trait {expr.field}")
 
     @classmethod

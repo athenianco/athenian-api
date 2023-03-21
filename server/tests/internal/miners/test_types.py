@@ -1,5 +1,5 @@
+import medvedi as md
 import numpy as np
-import pandas as pd
 
 from athenian.api.defer import with_defer
 from athenian.api.internal.features.github.pull_request_filter import _fetch_pull_requests
@@ -45,8 +45,8 @@ def pure_participant_nodes(mpr: MinedPullRequest) -> PRParticipants:
     return participants
 
 
-def _extract_people(df: pd.DataFrame, col: str) -> set[str]:
-    values = df[col].values
+def _extract_people(df: md.DataFrame, col: str) -> set[str]:
+    values = df[col]
     return set(np.unique(values[np.flatnonzero(values)]).tolist())
 
 

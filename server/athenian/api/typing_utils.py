@@ -14,24 +14,14 @@ from typing import (
     Mapping,
     NamedTuple,
     Optional,
-    Sequence,
     Type,
     TypeVar,
     Union,
 )
 
+import medvedi as md
 import numpy as np
 from numpy import typing as npt
-import pandas as pd
-from pandas.core.dtypes.cast import tslib
-from pandas.core.internals.blocks import (
-    Block,
-    _extract_bool_array,
-    get_block_type as get_block_type_original,
-    lib as blocks_lib,
-    make_block as make_block_original,
-)
-from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 
 from athenian.api.object_arrays import (
@@ -410,138 +400,8 @@ def numpy_struct(cls: type) -> Type[NumpyStruct]:
     return struct_cls
 
 
-class IntBlock(Block):
-    """
-    Custom Pandas block to carry S and U dtypes.
-
-    The name hacks the internals to recognize the block downstream.
-    """
-
-    __slots__ = ()
-    _can_hold_na = False
-
-    @property
-    def fill_value(self):
-        """Return an empty string."""
-        return self.values.dtype.type()
-
-    def take_nd(
-        self,
-        indexer,
-        axis: int = 0,
-        new_mgr_locs=None,
-        fill_value=blocks_lib.no_default,
-    ):
-        """Take values according to indexer and return them as a block."""
-        new_values = self.values.take(indexer, axis=axis)
-
-        if new_mgr_locs is None:
-            new_mgr_locs = self.mgr_locs
-
-        return self.make_block_same_class(new_values, new_mgr_locs)
-
-    def putmask(
-        self,
-        mask,
-        new,
-        inplace: bool = False,
-        axis: int = 0,
-        transpose: bool = False,
-    ) -> list["Block"]:
-        """Specialize DataFrame.where()."""
-        mask = _extract_bool_array(mask)
-        new_values = self.values if inplace else self.values.copy()
-        if isinstance(new, np.ndarray) and len(new) == len(mask):
-            new = new[mask]
-        mask = mask.reshape(new_values.shape)
-        new_values[mask] = new
-        return [self.make_block_same_class(new_values, placement=self.mgr_locs)]
-
-
-def get_block_type(values, dtype=None):
-    """Add block type exclusion for fixed-length bytes and strings."""
-    if (dtype or values.dtype).kind in ("S", "U"):
-        return IntBlock
-    return get_block_type_original(values, dtype)
-
-
-def make_block(values, placement, klass=None, ndim=None, dtype=None):
-    """Override the block class if we are S or U."""
-    if (
-        klass is not None
-        and klass.__name__ == "IntBlock"
-        and klass is not IntBlock
-        and values.dtype.kind in ("S", "U")
-    ):
-        if isinstance(values, pd.Series):
-            values = values.values
-        klass = IntBlock
-    return make_block_original(values, placement, klass=klass, ndim=ndim, dtype=dtype)
-
-
-pd.core.internals.blocks.get_block_type = get_block_type
-pd.core.internals.blocks.make_block = make_block
-pd.core.internals.managers.get_block_type = get_block_type
-pd.core.internals.managers.make_block = make_block
-
-
-original_index_new = pd.Index.__new__
-
-
-def _string_friendly_index_new(
-    cls: pd.Index,
-    data=None,
-    dtype=None,
-    copy=False,
-    name=None,
-    tupleize_cols=True,
-    **kwargs,
-) -> pd.Index:
-    if dtype is None and isinstance(data, np.ndarray) and data.dtype.kind in ("S", "U"):
-        # otherwise, pandas will coerce to object dtype; we know better
-        if copy:
-            data = data.copy()
-        return cls._simple_new(data, name)
-    return original_index_new(
-        cls, data=data, dtype=dtype, copy=copy, name=name, tupleize_cols=tupleize_cols, **kwargs,
-    )
-
-
-pd.Index.__new__ = _string_friendly_index_new
-
-
-def create_data_frame_from_arrays(
-    arrays_typed: Sequence[np.ndarray],
-    arrays_obj: np.ndarray,
-    names_typed: list[str],
-    names_obj: list[str],
-    size: int,
-) -> pd.DataFrame:
-    """
-    Create a new Pandas DataFrame from two parts: sequence of typed arrays and an object array.
-
-    This is much more efficient than calling pd.DataFrame(dict) or pd.DataFrame.from_records()
-    because we construct the block manager directly and avoid memory copies and various integrity
-    checks.
-    """
-    assert len(arrays_typed) == len(names_typed)
-    if names_obj:
-        assert len(arrays_obj) == len(names_obj)
-    range_index = pd.RangeIndex(stop=size)
-    blocks = [
-        make_block(np.atleast_2d(arrays_typed[i]), placement=[i])
-        for i, arr in enumerate(arrays_typed)
-    ]
-    if names_obj:
-        blocks.append(
-            make_block(arrays_obj, placement=np.arange(len(arrays_obj)) + len(arrays_typed)),
-        )
-    manager = BlockManager(blocks, [pd.Index(names_typed + names_obj), range_index])
-    return pd.DataFrame(manager, columns=names_typed + names_obj, copy=False)
-
-
 @sentry_span
-def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) -> pd.DataFrame:
+def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) -> md.DataFrame:
     """
     Combine several NumpyStruct-s to a Pandas DataFrame.
 
@@ -559,7 +419,7 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
         try:
             first_item = next(items_iter)
         except StopIteration:
-            return pd.DataFrame()
+            return md.DataFrame()
         assert isinstance(first_item, NumpyStruct)
         inspector = _NumpyStructInspector(first_item, None)
         indirect_items = inspector.indirect_columns.items()
@@ -588,7 +448,7 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
         try:
             first_item = next(items_iter)
         except StopIteration:
-            return pd.DataFrame()
+            return md.DataFrame()
 
         assert isinstance(first_item, NumpyStruct)
         inspector = _NumpyStructInspector(first_item, length)
@@ -616,11 +476,10 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
         del coerced_datas_buf
 
     inspector.delete_data()
-    typed_names = [name for name in inspector.dtype.names if name not in inspector.nested_fields]
+    names = [name for name in inspector.dtype.names if name not in inspector.nested_fields]
     # must take a copy to make each strided array contiguous
-    typed_arrs = [table_array[name].copy() for name in typed_names]
-    obj_names = list(columns)
-    if (obj_arr := inspector.obj_arr) is None:
+    arrays = [table_array[name].copy() for name in names]
+    if inspector.obj_arr is None:
         obj_arr = np.empty((len(columns), length), dtype=object)
         for i, (k, v) in enumerate(columns.items()):
             obj_arr[i] = v
@@ -650,16 +509,12 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
             else:
                 set_dtype(k, v)
 
-    left_untyped = []
-    for i, (k, v) in enumerate(columns.items()):
+    for k, v in columns.items():
         column_type = column_types.get(k, object)
-        typed = False
         if isinstance(column_type, type) and issubclass(column_type, datetime):
-            v = tslib.array_to_datetime(np.array(v, dtype=object), utc=True, errors="raise")[0]
-            typed = True
+            v = np.array(v, dtype="datetime64[s]")
         elif isinstance(column_type, type) and issubclass(column_type, timedelta):
             v = np.array(v, dtype="timedelta64[s]")
-            typed = True
         elif np.dtype(column_type) != np.dtype(object):
             if (
                 isinstance(column_type, np.dtype)
@@ -667,17 +522,10 @@ def df_from_structs(items: Iterable[NumpyStruct], length: Optional[int] = None) 
                 or is_not_null(v).all()
             ):
                 v = np.array(v, dtype=column_type)
-                typed = True
-        if typed:
-            typed_names.append(k)
-            typed_arrs.append(v)
-        else:
-            left_untyped.append(i)
-    if len(left_untyped) < len(obj_arr):
-        obj_arr = obj_arr[left_untyped]
-        obj_names = [obj_names[i] for i in left_untyped]
+        arrays.append(v)
+        names.append(k)
 
-    df = create_data_frame_from_arrays(typed_arrs, obj_arr, typed_names, obj_names, length)
+    df = md.DataFrame(arrays, columns=names)
     if sentry_sdk.Hub.current.scope.span is not None:
         sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df

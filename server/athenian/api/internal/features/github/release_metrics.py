@@ -1,8 +1,8 @@
 from datetime import timedelta
 from typing import Generic, Optional, Sequence, Type, TypeVar
 
+import medvedi as md
 import numpy as np
-import pandas as pd
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.internal.features.metric_calculator import (
@@ -32,7 +32,7 @@ T = TypeVar("T")
 
 def group_releases_by_participants(
     participants: list[ReleaseParticipants],
-    df: pd.DataFrame,
+    df: md.DataFrame,
 ) -> list[np.ndarray]:
     """Triage releases by their contributors."""
     if not participants or df.empty:
@@ -41,8 +41,8 @@ def group_releases_by_participants(
     for group in participants:
         if ReleaseParticipationKind.RELEASER in group:
             missing_indexes = np.flatnonzero(
-                np.in1d(
-                    np.array(df["publisher"].values),
+                df.isin(
+                    ReleaseFacts.f.publisher,
                     group[ReleaseParticipationKind.RELEASER],
                     invert=True,
                 ),
@@ -50,13 +50,13 @@ def group_releases_by_participants(
         else:
             missing_indexes = np.arange(len(df))
         for rpk, col in [
-            (ReleaseParticipationKind.COMMIT_AUTHOR, "commit_authors"),
+            (ReleaseParticipationKind.COMMIT_AUTHOR, ReleaseFacts.f.commit_authors),
             (ReleaseParticipationKind.PR_AUTHOR, "prs_" + PullRequest.user_node_id.name),
         ]:
             if len(missing_indexes) == 0:
                 break
             if rpk in group:
-                values = df[col].values[missing_indexes]
+                values = df[col][missing_indexes]
                 lengths = nested_lengths(values)
                 offsets = np.zeros(len(values) + 1, dtype=int)
                 np.cumsum(lengths, out=offsets[1:])
@@ -71,14 +71,14 @@ def group_releases_by_participants(
 
 
 def calculate_logical_release_duplication_mask(
-    items: pd.DataFrame,
+    items: md.DataFrame,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
 ) -> Optional[np.ndarray]:
     """Assign indexes to releases with the same settings for each logical repository."""
     if items.empty or not logical_settings.has_logical_prs():
         return None
-    repos_column = items[ReleaseFacts.f.repository_full_name].values.astype("S", copy=False)
+    repos_column = items[ReleaseFacts.f.repository_full_name].astype("S", copy=False)
     return calculate_logical_duplication_mask(repos_column, release_settings, logical_settings)
 
 
@@ -111,7 +111,7 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
 
     def _analyze(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
         **kwargs,
@@ -131,14 +131,14 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
 
     def _check(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
     ) -> np.ndarray:
-        published = facts[ReleaseFacts.f.published].values
+        published = facts[ReleaseFacts.f.published]
         return (min_times[:, None] <= published) & (published < max_times[:, None])
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
         raise NotImplementedError
 
 
@@ -147,12 +147,12 @@ class TagReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
 
     def _check(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
     ) -> np.ndarray:
         return super()._check(facts, min_times, max_times) & (
-            facts[matched_by_column].values == ReleaseMatch.tag
+            facts[matched_by_column] == ReleaseMatch.tag
         )
 
 
@@ -161,12 +161,12 @@ class BranchReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
 
     def _check(
         self,
-        facts: pd.DataFrame,
+        facts: md.DataFrame,
         min_times: np.ndarray,
         max_times: np.ndarray,
     ) -> np.ndarray:
         return super()._check(facts, min_times, max_times) & (
-            facts[matched_by_column].values == ReleaseMatch.branch
+            facts[matched_by_column] == ReleaseMatch.branch
         )
 
 
@@ -176,7 +176,7 @@ class ReleaseCounterMixin:
     may_have_negative_values = False
     metric = MetricInt
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
         return np.full(len(facts), 1, self.dtype)
 
 
@@ -186,7 +186,7 @@ class ReleasePRsMixin:
     may_have_negative_values = False
     metric = MetricInt
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
         return np.array(
             [len(arr) for arr in facts["prs_" + PullRequest.number.name]], dtype=self.dtype,
         )
@@ -198,8 +198,8 @@ class ReleaseCommitsMixin:
     may_have_negative_values = False
     metric = MetricInt
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts[ReleaseFacts.f.commits_count].values
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
+        return facts[ReleaseFacts.f.commits_count]
 
 
 class ReleaseLinesMixin:
@@ -208,8 +208,8 @@ class ReleaseLinesMixin:
     may_have_negative_values = False
     metric = MetricInt
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts[ReleaseFacts.f.additions].values + facts[ReleaseFacts.f.deletions].values
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
+        return facts[ReleaseFacts.f.additions] + facts[ReleaseFacts.f.deletions]
 
 
 class ReleaseAgeMixin:
@@ -218,8 +218,8 @@ class ReleaseAgeMixin:
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts[ReleaseFacts.f.age].values.astype(self.dtype).view(int)
+    def _extract(self, facts: md.DataFrame) -> np.ndarray:
+        return facts[ReleaseFacts.f.age].astype(self.dtype).view(int)
 
 
 @register_metric(ReleaseMetricID.RELEASE_COUNT)

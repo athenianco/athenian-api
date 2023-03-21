@@ -1,7 +1,7 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 from typing import Any
 
-import pandas as pd
+import numpy as np
 import pytest
 
 from athenian.api.db import Database
@@ -33,7 +33,9 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
     assert items[0] == CodeCheckRunListItem(
         title="DCO",
         repository="src-d/go-git",
-        last_execution_time=pd.Timestamp("2019-12-30T09:41:10+00").to_pydatetime(),
+        last_execution_time=np.datetime64("2019-12-30 09:41:10", "s")
+        .item()
+        .replace(tzinfo=timezone.utc),
         last_execution_url="https://github.com/src-d/go-git/runs/367607194",
         size_groups=[1, 2, 3, 4, 5, 6],
         total_stats=CodeCheckRunListStats(

@@ -6,8 +6,9 @@ import pickle
 from typing import Collection, Iterable, Iterator, KeysView, Mapping, Optional, Sequence, Union
 
 import aiomcache
+import medvedi as md
+from medvedi.accelerators import in1d_str
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, outerjoin, select, union_all
 from sqlalchemy.orm import aliased
@@ -43,6 +44,7 @@ from athenian.api.internal.miners.types import DAG as DAGStruct, Deployment
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.io import deserialize_args, serialize_args
 from athenian.api.models.metadata.github import (
     Branch,
     NodeCommit,
@@ -54,9 +56,8 @@ from athenian.api.models.metadata.github import (
 from athenian.api.models.persistentdata.models import HealthMetric
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.native.mi_heap_destroy_stl_allocator import make_mi_heap_allocator_capsule
-from athenian.api.pandas_io import deserialize_args, serialize_args
+from athenian.api.object_arrays import is_null
 from athenian.api.tracing import sentry_span
-from athenian.api.unordered_unique import in1d_str
 from athenian.precomputer.db.models import GitHubCommitDeployment
 
 
@@ -142,7 +143,7 @@ async def extract_commits(
     cache: Optional[aiomcache.Client],
     columns: Optional[list[InstrumentedAttribute]] = None,
     with_deployments: bool = True,
-) -> tuple[pd.DataFrame, dict[str, Deployment]] | pd.DataFrame:
+) -> tuple[md.DataFrame, dict[str, Deployment]] | md.DataFrame:
     """Fetch commits that satisfy the given filters."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
@@ -227,8 +228,8 @@ async def extract_commits(
         commits = _remove_force_push_dropped(commits, dags)
         log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
     if prop == FilterCommitsProperty.EVERYTHING:
-        commit_shas = commits[PushCommit.sha.name].values
-        commit_repos = commits[PushCommit.repository_full_name.name].values
+        commit_shas = commits[PushCommit.sha.name]
+        commit_repos = commits[PushCommit.repository_full_name.name]
         order = np.argsort(commit_repos)
         unique_repos, group_counts = np.unique(commit_repos[order], return_counts=True)
         children = np.empty(len(commits), dtype=object)
@@ -244,12 +245,14 @@ async def extract_commits(
         commit_deployments = await read_sql_query(
             select(GitHubCommitDeployment.commit_id, GitHubCommitDeployment.deployment_name).where(
                 GitHubCommitDeployment.acc_id == account,
-                GitHubCommitDeployment.commit_id.in_(commits[PushCommit.node_id.name].values),
+                GitHubCommitDeployment.commit_id.in_(commits[PushCommit.node_id.name]),
             ),
             pdb,
             [GitHubCommitDeployment.commit_id, GitHubCommitDeployment.deployment_name],
         )
-        deployments = commit_deployments[GitHubCommitDeployment.deployment_name.name].unique()
+        deployments = commit_deployments.unique(
+            GitHubCommitDeployment.deployment_name.name, unordered=True,
+        )
         if len(deployments):
             # we must ignore the logical settings here
             deployments = await load_included_deployments(
@@ -263,15 +266,15 @@ async def extract_commits(
                 cache,
             )
             fill_col = np.empty(len(commits), dtype=object)
-            dep_id_col = commit_deployments[GitHubCommitDeployment.commit_id.name].values
+            dep_id_col = commit_deployments[GitHubCommitDeployment.commit_id.name]
             order = np.argsort(dep_id_col)
             dep_id_col = dep_id_col[order]
             _, splits = np.unique(dep_id_col, return_index=True)
             split_deps = np.split(
-                commit_deployments[GitHubCommitDeployment.deployment_name.name].values[order],
+                commit_deployments[GitHubCommitDeployment.deployment_name.name][order],
                 splits[1:],
             )
-            full_ids = commits[PushCommit.node_id.name].values
+            full_ids = commits[PushCommit.node_id.name]
             order = np.argsort(full_ids)
             try:
                 fill_col[
@@ -290,8 +293,8 @@ async def extract_commits(
             number_col = commits[number_prop.name]
         except KeyError:
             continue
-        nans = commits[PushCommit.node_id.name].take(np.flatnonzero(number_col.isna()))
-        if not nans.empty:
+        nans = commits[PushCommit.node_id.name][is_null(number_col)]
+        if len(nans):
             log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.name, ", ".join(nans))
     if with_deployments:
         return commits, deployments
@@ -299,32 +302,32 @@ async def extract_commits(
 
 
 def _take_commits_in_default_branches(
-    commits: pd.DataFrame,
+    commits: md.DataFrame,
     dags: dict[str, tuple[bool, DAG]],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     default_branches: dict[str, str],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     if commits.empty:
         return commits
-    branch_repos = branches[Branch.repository_full_name.name].values.astype("U")
-    branch_names = branches[Branch.branch_name.name].values.astype("U")
+    branch_repos = branches[Branch.repository_full_name.name].astype("U")
+    branch_names = branches[Branch.branch_name.name].astype("U")
     branch_repos_names = np.char.add(np.char.add(branch_repos, "|"), branch_names)
     default_repos_names = np.array([f"{k}|{v}" for k, v in default_branches.items()], dtype="U")
     default_mask = np.in1d(branch_repos_names, default_repos_names, assume_unique=True)
     branch_repos = branch_repos[default_mask]
-    branch_hashes = branches[Branch.commit_sha.name].values[default_mask]
+    branch_hashes = branches[Branch.commit_sha.name][default_mask]
     repos_order = np.argsort(branch_repos)
     branch_repos = branch_repos[repos_order]
     branch_hashes = branch_hashes[repos_order]
 
     commit_repos, commit_repo_indexes = np.unique(
-        commits[PushCommit.repository_full_name.name].values.astype("U"), return_inverse=True,
+        commits[PushCommit.repository_full_name.name].astype("U"), return_inverse=True,
     )
     commit_repos_in_branches_mask = np.in1d(commit_repos, branch_repos, assume_unique=True)
     branch_repos_in_commits_mask = np.in1d(branch_repos, commit_repos, assume_unique=True)
     branch_repos = branch_repos[branch_repos_in_commits_mask]
     branch_hashes = branch_hashes[branch_repos_in_commits_mask]
-    commit_hashes = commits[PushCommit.sha.name].values
+    commit_hashes = commits[PushCommit.sha.name]
 
     alloc = make_mi_heap_allocator_capsule()
     accessible_indexes = []
@@ -343,15 +346,15 @@ def _take_commits_in_default_branches(
 
 
 def _remove_force_push_dropped(
-    commits: pd.DataFrame,
+    commits: md.DataFrame,
     dags: dict[str, tuple[bool, DAG]],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     if commits.empty:
         return commits
     repos_order, indexes = np.unique(
-        commits[PushCommit.repository_full_name.name].values, return_inverse=True,
+        commits[PushCommit.repository_full_name.name], return_inverse=True,
     )
-    hashes = commits[PushCommit.sha.name].values
+    hashes = commits[PushCommit.sha.name]
     accessible_indexes = []
     for i, repo in enumerate(repos_order):
         repo_indexes = np.flatnonzero(indexes == i)
@@ -371,9 +374,7 @@ def _remove_force_push_dropped(
     key=lambda repos, branches, columns, prune, **_: (
         ",".join(sorted(repos)),
         b",".join(
-            np.sort(
-                branches[columns[0] if isinstance(columns[0], str) else columns[0].name].values,
-            ),
+            np.sort(branches[columns[0] if isinstance(columns[0], str) else columns[0].name]),
         )
         if not branches.empty
         else None,
@@ -383,7 +384,7 @@ def _remove_force_push_dropped(
 )
 async def fetch_repository_commits(
     repos: dict[str, tuple[bool, DAG]],
-    branches: pd.DataFrame,
+    branches: md.DataFrame,
     columns: tuple[
         str | InstrumentedAttribute,
         str | InstrumentedAttribute,
@@ -426,12 +427,12 @@ async def fetch_repository_commits(
     sha_col, id_col, dt_col, repo_col = (c if isinstance(c, str) else c.name for c in columns)
     result = {}
     tasks = []
-    df_shas = branches[sha_col].values
+    df_shas = branches[sha_col]
     sha_order = np.argsort(df_shas)
     df_shas = df_shas[sha_order]
-    df_ids = branches[id_col].values[sha_order]
-    df_dts = branches[dt_col].values[sha_order]
-    df_repos = branches[repo_col].values[sha_order]
+    df_ids = branches[id_col][sha_order]
+    df_dts = branches[dt_col][sha_order]
+    df_repos = branches[repo_col][sha_order]
     del branches
     unique_repos, index_map, counts = np.unique(df_repos, return_inverse=True, return_counts=True)
     repo_order = np.argsort(index_map)
@@ -571,7 +572,7 @@ async def fetch_repository_commits_from_scratch(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[dict[str, tuple[bool, DAG]], pd.DataFrame, dict[str, str]]:
+) -> tuple[dict[str, tuple[bool, DAG]], md.DataFrame, dict[str, str]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -584,8 +585,8 @@ async def fetch_repository_commits_from_scratch(
     )
     if only_default_branch:
         branch_index = np.char.add(
-            branches[Branch.repository_full_name.name].values.astype("U"),
-            branches[Branch.branch_name.name].values.astype("U"),
+            branches[Branch.repository_full_name.name].astype("U"),
+            branches[Branch.branch_name.name].astype("U"),
         )
         if isinstance(repos, (set, frozenset, KeysView)):
             repos = list(repos)
@@ -593,7 +594,7 @@ async def fetch_repository_commits_from_scratch(
             np.array(repos, dtype="U"),
             np.array([defaults.get(r) for r in repos], dtype="U"),
         )
-        branches = branches.take(np.flatnonzero(in1d_str(branch_index, default_set)))
+        branches = branches.take(in1d_str(branch_index, default_set))
     dags = await fetch_repository_commits(
         pdags, branches, BRANCH_FETCH_COMMITS_COLUMNS, prune, account, meta_ids, mdb, pdb, cache,
     )
@@ -680,7 +681,7 @@ async def _fetch_commit_history_dag(
                 mdb,
                 [PushCommit.node_id],
             )
-        )[PushCommit.node_id.name].values
+        )[PushCommit.node_id.name]
     else:
         # find max `max_stop_heads` top-level most recent commit hashes
         stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
@@ -756,7 +757,7 @@ async def _fetch_commit_history_dag(
                     mdb,
                     [NodeCommit.oid],
                 )
-            )[NodeCommit.oid.name].values
+            )[NodeCommit.oid.name]
             if len(ignored_seed_hashes) > 0:
                 log.warning(
                     "%s: ignored %d outdated inconsistent seeds: %s",
@@ -835,7 +836,7 @@ async def _fetch_commit_history_dag(
                 mdb,
                 [NodeCommit.node_id],
             )
-        )[NodeCommit.node_id.name].values
+        )[NodeCommit.node_id.name]
         await refetcher.submit_commits(refetch_nodes, True)
     return consistent, repo, hashes, vertexes, edges
 
@@ -959,7 +960,7 @@ async def fetch_dags_with_commits(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[dict[str, tuple[bool, DAG]], pd.DataFrame]:
+) -> tuple[dict[str, tuple[bool, DAG]], md.DataFrame]:
     """
     Load full commit DAGs for the given commit node IDs mapped from repository names.
 
@@ -995,9 +996,9 @@ async def _fetch_commits_for_dags(
     meta_ids: tuple[int, ...],
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     if not commits:
-        return pd.DataFrame()
+        return md.DataFrame()
     queries = [
         select(*COMMIT_FETCH_COMMITS_COLUMNS).where(
             PushCommit.acc_id.in_(meta_ids),

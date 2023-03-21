@@ -1161,7 +1161,7 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
                     "repositories": ["github.com/src-d/go-git/alpha"],
                 },
                 "granularity": "all",
-                "values": [{"date": date(2018, 1, 12), "values": [91]}],
+                "values": [{"date": date(2018, 1, 12), "values": [73]}],
             },
         ],
         "date_from": date(2018, 1, 12),

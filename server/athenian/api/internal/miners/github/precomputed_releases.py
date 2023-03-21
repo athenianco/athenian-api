@@ -4,8 +4,9 @@ from itertools import chain
 import logging
 from typing import Iterable
 
+import medvedi as md
 import morcilla
-import pandas as pd
+import numpy as np
 import sentry_sdk
 from sqlalchemy import and_, desc, or_, select, union_all
 
@@ -14,6 +15,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.db import dialect_specific_insert
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.types import ReleaseFacts
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings, default_branch_alias
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import (
@@ -46,7 +48,7 @@ def reverse_release_settings(
 
 @sentry_span
 async def load_precomputed_release_facts(
-    releases: pd.DataFrame,
+    releases: md.DataFrame,
     default_branches: dict[str, str],
     settings: ReleaseSettings,
     account: int,
@@ -60,7 +62,7 @@ async def load_precomputed_release_facts(
     if releases.empty:
         return {}
     reverse_settings = defaultdict(list)
-    release_repos = releases[Release.repository_full_name.name].unique()
+    release_repos = releases.unique(Release.repository_full_name.name, unordered=True)
     for repo in release_repos:
         setting = settings.native[repo]
         if setting.match == ReleaseMatch.tag:
@@ -74,7 +76,7 @@ async def load_precomputed_release_facts(
         reverse_settings[(setting.match, value)].append(repo)
     grouped_releases = defaultdict(set)
     for rid, repo in zip(
-        releases[Release.node_id.name].values, releases[Release.repository_full_name.name].values,
+        releases[Release.node_id.name], releases[Release.repository_full_name.name],
     ):
         grouped_releases[repo].add(rid)
     default_version = GitHubReleaseFacts.__table__.columns[
@@ -206,8 +208,9 @@ async def store_precomputed_release_facts(
 async def fetch_precomputed_releases_by_name(
     names: dict[str, Iterable[str]],
     account: int,
+    prefixer: Prefixer,
     pdb: morcilla.Database,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Load precomputed release facts given the mapping from repository names to release names."""
     prel = PrecomputedRelease
     if pdb.url.dialect == "sqlite":
@@ -238,13 +241,16 @@ async def fetch_precomputed_releases_by_name(
         )
     df = await read_sql_query(query, pdb, prel)
     df[matched_by_column] = None
-    df.loc[
-        df[prel.release_match.name].str.startswith("branch|"),
-        matched_by_column,
+    df[matched_by_column][
+        np.fromiter((s.startswith("branch|") for s in df[prel.release_match.name]), bool, len(df))
     ] = ReleaseMatch.branch
-    df.loc[
-        df[prel.release_match.name].str.startswith("tag|"),
-        matched_by_column,
+    df[matched_by_column][
+        np.fromiter((s.startswith("tag|") for s in df[prel.release_match.name]), bool, len(df))
     ] = ReleaseMatch.tag
-    df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
+    for col in (PrecomputedRelease.acc_id, PrecomputedRelease.release_match):
+        del df[col.name]
+    user_node_to_login = prefixer.user_node_to_login.get
+    df[Release.author.name] = [
+        user_node_to_login(n) for n in df[PrecomputedRelease.author_node_id.name]
+    ]
     return df

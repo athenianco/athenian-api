@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
-from pathlib import Path
 
+import medvedi as md
 import numpy as np
 from numpy.testing import assert_array_equal
-import pandas as pd
 import pytest
 
 from athenian.api.int_to_str import int_to_str
@@ -130,17 +129,17 @@ async def test_check_run_smoke(
     for col in CheckRun.__table__.columns:
         if col.name not in (CheckRun.committed_date_hack.name,):
             assert col.name in df.columns
-    assert len(df[CheckRun.check_run_node_id.name].unique()) == len(df)
+    assert len(df.unique(CheckRun.check_run_node_id.name)) == len(df)
 
 
 @pytest.mark.parametrize(
     "repos, size",
     [
-        (["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"], 4662),
-        (["src-d/go-git", "src-d/go-git/alpha"], 3922),
-        (["src-d/go-git", "src-d/go-git/beta"], 3766),
+        (["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"], 4661),
+        (["src-d/go-git", "src-d/go-git/alpha"], 3928),
+        (["src-d/go-git", "src-d/go-git/beta"], 3863),
         (["src-d/go-git"], 4581),
-        (["src-d/go-git/alpha"], 896),
+        (["src-d/go-git/alpha"], 798),
     ],
 )
 async def test_check_run_logical_repos_title(mdb, logical_settings, repos, size):
@@ -156,7 +155,7 @@ async def test_check_run_logical_repos_title(mdb, logical_settings, repos, size)
         mdb,
         None,
     )
-    assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
+    assert set(df.unique(CheckRun.repository_full_name.name)) == set(repos)
     assert len(df) == size
 
 
@@ -175,7 +174,7 @@ def logical_settings_mixed():
     "repos, size",
     [
         (["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"], 4581),
-        (["src-d/go-git", "src-d/go-git/alpha"], 3841),
+        (["src-d/go-git", "src-d/go-git/alpha"], 3848),
         (["src-d/go-git", "src-d/go-git/beta"], 4572),
         (["src-d/go-git"], 4581),
         (["src-d/go-git/alpha"], 9),
@@ -194,7 +193,7 @@ async def test_check_run_logical_repos_label(mdb, logical_settings_mixed, repos,
         mdb,
         None,
     )
-    assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
+    assert set(df.unique(CheckRun.repository_full_name.name)) == set(repos)
     assert len(df) == size
 
 
@@ -215,30 +214,19 @@ def test_mark_check_suite_types_empty():
 
 
 @pytest.fixture(scope="module")
-def alternative_facts() -> pd.DataFrame:
-    df = pd.read_csv(
-        Path(__file__).parent.parent.parent / "features" / "github" / "check_runs.csv.gz",
-    )
-    for col in (
-        CheckRun.started_at,
-        CheckRun.completed_at,
-        CheckRun.pull_request_created_at,
-        CheckRun.pull_request_closed_at,
-        CheckRun.committed_date,
-    ):
-        df[col.name] = df[col.name].astype(np.datetime64)
-    _split_duplicate_check_runs(df)
-    _postprocess_check_runs(df)
-    return df
+def alternative_facts(alternative_check_run_facts) -> md.DataFrame:
+    _split_duplicate_check_runs(alternative_check_run_facts)
+    _postprocess_check_runs(alternative_check_run_facts)
+    return alternative_check_run_facts
 
 
 def test_mark_check_suite_types_real_world(alternative_facts):
-    repos = int_to_str(alternative_facts[CheckRun.repository_node_id.name].values)
+    repos = int_to_str(alternative_facts[CheckRun.repository_node_id.name])
     names = np.char.add(
-        repos, np.char.encode(alternative_facts[CheckRun.name.name].values.astype("U"), "UTF-8"),
+        repos, np.char.encode(alternative_facts[CheckRun.name.name].astype("U"), "UTF-8"),
     )
     suite_indexes, group_ids = mark_check_suite_types(
-        names, alternative_facts[CheckRun.check_suite_node_id.name].values,
+        names, alternative_facts[CheckRun.check_suite_node_id.name],
     )
     assert (suite_indexes < len(alternative_facts)).all()
     assert (suite_indexes >= 0).all()

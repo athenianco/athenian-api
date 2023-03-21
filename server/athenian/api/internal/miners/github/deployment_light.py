@@ -3,8 +3,9 @@ import pickle
 from typing import Any, Collection, Mapping, Optional
 
 import aiomcache
+import medvedi as md
+from medvedi.accelerators import in1d_str, unordered_unique
 import numpy as np
-import pandas as pd
 from sqlalchemy import and_, desc, exists, join, not_, or_, select
 
 from athenian.api.async_utils import gather, read_sql_query
@@ -20,15 +21,14 @@ from athenian.api.internal.miners.types import (
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.io import deserialize_args, serialize_args
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
     DeploymentNotification,
 )
-from athenian.api.pandas_io import deserialize_args, serialize_args
 from athenian.api.tracing import sentry_span
-from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 @sentry_span
@@ -91,9 +91,9 @@ async def load_included_deployments(
     )
     repo_node_to_name = prefixer.repo_node_to_name.get
     components[DeployedComponent.repository_full_name] = [
-        repo_node_to_name(r) for r in components[DeployedComponent.repository_node_id.name].values
+        repo_node_to_name(r) for r in components[DeployedComponent.repository_node_id.name]
     ]
-    commit_ids = components[DeployedComponent.resolved_commit_node_id.name].unique()
+    commit_ids = components.unique(DeployedComponent.resolved_commit_node_id.name)
     if len(commit_ids) and commit_ids[0] is None:
         commit_ids = commit_ids[1:]
     hashes = await mdb.fetch_all(
@@ -104,10 +104,8 @@ async def load_included_deployments(
     hashes = {r[NodeCommit.graph_id.name]: r[NodeCommit.sha.name] for r in hashes}
     labels = group_deployed_labels_df(labels)
     labels_by_dep = {
-        name: dict(
-            zip(keyvals[DeployedLabel.key.name].values, keyvals[DeployedLabel.value.name].values),
-        )
-        for name, keyvals in zip(labels.index.values, labels["labels"].values)
+        name: dict(zip(keyvals[DeployedLabel.key.name], keyvals[DeployedLabel.value.name]))
+        for name, keyvals in zip(labels.index.values, labels["labels"])
     }
     components = split_logical_deployed_components(
         notifications,
@@ -118,10 +116,10 @@ async def load_included_deployments(
     )
     comps_by_dep = {}
     for name, repo, ref, commit_id in zip(
-        components[DeployedComponent.deployment_name.name].values,
-        components[DeployedComponent.repository_full_name].values,
-        components[DeployedComponent.reference.name].values,
-        components[DeployedComponent.resolved_commit_node_id.name].values,
+        components[DeployedComponent.deployment_name.name],
+        components[DeployedComponent.repository_full_name],
+        components[DeployedComponent.reference.name],
+        components[DeployedComponent.resolved_commit_node_id.name],
     ):
         comps_by_dep.setdefault(name, []).append(
             DeployedComponentDC(
@@ -141,9 +139,9 @@ async def load_included_deployments(
         )
         for name, conclusion, env, url, started_at, finished_at in zip(
             notifications.index.values,
-            notifications[DeploymentNotification.conclusion.name].values,
-            notifications[DeploymentNotification.environment.name].values,
-            notifications[DeploymentNotification.url.name].values,
+            notifications[DeploymentNotification.conclusion.name],
+            notifications[DeploymentNotification.environment.name],
+            notifications[DeploymentNotification.url.name],
             notifications[DeploymentNotification.started_at.name],
             notifications[DeploymentNotification.finished_at.name],
         )
@@ -221,18 +219,26 @@ async def fetch_repository_environments(
     return result
 
 
-def group_deployed_labels_df(df: pd.DataFrame) -> pd.DataFrame:
+def group_deployed_labels_df(df: md.DataFrame) -> md.DataFrame:
     """Group the DataFrame with key-value labels by deployment name."""
-    groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
-    grouped_labels = pd.DataFrame(
+    deployment_names = df["deployment_name"]
+    grouped_deployment_names = []
+    grouped_labels = []
+    for group in df.groupby(DeployedLabel.deployment_name.name):
+        grouped_deployment_names.append(deployment_names[group[0]])
+        grouped_labels.append(df.take(group))
+
+    grouped_labels_array = np.empty(len(grouped_labels), object)
+    grouped_labels_array[:] = grouped_labels
+    grouped_labels = md.DataFrame(
         {
-            "deployment_name": [g[0] for g in groups],
-            "labels": [g[1] for g in groups],
+            "deployment_name": np.array(grouped_deployment_names, dtype=object),
+            "labels": grouped_labels_array,
         },
+        index="deployment_name",
     )
-    for df in grouped_labels["labels"].values:
+    for df in grouped_labels["labels"]:
         df.reset_index(drop=True, inplace=True)
-    grouped_labels.set_index("deployment_name", drop=True, inplace=True)
     return grouped_labels
 
 
@@ -242,11 +248,11 @@ class NoDeploymentNotificationsError(Exception):
 
 @sentry_span
 async def fetch_components_and_prune_unresolved(
-    notifications: pd.DataFrame,
+    notifications: md.DataFrame,
     prefixer: Prefixer,
     account: int,
     rdb: Database,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[md.DataFrame, md.DataFrame]:
     """Remove deployment notifications with unresolved components. Fetch the components."""
     components = await read_sql_query(
         select(DeployedComponent).where(
@@ -263,38 +269,36 @@ async def fetch_components_and_prune_unresolved(
     ):
         del components[col.name]
     unresolved_names = unordered_unique(
-        components[DeployedComponent.deployment_name.name]
-        .values[components[DeployedComponent.resolved_commit_node_id.name].values == 0]
-        .astype("U"),
+        components[DeployedComponent.deployment_name.name][
+            components[DeployedComponent.resolved_commit_node_id.name] == 0
+        ].astype("U"),
     )
     # we drop not yet resolved notifications and rely on
     # _invalidate_precomputed_on_out_of_order_notifications() to correctly compute them
     # in the future
-    notifications = notifications.take(
-        np.flatnonzero(
-            np.in1d(
-                notifications.index.values.astype("U"),
-                unresolved_names,
-                assume_unique=True,
-                invert=True,
-            ),
+    notifications.take(
+        notifications.isin(
+            notifications.index.name,
+            unresolved_names,
+            assume_unique=True,
+            invert=True,
         ),
+        inplace=True,
     )
-    components = components.take(
-        np.flatnonzero(
-            np.in1d(
-                components[DeployedComponent.deployment_name.name].values.astype("U"),
-                unresolved_names,
-                assume_unique=True,
-                invert=True,
-            ),
+    components.take(
+        components.isin(
+            DeployedComponent.deployment_name.name,
+            unresolved_names,
+            assume_unique=True,
+            invert=True,
         ),
+        inplace=True,
     )
     components.set_index(DeployedComponent.deployment_name.name, drop=True, inplace=True)
     repo_node_to_name = prefixer.repo_node_to_name.get
     components[DeployedComponent.repository_full_name] = [
         repo_node_to_name(n, f"unidentified_{n}")
-        for n in components[DeployedComponent.repository_node_id.name].values
+        for n in components[DeployedComponent.repository_node_id.name]
     ]
     return notifications, components
 
@@ -304,7 +308,7 @@ async def fetch_labels(
     names: Collection[str],
     account: int,
     rdb: Database,
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """Fetch the labels corresponding to the deployment notifications."""
     return await read_sql_query(
         select(DeployedLabel).where(
@@ -327,7 +331,7 @@ async def fetch_deployment_candidates(
     account: int,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> md.DataFrame:
     """
     Load deployment notifications that satisfy the filters.
 
@@ -352,18 +356,18 @@ async def fetch_deployment_candidates(
 
 @sentry_span
 def _postprocess_fetch_deployment_candidates(
-    result: tuple[pd.DataFrame, Collection[str], Collection[DeploymentConclusion]],
+    result: tuple[md.DataFrame, Collection[str], Collection[DeploymentConclusion]],
     environments: Collection[str],
     conclusions: Collection[DeploymentConclusion],
     **_,
-) -> tuple[pd.DataFrame, Collection[str], Collection[DeploymentConclusion]]:
+) -> tuple[md.DataFrame, Collection[str], Collection[DeploymentConclusion]]:
     df, cached_envs, cached_concls = result
     if not cached_envs or (environments and set(environments).issubset(cached_envs)):
         if environments:
             df = df.take(
                 np.flatnonzero(
                     in1d_str(
-                        df[DeploymentNotification.environment.name].values.astype("U"),
+                        df[DeploymentNotification.environment.name].astype("U"),
                         np.array(list(environments), dtype="U"),
                     ),
                 ),
@@ -375,7 +379,7 @@ def _postprocess_fetch_deployment_candidates(
             df = df.take(
                 np.flatnonzero(
                     in1d_str(
-                        df[DeploymentNotification.conclusion.name].values,
+                        df[DeploymentNotification.conclusion.name],
                         np.array([c.name for c in conclusions], dtype="S"),
                     ),
                 ),
@@ -410,7 +414,7 @@ async def _fetch_deployment_candidates(
     account: int,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[pd.DataFrame, Collection[str], Collection[DeploymentConclusion]]:
+) -> tuple[md.DataFrame, Collection[str], Collection[DeploymentConclusion]]:
     query = select(DeploymentNotification)
     filters = [
         DeploymentNotification.account_id == account,
@@ -546,31 +550,32 @@ async def mine_environments(
         # (the root repository minus all the logicals)
         components = split_logical_deployed_components(
             notifications,
-            labels[0] if labels else pd.DataFrame(),
+            labels[0] if labels else md.DataFrame(),
             components,
             logical_settings.with_logical_deployments(repos or []),
             logical_settings,
         )
-    envs_col = notifications[DeploymentNotification.environment.name].values
+    envs_col = notifications[DeploymentNotification.environment.name]
     unique_envs, first_indexes, env_counts = np.unique(
         envs_col, return_index=True, return_counts=True,
     )
-    last_conclusions = notifications[DeploymentNotification.conclusion.name].values[first_indexes]
+    last_conclusions = notifications[DeploymentNotification.conclusion.name][first_indexes]
 
-    components = components[[DeployedComponent.repository_full_name]].join(
-        notifications[DeploymentNotification.environment.name],
+    components = md.join(
+        components[[DeployedComponent.repository_full_name]],
+        notifications[[DeploymentNotification.environment.name]],
     )
 
-    repo_col = components[DeployedComponent.repository_full_name].values.astype("U")
-    envs_col = components[DeploymentNotification.environment.name].values.astype("U")
+    repo_col = components[DeployedComponent.repository_full_name].astype("U")
+    envs_col = components[DeploymentNotification.environment.name].astype("U")
     keys = np.char.add(envs_col, repo_col)
     _, first_indexes = np.unique(keys, return_index=True)
     components = components.take(first_indexes)
-    envs_col = components[DeploymentNotification.environment.name].values
+    envs_col = components[DeploymentNotification.environment.name]
     order = np.argsort(envs_col)
     repo_unique_envs, repo_group_counts = np.unique(envs_col[order], return_counts=True)
     assert list(repo_unique_envs) == list(unique_envs)
-    repo_name_col = components[DeployedComponent.repository_full_name].values
+    repo_name_col = components[DeployedComponent.repository_full_name]
     repo_pos = 0
     result = []
     for env, notifications_count, last_conclusion, repo_group_count in zip(
