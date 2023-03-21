@@ -94,7 +94,7 @@ jobs:
     - name: bandit
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       working-directory: server
-      run: bandit --severity-level high -r athenian/api
+      run: bandit -c pyproject.toml --severity-level high -r athenian/api
   custom_checks:
     name: Custom checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
