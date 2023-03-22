@@ -1012,7 +1012,8 @@ async def query_jira_raw(
                 ),
             )
             df = md.concat(*df, copy=False)
-            df.drop_duplicates(df.index.names, inplace=True)
+            if not distinct:
+                df.drop_duplicates(df.index.names, inplace=True)
         else:
             df = await read_sql_query(
                 query, mdb, columns, index=Issue.id.name if not distinct else None,
