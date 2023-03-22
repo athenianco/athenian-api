@@ -1249,6 +1249,28 @@ async def test_filter_jira_issue_types_filter(client, headers, metadata_db):
     assert not model.issues
 
 
+async def test_filter_jira_issue_fast_people_filter(client, headers, metadata_db):
+    if metadata_db.startswith("sqlite://"):
+        raise pytest.skip("not supported on SQLite")
+    body = {
+        "date_from": "2019-11-01",
+        "date_to": "2023-01-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+        "with": {"assignees": ["Vadim Markovtsev", None], "reporters": ["Vadim Markovtsev"]},
+        "return": ["issues", "issue_types"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issue_types) == 13
+    assert not model.issues
+
+
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_filter_jira_issue_prs_comments(client, headers):
