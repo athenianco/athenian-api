@@ -322,7 +322,8 @@ class PullRequestMiner:
                 index.get_level_values(0),
                 index.get_level_values(1).astype("S"),
             )
-            return index, in1d_str(index, prs_index, skip_leading_zeros=True)
+            # TODO(vmarkovtsev): optimize this
+            return index, np.in1d(index, prs_index)
 
         prs_index, toremove = intersect_index(self._dfs.prs.index)
         if not toremove.any():
@@ -1052,7 +1053,8 @@ class PullRequestMiner:
                         np.fromiter((p[0] for p in unreleased), int, len(unreleased)),
                         np.array([p[1] for p in unreleased], dtype=prs_repos.dtype),
                     )
-                merged_mask &= ~in1d_str(prs_index, unreleased_index, skip_leading_zeros=True)
+                # TODO(vmarkovtsev): optimize this
+                merged_mask &= np.in1d(prs_index, unreleased_index, invert=True)
             merged_prs = prs.take(merged_mask)
             nonlocal releases
             if extra_releases_task is not None:

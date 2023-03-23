@@ -492,12 +492,9 @@ async def _mine_releases(
             releases[Release.node_id.name],
             release_repos := releases[Release.repository_full_name.name].astype("S"),
         )
-        precomputed_mask = in1d_str(
-            release_ids, unfiltered_precomputed_facts_keys, skip_leading_zeros=True,
-        )
-        out_of_interest_mask = ~in1d_str(
-            release_ids, required_release_ids, skip_leading_zeros=True,
-        )
+        # TODO(vmarkovtsev): optimize this
+        precomputed_mask = np.in1d(release_ids, unfiltered_precomputed_facts_keys)
+        out_of_interest_mask = np.in1d(release_ids, required_release_ids, invert=True)
         release_relevant = ~(precomputed_mask | out_of_interest_mask)
         del required_release_ids, release_ids, precomputed_mask, out_of_interest_mask
 
