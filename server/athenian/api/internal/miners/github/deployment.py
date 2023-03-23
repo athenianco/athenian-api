@@ -1683,8 +1683,9 @@ async def _map_releases_to_deployments(
     if PrecomputedRelease.acc_id.name in releases:
         del releases[PrecomputedRelease.acc_id.name]
     if not event_releases.empty:
+        for col in (ReleaseNotification.account_id, ReleaseNotification.resolved_at):
+            del event_releases[col.name]
         for rename_from, rename_to in [
-            (ReleaseNotification.account_id, PrecomputedRelease.acc_id),
             (ReleaseNotification.resolved_commit_hash, PrecomputedRelease.sha),
             (ReleaseNotification.resolved_commit_node_id, PrecomputedRelease.commit_id),
             (ReleaseNotification.cloned, None),
