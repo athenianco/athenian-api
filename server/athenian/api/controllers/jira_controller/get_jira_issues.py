@@ -50,7 +50,11 @@ async def get_jira_issues(request: AthenianWebRequest, body: dict) -> web.Respon
     ]
     include = issues_req.include or ()
     if GetJIRAIssuesInclude.JIRA_USERS.value in include:
+        # used later by fetch_issues_user
         extra_columns.extend([Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids])
+
+    if GetJIRAIssuesInclude.DESCRIPTION.value in include:
+        extra_columns.append(Issue.description)
 
     issues = await fetch_jira_issues_by_keys(
         issues_req.issues,

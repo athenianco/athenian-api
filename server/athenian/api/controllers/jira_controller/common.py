@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from itertools import chain
+from itertools import chain, repeat
 import logging
 from typing import Sequence
 
@@ -119,6 +119,11 @@ def build_issue_web_models(
         issues[AthenianIssue.resolved.name], prs_began, issues[ISSUE_PRS_RELEASED],
     )
 
+    if Issue.description.name in issues.columns:
+        issues_descriptions = issues[Issue.description.name]
+    else:
+        issues_descriptions = repeat(None)
+
     for (
         issue_key,
         issue_title,
@@ -136,6 +141,7 @@ def build_issue_web_models(
         issue_story_points,
         issue_work_began,
         issue_resolved,
+        issue_description,
     ) in zip(
         *(
             issues[column]
@@ -158,6 +164,7 @@ def build_issue_web_models(
         ),
         issues_work_began,
         issues_resolved,
+        issues_descriptions,
     ):
         issue_work_began = issue_work_began if issue_work_began == issue_work_began else None
         issue_resolved = issue_resolved if issue_resolved == issue_resolved else None
@@ -190,6 +197,7 @@ def build_issue_web_models(
                 prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
                 url=issue_url,
                 story_points=issue_story_points,
+                rendered_description=issue_description,
             ),
         )
     return models
