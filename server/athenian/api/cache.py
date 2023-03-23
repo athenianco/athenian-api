@@ -184,8 +184,6 @@ def cached(
                         with sentry_sdk.start_span(op="deserialize") as span:
                             buffer = lz4.frame.decompress(buffer)
                             span.description = str(len(buffer))
-                            if b"pandas.core.frame" in buffer:
-                                raise CancelCache
                             result = deserialize(buffer)
                             del buffer
                     except Exception as e:
