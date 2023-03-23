@@ -79,6 +79,7 @@ async def load_included_deployments(
             ),
             rdb,
             DeployedComponent,
+            index=DeployedComponent.deployment_name,
         ),
         read_sql_query(
             select(DeployedLabel).where(
@@ -261,6 +262,7 @@ async def fetch_components_and_prune_unresolved(
         ),
         rdb,
         DeployedComponent,
+        index=DeployedComponent.deployment_name,
     )
     for col in (
         DeployedComponent.account_id,
@@ -294,7 +296,6 @@ async def fetch_components_and_prune_unresolved(
         ),
         inplace=True,
     )
-    components.set_index(DeployedComponent.deployment_name.name, drop=True, inplace=True)
     repo_node_to_name = prefixer.repo_node_to_name.get
     components[DeployedComponent.repository_full_name] = [
         repo_node_to_name(n, f"unidentified_{n}")
