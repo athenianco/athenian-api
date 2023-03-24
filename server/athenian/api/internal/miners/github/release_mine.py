@@ -1883,7 +1883,7 @@ async def diff_releases(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> tuple[dict[str, list[tuple[str, str, md.DataFrame]]], list[tuple[str, str]]]:
+) -> tuple[dict[str, list[tuple[str, str, md.DataFrame]]], list[tuple[int, str]]]:
     """Collect details about inner releases between the given boundaries for each repo."""
     log = logging.getLogger("%s.diff_releases" % metadata.__package__)
     names = defaultdict(set)
