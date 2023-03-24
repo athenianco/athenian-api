@@ -1076,10 +1076,15 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
     else:
         issues = {}
 
+    user_node_to_login = prefixer.user_node_to_prefixed_login.get
     result = DiffedReleases(
         data={},
         include=ReleaseSetInclude(
-            users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
+            users={
+                pl: IncludedNativeUser(avatar=a)
+                for u, a in avatars
+                if (pl := user_node_to_login(u)) is not None
+            },
             jira=issues,
         ),
     )
