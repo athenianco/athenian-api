@@ -158,7 +158,7 @@ def cached(
                                 ) is not None:
                                     span.description = str(len(buffer))
                             break
-                        except TimeoutError:
+                        except (TimeoutError, asyncio.TimeoutError):
                             log.warning(
                                 "Timed out while fetching cached %s/%s [%d]",
                                 full_name,

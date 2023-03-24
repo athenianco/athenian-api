@@ -905,8 +905,13 @@ async def _mine_releases(
                 facts.deployments = depmap.get(facts.node_id)
         else:
             deployments = {}
+    if not result:
+        result = _empty_mined_releases_df()
+    else:
+        result = df_from_structs(result)
+        result.sort_values(ReleaseFacts.f.published, inplace=True, ascending=False)
     return (
-        df_from_structs(result),
+        result,
         avatars,
         {r: v.match for r, v in release_settings.native.items()},
         deployments,

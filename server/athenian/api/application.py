@@ -750,7 +750,7 @@ class AthenianApp(especifico.AioHttpApp):
             asyncio.current_task().set_name(f"exec {summary}")
             try:
                 return await handler(request)
-            except asyncio.TimeoutError as e:
+            except (TimeoutError, asyncio.TimeoutError) as e:
                 # re-package any internal timeouts
                 raise RuntimeError("TimeoutError") from e
 
@@ -795,7 +795,7 @@ class AthenianApp(especifico.AioHttpApp):
                     },
                 )
             raise e from None
-        except asyncio.TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             self.log.error("internal timeout %s", summary)
             # nginx has already cancelled the request, we can return whatever
             return ResponseError(ServerCrashedError(None, "/errors/ServerTimeout")).response
