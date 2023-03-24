@@ -1641,7 +1641,7 @@ async def _map_releases_to_deployments(
         else:
             commits_by_reverse_key[key] = np.unique(np.concatenate(val))
     if event_hashes:
-        event_hashes = np.concatenate(event_hashes)
+        event_hashes = unordered_unique(np.concatenate(event_hashes))
     commits_by_reverse_key = {
         k: v for k, v in commits_by_reverse_key.items() if k[0] != ReleaseMatch.event
     }
