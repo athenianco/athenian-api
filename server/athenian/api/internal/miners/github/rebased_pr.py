@@ -242,7 +242,6 @@ async def _match_rebased_prs_from_scratch(
         searched_commits = searched_commits[0]
     else:
         searched_commits = md.concat(*searched_commits, ignore_index=True)
-    prefixes = []
     message_commit_map = defaultdict(lambda: defaultdict(list))
     message_pr_merge_map = defaultdict(lambda: defaultdict(list))
     merge_message_re = re.compile(r"Merge pull request #(\d+) from ")
@@ -257,19 +256,21 @@ async def _match_rebased_prs_from_scratch(
     if len(repo_matched) < len(searched_commits):
         searched_commits = searched_commits.take(repo_matched)
 
+    prefixes = np.empty(len(searched_commits), object)
     for i, (msg, repo_id) in enumerate(
         zip(
             searched_commits[NodeCommit.message.name],
             searched_commits[NodeCommit.repository_id.name],
         ),
     ):
-        prefixes.append(msg[:commit_message_substr_len])
+        prefixes[i] = msg[:commit_message_substr_len]
         if (nl := msg.find("\n")) >= 0:
             msg = msg[:nl]
         message_commit_map[repo_id][msg].append(i)
         if match := merge_message_re.match(msg):
             extra_prs[repo_id].append(int(match.group(1)))
             message_pr_merge_map[repo_id][match.group(0)].append(i)
+    prefixes = unordered_unique(prefixes)
 
     tasks = [
         read_sql_query(
@@ -351,10 +352,7 @@ async def _match_rebased_prs_from_scratch(
     ]
 
     rough_matches = await gather(*tasks, op="_match_rebased_prs_from_scratch/rough_matches")
-    if len(rough_matches) == 1:
-        rough_matches = rough_matches[0]
-    else:
-        rough_matches = md.concat(*rough_matches, ignore_index=True)
+    rough_matches = md.concat(*rough_matches, ignore_index=True, copy=False)
     matched_commits = []
     if not rough_matches.empty:
         matched_pr_node_ids = []
@@ -375,8 +373,9 @@ async def _match_rebased_prs_from_scratch(
             else:
                 lookup_map = message_commit_map
             if indexes := lookup_map[repo_id][message]:
-                if (searched_commit_ids[indexes] != merge_commit_id).all():
-                    indexes = np.array(indexes)[
+                indexes = np.array(indexes)[searched_commit_ids[indexes] != merge_commit_id]
+                if len(indexes):
+                    indexes = indexes[
                         searched_committed_ats[indexes] > (merged_at - np.timedelta64(10, "s"))
                     ]
                     matched_commits.extend(indexes)

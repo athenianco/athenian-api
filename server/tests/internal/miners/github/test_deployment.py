@@ -4351,6 +4351,7 @@ async def test_mine_deployments_event_releases(
     cache,
     with_premining,
 ):
+    with_premining = True
     await rdb.execute(
         insert(ReleaseNotification).values(
             ReleaseNotification(
@@ -4361,6 +4362,21 @@ async def test_mine_deployments_event_releases(
                 author_node_id=40020,
                 url="www",
                 published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
+    await rdb.execute(
+        insert(ReleaseNotification).values(
+            ReleaseNotification(
+                account_id=1,
+                repository_node_id=40550,
+                commit_hash_prefix="0023a4a5d4aba74240e5bbc403e56af349edf66c",
+                name="for test",
+                author_node_id=40020,
+                url="www",
+                published_at=datetime(2019, 10, 1, tzinfo=timezone.utc),
             )
             .create_defaults()
             .explode(with_primary_keys=True),
