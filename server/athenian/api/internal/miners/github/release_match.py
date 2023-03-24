@@ -190,7 +190,7 @@ class PullRequestToReleaseMapper:
             ),
         )
         merged_prs = prs.take(
-            ~in1d_str(joint_index[: len(prs)], joint_index[len(prs) :], verbatim=True),
+            in1d_str(joint_index[: len(prs)], joint_index[len(prs) :], verbatim=True, invert=True),
         )
         if merged_prs.empty:
             unreleased_prs_event.set()
@@ -218,7 +218,9 @@ class PullRequestToReleaseMapper:
                 ],
             ),
         )
-        mask = ~in1d_str(joint_index[: len(dead_prs)], joint_index[len(dead_prs) :], verbatim=True)
+        mask = in1d_str(
+            joint_index[: len(dead_prs)], joint_index[len(dead_prs) :], verbatim=True, invert=True,
+        )
         if not mask.all():
             dead_prs.take(mask, inplace=True)
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
