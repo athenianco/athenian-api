@@ -147,7 +147,7 @@ async def _fetch_comments(
     bodies = comments[Comment.body.name]
 
     comments_map = {}
-    for indexes in comments.groupby("issue_id"):
+    for indexes in comments.groupby(Comment.issue_id.name):
         issue_id = issue_ids[indexes[0]]
         comments_map[issue_id] = [
             WebJIRAComment(
