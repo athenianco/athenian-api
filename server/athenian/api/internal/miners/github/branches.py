@@ -206,8 +206,11 @@ class BranchMiner:
                     ],
                 ),
             )
-            old_mask = ~in1d_str(
-                joint_index[: len(old_branches)], joint_index[len(old_branches) :], verbatim=True,
+            old_mask = in1d_str(
+                joint_index[: len(old_branches)],
+                joint_index[len(old_branches) :],
+                verbatim=True,
+                invert=True,
             )
             if old_count := old_mask.sum():
                 if old_count < len(old_branches):
