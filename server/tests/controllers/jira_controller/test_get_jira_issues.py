@@ -186,7 +186,7 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
         assert "story_points" not in res["issues"][1]
 
 
-class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
+class TestGetJIRAIssuesIncludeUsers(BaseGetJIRAIssuesTests):
     async def test_include_no_issues(self) -> None:
         JIRA_USERS = GetJIRAIssuesInclude.JIRA_USERS.value
         GITHUB_USERS = GetJIRAIssuesInclude.GITHUB_USERS.value
@@ -195,7 +195,7 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
         assert res["issues"] == []
         assert res["include"] == {}
 
-    async def test_users(self, sdb: Database, mdb_rw: Database) -> None:
+    async def test_jira_users(self, sdb: Database, mdb_rw: Database) -> None:
         JIRA_USERS = GetJIRAIssuesInclude.JIRA_USERS.value
         issue_kwargs: dict[str, Any] = {"project_id": "1", "type_id": "0"}
         mdb_models = [
@@ -224,7 +224,7 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
         assert jira_users[1]["avatar"] == "http://a.co/1"
         assert jira_users[1]["developer"] == "github.com/gh33"
 
-    async def test_users_fixture(self) -> None:
+    async def test_jira_users_fixture(self) -> None:
         body = self._body(issues=["DEV-164"], include=[GetJIRAIssuesInclude.JIRA_USERS.value])
         res = await self.post_json(json=body)
         assert sorted(u["avatar"] for u in res["include"]["jira_users"]) == [
@@ -262,6 +262,42 @@ class TestGetJIRAIssuesInclude(BaseGetJIRAIssuesTests):
             "github.com/gh33": {"avatar": "https://a/3.jpg"},
             "github.com/gh44": {"avatar": "https://a/4.jpg"},
         }
+
+
+class TestGetJIRAIssuesIncludeComments(BaseGetJIRAIssuesTests):
+    async def test_base(self, mdb_rw: Database) -> None:
+        COMMENTS = GetJIRAIssuesInclude.COMMENTS.value
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            issue_kwargs = {"project_id": "1", "type_id": "0"}
+            models = [
+                md_factory.JIRAProjectFactory(id="1", key="P"),
+                md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
+                *jira_issue_models("1", key="P-1", comments_count=0, **issue_kwargs),
+                *jira_issue_models("2", key="P-2", comments_count=2, **issue_kwargs),
+                *jira_issue_models("3", key="P-3", comments_count=1, **issue_kwargs),
+                md_factory.JIRACommentFactory(issue_id="2", author_display_name="A0", body="RB0"),
+                md_factory.JIRACommentFactory(issue_id="2", author_display_name="A1", body="RB1"),
+                md_factory.JIRACommentFactory(issue_id="3", author_display_name="A2", body="RB2"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            body = self._body(issues=["P-2", "P-3", "P-1"], include=[COMMENTS])
+            res = await self.post_json(json=body)
+
+        assert (p2 := res["issues"][0])["id"] == "P-2"
+        assert p2["comments"] == 2
+        assert sorted(c["rendered_body"] for c in p2["comment_list"]) == ["RB0", "RB1"]
+        assert sorted(c["author"] for c in p2["comment_list"]) == ["A0", "A1"]
+
+        assert (p3 := res["issues"][1])["id"] == "P-3"
+        assert p3["comments"] == 1
+        assert [c["rendered_body"] for c in p3["comment_list"]] == ["RB2"]
+        assert [c["author"] for c in p3["comment_list"]] == ["A2"]
+
+        assert (p1 := res["issues"][2])["id"] == "P-1"
+        assert p1["comments"] == 0
+        assert p1.get("comment_list", []) == []
 
 
 class TestIncludeDescription(BaseGetJIRAIssuesTests):

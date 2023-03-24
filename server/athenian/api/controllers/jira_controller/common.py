@@ -42,6 +42,7 @@ from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, User
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import (
+    JIRAComment as WebJIRAComment,
     JIRAIssue as WebJIRAIssue,
     JIRAUser as WebJIRAUser,
     PullRequest as WebPullRequest,
@@ -101,6 +102,7 @@ async def collect_account_info(account: int, request: AthenianWebRequest) -> Acc
 def build_issue_web_models(
     issues: md.DataFrame,
     prs: dict[str, WebPullRequest],
+    comments: dict[str, list[WebJIRAComment]],
     issue_types: list[Row],
 ) -> list[WebJIRAIssue]:
     """Build the Jira issues web models from an issues dataframe."""
@@ -139,6 +141,7 @@ def build_issue_web_models(
         issue_comments,
         issue_url,
         issue_story_points,
+        issue_id,
         issue_work_began,
         issue_resolved,
         issue_description,
@@ -162,6 +165,7 @@ def build_issue_web_models(
                 Issue.story_points.name,
             )
         ),
+        issues.index.values,
         issues_work_began,
         issues_resolved,
         issues_descriptions,
@@ -190,6 +194,7 @@ def build_issue_web_models(
                 reporter=issue_reporter,
                 assignee=issue_assignee,
                 comments=issue_comments,
+                comment_list=comments.get(issue_id),
                 priority=issue_priority,
                 status=issue_status,
                 project=issue_project.decode(),
