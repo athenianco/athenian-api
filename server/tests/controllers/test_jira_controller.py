@@ -9,9 +9,15 @@ from sqlalchemy import delete, insert, update
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.jira.epic import filter_epics
-from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.internal.settings import (
+    LogicalRepositorySettings,
+    ReleaseMatch,
+    ReleaseMatchSetting,
+    ReleaseSettings,
+)
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.models.web import (
     CalculatedJIRAHistogram,
     DeployedComponent,
@@ -626,7 +632,16 @@ async def test_filter_jira_epics_no_time(client, headers):
 
 
 @with_defer
-async def test_missing_release_settings(client, headers, mdb_rw, sdb):
+async def test_missing_release_settings(
+    client,
+    headers,
+    mdb_rw,
+    sdb,
+    pdb,
+    meta_ids,
+    pr_facts_calculator_factory,
+    prefixer,
+):
     body = {
         "date_from": "2023-02-01",
         "date_to": "2023-03-01",
@@ -652,11 +667,37 @@ async def test_missing_release_settings(client, headers, mdb_rw, sdb):
         await models_insert(mdb_rw, *models)
 
         # let precompute, mapped prs are read only from pdb
-        search_body = {"date_from": "2023-02-01", "date_to": "2023-03-01", "account": 1}
-        await client.request(
-            method="POST", path="/private/search/pull_requests", headers=headers, json=search_body,
+        pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, meta_ids)
+        await pr_facts_calculator_no_cache(
+            dt(2023, 2, 1),
+            dt(2023, 3, 1),
+            {"org/repo"},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            {},
+            ReleaseSettings(
+                {
+                    "github.com/org/repo": ReleaseMatchSetting(
+                        branches="", tags=".*", events=".*", match=ReleaseMatch.tag,
+                    ),
+                },
+            ),
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            False,
+            0,
         )
         await wait_deferred()
+        await pdb.execute(
+            update(GitHubDonePullRequestFacts).values(
+                {
+                    GitHubDonePullRequestFacts.release_match: "tag|.*",
+                    GitHubDonePullRequestFacts.updated_at: datetime.now(timezone.utc),
+                },
+            ),
+        )
         response = await client.request(
             method="POST", path="/v1/filter/jira", headers=headers, json=body,
         )

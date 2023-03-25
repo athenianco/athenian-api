@@ -51,7 +51,6 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestDeployment,
     GitHubReleaseDeployment,
 )
-from tests.conftest import get_default_branches, get_release_match_setting_tag
 from tests.testutils.db import assert_existing_row, assert_missing_row, count, models_insert
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.persistentdata import (
@@ -4879,13 +4878,15 @@ class TestHideOutlierFirstDeployments:
         pdb,
         rdb,
         sdb,
+        default_branches,
+        release_match_setting_tag,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
         deps = await mine_deployments(
-            **self._mine_common_kwargs(),
+            **self._mine_common_kwargs(default_branches, release_match_setting_tag),
             branches=branches,
             prefixer=prefixer,
             mdb=mdb,
@@ -4939,13 +4940,15 @@ class TestHideOutlierFirstDeployments:
         pdb,
         rdb,
         sdb,
+        default_branches,
+        release_match_setting_tag,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         # delete notifications so that mine_deployments will find nothing
         await rdb.execute(sa.delete(DeploymentNotification))
 
         deps = await mine_deployments(
-            **self._mine_common_kwargs(),
+            **self._mine_common_kwargs(default_branches, release_match_setting_tag),
             branches=branches,
             prefixer=prefixer,
             mdb=mdb,
@@ -4972,6 +4975,8 @@ class TestHideOutlierFirstDeployments:
         pdb,
         rdb,
         sdb,
+        default_branches,
+        release_match_setting_tag,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         await rdb.execute(sa.delete(DeploymentNotification))
@@ -4985,7 +4990,7 @@ class TestHideOutlierFirstDeployments:
         )
 
         deps = await mine_deployments(
-            **self._mine_common_kwargs(),
+            **self._mine_common_kwargs(default_branches, release_match_setting_tag),
             branches=branches,
             prefixer=prefixer,
             mdb=mdb,
@@ -5008,6 +5013,7 @@ class TestHideOutlierFirstDeployments:
         pdb,
         rdb,
         release_match_setting_tag_logical,
+        default_branches,
     ) -> None:
         logical_settings = LogicalRepositorySettings(
             {"src-d/go-git/alpha": {"title": "alpha-.*"}},
@@ -5024,8 +5030,9 @@ class TestHideOutlierFirstDeployments:
         )
         deps = await mine_deployments(
             **self._mine_common_kwargs(
+                default_branches,
+                release_match_setting_tag_logical,
                 logical_settings=logical_settings,
-                release_settings=release_match_setting_tag_logical,
                 repositories=["src-d/go-git/alpha"],
             ),
             branches=branches,
@@ -5069,7 +5076,12 @@ class TestHideOutlierFirstDeployments:
         return md.DataFrame(dict(zip(df_columns, arrays)))
 
     @classmethod
-    def _mine_common_kwargs(cls, **extra: Any) -> dict:
+    def _mine_common_kwargs(
+        cls,
+        default_branches,
+        release_settings,
+        **extra: Any,
+    ) -> dict:
         return {
             "repositories": ["src-d/go-git"],
             "participants": {},
@@ -5081,9 +5093,9 @@ class TestHideOutlierFirstDeployments:
             "without_labels": {},
             "pr_labels": LabelFilter.empty(),
             "jira": JIRAFilter.empty(),
-            "release_settings": get_release_match_setting_tag(),
+            "release_settings": release_settings,
             "logical_settings": LogicalRepositorySettings.empty(),
-            "default_branches": get_default_branches(),
+            "default_branches": default_branches,
             "account": 1,
             "jira_ids": JIRAConfig(1, {}, {}),
             "meta_ids": (6366825,),
