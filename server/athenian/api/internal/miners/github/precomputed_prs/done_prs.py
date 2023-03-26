@@ -537,7 +537,7 @@ class DonePRFactsLoader:
         query = select(*query_columns).where(
             ghprt.acc_id == account,
             ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
-            ghprt.releaser.isnot(None),
+            ghprt.release_match.like("%|%"),
             ghprt.pr_done_at < time_to,
             ghprt.repository_full_name.in_(np.unique(prs.index.get_level_values(1))),
             ghprt.pr_node_id.in_(pr_node_ids)
