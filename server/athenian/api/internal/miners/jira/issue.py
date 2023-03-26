@@ -1,7 +1,6 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timezone
-from functools import partial
 from itertools import chain
 import logging
 import pickle
@@ -284,6 +283,7 @@ ISSUE_PRS_BEGAN = "prs_began"
 ISSUE_PRS_RELEASED = "prs_released"
 ISSUE_PRS_COUNT = "prs_count"
 ISSUE_PR_IDS = "pr_ids"
+ISSUE_REQUIRES_RELEASES = "requires_releases"
 
 
 class _NoResult:
@@ -410,46 +410,55 @@ async def _fetch_jira_issues(
     assert jira_filter.account > 0
     log = logging.getLogger("%s.jira" % metadata.__package__)
 
-    query_raw = partial(
-        query_jira_raw,
-        [
-            Issue.id,
-            Issue.created,
-            AthenianIssue.updated,
-            AthenianIssue.work_began,
-            AthenianIssue.resolved,
-            Status.category_name,
-            *extra_columns,
-        ],
-        time_to=time_to,
-        jira_filter=jira_filter,
-        exclude_inactive=exclude_inactive,
-        reporters=reporters,
-        assignees=assignees,
-        commenters=commenters,
-        nested_assignees=nested_assignees,
-        mdb=mdb,
-        cache=cache,
-    )
+    async def query_raw(requires_releases: bool, **kwargs) -> md.DataFrame:
+        df = await query_jira_raw(
+            [
+                Issue.id,
+                Issue.created,
+                AthenianIssue.updated,
+                AthenianIssue.work_began,
+                AthenianIssue.resolved,
+                Status.category_name,
+                *extra_columns,
+            ],
+            **dict(
+                time_to=time_to,
+                jira_filter=jira_filter,
+                exclude_inactive=exclude_inactive,
+                reporters=reporters,
+                assignees=assignees,
+                commenters=commenters,
+                nested_assignees=nested_assignees,
+                mdb=mdb,
+                cache=cache,
+                **kwargs,
+            ),
+        )
+        df[ISSUE_REQUIRES_RELEASES] = requires_releases
+        return df
+
     fetch_tasks = []
     if time_from and time_to:
         # `query_jira_raw` applies `time_from` considering only jira resolution time, we need to
         # extend this by considering also done time of any linked PRs.
-        # In order to do so we first retrieve node ids for PR released in the interval, then we
-        # execute query_jira_raw again with no `time_from` but filtering the issues resolved
-        # before `time_from` and mapped to those PRs
-        async def _fetch_by_pr_release():
-            pr_ids = await _fetch_released_pr_ids(
-                time_from, time_to, default_branches, release_settings, account, pdb,
-            )
+        # In order to do so we first retrieve node ids of PRs that probably released in the time
+        # interval, then we execute query_jira_raw() again with no `time_from` but filtering
+        # the issues resolved before `time_from` and mapped to those PRs
+        # We don't need the exact match because we will reliably disambiguate in subsequent code.
+        async def _fetch_by_pr_release() -> md.DataFrame | None:
+            pr_ids = await _fetch_potentially_released_pr_ids(time_from, time_to, account, pdb)
             if len(pr_ids) == 0:
                 return None
             return await query_raw(
-                time_from=None, resolved_before=time_from, mapped_to_prs=pr_ids, meta_ids=meta_ids,
+                True,
+                time_from=None,
+                resolved_before=time_from,
+                mapped_to_prs=pr_ids,
+                meta_ids=meta_ids,
             )
 
         fetch_tasks.append(_fetch_by_pr_release())
-    fetch_tasks.append(query_raw(time_from=time_from))
+    fetch_tasks.append(query_raw(False, time_from=time_from))
 
     results = await gather(*fetch_tasks, op="_fetch_jira_issues_fetches")
     results = [r for r in results if r is not None]
@@ -462,7 +471,7 @@ async def _fetch_jira_issues(
                 "JIRA issues are missing in jira.athenian_issue: %s",
                 ", ".join(map(str, issues.index.values[missing_updated])),
             )
-            issues = issues.take(np.flatnonzero(~missing_updated))
+            issues = issues.take(~missing_updated)
     if on_raw_fetch_complete is not None:
         on_raw_fetch_complete_task = asyncio.create_task(
             on_raw_fetch_complete(issues), name="fetch_jira_issues/on_raw_fetch_complete",
@@ -471,6 +480,24 @@ async def _fetch_jira_issues(
         on_raw_fetch_complete_task = _NoResult.stub()
     if issues.empty or not adjust_timestamps_using_prs:
         _fill_issues_with_empty_prs_info(issues)
+        if issues[ISSUE_REQUIRES_RELEASES].any():
+            assert default_branches is not None
+            requires_releases_mask = issues[ISSUE_REQUIRES_RELEASES]
+            requires_releases_issues = issues.take(requires_releases_mask)
+            await _fill_issues_with_mapped_prs_info(
+                requires_releases_issues,
+                default_branches,
+                release_settings,
+                logical_settings,
+                account,
+                meta_ids,
+                jira_filter.account,
+                pdb,
+                mdb,
+            )
+            issues[ISSUE_PRS_RELEASED][requires_releases_mask] = requires_releases_issues[
+                ISSUE_PRS_RELEASED
+            ]
     else:
         assert default_branches is not None
         await _fill_issues_with_mapped_prs_info(
@@ -484,6 +511,12 @@ async def _fetch_jira_issues(
             pdb,
             mdb,
         )
+
+    requires_releases_mask = ~(issues[ISSUE_REQUIRES_RELEASES] & issues.isnull(ISSUE_PRS_RELEASED))
+    if not requires_releases_mask.all():
+        issues.take(requires_releases_mask, inplace=True)
+    del issues[ISSUE_REQUIRES_RELEASES]
+
     return issues, await on_raw_fetch_complete_task, adjust_timestamps_using_prs
 
 
@@ -744,37 +777,35 @@ async def _fetch_released_prs(
 
 
 @sentry_span
-async def _fetch_released_pr_ids(
+async def _fetch_potentially_released_pr_ids(
     time_from: datetime,
     time_to: datetime,
-    default_branches: dict[str, str],
-    release_settings: ReleaseSettings,
     account: int,
     pdb: Database,
 ) -> Sequence[str]:
-    """Fetch the node ids of the PR released in the interval."""
+    """
+    Fetch the node ids of the PRs *potentially* released in the interval.
+
+    There is a guarantee that if a PR released on the time interval, it is included in the result.
+    """
     ghdprf = GitHubDonePullRequestFacts
-    selected = [ghdprf.pr_node_id, ghdprf.repository_full_name, ghdprf.release_match]
-    where = [ghdprf.acc_id == account, ghdprf.pr_done_at >= time_from]
-
-    df = await read_sql_query(sa.select(*selected).where(*where), pdb, selected)
-    take_mask = np.full(len(df), True, bool)
-
-    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-    for repo, match, indexes in _iter_released_prs_by_match(df):
-        if repo in release_settings.native:
-            ok = triage_by_release_match(
-                repo, match, release_settings, default_branches, df, ambiguous,
-            )
-            if ok is None:
-                take_mask[indexes] = False
-    return df[ghdprf.pr_node_id.name][take_mask]
+    format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
+    where = [
+        ghdprf.acc_id == account,
+        ghdprf.release_match.like("%|%"),
+        ghdprf.format_version == format_version,
+        ghdprf.pr_done_at.between(time_from, time_to),
+    ]
+    df = await read_sql_query(
+        sa.select(sa.distinct(ghdprf.pr_node_id)).where(*where), pdb, [ghdprf.pr_node_id],
+    )
+    return df[ghdprf.pr_node_id.name]
 
 
 def _iter_released_prs_by_match(df: md.DataFrame) -> Iterator[tuple[npt.NDArray[int], str, str]]:
     """Iterate over the released PRs dataframe grouped by release match.
 
-    Emits a tuple for every groups of PRs with the same release match and repo; each tuple has
+    Emits a tuple for every group of PRs with the same release match and repo; each tuple has
     - the string of the release match
     - the repository
     - indexes of `df` composing the group

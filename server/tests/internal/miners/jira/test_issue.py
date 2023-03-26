@@ -6,6 +6,7 @@ import medvedi as md
 from medvedi.testing import assert_frame_equal
 import numpy as np
 from numpy.testing import assert_array_equal
+import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
@@ -43,6 +44,7 @@ from athenian.api.internal.settings import (
 )
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
 from athenian.api.models.metadata.jira import Issue, Status
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import (
@@ -204,6 +206,7 @@ class TestFetchJIRAIssues:
         pdb,
         default_branches,
         pr_facts_calculator_factory,
+        meta_ids,
     ):
         kwargs = self._kwargs(
             time_from=dt(2023, 2, 1),
@@ -237,11 +240,16 @@ class TestFetchJIRAIssues:
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
 
-            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
-            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
-            release_settings = await settings.list_release_matches()
+            prefixer = await Prefixer.load(meta_ids, mdb_rw, None)
+            release_settings = ReleaseSettings(
+                {
+                    "github.com/org/repo": ReleaseMatchSetting(
+                        branches="", tags=".*", events=".*", match=ReleaseMatch.tag,
+                    ),
+                },
+            )
 
-            pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, (DEFAULT_MD_ACCOUNT_ID,))
+            pr_facts_calculator_no_cache = pr_facts_calculator_factory(1, meta_ids)
             # filtering by PR release time needs pdb, let facts calculator fill it
             await pr_facts_calculator_no_cache(
                 dt(2022, 10, 1),
@@ -261,9 +269,35 @@ class TestFetchJIRAIssues:
             await wait_deferred()
             kwargs["release_settings"] = release_settings
             issues = await fetch_jira_issues(**kwargs)
-            # issue 1 is included because its PR is released on Feb.
+            # issue 1 is excluded because its PR is rejected.
             # issue 4 is excluded because its PR is released on Jan.
+            assert sorted(issues.index.values) == [b"2", b"3"]
+
+            await pdb.execute(
+                sa.update(GitHubDonePullRequestFacts).values(
+                    {
+                        GitHubDonePullRequestFacts.release_match: "tag|.*",
+                        GitHubDonePullRequestFacts.updated_at: datetime.now(timezone.utc),
+                    },
+                ),
+            )
+
+            # issue 1 is included because its PR is released on Feb.
+            issues = await fetch_jira_issues(**kwargs)
             assert sorted(issues.index.values) == [b"1", b"2", b"3"]
+
+            await pdb.execute(
+                sa.update(GitHubDonePullRequestFacts).values(
+                    {
+                        GitHubDonePullRequestFacts.release_match: "branch|master",
+                        GitHubDonePullRequestFacts.updated_at: datetime.now(timezone.utc),
+                    },
+                ),
+            )
+            # issue 1 is excluded because its PR is released by branch.
+            # issue 4 is excluded because its PR is released on Jan.
+            issues = await fetch_jira_issues(**kwargs)
+            assert sorted(issues.index.values) == [b"2", b"3"]
 
     @with_defer
     async def test_mapped_prs_from_multiple_accounts(
@@ -273,8 +307,9 @@ class TestFetchJIRAIssues:
         pdb,
         default_branches,
         pr_facts_calculator_factory,
+        meta_ids,
     ):
-        meta_ids = (DEFAULT_MD_ACCOUNT_ID, 10)
+        meta_ids = (*meta_ids, 10)
         kwargs = self._kwargs(
             time_from=dt(2023, 2, 1),
             time_to=dt(2023, 3, 1),
@@ -573,7 +608,12 @@ class TestGenerateJIRAPRsQuery:
 
 
 class TestPullRequestJiraMapper:
-    async def test_load_and_apply_to_pr_facts(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_load_and_apply_to_pr_facts(
+        self,
+        mdb_rw: Database,
+        sdb: Database,
+        meta_ids,
+    ) -> None:
         models = [
             *pr_jira_issue_mappings((10, "20"), (11, "20"), (11, "21")),
             md_factory.JIRAIssueFactory(
@@ -599,7 +639,7 @@ class TestPullRequestJiraMapper:
                 (11, "repo1"): PullRequestFacts(b""),
             }
             await PullRequestJiraMapper.load_and_apply_to_pr_facts(
-                prs, JIRAEntityToFetch.EVERYTHING(), (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+                prs, JIRAEntityToFetch.EVERYTHING(), meta_ids, mdb_rw,
             )
 
         assert sorted(prs) == [(10, "repo0"), (10, "repo1"), (11, "repo1")]
@@ -618,7 +658,7 @@ class TestPullRequestJiraMapper:
         assert_array_equal(prs[(11, "repo1")].jira.types, np.array([b"T", b"T"]))
         assert_array_equal(prs[(11, "repo1")].jira.labels, ["l0", "l0", "l1"])
 
-    async def test_labels(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_labels(self, mdb_rw: Database, sdb: Database, meta_ids) -> None:
         models = [
             *pr_jira_issue_mappings(
                 (10, "20"), (11, "21"), (12, "22"), (13, "20"), (13, "22"), (14, "20"), (14, "21"),
@@ -637,7 +677,7 @@ class TestPullRequestJiraMapper:
                 for k in ((10, "r"), (11, "r"), (12, "r"), (13, "r"), (14, "r"))
             }
             await PullRequestJiraMapper.load_and_apply_to_pr_facts(
-                prs, JIRAEntityToFetch.EVERYTHING(), (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+                prs, JIRAEntityToFetch.EVERYTHING(), meta_ids, mdb_rw,
             )
             assert_array_equal(prs[(10, "r")].jira.labels, np.array(["l0"]))
             assert_array_equal(prs[(11, "r")].jira.labels, np.array(["l0", "l1"]))
@@ -645,7 +685,7 @@ class TestPullRequestJiraMapper:
             assert_array_equal(prs[(13, "r")].jira.labels, np.array(["l0"]))
             assert_array_equal(prs[(14, "r")].jira.labels, np.array(["l0", "l0", "l1"]))
 
-    async def test_components_as_labels(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_components_as_labels(self, mdb_rw: Database, sdb: Database, meta_ids) -> None:
         models = [
             *pr_jira_issue_mappings((10, "20"), (10, "21"), (11, "21"), (12, "22"), (13, "23")),
             md_factory.JIRAComponentFactory(id="0", name="c0"),
@@ -661,7 +701,7 @@ class TestPullRequestJiraMapper:
 
             prs = {k: PullRequestFacts(b"") for k in ((10, "r"), (11, "r"), (12, "r"), (13, "r"))}
             await PullRequestJiraMapper.load_and_apply_to_pr_facts(
-                prs, JIRAEntityToFetch.EVERYTHING(), (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+                prs, JIRAEntityToFetch.EVERYTHING(), meta_ids, mdb_rw,
             )
             assert_array_equal(
                 np.sort(prs[(10, "r")].jira.labels), np.array(["c0", "c1", "l0", "l0", "l1"]),
@@ -670,7 +710,7 @@ class TestPullRequestJiraMapper:
             assert_array_equal(prs[(12, "r")].jira.labels, np.array(["c1"]))
             assert_array_equal(prs[(13, "r")].jira.labels, np.array(["c0"]))
 
-    async def test_load_only_issues(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_load_only_issues(self, mdb_rw: Database, sdb: Database, meta_ids) -> None:
         models = [
             *pr_jira_issue_mappings((10, "20"), (10, "21"), (11, "22"), (12, "20"), (13, "20")),
             md_factory.JIRAIssueFactory(id="20", key="I20"),
@@ -683,7 +723,7 @@ class TestPullRequestJiraMapper:
             await models_insert(mdb_rw, *models)
 
             mapping = await PullRequestJiraMapper.load(
-                [10, 11, 12, 14], JIRAEntityToFetch.ISSUES, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+                [10, 11, 12, 14], JIRAEntityToFetch.ISSUES, meta_ids, mdb_rw,
             )
             assert sorted(mapping) == [10, 11, 12]
             assert sorted(mapping[10].ids) == ["I20", "I21"]
@@ -694,7 +734,7 @@ class TestPullRequestJiraMapper:
             assert list(mapping[10].priorities) == []
             assert list(mapping[10].types) == []
 
-    async def test_load_everything(self, mdb_rw: Database, sdb: Database) -> None:
+    async def test_load_everything(self, mdb_rw: Database, sdb: Database, meta_ids) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = [
                 *pr_jira_issue_mappings((10, "20")),
@@ -706,7 +746,7 @@ class TestPullRequestJiraMapper:
             await models_insert(mdb_rw, *models)
 
             mapping = await PullRequestJiraMapper.load(
-                [10], JIRAEntityToFetch.EVERYTHING(), (DEFAULT_MD_ACCOUNT_ID,), mdb_rw,
+                [10], JIRAEntityToFetch.EVERYTHING(), meta_ids, mdb_rw,
             )
             assert list(mapping) == [10]
             assert mapping[10].ids == ["I20"]

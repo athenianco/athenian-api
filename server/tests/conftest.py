@@ -893,7 +893,9 @@ def release_match_setting_tag_or_branch():
     )
 
 
-def get_release_match_setting_tag() -> ReleaseSettings:
+# Do not make this a static function, must be a fixture!!!
+@pytest.fixture(scope="session")
+def release_match_setting_tag():
     return ReleaseSettings(
         {
             "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -901,11 +903,6 @@ def get_release_match_setting_tag() -> ReleaseSettings:
             ),
         },
     )
-
-
-@pytest.fixture(scope="session")
-def release_match_setting_tag():
-    return get_release_match_setting_tag()
 
 
 @pytest.fixture(scope="session")
@@ -950,17 +947,14 @@ def meta_ids() -> tuple[int, ...]:
     return (6366825,)
 
 
-def get_default_branches() -> dict:
+# Do not make this a static function, must be a fixture!!!
+@pytest.fixture(scope="session")
+def default_branches():
     return {
         "src-d/go-git": "master",
         "src-d/gitbase": "master",
         "src-d/hercules": "master",
     }
-
-
-@pytest.fixture(scope="session")
-def default_branches():
-    return get_default_branches()
 
 
 _branches = None
