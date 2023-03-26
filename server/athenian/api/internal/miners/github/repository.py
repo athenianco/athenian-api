@@ -81,18 +81,29 @@ async def mine_repositories(
 
     @sentry_span
     async def fetch_active_done_prs():
+        ghprt = GitHubDonePullRequestFacts
+        default_format_version = ghprt.__table__.columns[ghprt.format_version.key].default.arg
         return await pdb.fetch_all(
             union_all(
-                *(
-                    select(distinct(GitHubDonePullRequestFacts.repository_full_name)).where(
-                        GitHubDonePullRequestFacts.acc_id == account,
-                        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-                        col.between(time_from, time_to),
-                    )
-                    for col in (
-                        GitHubDonePullRequestFacts.pr_done_at,
-                        GitHubDonePullRequestFacts.pr_created_at,
-                    )
+                select(distinct(ghprt.repository_full_name)).where(
+                    ghprt.acc_id == account,
+                    ghprt.format_version == default_format_version,
+                    ghprt.repository_full_name.in_(repos),
+                    ghprt.release_match.like("%|%"),
+                    ghprt.pr_done_at.between(time_from, time_to),
+                ),
+                select(distinct(ghprt.repository_full_name)).where(
+                    ghprt.acc_id == account,
+                    ghprt.format_version == default_format_version,
+                    ghprt.repository_full_name.in_(repos),
+                    ghprt.release_match == ReleaseMatch.rejected.name,
+                    ghprt.pr_done_at.between(time_from, time_to),
+                ),
+                select(distinct(ghprt.repository_full_name)).where(
+                    ghprt.acc_id == account,
+                    ghprt.format_version == default_format_version,
+                    ghprt.repository_full_name.in_(repos),
+                    ghprt.pr_created_at.between(time_from, time_to),
                 ),
             ),
         )
