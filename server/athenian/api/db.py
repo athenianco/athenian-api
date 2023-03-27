@@ -93,7 +93,7 @@ integrity_errors = (asyncpg.IntegrityConstraintViolationError, sqlite3.Integrity
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
-_sql_str_re = re.compile(r"\(?'[^']+'\)?, ?")
+_sql_str_re = re.compile(r"\(?'[^']+' *\)?, ?")
 _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
 

@@ -335,7 +335,7 @@ async def precompute_reposet(
             _release_settings = release_settings
             ignored_first_releases = md.DataFrame()
         if not args.skip_prs:
-            if reposet.precomputed:
+            if reposet.precomputed and not args.skip_force_push_dropped:
                 log.info("Scanning for force push dropped PRs")
                 await detect_force_push_dropped_prs(
                     repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
