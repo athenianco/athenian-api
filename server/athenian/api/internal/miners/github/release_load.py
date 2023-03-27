@@ -330,6 +330,7 @@ class ReleaseLoader:
                     missing_high[0][0],
                     time_to,
                     release_settings,
+                    prefixer,
                     account,
                     meta_ids,
                     mdb,
@@ -351,6 +352,7 @@ class ReleaseLoader:
                     time_from,
                     missing_low[-1][0],
                     release_settings,
+                    prefixer,
                     account,
                     meta_ids,
                     mdb,
@@ -371,6 +373,7 @@ class ReleaseLoader:
                     time_from,
                     time_to,
                     release_settings,
+                    prefixer,
                     account,
                     meta_ids,
                     mdb,
@@ -573,6 +576,7 @@ class ReleaseLoader:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
+        prefixer: Prefixer,
         account: int,
         meta_ids: tuple[int, ...],
         mdb: Database,
@@ -608,6 +612,7 @@ class ReleaseLoader:
                     time_from,
                     time_to,
                     release_settings,
+                    prefixer,
                     metrics,
                     refetcher,
                 ),
@@ -1487,6 +1492,7 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
+        prefixer: Prefixer,
         metrics: Optional[MineReleaseMetrics],
         refetcher: Optional[Refetcher],
     ) -> tuple[md.DataFrame, list[str]]:
@@ -1545,7 +1551,7 @@ class ReleaseMatcher:
         if first_shas:
             first_shas = np.sort(np.concatenate(first_shas))
         first_commits, merge_points = await gather(
-            self._fetch_commits(first_shas, time_from, time_to, repos)
+            self._fetch_commits(first_shas, time_from, time_to, repos, prefixer)
             if len(first_shas)
             else None,
             fetch_merge_points_task,
@@ -1700,6 +1706,7 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         repos: Iterable[str],
+        prefixer: Prefixer,
     ) -> md.DataFrame:
         selected = [
             PushCommit.acc_id,
@@ -1721,7 +1728,7 @@ class ReleaseMatcher:
             )
         else:
             return await self._fetch_commits_prefilter(
-                commit_shas, time_from, time_to, repos, selected,
+                commit_shas, time_from, time_to, repos, prefixer, selected,
             )
 
     @sentry_span
@@ -1754,11 +1761,15 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         repos: Iterable[str],
+        prefixer: Prefixer,
         selected: list[InstrumentedAttribute],
     ) -> md.DataFrame:
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        repos = [repo_name_to_node(n) for n in repos]
         filters = [
             PushCommit.acc_id.in_(self._meta_ids),
             PushCommit.committed_date.between(time_from, time_to),
+            PushCommit.repository_node_id.in_(repos),
         ]
         if small_scale := (len(commit_shas) < 100):
             filters.append(PushCommit.sha.in_(commit_shas))
@@ -1777,15 +1788,10 @@ class ReleaseMatcher:
                 .with_statement_hint(f"Rows(*VALUES* cmm repo #{len(commit_shas)})")
                 .with_statement_hint(f"Rows(*VALUES* cmm repo ath #{len(commit_shas)})")
                 .with_statement_hint(f"Rows(*VALUES* cmm repo ath cath #{len(commit_shas)})")
-                .with_statement_hint("IndexScan(cmm github_node_commit_committed_date)")
+                .with_statement_hint("IndexScan(cmm github_node_commit_check_runs)")
             )
 
-        df = await read_sql_query(query, self._mdb, selected)
-        # DEV-5719 there can be same commits in irrelevant repositories
-        matching_repos_mask = df.isin(PushCommit.repository_full_name.name, repos)
-        if not matching_repos_mask.all():
-            df = df.take(matching_repos_mask)
-        return df
+        return await read_sql_query(query, self._mdb, selected)
 
     @sentry_span
     async def _fetch_pr_merge_points(

@@ -684,7 +684,9 @@ async def _fetch_commit_history_dag(
         )[PushCommit.node_id.name]
     else:
         # find max `max_stop_heads` top-level most recent commit hashes
-        stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
+        mask = np.ones(len(hashes), bool)
+        mask[edges] = False
+        stop_heads = hashes[mask]
         if alloc is None:
             alloc = make_mi_heap_allocator_capsule()
         if len(stop_heads) > 0:
@@ -694,8 +696,8 @@ async def _fetch_commit_history_dag(
                     select(NodeCommit.oid)
                     .where(
                         NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.oid.in_(stop_heads),
                         NodeCommit.committed_date > min_commit_time,
+                        NodeCommit.oid.in_(stop_heads),
                     )
                     .order_by(desc(NodeCommit.committed_date))
                     .limit(max_stop_heads),
