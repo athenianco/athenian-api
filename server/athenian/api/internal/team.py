@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api.align.goals.empty_goals import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
+from athenian.api.internal.dashboard import remove_team_refs_from_charts
 from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team, UserAccount
@@ -243,6 +244,7 @@ async def delete_team(team: Row, sdb_conn: Connection) -> None:
     await sdb_conn.execute(sa.delete(Team).where(Team.id == team_id))
     # TeamGoal-s have been deleted by ON DELETE CASCADE on team_id, now empty Goals must be removed
     await delete_empty_goals(team[Team.owner_id.name], sdb_conn)
+    await remove_team_refs_from_charts(team_id, team[Team.owner_id.name], sdb_conn)
 
 
 @sentry_span
