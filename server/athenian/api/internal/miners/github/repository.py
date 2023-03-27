@@ -5,7 +5,7 @@ from typing import Collection, KeysView, List, Optional, Tuple
 
 import aiomcache
 import sentry_sdk
-from sqlalchemy import and_, distinct, join, select, union, union_all
+from sqlalchemy import and_, distinct, join, select, union_all
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
@@ -201,7 +201,11 @@ async def mine_repositories(
             PullRequestReview.repository_node_id.in_(repo_ids),
             PullRequestReview.submitted_at.between(time_from, time_to),
         )
-        return await mdb.fetch_all(union(query_comments, query_commits, query_reviews))
+        return await mdb.fetch_all(
+            union_all(query_comments, query_commits, query_reviews).with_statement_hint(
+                f"Rows({NodeCommit.__tablename__} {NodeRepository.__tablename__} *1000)",
+            ),
+        )
 
     @sentry_span
     async def fetch_releases():

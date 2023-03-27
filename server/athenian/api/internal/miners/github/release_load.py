@@ -1782,11 +1782,9 @@ class ReleaseMatcher:
 
         df = await read_sql_query(query, self._mdb, selected)
         # DEV-5719 there can be same commits in irrelevant repositories
-        matching_repos_indexes = np.flatnonzero(
-            df.isin(PushCommit.repository_full_name.name, repos),
-        )
-        if len(matching_repos_indexes) < len(df):
-            df = df.take(matching_repos_indexes)
+        matching_repos_mask = df.isin(PushCommit.repository_full_name.name, repos)
+        if not matching_repos_mask.all():
+            df = df.take(matching_repos_mask)
         return df
 
     @sentry_span
