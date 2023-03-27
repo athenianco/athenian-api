@@ -15,10 +15,16 @@ from athenian.api.internal.dashboard import (
     delete_dashboard_chart,
     get_dashboard,
     get_team_default_dashboard,
+    remove_team_refs_from_charts,
     reorder_dashboard_charts,
     update_dashboard_chart,
 )
-from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
+from athenian.api.models.state.models import (
+    DashboardChart,
+    DashboardChartGroupBy,
+    Team,
+    TeamDashboard,
+)
 from athenian.api.models.web import (
     DashboardChartCreateRequest,
     DashboardChartUpdateRequest,
@@ -30,7 +36,12 @@ from tests.testutils.db import (
     models_insert,
     transaction_conn,
 )
-from tests.testutils.factory.state import DashboardChartFactory, TeamDashboardFactory, TeamFactory
+from tests.testutils.factory.state import (
+    DashboardChartFactory,
+    DashboardChartGroupByFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+)
 from tests.testutils.time import dt
 
 
@@ -402,3 +413,55 @@ class TestReorderDashboardCharts:
             await reorder_dashboard_charts(1, [2, 1, 3], sdb_conn)
         rows = await sdb.fetch_all(sa.select(DashboardChart.position, DashboardChart.id))
         assert sorted(rows) == [(0, 2), (1, 1), (2, 3)]
+
+
+class TestRemoveTeamRefsFromCharts:
+    async def test_smoke(self, sdb) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+            *[DashboardChartFactory(id=n, dashboard_id=1) for n in range(1, 8)],
+            DashboardChartGroupByFactory(chart_id=1, teams=None),
+            DashboardChartGroupByFactory(chart_id=2, teams=[]),
+            DashboardChartGroupByFactory(chart_id=3, teams=[7]),
+            DashboardChartGroupByFactory(chart_id=4, teams=[7], jira_priorities=["p0"]),
+            DashboardChartGroupByFactory(chart_id=5, teams=[7], jira_priorities=[]),
+            DashboardChartGroupByFactory(chart_id=6, teams=[7, 8]),
+            DashboardChartGroupByFactory(chart_id=7, teams=[6, 7, 8]),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            await remove_team_refs_from_charts(7, 1, sdb_conn)
+
+        charts = await sdb.fetch_all(
+            sa.select(DashboardChart.id, DashboardChartGroupBy.teams)
+            .join(DashboardChartGroupBy)
+            .where(DashboardChart.id <= 8)
+            .order_by(DashboardChart.id),
+        )
+        assert [c[DashboardChart.id.name] for c in charts] == [1, 2, 4, 6, 7]
+        assert [c[DashboardChartGroupBy.teams.name] for c in charts] == [
+            None,
+            [],
+            None,
+            [8],
+            [6, 8],
+        ]
+
+        for chart_id in (3, 5):
+            await assert_missing_row(sdb, DashboardChart, id=chart_id)
+            await assert_missing_row(sdb, DashboardChartGroupBy, chart_id=chart_id)
+
+    async def test_no_charts(self, sdb) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=6),
+            TeamDashboardFactory(id=1, team_id=6),
+        )
+
+        async with transaction_conn(sdb) as sdb_conn:
+            await remove_team_refs_from_charts(6, 1, sdb_conn)
+
+        await assert_existing_row(sdb, Team, id=6)
+        await assert_existing_row(sdb, TeamDashboard, id=1)

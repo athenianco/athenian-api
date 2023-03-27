@@ -1,11 +1,14 @@
+from collections.abc import Container
 from datetime import datetime, timezone
 from enum import Enum
 from http import HTTPStatus
+import logging
 from typing import Any, Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api import metadata
 from athenian.api.db import (
     Connection,
     DatabaseLike,
@@ -20,7 +23,12 @@ from athenian.api.internal.datetime_utils import (
 )
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import parse_db_repositories
-from athenian.api.models.state.models import DashboardChart, DashboardChartGroupBy, TeamDashboard
+from athenian.api.models.state.models import (
+    DashboardChart,
+    DashboardChartGroupBy,
+    Team,
+    TeamDashboard,
+)
 from athenian.api.models.web import (
     DashboardChart as WebDashboardChart,
     DashboardChartCreateRequest,
@@ -32,6 +40,7 @@ from athenian.api.models.web import (
     TeamDashboard as WebTeamDashboard,
 )
 from athenian.api.response import ResponseError
+from athenian.api.tracing import sentry_span
 
 
 async def get_dashboard(dashboard_id: int, sdb_conn: DatabaseLike) -> Row:
@@ -211,12 +220,90 @@ async def reorder_dashboard_charts(
         requested_repr = ",".join(sorted(map(str, chart_ids)))
         raise InvalidDashboardChartOrder(
             dashboard_id,
-            "Charts in requested ordering does not matc existing charts. "
+            "Charts in requested ordering does not match existing charts. "
             f"existing: {existing_repr}; requested: {requested_repr}",
         )
 
     if chart_ids:
         await _reassign_charts_positions(chart_ids, 0, datetime.now(timezone.utc), sdb_conn)
+
+
+@sentry_span
+async def remove_team_refs_from_charts(team: int, account: int, sdb_conn: Connection) -> None:
+    """Remove references to the team from account charts.
+
+    Team will be removed from the "teams" group by of every account's chart.
+    Charts with the specified team as the only "teams" group by, and with no other group by
+    criteria, will be deleted.
+
+    Charts owned by the team are removed by ON DELETE CASCADE so are not handled here.
+    """
+    assert await conn_in_transaction(sdb_conn)
+    log = logging.getLogger(f"{metadata.__package__}.remove_team_refs_from_charts")
+    where = [Team.owner_id == account]
+    select_from = sa.select(DashboardChartGroupBy).select_from(DashboardChartGroupBy)
+    for table in (DashboardChart, TeamDashboard, Team):
+        select_from = select_from.join(table)
+
+    if await is_postgresql(sdb_conn):
+        # will use jsonb "@>" operator
+        where.append(DashboardChartGroupBy.teams.contains(team))
+    else:
+        # expand teams to a virtual table with json_each, then filter
+        teams_table = sa.func.json_each(DashboardChartGroupBy.teams).table_valued("value")
+        select_from = select_from.select_from(teams_table)
+        where.append(teams_table.c.value == team)
+
+    for_update_of = [DashboardChart, DashboardChartGroupBy]
+    select_stmt = select_from.where(*where).with_for_update(of=for_update_of)
+    rows = await sdb_conn.fetch_all(select_stmt)
+
+    todelete = set()
+    toupdate = set()
+
+    def _chart_to_be_deleted(r: Row) -> bool:
+        if len(r[DashboardChartGroupBy.teams.name]) > 1:
+            return False
+        fields = set(DashboardChartGroupBy.GROUP_BY_FIELDS) - {DashboardChartGroupBy.teams}
+        return all(not r[f.name] for f in fields)
+
+    for r in rows:
+        if _chart_to_be_deleted(r):
+            todelete.add(r[DashboardChartGroupBy.chart_id.name])
+        else:
+            toupdate.add(r[DashboardChartGroupBy.chart_id.name])
+
+    if todelete:
+        # DashboardChartGroupBy will be removed due to CASCADE constraint
+        delete_stmt = sa.delete(DashboardChart).where(DashboardChart.id.in_(todelete))
+        await sdb_conn.execute(delete_stmt)
+
+    if toupdate:
+        now = datetime.now(timezone.utc)
+
+        def _update_stmt(chart_ids: Container[int], teams: Any) -> sa.sql.Update:
+            values = {DashboardChartGroupBy.teams: teams, DashboardChartGroupBy.updated_at: now}
+            where = DashboardChartGroupBy.chart_id.in_(chart_ids)
+            return sa.update(DashboardChartGroupBy).where(where).values(values)
+
+        if await is_postgresql(sdb_conn):
+            # remove the team id from the teams jsonb array and make [] => null
+            cleared_teams_array = sa.func.jsonb_path_query_array(
+                DashboardChartGroupBy.teams, f"$[*] ? (@ != {team})",
+            )
+            cleared_teams = sa.case((cleared_teams_array == [], None), else_=cleared_teams_array)
+            await sdb_conn.execute(_update_stmt(toupdate, cleared_teams))
+        else:
+            # probably possible with a single query, not efficient but unused in production
+            rows_toupdate = [r for r in rows if r[DashboardChartGroupBy.chart_id.name] in toupdate]
+            for row_toupdate in rows_toupdate:
+                teams = row_toupdate[DashboardChartGroupBy.teams.name]
+                chart_id = row_toupdate[DashboardChartGroupBy.chart_id.name]
+                cleared_teams_lst = [t for t in teams if t != team] or None
+                await sdb_conn.execute(_update_stmt([chart_id], cleared_teams_lst))
+
+    log.info("%d charts deleted", len(todelete))
+    log.info("References to team %d removed from %d charts group by", team, len(todelete))
 
 
 def build_dashboard_web_model(

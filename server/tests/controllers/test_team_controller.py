@@ -8,7 +8,15 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team, TeamGoal
+from athenian.api.models.state.models import (
+    AccountGitHubAccount,
+    DashboardChart,
+    DashboardChartGroupBy,
+    Goal,
+    Team,
+    TeamDashboard,
+    TeamGoal,
+)
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
@@ -18,7 +26,14 @@ from tests.testutils.db import (
     model_insert_stmt,
     models_insert,
 )
-from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
+from tests.testutils.factory.state import (
+    DashboardChartFactory,
+    DashboardChartGroupByFactory,
+    GoalFactory,
+    TeamDashboardFactory,
+    TeamFactory,
+    TeamGoalFactory,
+)
 from tests.testutils.requester import Requester
 
 
@@ -45,7 +60,7 @@ class TestCreateTeam(Requester):
         eng_team_id = (await response.json())["id"]
 
         team = await sdb.fetch_one(select(Team).where(Team.id == eng_team_id))
-        _test_same_team(
+        self._test_same_team(
             team,
             {
                 "id": eng_team_id,
@@ -63,7 +78,7 @@ class TestCreateTeam(Requester):
         response = await self._request(body, 200)
         mngmt_team_id = (await response.json())["id"]
         team = await sdb.fetch_one(select(Team).where(Team.id == mngmt_team_id))
-        _test_same_team(
+        self._test_same_team(
             team,
             {
                 "id": mngmt_team_id,
@@ -89,7 +104,7 @@ class TestCreateTeam(Requester):
         assert len(await sdb.fetch_all(select(Team))) == 2
         eng_team_id = (await response.json())["id"]
         team = await sdb.fetch_one(select(Team).where(Team.id == eng_team_id))
-        _test_same_team(
+        self._test_same_team(
             team,
             {
                 "id": eng_team_id,
@@ -212,7 +227,7 @@ class TestCreateTeam(Requester):
 
         teams = await sdb.fetch_all(select(Team).order_by(Team.name))
         assert len(teams) == 2
-        _test_same_team(
+        self._test_same_team(
             teams[0],
             {
                 "id": eng_team_id,
@@ -239,6 +254,19 @@ class TestCreateTeam(Requester):
         )
         assert response.status == assert_status
         return response
+
+    @classmethod
+    def _test_same_team(cls, actual, expected, no_timings=True):
+        if not isinstance(actual, dict):
+            actual = dict(actual)
+
+        if no_timings:
+            actual.pop("created_at", None)
+            actual.pop("updated_at", None)
+            expected.pop("created_at", None)
+            expected.pop("updated_at", None)
+
+        assert actual == expected
 
 
 class TestListTeams(Requester):
@@ -336,19 +364,6 @@ class TestListTeams(Requester):
                 "is not a member."
             ),
         }
-
-
-def _test_same_team(actual, expected, no_timings=True):
-    if not isinstance(actual, dict):
-        actual = dict(actual)
-
-    if no_timings:
-        actual.pop("created_at", None)
-        actual.pop("updated_at", None)
-        expected.pop("created_at", None)
-        expected.pop("updated_at", None)
-
-    assert actual == expected
 
 
 class TestResyncTeams(Requester):
@@ -681,8 +696,35 @@ class TestDeleteTeam(Requester):
         await self._request(2)
 
         await assert_missing_row(sdb, Team, id=2)
-        await assert_missing_row(sdb, Team, id=2)
+        await assert_existing_row(sdb, Team, id=1)
         await assert_missing_row(sdb, Goal, id=20)
+
+    async def test_remove_refs_in_charts(self, sdb: Database, disable_default_user: None):
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, parent_id=None),
+            TeamFactory(id=2, parent_id=1),
+            GoalFactory(id=20),
+            TeamGoalFactory(goal_id=20, team_id=2),
+            TeamDashboardFactory(id=1, team_id=1),
+            TeamDashboardFactory(id=2, team_id=2),
+            DashboardChartFactory(id=1, dashboard_id=1),
+            DashboardChartFactory(id=2, dashboard_id=1),
+            DashboardChartGroupByFactory(chart_id=1, teams=[2]),
+            DashboardChartGroupByFactory(chart_id=2, teams=[1, 2]),
+        )
+
+        await self._request(2)
+        await assert_missing_row(sdb, Team, id=2)
+        await assert_missing_row(sdb, TeamDashboard, id=2)
+
+        await assert_existing_row(sdb, TeamDashboard, id=1)
+        await assert_missing_row(sdb, DashboardChartGroupBy, chart_id=1)
+        await assert_missing_row(sdb, DashboardChart, id=1)
+
+        chart2_group_by = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=2)
+        assert chart2_group_by[DashboardChartGroupBy.teams.name] == [1]
+        await assert_existing_row(sdb, DashboardChart, id=2)
 
     async def _request(self, team_id: int, assert_status: int = 200) -> dict:
         response = await self.client.request(
@@ -692,66 +734,43 @@ class TestDeleteTeam(Requester):
         return await response.json()
 
 
-async def test_get_team_smoke(client, headers, sdb, vadim_id_mapping):
-    await sdb.execute(
-        insert(Team).values(
-            Team(
-                owner_id=1,
-                name="Engineering",
-                members=[40020, 39789],
-            )
-            .create_defaults()
-            .explode(),
-        ),
-    )
-    response = await client.request(method="GET", path="/v1/team/1", headers=headers, json={})
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    body = json.loads(body)
-    assert body == {
-        "id": 1,
-        "name": "Engineering",
-        "parent": None,
-        "members": [
-            {
-                "login": "github.com/mcuadros",
-                "name": "Máximo Cuadros",
-                "email": "mcuadros@gmail.com",
-                "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4",
-            },
-            {
-                "login": "github.com/vmarkovtsev",
-                "email": "gmarkhor@gmail.com",
-                "name": "Vadim Markovtsev",
-                "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
-                "jira_user": "Vadim Markovtsev",
-            },
+class TestGetTeam(Requester):
+    path = "/v1/team/{team_id}"
+
+    async def test_get_team_smoke(self, sdb: Database, vadim_id_mapping) -> None:
+        await models_insert(sdb, TeamFactory(id=1, name="Engineering", members=[40020, 39789]))
+        res = await self.get_json(path_kwargs={"team_id": "1"})
+        assert res == {
+            "id": 1,
+            "name": "Engineering",
+            "parent": None,
+            "members": [
+                {
+                    "login": "github.com/mcuadros",
+                    "name": "Máximo Cuadros",
+                    "email": "mcuadros@gmail.com",
+                    "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4",
+                },
+                {
+                    "login": "github.com/vmarkovtsev",
+                    "email": "gmarkhor@gmail.com",
+                    "name": "Vadim Markovtsev",
+                    "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+                    "jira_user": "Vadim Markovtsev",
+                },
+            ],
+        }
+
+    @pytest.mark.parametrize(
+        "owner, id, status",
+        [
+            (1, 2, 404),
+            (2, 1, 422),
+            (3, 1, 404),
         ],
-    }
-
-
-@pytest.mark.parametrize(
-    "owner, id, status",
-    [
-        (1, 2, 404),
-        (2, 1, 422),
-        (3, 1, 404),
-    ],
-)
-async def test_get_team_nasty_input(client, headers, sdb, owner, id, status):
-    await sdb.execute(
-        insert(Team).values(
-            Team(
-                owner_id=owner,
-                name="Engineering",
-                members=[51, 39789],
-            )
-            .create_defaults()
-            .explode(),
-        ),
     )
-    response = await client.request(
-        method="GET", path="/v1/team/%d" % id, headers=headers, json={},
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == status, "Response body is : " + body
+    async def test_nasty_input(self, sdb: Database, owner: int, id: int, status: int) -> None:
+        await models_insert(
+            sdb, TeamFactory(id=1, owner_id=owner, name="Engineering", members=[51, 39789]),
+        )
+        await self.get_json(assert_status=status, path_kwargs={"team_id": str(id)})
