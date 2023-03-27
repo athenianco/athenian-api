@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from http import HTTPStatus
 from itertools import chain
 import logging
 import re
@@ -838,3 +839,20 @@ async def _resolve_deployed_component_references(
             for u in updated
         ]
         await gather(*tasks, op=f"resolve_deployed_component_references/update/{account}")
+
+
+@weight(0)
+async def get_deployment_labels(request: AthenianWebRequest, name: str) -> web.Response:
+    """Retrieve the labels associated with the deployment."""
+    return web.Response(status=HTTPStatus.NOT_FOUND)
+
+
+@disable_default_user
+@weight(0)
+async def modify_deployment_labels(
+    request: AthenianWebRequest,
+    name: str,
+    body: dict,
+) -> web.Response:
+    """Modify the labels for the deployment applying the given instructions."""
+    return web.Response(status=HTTPStatus.NOT_FOUND)
