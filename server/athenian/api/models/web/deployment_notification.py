@@ -80,3 +80,16 @@ class DeploymentNotificationUnsealed(Model, sealed=False):
 
 class DeploymentNotification(DeploymentNotificationUnsealed):
     """Push message about a deployment. We remove unresolved components after 24h."""
+
+
+class NotifiedDeployment(Model):
+    """A single notified deployment."""
+
+    name: str
+    resolved: bool
+
+
+class NotifyDeploymentsResponse(Model):
+    """Response for the notify_deployments operation."""
+
+    deployments: list[NotifiedDeployment]

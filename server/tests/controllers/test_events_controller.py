@@ -422,13 +422,13 @@ class TestClearPrecomputedEvents(Requester):
 
 class TestNotifyDeployments(Requester):
     @pytest.mark.parametrize(
-        "ref, vhash",
+        "ref, vhash, resolved",
         [
-            ("4.2.0", "y9c5A0Df"),
-            ("v4.2.0", "y9c5A0Df"),
-            ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "Cd34s0Jb"),
-            ("1d28459", "Cd34s0Jb"),
-            ("xxx", "u5VWde@k"),
+            ("4.2.0", "y9c5A0Df", True),
+            ("v4.2.0", "y9c5A0Df", True),
+            ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "Cd34s0Jb", True),
+            ("1d28459", "Cd34s0Jb", True),
+            ("xxx", "u5VWde@k", False),
         ],
     )
     async def test_smoke(
@@ -437,6 +437,7 @@ class TestNotifyDeployments(Requester):
         rdb,
         ref,
         vhash,
+        resolved,
         disable_default_user,
     ):
         await rdb.execute(sa.delete(DeploymentNotification))
@@ -451,10 +452,16 @@ class TestNotifyDeployments(Requester):
                 "labels": {"one": 1, 2: "two"},
             },
         ]
-        await self._request(token, json=body)
+        response = await self._request(token, json=body)
+
         rows = await rdb.fetch_all(select(DeployedComponent))
         assert len(rows) == 1
         row = dict(rows[0])
+        assert response == {
+            "deployments": [
+                {"name": row[DeployedComponent.deployment_name.name], "resolved": resolved},
+            ],
+        }
         created_at = row[DeployedComponent.created_at.name]
         assert isinstance(created_at, datetime)
         del row[DeployedComponent.created_at.name]
@@ -669,15 +676,14 @@ class TestNotifyDeployments(Requester):
         token: Optional[str],
         assert_status: int = 200,
         **kwargs: Any,
-    ) -> None:
+    ) -> dict:
         headers = self.headers.copy()
         if token is not None:
             headers["X-API-Key"] = token
         path = "/v1/events/deployments"
         response = await self.client.request(method="POST", path=path, headers=headers, **kwargs)
         assert response.status == assert_status
-        if assert_status == 200:
-            assert await response.json() == {}
+        return await response.json()
 
 
 @pytest.mark.parametrize("unresolved", [False, True])
