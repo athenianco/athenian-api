@@ -81,6 +81,8 @@ from athenian.api.models.web.deployment_metrics_request import DeploymentMetrics
 from athenian.api.models.web.deployment_notification import (
     DeploymentNotification,
     DeploymentNotificationUnsealed,
+    NotifiedDeployment,
+    NotifyDeploymentsResponse,
 )
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
