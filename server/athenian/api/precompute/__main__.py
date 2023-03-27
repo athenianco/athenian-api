@@ -127,6 +127,11 @@ def _parse_args() -> argparse.Namespace:
         "--skip-prs", action="store_true", help="Do not precompute any PRs.",
     )
     accounts_parser.add_argument(
+        "--skip-force-push-dropped",
+        action="store_true",
+        help="Do not scan for force-push-dropped PRs.",
+    )
+    accounts_parser.add_argument(
         "--skip-deployments", action="store_true", help="Do not precompute any deployments.",
     )
     accounts_parser.add_argument(
