@@ -73,6 +73,8 @@ from athenian.api.models.web import (
     DeploymentNotification as WebDeploymentNotification,
     ForbiddenError,
     InvalidRequestError,
+    NotifiedDeployment,
+    NotifyDeploymentsResponse,
     ReleaseNotification as WebReleaseNotification,
     ReleaseNotificationStatus,
 )
@@ -549,10 +551,16 @@ async def notify_deployments(request: AthenianWebRequest, body: list[dict]) -> w
         for notification in notifications
     ]
     try:
-        await gather(*tasks, op=f"_notify_deployment({len(tasks)})")
+        notifications_resolved = await gather(*tasks, op=f"_notify_deployment({len(tasks)})")
     except (sqlite3.IntegrityError, asyncpg.IntegrityConstraintViolationError):
         raise ResponseError(DatabaseConflict("Specified deployment(s) already exist.")) from None
-    return web.json_response({})
+
+    notified_deployments = [
+        NotifiedDeployment(name=notification.name, resolved=resolved)
+        for notification, resolved in zip(notifications, notifications_resolved)
+    ]
+
+    return model_response(NotifyDeploymentsResponse(deployments=notified_deployments))
 
 
 def _normalize_reference(ref: str) -> str:
@@ -670,7 +678,7 @@ async def _notify_deployment(
     rdb: Database,
     resolved_refs: Mapping[str, Mapping[str, str]],
     repo_nodes: Mapping[str, int],
-) -> None:
+) -> bool:
     async with rdb.connection() as rdb_conn:
         async with rdb_conn.transaction():
             await rdb_conn.execute(
@@ -703,6 +711,7 @@ async def _notify_deployment(
                 .explode(with_primary_keys=True)
                 for c in notification.components
             ]
+            all_resolved = all(component["resolved_at"] is not None for component in cvalues)
             await rdb_conn.execute_many(insert(DeployedComponent), cvalues)
             if notification.labels:
                 lvalues = [
@@ -717,6 +726,8 @@ async def _notify_deployment(
                     for key, value in notification.labels.items()
                 ]
                 await rdb_conn.execute_many(insert(DeployedLabel), lvalues)
+
+    return all_resolved
 
 
 async def resolve_deployed_component_references(
