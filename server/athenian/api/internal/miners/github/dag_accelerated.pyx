@@ -110,6 +110,8 @@ def extract_subdag(
     assert len(vertexes) == len(hashes) + 1
     assert heads.dtype.char == "S"
     if len(hashes) == 0:
+        if return_indexes:
+            hashes = np.arange(len(hashes), dtype=np.uint32)
         return hashes, vertexes, edges
     if len(heads):
         heads = np.sort(heads)
