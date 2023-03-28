@@ -6,7 +6,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Iterable, Iterator, KeysView, Mapping, Optional, Sequence
+from typing import Iterable, Iterator, KeysView, Mapping, Optional, Sequence, Union
 
 import aiomcache
 import medvedi as md
@@ -42,6 +42,7 @@ from athenian.api.internal.logical_repos import (
 )
 from athenian.api.internal.miners.github.commit import (
     BRANCH_FETCH_COMMITS_COLUMNS,
+    DAG,
     CommitDAGMetrics,
     compose_commit_url,
     fetch_precomputed_commit_history_dags,
@@ -128,12 +129,17 @@ class ReleaseLoader:
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
+        *,
         index: Optional[str | Sequence[str]] = None,
         force_fresh: bool = False,
         only_applied_matches: bool = False,
+        return_dags: bool = False,
         metrics: Optional[MineReleaseMetrics] = None,
         refetcher: Optional[Refetcher] = None,
-    ) -> tuple[md.DataFrame, dict[str, ReleaseMatch]]:
+    ) -> Union[
+        tuple[md.DataFrame, dict[str, ReleaseMatch]],
+        tuple[md.DataFrame, dict[str, ReleaseMatch], dict[str, tuple[bool, DAG]]],
+    ]:
         """
         Fetch releases from the metadata DB according to the match settings.
 
@@ -143,6 +149,8 @@ class ReleaseLoader:
         :param default_branches: Mapping from repository name to default branch name.
         :param force_fresh: Disable the "unfresh" mode on big accounts.
         :param only_applied_matches: The caller doesn't care about the actual releases.
+        :param return_dags: Return any DAGs loaded during the matching. The keys do not have to \
+                            match `repos`! This is a performance trick.
         :param metrics: Optional health metrics collector.
         :param refetcher: Metadata auto-healer for branch releases.
         :return: 1. Pandas DataFrame with the loaded releases (columns match the Release model + \
@@ -205,20 +213,18 @@ class ReleaseLoader:
                 [Release.repository_full_name.name, Release.published_at.name, matched_by_column]
             ]
             relevant.take(
-                np.flatnonzero(
-                    (
-                        relevant[Release.published_at.name]
-                        >= np.datetime64(
-                            (time_from - tag_by_branch_probe_lookaround).replace(tzinfo=None),
-                            "us",
-                        )
+                (
+                    relevant[Release.published_at.name]
+                    >= np.datetime64(
+                        (time_from - tag_by_branch_probe_lookaround).replace(tzinfo=None),
+                        "us",
                     )
-                    & (
-                        relevant[Release.published_at.name]
-                        < np.datetime64(
-                            (time_to + tag_by_branch_probe_lookaround).replace(tzinfo=None), "us",
-                        )
-                    ),
+                )
+                & (
+                    relevant[Release.published_at.name]
+                    < np.datetime64(
+                        (time_to + tag_by_branch_probe_lookaround).replace(tzinfo=None), "us",
+                    )
                 ),
                 inplace=True,
             )
@@ -319,29 +325,8 @@ class ReleaseLoader:
                 if missed:
                     hits += 1
         add_pdb_hits(pdb, "releases", hits)
+        dags = {}
         tasks = []
-        if missing_high:
-            missing_high.sort()
-            tasks.append(
-                cls._load_releases(
-                    [r for _, r in missing_high],
-                    branches,
-                    default_branches,
-                    missing_high[0][0],
-                    time_to,
-                    release_settings,
-                    prefixer,
-                    account,
-                    meta_ids,
-                    mdb,
-                    pdb,
-                    cache,
-                    index,
-                    metrics,
-                    refetcher,
-                ),
-            )
-            add_pdb_misses(pdb, "releases/high", len(missing_high))
         if missing_low:
             missing_low.sort()
             tasks.append(
@@ -364,6 +349,28 @@ class ReleaseLoader:
                 ),
             )
             add_pdb_misses(pdb, "releases/low", len(missing_low))
+        if missing_high:
+            missing_high.sort()
+            tasks.append(
+                cls._load_releases(
+                    [r for _, r in missing_high],
+                    branches,
+                    default_branches,
+                    missing_high[0][0],
+                    time_to,
+                    release_settings,
+                    prefixer,
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    cache,
+                    index,
+                    metrics,
+                    refetcher,
+                ),
+            )
+            add_pdb_misses(pdb, "releases/high", len(missing_high))
         if missing_all:
             tasks.append(
                 cls._load_releases(
@@ -387,10 +394,16 @@ class ReleaseLoader:
             add_pdb_misses(pdb, "releases/all", len(missing_all))
         if tasks:
             missings = await gather(*tasks)
-            if inconsistent := list(chain.from_iterable(m[1] for m in missings)):
+            dfs = []
+            inconsistent = []
+            for df, loaded_inconsistent, loaded_dags in missings:
+                dfs.append(df)
+                inconsistent.extend(loaded_inconsistent)
+                dags.update(loaded_dags)
+            if inconsistent:
                 log.warning("failed to load releases for inconsistent %s", inconsistent)
-            missings = [m[0] for m in missings]
-            missings = md.concat(*missings, copy=False)
+            missings = md.concat(*dfs, copy=False)
+            del dfs
             assert matched_by_column in missings
             if not missings.empty:
                 releases = md.concat(releases, missings, copy=False)
@@ -498,6 +511,8 @@ class ReleaseLoader:
             )
         if sentry_sdk.Hub.current.scope.span is not None:
             sentry_sdk.Hub.current.scope.span.description = f"{repos_count} -> {len(releases)}"
+        if return_dags:
+            return releases, applied_matches, dags
         return releases, applied_matches
 
     @classmethod
@@ -585,7 +600,7 @@ class ReleaseLoader:
         index: Optional[str | Sequence[str]],
         metrics: Optional[MineReleaseMetrics],
         refetcher: Optional[Refetcher],
-    ) -> tuple[md.DataFrame, list[str]]:
+    ) -> tuple[md.DataFrame, list[str], dict[str, tuple[bool, DAG]]]:
         rel_matcher = ReleaseMatcher(account, meta_ids, mdb, pdb, cache)
         repos_by_tag = []
         repos_by_branch = []
@@ -596,36 +611,37 @@ class ReleaseLoader:
                 repos_by_branch.append(repo)
             else:
                 raise AssertionError("Invalid release match: %s" % match)
-        result = []
-        if repos_by_tag:
-            result.append(
-                rel_matcher.match_releases_by_tag(
-                    repos_by_tag, time_from, time_to, release_settings,
-                ),
+        result_tags, result_branches = await gather(
+            rel_matcher.match_releases_by_tag(repos_by_tag, time_from, time_to, release_settings)
+            if repos_by_tag
+            else None,
+            rel_matcher.match_releases_by_branch(
+                repos_by_branch,
+                branches,
+                default_branches,
+                time_from,
+                time_to,
+                release_settings,
+                prefixer,
+                metrics,
+                refetcher,
             )
-        if repos_by_branch:
-            result.append(
-                rel_matcher.match_releases_by_branch(
-                    repos_by_branch,
-                    branches,
-                    default_branches,
-                    time_from,
-                    time_to,
-                    release_settings,
-                    prefixer,
-                    metrics,
-                    refetcher,
-                ),
-            )
-        result = await gather(*result)
-        dfs = [r[0] for r in result]
-        inconsistent = list(chain.from_iterable(r[1] for r in result))
+            if repos_by_branch
+            else None,
+        )
+        dfs = [result_tags] if result_tags is not None else []
+        if result_branches is not None:
+            df, inconsistent, dags = result_branches
+            dfs.append(df)
+        else:
+            inconsistent = []
+            dags = {}
         result = md.concat(*dfs, ignore_index=True)
         if result.empty:
             result = dummy_releases_df(index)
         elif index is not None:
             result.set_index(index, inplace=True)
-        return result, inconsistent
+        return result, inconsistent, dags
 
     @classmethod
     @sentry_span
@@ -1305,7 +1321,7 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
-    ) -> tuple[md.DataFrame, list[str]]:
+    ) -> md.DataFrame:
         """Return the releases matched by tag."""
         with sentry_sdk.start_span(op="fetch_tags"):
             query = (
@@ -1481,7 +1497,7 @@ class ReleaseMatcher:
         else:
             releases = releases.iloc[:0]
         releases[matched_by_column] = ReleaseMatch.tag.value
-        return releases, []
+        return releases
 
     @sentry_span
     async def match_releases_by_branch(
@@ -1495,7 +1511,7 @@ class ReleaseMatcher:
         prefixer: Prefixer,
         metrics: Optional[MineReleaseMetrics],
         refetcher: Optional[Refetcher],
-    ) -> tuple[md.DataFrame, list[str]]:
+    ) -> tuple[md.DataFrame, list[str], dict[str, tuple[bool, DAG]]]:
         """Return the releases matched by branch and the list of inconsistent repositories."""
         assert not contains_logical_repos(repos)
         # we don't need all the branches belonging to all the repos
@@ -1505,7 +1521,7 @@ class ReleaseMatcher:
             branches, default_branches, release_settings,
         )
         if not branches_matched:
-            return dummy_releases_df(), []
+            return dummy_releases_df(), [], {}
         branches = md.concat(*branches_matched.values(), ignore_index=True)
         fetch_merge_points_task = asyncio.create_task(
             self._fetch_pr_merge_points(
@@ -1652,8 +1668,8 @@ class ReleaseMatcher:
                 ),
             )
         if not pseudo_releases:
-            return dummy_releases_df(), inconsistent
-        return md.concat(*pseudo_releases, ignore_index=True, copy=False), inconsistent
+            return dummy_releases_df(), inconsistent, dags
+        return md.concat(*pseudo_releases, ignore_index=True, copy=False), inconsistent, dags
 
     def _match_branches_by_release_settings(
         self,

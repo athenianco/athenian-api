@@ -659,6 +659,7 @@ class ReleaseToPullRequestMapper:
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
+        *,
         releases_in_time_range: Optional[md.DataFrame] = None,
         metrics: Optional[CommitDAGMetrics] = None,
         refetcher: Optional[Refetcher] = None,
@@ -726,9 +727,12 @@ class ReleaseToPullRequestMapper:
         async def fetch_dags() -> dict[str, tuple[bool, DAG]]:
             nonlocal pdags
             if pdags is None:
-                pdags = await fetch_precomputed_commit_history_dags(
-                    physical_repos, account, pdb, cache,
-                )
+                pdags = {}
+                missing = physical_repos
+            else:
+                missing = [r for r in physical_repos if r not in pdags]
+            if missing:
+                pdags = await fetch_precomputed_commit_history_dags(missing, account, pdb, cache)
             return await fetch_repository_commits(
                 pdags,
                 releases_in_time_range,
