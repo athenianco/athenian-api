@@ -39,6 +39,7 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     mark_dag_access,
     mark_dag_parents,
     searchsorted_inrange,
+    sorted_set_difference,
 )
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
@@ -1370,15 +1371,17 @@ class ReleaseToPullRequestMapper:
         time_mask = published_ats >= time_boundary
         new_shas = shas if (everything := time_mask.all()) else shas[time_mask]
         assert len(new_shas), "you must check this before calling me"
-        visited_hashes, _, _ = extract_subdag(*dag, new_shas, alloc)
+        visited_hashes, _, _ = extract_subdag(
+            *dag, new_shas, return_indexes=True, alloc_capsule=alloc,
+        )
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not everything:
             boundary_release_hashes = shas[~time_mask]
         else:
-            return visited_hashes
-        ignored_hashes, _, _ = extract_subdag(*dag, boundary_release_hashes, alloc)
-        deleted_indexes = np.searchsorted(visited_hashes, ignored_hashes)
+            return dag[0][visited_hashes]
+        ignored_hashes, _, _ = extract_subdag(
+            *dag, boundary_release_hashes, return_indexes=True, alloc_capsule=alloc,
+        )
         # boundary_release_hash may touch some unique hashes not present in visited_hashes
-        deleted_indexes = deleted_indexes[deleted_indexes < len(visited_hashes)]
-        released_hashes = np.delete(visited_hashes, deleted_indexes)
-        return released_hashes
+        released_hashes = sorted_set_difference(visited_hashes, ignored_hashes)
+        return dag[0][released_hashes]

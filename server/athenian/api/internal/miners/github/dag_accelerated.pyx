@@ -1,7 +1,7 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
-# distutils: extra_compile_args = -std=c++17
+# distutils: extra_compile_args = -std=c++17 -mavx2
 # distutils: libraries = mimalloc
 # distutils: runtime_library_dirs = /usr/local/lib
 
@@ -16,11 +16,15 @@ from libcpp cimport bool
 from libcpp.algorithm cimport binary_search
 from libcpp.utility cimport pair
 from numpy cimport (
+    NPY_ARRAY_C_CONTIGUOUS,
+    NPY_UINT,
     PyArray_BYTES,
     PyArray_CheckExact,
+    PyArray_DescrFromType,
     PyArray_DIM,
     PyArray_IS_C_CONTIGUOUS,
     PyArray_NDIM,
+    dtype as np_dtype,
     import_array,
     ndarray,
     npy_intp,
@@ -47,6 +51,13 @@ from athenian.api.native.mi_heap_destroy_stl_allocator cimport (
     mi_unordered_set,
     mi_vector,
 )
+from athenian.api.native.numpy cimport (
+    PyArray_Descr,
+    PyArray_DESCR,
+    PyArray_DescrNew,
+    PyArray_NewFromDescr,
+    PyArray_Type,
+)
 from athenian.api.native.optional cimport optional
 from athenian.api.native.string_view cimport string_view
 
@@ -56,10 +67,20 @@ import asyncpg
 import numpy as np
 
 
-cdef extern from "../../../asyncpg_recordobj.h":
-    PyObject *ApgRecord_GET_ITEM(PyObject *, int) nogil
-    void ApgRecord_SET_ITEM(object, int, object) nogil
-    PyObject *ApgRecord_GET_DESC(PyObject *) nogil
+cdef extern from "../../../asyncpg_recordobj.h" nogil:
+    PyObject *ApgRecord_GET_ITEM(PyObject *, int)
+    void ApgRecord_SET_ITEM(object, int, object)
+    PyObject *ApgRecord_GET_DESC(PyObject *)
+
+
+cdef extern from "dag_accelerated.h" nogil:
+    size_t sorted_set_difference_avx2(
+        const uint32_t *set1,
+        const size_t length1,
+        const uint32_t *set2,
+        const size_t length2,
+        uint32_t *out,
+    )
 
 
 # ApgRecord_New is not exported from the Python interface of asyncpg
@@ -82,6 +103,8 @@ def extract_subdag(
     ndarray vertexes,
     ndarray edges,
     ndarray heads,
+    *,
+    return_indexes=False,
     alloc_capsule=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     assert len(vertexes) == len(hashes) + 1
@@ -121,7 +144,10 @@ def extract_subdag(
             left_edges_view,
             dereference(alloc),
         )
-    left_hashes = hashes[left_vertexes_map[:left_count]]
+    if return_indexes:
+        left_hashes = left_vertexes_map[:left_count]
+    else:
+        left_hashes = hashes[left_vertexes_map[:left_count]]
     left_vertexes = left_vertexes[:left_count + 1]
     left_edges = left_edges[:left_vertexes[left_count]]
     return left_hashes, left_vertexes, left_edges
@@ -186,6 +212,46 @@ cdef uint32_t _extract_subdag(
             left_vertexes_map[left_count] = i
             left_count += 1
     return left_count
+
+
+def sorted_set_difference(
+    ndarray arr1 not None,
+    ndarray arr2 not None,
+) -> ndarray:
+    assert PyArray_NDIM(arr1) == 1
+    assert PyArray_IS_C_CONTIGUOUS(arr1)
+    assert PyArray_DESCR(<PyObject *> arr1).kind == b"u"
+    assert PyArray_NDIM(arr2) == 1
+    assert PyArray_IS_C_CONTIGUOUS(arr2)
+    assert PyArray_DESCR(<PyObject *> arr2).kind == b"u"
+
+    cdef:
+        uint32_t *arr1_data = <uint32_t *> PyArray_BYTES(arr1)
+        uint32_t *arr2_data = <uint32_t *> PyArray_BYTES(arr2)
+        npy_intp len1 = PyArray_DIM(arr1, 0)
+        npy_intp len2 = PyArray_DIM(arr2, 0)
+        ndarray output
+        np_dtype u32dtype = PyArray_DescrNew(PyArray_DescrFromType(NPY_UINT))
+
+    output = <ndarray> PyArray_NewFromDescr(
+        &PyArray_Type,
+        <PyArray_Descr *> u32dtype,
+        1,
+        &len1 if len1 > len2 else &len2,
+        NULL,
+        NULL,
+        NPY_ARRAY_C_CONTIGUOUS,
+        NULL,
+    )
+    Py_INCREF(u32dtype)
+    output.shape[0] = sorted_set_difference_avx2(
+        arr1_data,
+        len1,
+        arr2_data,
+        len2,
+        <uint32_t *> PyArray_BYTES(output),
+    )
+    return output
 
 
 cdef struct Edge:

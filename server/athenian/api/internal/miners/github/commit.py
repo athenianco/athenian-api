@@ -336,7 +336,9 @@ def _take_commits_in_default_branches(
     ):
         repo_indexes = np.nonzero(commit_repo_indexes == commit_repo_index)[0]
         repo_hashes = commit_hashes[repo_indexes]
-        default_branch_hashes = extract_subdag(*dags[repo][1], np.array([head_sha]), alloc)[0]
+        default_branch_hashes = extract_subdag(
+            *dags[repo][1], np.array([head_sha]), alloc_capsule=alloc,
+        )[0]
         accessible_indexes.append(
             repo_indexes[np.in1d(repo_hashes, default_branch_hashes, assume_unique=True)],
         )
@@ -482,7 +484,7 @@ async def fetch_repository_commits(
             if prune:
                 consistent = False
                 hashes, vertexes, edges = extract_subdag(
-                    hashes, vertexes, edges, required_shas, alloc,
+                    hashes, vertexes, edges, required_shas, alloc_capsule=alloc,
                 )
             result[repo] = consistent, (hashes, vertexes, edges)
     # traverse commits starting from the missing branch heads
@@ -509,7 +511,7 @@ async def fetch_repository_commits(
             if prune:
                 consistent = False
                 hashes, vertexes, edges = extract_subdag(
-                    hashes, vertexes, edges, repo_heads[repo], alloc,
+                    hashes, vertexes, edges, repo_heads[repo], alloc_capsule=alloc,
                 )
             result[repo] = consistent, (hashes, vertexes, edges)
         if sql_values:

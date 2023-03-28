@@ -1986,7 +1986,9 @@ async def diff_releases(
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
             start_sha, finish_sha = (sha_col[indexes[x]] for x in (start, finish))
-            hashes, _, _ = extract_subdag(*dags[repo][1], np.array([finish_sha]), alloc)
+            hashes, _, _ = extract_subdag(
+                *dags[repo][1], np.array([finish_sha]), alloc_capsule=alloc,
+            )
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 pair_indexes = indexes[start + 1 : finish + 1]
                 shas = sha_col[pair_indexes]
