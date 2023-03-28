@@ -800,14 +800,9 @@ async def mine_commit_check_runs(
             for acc_id in meta_ids
         ),
     )
-    df = dfs[0]
-    dfs = [df for df in dfs if not df.empty]
-    if len(dfs) == 1:
-        df = dfs[0]
-    elif len(dfs) > 1:
-        df = md.concat(dfs, ignore_index=True, copy=False)
+    df = md.concat(*dfs, ignore_index=True, copy=False)
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(
-        df[CheckRun.started_at.name].dtype,
+        df[CheckRun.started_at.name].dtype, copy=False,
     )
     df, *_ = await _disambiguate_pull_requests(df, False, log, meta_ids, mdb)
     return _finalize_check_runs(df, log)
