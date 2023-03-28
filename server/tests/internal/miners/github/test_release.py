@@ -778,6 +778,7 @@ async def test_load_releases_events_settings(
     }
 
 
+@pytest.mark.parametrize("resolved", [False, True])
 @with_defer
 async def test_load_releases_events_url_none(
     branches,
@@ -787,6 +788,7 @@ async def test_load_releases_events_url_none(
     rdb,
     release_loader,
     prefixer,
+    resolved,
 ):
     await rdb.execute(
         insert(ReleaseNotification).values(
@@ -794,6 +796,10 @@ async def test_load_releases_events_url_none(
                 account_id=1,
                 repository_node_id=40550,
                 commit_hash_prefix="8d20cc5",
+                resolved_commit_hash="8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+                if resolved
+                else None,
+                resolved_commit_node_id=2756775 if resolved else None,
                 name="Pushed!",
                 author_node_id=40020,
                 url=None,
@@ -827,12 +833,13 @@ async def test_load_releases_events_url_none(
         releases.iloc[0]["url"]
         == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
     )
-    rows = await rdb.fetch_all(select(ReleaseNotification))
-    assert len(rows) == 1
-    assert (
-        rows[0]["url"]
-        == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
-    )
+    if not resolved:
+        rows = await rdb.fetch_all(select(ReleaseNotification))
+        assert len(rows) == 1
+        assert (
+            rows[0]["url"]
+            == "https://github.com/src-d/go-git/commit/8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
+        )
 
 
 @with_defer

@@ -739,8 +739,9 @@ class ReleaseLoader:
         unresolved_commits_short = defaultdict(list)
         unresolved_commits_long = defaultdict(list)
         unresolved_count = 0
+        rn_resolved_commit_node_id_col = ReleaseNotification.resolved_commit_node_id.name
         for row in release_rows:
-            if row[ReleaseNotification.resolved_commit_node_id.name] is None:
+            if row[rn_resolved_commit_node_id_col] is None:
                 unresolved_count += 1
                 repo = row[ReleaseNotification.repository_node_id.name]
                 commit = row[ReleaseNotification.commit_hash_prefix.name]
@@ -822,7 +823,6 @@ class ReleaseLoader:
 
         rn_repository_node_id_col = ReleaseNotification.repository_node_id.name
         rn_url_col = ReleaseNotification.url.name
-        rn_resolved_commit_node_id_col = ReleaseNotification.resolved_commit_node_id.name
         rn_commit_hash_prefix_col = ReleaseNotification.commit_hash_prefix.name
         rn_resolved_commit_hash_col = ReleaseNotification.resolved_commit_hash.name
         rn_author_node_id_col = ReleaseNotification.author_node_id.name
@@ -857,6 +857,7 @@ class ReleaseLoader:
         releases = [[] for _ in release_columns]
         updated = []
         empty_resolved = None, None, None
+        repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
 
         for row in release_rows:
             repo = row[rn_repository_node_id_col]
@@ -873,6 +874,17 @@ class ReleaseLoader:
                     continue
             else:
                 commit_hash = row[rn_resolved_commit_hash_col]
+            url = row[rn_url_col]
+            if url is None:
+                url = (
+                    commit_url
+                    if commit_url is not None
+                    else compose_commit_url(
+                        "https:/",
+                        repo_node_to_prefixed_name(repo, "<repository not found>"),
+                        commit_hash,
+                    )
+                )
             author = row[rn_author_node_id_col]
             name = row[rn_name_col]
             try:
@@ -898,7 +910,7 @@ class ReleaseLoader:
                 releases[7].append(repo)
                 releases[8].append(commit_hash)
                 releases[9].append(None)
-                releases[10].append(row[rn_url_col] or commit_url)
+                releases[10].append(url)
                 releases[11].append(ReleaseMatch.event.value)
         if unresolved_count > 0:
             log.info("resolved %d / %d event releases", len(updated), unresolved_count)
