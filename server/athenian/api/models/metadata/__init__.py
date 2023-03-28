@@ -12,7 +12,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.metadata.jira import Base as JiraBase
 
-__min_version__ = 253
+__min_version__ = 255
 
 
 def dereference_schemas():

@@ -30,6 +30,7 @@ from athenian.api.db import (
     add_pdb_hits,
     add_pdb_misses,
     dialect_specific_insert,
+    least,
 )
 from athenian.api.defer import AllEvents, defer
 from athenian.api.internal.logical_repos import coerce_logical_repos
@@ -1844,28 +1845,36 @@ class PullRequestMiner:
         for acc_id in meta_ids:
             filters = [
                 PullRequest.acc_id == acc_id,
-                (
-                    sql.case(
-                        (PullRequest.closed, PullRequest.closed_at),
-                        else_=sql.text("'3000-01-01'"),  # backed up with a DB index
-                    )
-                    >= time_from
-                )
-                if time_from is not None
-                else sql.true(),
                 PullRequest.created_at < time_to,
-                PullRequest.repository_full_name.in_(repositories),
             ]
-            if exclude_inactive and updated_min is None:
-                # this does not provide 100% guarantee because it can be after time_to,
-                # we need to properly filter later
-                filters.append(PullRequest.updated_at >= time_from)
+            if time_from is not None:
+                if exclude_inactive and updated_min is None:
+                    # this does not provide 100% guarantee because it can be after time_to,
+                    # we need to properly filter later
+                    least_expr = await least(mdb)
+                    filters.append(
+                        least_expr(
+                            PullRequest.updated_at,
+                            sql.case(
+                                (PullRequest.closed, PullRequest.closed_at),
+                                else_=sql.text("'3000-01-01'"),  # backed up with a DB index
+                            ),
+                        )
+                        >= time_from,
+                    )
+                else:
+                    filters.append(
+                        sql.case(
+                            (PullRequest.closed, PullRequest.closed_at),
+                            else_=sql.text("'3000-01-01'"),  # backed up with a DB index
+                        )
+                        >= time_from,
+                    )
             if updated_min is not None:
                 filters.append(PullRequest.updated_at.between(updated_min, updated_max))
-            if pr_blacklist is not None:
-                filters.append(pr_blacklist)
-            if pr_whitelist is not None:
-                filters.append(pr_whitelist)
+            # this makes the smallest conditions come first, important for SQL perf debugging
+            # do not move up
+            filters.append(PullRequest.repository_full_name.in_(repositories))
             if len(participants) == 1:
                 if PRParticipationKind.AUTHOR in participants:
                     filters.append(
@@ -1905,6 +1914,10 @@ class PullRequestMiner:
                             ),
                         ),
                     )
+            if pr_blacklist is not None:
+                filters.append(pr_blacklist)
+            if pr_whitelist is not None:
+                filters.append(pr_whitelist)
             if not jira:
                 query = sql.select(*selected_columns).where(*filters)
                 if (
@@ -1915,8 +1928,18 @@ class PullRequestMiner:
                     # fmt: off
                     query = (
                         query
-                        .with_statement_hint("IndexScan(pr github_node_pull_request_main)")
+                        .with_statement_hint(
+                            "IndexScan(pr "
+                            "github_node_pull_request_main "
+                            "github_node_pull_request_active_closed_or_eternal "
+                            "node_pullrequest_updated"
+                            ")",
+                        )
+                        .with_statement_hint(
+                            "IndexOnlyScan(repo github_node_repository_full_name_cover)",
+                        )
                         .with_statement_hint("Leading(((((pr *VALUES*) repo) ath) math))")
+                        .with_statement_hint("Rows(pr repo *500)")
                     )
                     # fmt: on
             else:
