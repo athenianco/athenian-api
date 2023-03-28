@@ -1321,7 +1321,9 @@ async def unwrap_pull_requests(
             # no nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs_df,
-                releases[Release.published_at.name].max(),
+                releases[Release.published_at.name].max()
+                if len(releases)
+                else np.datetime64("NaT"),
                 LabelFilter.empty(),
                 matched_bys,
                 default_branches,
