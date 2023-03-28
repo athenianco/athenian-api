@@ -168,6 +168,9 @@ cdef uint32_t _extract_subdag(
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
         uint32_t i, j, head, peek, edge
+        const uint32_t *raw_vertexes = &vertexes[0]
+        const uint32_t *raw_edges = &edges[0]
+        uint32_t *raw_left_vertexes_map = &left_vertexes_map[0]
     boilerplate.emplace(alloc)
     dereference(boilerplate).reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(len(heads)):
@@ -176,40 +179,40 @@ cdef uint32_t _extract_subdag(
         while not dereference(boilerplate).empty():
             peek = dereference(boilerplate).back()
             dereference(boilerplate).pop_back()
-            if left_vertexes_map[peek]:
+            if raw_left_vertexes_map[peek]:
                 continue
-            left_vertexes_map[peek] = 1
-            for j in range(vertexes[peek], vertexes[peek + 1]):
-                edge = edges[j]
-                if not left_vertexes_map[edge]:
+            raw_left_vertexes_map[peek] = 1
+            for j in range(raw_vertexes[peek], raw_vertexes[peek + 1]):
+                edge = raw_edges[j]
+                if not raw_left_vertexes_map[edge]:
                     dereference(boilerplate).push_back(edge)
     if only_map:
         return 0
     # compress the vertex index mapping
     cdef uint32_t left_count = 0, edge_index, v
     for i in range(len(left_vertexes_map)):
-        if left_vertexes_map[i]:
-            left_vertexes_map[i] = left_count + 1  # disambiguate 0, become 1-based indexed
+        if raw_left_vertexes_map[i]:
+            raw_left_vertexes_map[i] = left_count + 1  # disambiguate 0, become 1-based indexed
             left_count += 1
     # len(left_vertexes) == 0 means we don't care about the extracted edges
     if len(left_vertexes) > 0:
         # rebuild the edges
         edge_index = 0
         for i in range(len(vertexes) - 1):
-            v = left_vertexes_map[i]
+            v = raw_left_vertexes_map[i]
             if v:
                 v -= 1  # become 0-based indexed again
                 left_vertexes[v] = edge_index
-                for j in range(vertexes[i], vertexes[i + 1]):
-                    edge = edges[j]
-                    left_edges[edge_index] = left_vertexes_map[edge] - 1
+                for j in range(raw_vertexes[i], raw_vertexes[i + 1]):
+                    edge = raw_edges[j]
+                    left_edges[edge_index] = raw_left_vertexes_map[edge] - 1
                     edge_index += 1
         left_vertexes[left_count] = edge_index
     # invert the vertex index mapping
     left_count = 0
     for i in range(len(left_vertexes_map)):
-        if left_vertexes_map[i]:
-            left_vertexes_map[left_count] = i
+        if raw_left_vertexes_map[i]:
+            raw_left_vertexes_map[left_count] = i
             left_count += 1
     return left_count
 
