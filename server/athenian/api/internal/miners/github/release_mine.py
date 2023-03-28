@@ -311,10 +311,11 @@ async def _mine_releases(
     JIRAEntityToFetch,
 ]:
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
+    dags = None
     if internal_releases := (releases_in_time_range is None):
         assert time_from is not None
         assert time_to is not None
-        releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
+        releases_in_time_range, matched_bys, dags = await ReleaseLoader.load_releases(
             repos,
             branches,
             default_branches,
@@ -330,6 +331,7 @@ async def _mine_releases(
             rdb,
             cache,
             force_fresh=force_fresh,
+            return_dags=True,
             metrics=metrics,
             refetcher=refetcher,
         )
@@ -451,7 +453,7 @@ async def _mine_releases(
                 False,
                 release_settings,
                 logical_settings,
-                None,
+                dags,
                 prefixer,
                 account,
                 meta_ids,
