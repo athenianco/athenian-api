@@ -136,17 +136,18 @@ class TestListGoalTemplates(Requester):
             sdb,
             GoalTemplateFactory(id=1, metric=PullRequestMetricID.PR_DONE),
             GoalTemplateFactory(id=2, metric=JIRAMetricID.JIRA_RESOLVED),
+            GoalTemplateFactory(id=3, metric=PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA),
         )
         res = await self._request(1)
-        assert [r["id"] for r in res] == [1, 2]
-        assert [r["available"] for r in res] == [True, True]
+        assert [r["id"] for r in res] == [1, 2, 3]
+        assert [r["available"] for r in res] == [True, True, True]
 
         await sdb.execute(
             sa.delete(AccountJiraInstallation).where(AccountJiraInstallation.account_id == 1),
         )
         res = await self._request(1)
-        assert [r["id"] for r in res] == [1, 2]
-        assert [r["available"] for r in res] == [True, False]
+        assert [r["id"] for r in res] == [1, 2, 3]
+        assert [r["available"] for r in res] == [True, False, False]
 
     async def _request(
         self,
