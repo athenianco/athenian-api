@@ -142,6 +142,59 @@ async def test_load_releases_branches_empty(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
+@pytest.mark.parametrize("with_fake_branch", [False, True])
+@with_defer
+async def test_load_releases_branches_no_commits(
+    branches,
+    default_branches,
+    meta_ids,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    release_loader,
+    prefixer,
+    with_fake_branch,
+):
+    time_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
+    if with_fake_branch:
+        branches = md.concat(
+            branches,
+            md.DataFrame(
+                {
+                    "repository_node_id": [39652769],
+                    "repository_full_name": ["src-d/gitbase"],
+                    "branch_id": [777],
+                    "branch_name": ["unknown"],
+                    "is_default": [True],
+                    "commit_id": [666],
+                    "commit_sha": ["0" * 40],
+                    "commit_date": [np.datetime64(datetime.utcnow(), "us")],
+                },
+                dtype=branches.dtype,
+            ),
+        )
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/gitbase"],
+        branches,
+        default_branches,
+        time_from,
+        time_to,
+        ReleaseSettings({"github.com/src-d/gitbase": _mk_rel_match_settings(branches="unknown")}),
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        cache,
+    )
+    assert len(releases) == 0
+    assert matched_bys == {"src-d/gitbase": ReleaseMatch.branch}
+
+
 @pytest.mark.parametrize(
     "time_from, n, pretag",
     [
