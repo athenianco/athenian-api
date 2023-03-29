@@ -26,6 +26,7 @@ from athenian.api.models.web import (
     GoalTemplateUpdateRequest,
     JIRAMetricID,
 )
+from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 
@@ -145,9 +146,16 @@ async def update_goal_template(request: AthenianWebRequest, id: int, body: dict)
     return web.json_response({})
 
 
+_JIRA_RELATED_METRICS = frozenset(JIRAMetricID) | {
+    PullRequestMetricID.PR_OPENED_MAPPED_TO_JIRA,
+    PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
+    PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
+}
+
+
 def _goal_template_from_row(row: Row, datasources: AccountDatasources, **kwargs) -> GoalTemplate:
     metric = row[DBGoalTemplate.metric.name]
-    available = (metric not in JIRAMetricID) or AccountDatasources.JIRA in datasources
+    available = (metric not in _JIRA_RELATED_METRICS) or AccountDatasources.JIRA in datasources
     return GoalTemplate(
         available=available,
         id=row[DBGoalTemplate.id.name],
