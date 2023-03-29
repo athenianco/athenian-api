@@ -1585,7 +1585,7 @@ class ReleaseMatcher:
             fetch_merge_points_task,
         )
         if len(first_shas) == 0 and merge_points.empty:
-            return dummy_releases_df(), inconsistent
+            return dummy_releases_df(), inconsistent, dags
         if len(first_shas):
             gh_merge = (first_commits[PushCommit.committer_name.name] == "GitHub") & (
                 first_commits[PushCommit.committer_email.name] == "noreply@github.com"

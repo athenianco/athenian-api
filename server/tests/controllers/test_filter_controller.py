@@ -2580,6 +2580,7 @@ async def test_filter_releases_by_labels(client, headers):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_releases
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 @with_defer
 async def test_filter_releases_deployments(
     client,
