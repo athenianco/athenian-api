@@ -732,7 +732,9 @@ class ReleaseToPullRequestMapper:
             else:
                 missing = [r for r in physical_repos if r not in pdags]
             if missing:
+                prefetched_dags = pdags
                 pdags = await fetch_precomputed_commit_history_dags(missing, account, pdb, cache)
+                pdags.update(prefetched_dags)
             return await fetch_repository_commits(
                 pdags,
                 releases_in_time_range,
