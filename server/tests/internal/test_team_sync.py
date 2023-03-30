@@ -19,8 +19,8 @@ from tests.testutils.time import dt
 
 class BaseTestSyncTeams:
     @classmethod
-    async def _mk_root_team(cls, sdb: Database) -> int:
-        return (await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT)))[0]
+    async def _mk_root_team(cls, sdb: Database, name: str = "Root") -> int:
+        return (await models_insert_auto_pk(sdb, TeamFactory(name=name)))[0]
 
 
 class TestSyncTeams(BaseTestSyncTeams):
@@ -69,11 +69,11 @@ class TestSyncTeams(BaseTestSyncTeams):
         assert team_b[Team.parent_id.name] == team_a_id
 
     async def test_create_name_clash(self, sdb: Database, mdb_rw: Database) -> None:
-        root_team_id = await self._mk_root_team(sdb)
+        root_team_id = await self._mk_root_team(sdb, name="root")
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = (
-                md_factory.TeamFactory(node_id=100, name=Team.ROOT),
+                md_factory.TeamFactory(node_id=100, name="root"),
                 md_factory.TeamFactory(node_id=101, parent_team_id=100, name=Team.BOTS),
                 md_factory.TeamMemberFactory(parent_id=100, child_id=200),
                 md_factory.TeamMemberFactory(parent_id=100, child_id=201),
@@ -84,9 +84,9 @@ class TestSyncTeams(BaseTestSyncTeams):
 
             await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb_rw)
 
-        team_root = await assert_existing_row(sdb, Team, name=Team.ROOT)
-        team_a = await assert_existing_row(sdb, Team, name=Team.ROOT + ".github")
-        team_b = await assert_existing_row(sdb, Team, name=Team.BOTS + ".github")
+        team_root = await assert_existing_row(sdb, Team, name="root")
+        team_a = await assert_existing_row(sdb, Team, name="root.github")
+        team_b = await assert_existing_row(sdb, Team, name=f"{Team.BOTS}.github")
         await assert_missing_row(sdb, Team, name=Team.BOTS)
 
         assert team_root[Team.members.name] == []
@@ -140,10 +140,10 @@ class TestSyncTeams(BaseTestSyncTeams):
         # teamB was not updated
         assert ensure_db_datetime_tz(team_b[Team.updated_at.name], sdb) == dt(2020, 1, 1)
 
-    @pytest.mark.parametrize("name", [Team.ROOT, Team.BOTS])
+    @pytest.mark.parametrize("name", ["root", Team.BOTS])
     @freeze_time("2021-01-01")
     async def test_update_name_clash(self, sdb: Database, mdb_rw: Database, name: str) -> None:
-        root_team_id = await self._mk_root_team(sdb)
+        root_team_id = await self._mk_root_team(sdb, "root")
         team_a_id, team_b_id = await models_insert_auto_pk(
             sdb,
             TeamFactory(

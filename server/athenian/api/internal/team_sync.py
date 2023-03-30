@@ -134,14 +134,14 @@ class _MetaTeams:
 
 
 class _StateTeams:
-    def __init__(self, rows: Sequence[Row], root_team_id: int, force: bool, unmapped: bool):
+    def __init__(self, rows: Sequence[Row], root_team: Row, force: bool, unmapped: bool):
         self._rows = rows
-        self._root_team_id = root_team_id
+        self._root_team = root_team
         self._existing = {
             id_: r
             for r in rows
             if (id_ := r[Team.origin_node_id.name]) is not None
-            or (unmapped and id_ != root_team_id and r[Team.name.name] != Team.BOTS)
+            or (unmapped and id_ != root_team[Team.id.name] and r[Team.name.name] != Team.BOTS)
         }
         self._created: dict[int, int] = {}
         self.force = force
@@ -158,9 +158,9 @@ class _StateTeams:
     ) -> _StateTeams:
         where = [Team.owner_id == account, Team.name != Team.BOTS, Team.parent_id.isnot(None)]
         query = sa.select(Team).where(*where)
-        root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
+        root_team = await get_root_team(account, sdb_conn)
         rows = await sdb_conn.fetch_all(query)
-        return cls(rows, root_team_id, force, unmapped)
+        return cls(rows, root_team, force, unmapped)
 
     @property
     def existing_by_origin_node_id(self) -> dict[int, Row]:
@@ -168,7 +168,11 @@ class _StateTeams:
 
     @property
     def root_team_id(self) -> int:
-        return self._root_team_id
+        return self._root_team[Team.id.name]
+
+    @property
+    def root_team_name(self) -> str:
+        return self._root_team[Team.name.name]
 
     def track_created_team(self, id_: int, origin_node_id) -> None:
         self._created[origin_node_id] = id_
@@ -181,15 +185,20 @@ class _StateTeams:
 
     def get_parent_id(self, parent_origin_node_id: Optional[int]) -> int:
         if parent_origin_node_id is None:
-            return self._root_team_id
+            return self.root_team_id
         try:
             return self.get_id(parent_origin_node_id)
         except KeyError:  # this happens when meta team has an invalid, inexisting parent
-            return self._root_team_id
+            return self.root_team_id
 
     def get_gone(self, meta_teams) -> Sequence[Row]:
         rows = self._existing.values()
         return [r for r in rows if r[Team.origin_node_id.name] not in meta_teams.by_id]
+
+    def ensure_name_no_clash_with_builtin(self, name: str) -> str:
+        if name == Team.BOTS or name == self.root_team_name:
+            name += ".github"
+        return name
 
     def _check_unmapped(self) -> None:
         if self.force:
@@ -250,12 +259,6 @@ class _StateDBOperatorI(metaclass=abc.ABCMeta):
         ...
 
 
-def _ensure_name_no_clash_with_builtin(name: str) -> str:
-    if name == Team.BOTS or name == Team.ROOT:
-        name += ".github"
-    return name
-
-
 class _StateDBOperator(_StateDBOperatorI):
     def __init__(self, account: int, sdb_conn: Connection):
         self._account = account
@@ -270,7 +273,8 @@ class _StateDBOperator(_StateDBOperatorI):
         for meta_team_row in _new_meta_teams_insertion_order(meta_team_rows):
             origin_node_id = meta_team_row[MetadataTeam.id.name]
             members = sorted(all_members.get(origin_node_id, []))
-            real_name = _ensure_name_no_clash_with_builtin(meta_team_row[MetadataTeam.name.name])
+            meta_name = meta_team_row[MetadataTeam.name.name]
+            real_name = state_teams.ensure_name_no_clash_with_builtin(meta_name)
             name = _NameMangler.apply(real_name)
 
             # parent team can be either created in a *previous* iteration
@@ -337,7 +341,8 @@ class _DryRunStateDBOperator(_StateDBOperatorI):
     ) -> None:
         for meta_team_row in _new_meta_teams_insertion_order(meta_team_rows):
             origin_node_id = meta_team_row[MetadataTeam.id.name]
-            name = _ensure_name_no_clash_with_builtin(meta_team_row[MetadataTeam.name.name])
+            meta_name = meta_team_row[MetadataTeam.name.name]
+            name = state_teams.ensure_name_no_clash_with_builtin(meta_name)
             log.info('creating team "%s" with origin_node_id %s', name, origin_node_id)
             state_teams.track_created_team(-1, origin_node_id)
 
@@ -369,9 +374,8 @@ class _DryRunStateDBOperator(_StateDBOperatorI):
 def _get_team_updates(meta_row: Row, members: list[int], state_teams: _StateTeams) -> dict:
     updates: dict[InstrumentedAttribute, Any] = {}
     state_team_row = state_teams.existing_by_origin_node_id[meta_row[MetadataTeam.id.name]]
-    if state_team_row[Team.name.name] != (
-        meta_name := _ensure_name_no_clash_with_builtin(meta_row[MetadataTeam.name.name])
-    ):
+    meta_name = state_teams.ensure_name_no_clash_with_builtin(meta_row[MetadataTeam.name.name])
+    if state_team_row[Team.name.name] != meta_name:
         updates[Team.name] = _NameMangler.apply(meta_name)
 
     if state_team_row[Team.members.name] != (sorted_members := sorted(members)):
