@@ -122,6 +122,7 @@ from athenian.api.models.web import (
     PullRequestParticipant,
     PullRequestSet,
     PullRequestSetInclude,
+    PullRequestStage as WebPullRequestStage,
     ReleasedPullRequest,
     ReleaseSet,
     ReleaseSetInclude,
@@ -467,6 +468,12 @@ def web_pr_from_struct(
             props["stages_time_machine"] = sorted(p.name.lower() for p in pr.stages_time_machine)
         props["events_now"] = sorted(p.name.lower() for p in pr.events_now)
         props["stages_now"] = sorted(p.name.lower() for p in pr.stages_now)
+        if not pr.stage_timings.get(WebPullRequestStage.WIP):
+            pr.stage_timings[WebPullRequestStage.WIP] = timedelta(seconds=0)
+            log = logging.getLogger(f"{metadata.__package__}.web_pr_from_struct")
+            pr_repr = f"{pr.node_id} {pr.repository}/#{pr.number}"
+            log.error("PR %s has impossible 0 wip stage timing", pr_repr)
+
         props["stage_timings"] = StageTimings(**pr.stage_timings)
         participants = defaultdict(list)
         for pk, pids in sorted(pr.participants.items()):
