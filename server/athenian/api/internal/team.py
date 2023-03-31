@@ -268,3 +268,16 @@ async def sync_team_members(
             .where(Team.id == team[Team.id.name])
             .values({Team.updated_at: datetime.now(timezone.utc), Team.members: members}),
         )
+
+
+async def ensure_root_team(account: int, sdb: Database) -> int:
+    """Ensure that the Root team exists in DB and return its id."""
+    try:
+        team_row = await get_root_team(account, sdb)
+    except RootTeamNotFoundError:
+        pass
+    else:
+        return team_row[Team.id.name]
+
+    team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
+    return await sdb.execute(sa.insert(Team).values(team.create_defaults().explode()))

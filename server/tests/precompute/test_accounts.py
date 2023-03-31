@@ -20,7 +20,6 @@ from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet
 from athenian.api.precompute.accounts import (
     _DurationTracker,
     _ensure_bot_team,
-    _ensure_root_team,
     _StatusTracker,
     alert_bad_health,
     ensure_teams,
@@ -315,20 +314,6 @@ class TestEnsureBotTeam:
         assert bot_team[Team.owner_id.name] == 1
         assert len(bot_team[Team.members.name]) == 1
         assert bot_team[Team.parent_id.name] == 10
-
-
-class TestEnsureRootTeam:
-    # tests for private function _ensure_root_team
-    async def test_already_existing(self, sdb: Database) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
-        assert await _ensure_root_team(1, sdb) == 97
-
-    async def test_not_existing(self, sdb: Database) -> None:
-        root_team_id = await _ensure_root_team(1, sdb)
-        root_team_row = await assert_existing_row(
-            sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
-        )
-        assert root_team_row[Team.members.name] == []
 
 
 class TestSyncBotsTeamMembers:

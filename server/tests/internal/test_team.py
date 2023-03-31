@@ -10,6 +10,7 @@ from athenian.api.internal.team import (
     RootTeamNotFoundError,
     TeamNotFoundError,
     delete_team,
+    ensure_root_team,
     fetch_team_members_recursively,
     fetch_teams_recursively,
     get_root_team,
@@ -241,3 +242,16 @@ class TestSyncTeamMembers:
 
         team_row = await assert_existing_row(sdb, Team, id=99)
         assert team_row[Team.members.name] == [1, 2, 3]
+
+
+class TestEnsureRootTeam:
+    async def test_already_existing(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(parent_id=None, name=Team.ROOT, id=97))
+        assert await ensure_root_team(1, sdb) == 97
+
+    async def test_not_existing(self, sdb: Database) -> None:
+        root_team_id = await ensure_root_team(1, sdb)
+        root_team_row = await assert_existing_row(
+            sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
+        )
+        assert root_team_row[Team.members.name] == []
