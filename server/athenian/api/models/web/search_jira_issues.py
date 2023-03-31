@@ -43,4 +43,5 @@ class SearchJIRAIssuesOrderByIssueTrait(Enum):
     """A trait of the Jira issue usable as ordering field in /search/jira_issues."""
 
     CREATED = "created"
+    UPDATED = "updated"
     WORK_BEGAN = "work_began"

@@ -226,6 +226,8 @@ class _OrderByIssueTrait(OrderByValues):
     def _get_values(self, expr: OrderByExpression) -> npt.NDArray[np.datetime64]:
         if expr.field == SearchJIRAIssuesOrderByIssueTrait.CREATED.value:
             return self._issues[Issue.created.name]
+        if expr.field == SearchJIRAIssuesOrderByIssueTrait.UPDATED.value:
+            return self._issues[Issue.updated.name]
         if expr.field == SearchJIRAIssuesOrderByIssueTrait.WORK_BEGAN.value:
             return resolve_work_began(
                 self._issues[AthenianIssue.work_began.name],

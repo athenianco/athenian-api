@@ -334,3 +334,60 @@ class TestSearchJIRAIssuesOrderByTrait(BaseSearchJIRAIssuesTest):
             body["order_by"] = [{"field": field, "direction": OrderByDirection.DESCENDING.value}]
             ids = await self._fetch_ids(json=body)
             assert ids == ("P-5", "P-3", "P-1", "P-4")
+
+    async def test_updated(self, mdb_rw: Database) -> None:
+        issue_kwargs = {"project_id": "1", "created": dt(2016, 1, 1)}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            *jira_issue_models("1", key="P-1", **issue_kwargs, updated=dt(2016, 1, 2)),
+            *jira_issue_models("2", key="P-2", **issue_kwargs, updated=dt(2016, 1, 4)),
+            *jira_issue_models("3", key="P-3", **issue_kwargs, updated=dt(2016, 1, 3)),
+        ]
+
+        field = SearchJIRAIssuesOrderByIssueTrait.UPDATED.value
+        body = self._body()
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body["order_by"] = [{"field": field}]
+            assert await self._fetch_ids(json=body) == ("P-1", "P-3", "P-2")
+
+            body["order_by"] = [{"field": field, "direction": OrderByDirection.DESCENDING.value}]
+            assert await self._fetch_ids(json=body) == ("P-2", "P-3", "P-1")
+
+    async def test_multiple_order_by(self, mdb_rw: Database) -> None:
+        i_kw = {"project_id": "1"}
+        mdb_models = [
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            *jira_issue_models(
+                "1", key="P-1", **i_kw, created=dt(2016, 1, 2), updated=dt(2016, 1, 3),
+            ),
+            *jira_issue_models(
+                "2", key="P-2", **i_kw, created=dt(2016, 1, 2), updated=dt(2016, 1, 4),
+            ),
+            *jira_issue_models(
+                "3", key="P-3", **i_kw, created=dt(2016, 1, 3), updated=dt(2016, 1, 3),
+            ),
+        ]
+        body = self._body()
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            UPDATED = SearchJIRAIssuesOrderByIssueTrait.UPDATED.value
+            CREATED = SearchJIRAIssuesOrderByIssueTrait.CREATED.value
+
+            body["order_by"] = [
+                {"field": UPDATED},
+                {"field": CREATED, "direction": OrderByDirection.DESCENDING.value},
+            ]
+            assert await self._fetch_ids(json=body) == ("P-3", "P-1", "P-2")
+
+            body["order_by"] = [
+                {"field": CREATED, "direction": OrderByDirection.DESCENDING.value},
+                {"field": UPDATED},
+            ]
+            assert await self._fetch_ids(json=body) == ("P-3", "P-1", "P-2")
