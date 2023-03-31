@@ -326,7 +326,7 @@ class TestSyncBotsTeamMembers:
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
-            (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+            (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory())
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
 
             local_bots = {"u0", "u1", "u2"}
@@ -358,7 +358,7 @@ class TestSyncBotsTeamMembers:
 
     async def test_bots_team_not_exising(self, sdb: Database, mdb: Database) -> None:
         prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, id=97)))
         await _ensure_bot_team(1, set(), 97, prefixer, sdb, mdb, logging.getLogger())
         await assert_existing_row(sdb, Team, name=Team.BOTS)
 

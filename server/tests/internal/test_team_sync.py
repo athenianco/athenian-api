@@ -218,7 +218,7 @@ class TestSyncTeams(BaseTestSyncTeams):
             mdb_cleaner.add_models(*models)
             await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb_rw)
 
-        await assert_existing_row(sdb, Team, name=Team.ROOT)
+        await assert_existing_row(sdb, Team, parent_id=None, name="Root")
         await assert_existing_row(sdb, Team, name="teamA")
         await assert_missing_row(sdb, Team, name="teamB")
 
@@ -253,7 +253,7 @@ class TestSyncTeams(BaseTestSyncTeams):
     async def test_complex_scenario(self, sdb: Database, mdb_rw: Database) -> None:
         await models_insert(
             sdb,
-            TeamFactory(name=Team.ROOT, id=50, parent_id=None),
+            TeamFactory(id=50, parent_id=None),
             TeamFactory(name="A", id=51, parent_id=50, origin_node_id=100),
             TeamFactory(name="B", id=52, parent_id=51, origin_node_id=101, members=[201]),
             TeamFactory(name="C", id=53, parent_id=51, origin_node_id=102, members=[200]),
