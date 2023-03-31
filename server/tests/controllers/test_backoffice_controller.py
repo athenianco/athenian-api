@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 from sqlalchemy import select
 
-from athenian.api.models.state.models import Team, UserAccount
+from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import ResetTarget
 from tests.testutils.db import models_insert_auto_pk
 from tests.testutils.factory.state import TeamFactory
@@ -12,7 +12,7 @@ from tests.testutils.factory.state import TeamFactory
 
 async def test_reset_account_everything(client, headers, god, sdb):
     body = {"targets": list(ResetTarget), "account": 1}
-    await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+    await models_insert_auto_pk(sdb, TeamFactory())
     with _spy_resetters():
         response = await client.request(
             method="POST", path="/private/reset", headers=headers, json=body,
@@ -23,7 +23,7 @@ async def test_reset_account_everything(client, headers, god, sdb):
 
 
 async def test_reset_account_repos(client, headers, god, sdb):
-    await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+    await models_insert_auto_pk(sdb, TeamFactory())
     body = {
         "targets": list(ResetTarget),
         "repositories": ["github.com/src-d/go-git"],

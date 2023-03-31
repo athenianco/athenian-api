@@ -10,6 +10,7 @@ from athenian.api.internal.team import (
     RootTeamNotFoundError,
     TeamNotFoundError,
     delete_team,
+    ensure_root_team,
     fetch_team_members_recursively,
     fetch_teams_recursively,
     get_root_team,
@@ -18,11 +19,14 @@ from athenian.api.internal.team import (
 )
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from tests.testutils.db import (
+    DBCleaner,
     assert_existing_row,
     assert_missing_row,
     models_insert,
     transaction_conn,
 )
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import (
     GoalFactory,
     TeamFactory,
@@ -241,3 +245,28 @@ class TestSyncTeamMembers:
 
         team_row = await assert_existing_row(sdb, Team, id=99)
         assert team_row[Team.members.name] == [1, 2, 3]
+
+
+class TestEnsureRootTeam:
+    async def test_already_existing(self, sdb: Database, mdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(parent_id=None, id=97))
+        assert await ensure_root_team(1, (DEFAULT_MD_ACCOUNT_ID,), sdb, mdb) == 97
+
+    async def test_not_existing(self, sdb: Database, mdb_rw: Database) -> None:
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            models = [md_factory.OrganizationFactory(login="org", name="Org. 2", acc_id=222)]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            root_team_id = await ensure_root_team(1, (222,), sdb, mdb_rw)
+            root_team_row = await assert_existing_row(
+                sdb, Team, id=root_team_id, name="Org. 2", parent_id=None,
+            )
+            assert root_team_row[Team.members.name] == []
+
+    async def test_fallback_name(self, sdb: Database, mdb_rw: Database) -> None:
+        root_team_id = await ensure_root_team(2, (222,), sdb, mdb_rw)
+        root_team_row = await assert_existing_row(
+            sdb, Team, id=root_team_id, name="Root", parent_id=None,
+        )
+        assert root_team_row[Team.members.name] == []

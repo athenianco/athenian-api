@@ -41,7 +41,7 @@ class TestGetMultipleMetadataMetadataIds:
 
 class TestCopyTeamsAsNeeded:
     async def test_base(self, sdb: Database, mdb: Database) -> None:
-        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory())
 
         created_teams, n = await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb, None)
         loaded_team_rows = await sdb.fetch_all(sa.select(Team).where(Team.id != root_team_id))
@@ -75,7 +75,7 @@ class TestCopyTeamsAsNeeded:
         assert n == len(loaded_teams)
 
     async def test_meta_team_invalid_parent(self, sdb: Database, mdb_rw: Database) -> None:
-        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory())
 
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             models = (md_factory.TeamFactory(node_id=101, parent_team_id=1010110101, name="T"),)

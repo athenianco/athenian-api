@@ -55,7 +55,7 @@ from athenian.api.internal.prefixer import Prefixer, RepositoryName
 from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.reposet import reposet_items_to_refs
 from athenian.api.internal.settings import Settings
-from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
+from athenian.api.internal.team import ensure_root_team
 from athenian.api.internal.team_sync import SyncTeamsError, TeamSyncMetrics, sync_teams
 from athenian.api.models.metadata.github import AccountRepository, Repository
 from athenian.api.models.persistentdata.models import HealthMetric
@@ -594,7 +594,7 @@ async def ensure_teams(
     flag is enabled.
     """
     try:
-        root_team_id = await _ensure_root_team(account, sdb)
+        root_team_id = await ensure_root_team(account, meta_ids, sdb, mdb)
     except Exception as e:
         log.warning("root team %d: %s: %s", account, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
@@ -672,19 +672,6 @@ async def _ensure_bot_team(
                 ),
             )
             return len(new_team)
-
-
-async def _ensure_root_team(account: int, sdb: Database) -> int:
-    """Ensure that the Root team exists in DB and return its id."""
-    try:
-        team_row = await get_root_team(account, sdb)
-    except RootTeamNotFoundError:
-        pass
-    else:
-        return team_row[Team.id.name]
-
-    team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
-    return await sdb.execute(sa.insert(Team).values(team.create_defaults().explode()))
 
 
 class _DurationTracker:

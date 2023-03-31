@@ -8,12 +8,13 @@ import aiomcache
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api import metadata
 from athenian.api.align.goals.empty_goals import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.dashboard import remove_team_refs_from_charts
 from athenian.api.internal.jira import load_mapped_jira_users
-from athenian.api.models.metadata.github import User
+from athenian.api.models.metadata.github import Organization, User
 from athenian.api.models.state.models import Team, UserAccount
 from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
@@ -268,3 +269,34 @@ async def sync_team_members(
             .where(Team.id == team[Team.id.name])
             .values({Team.updated_at: datetime.now(timezone.utc), Team.members: members}),
         )
+
+
+async def ensure_root_team(account: int, meta_ids, sdb: Database, mdb: Database) -> int:
+    """Ensure that the Root team exists in DB and return its id."""
+    try:
+        team_row = await get_root_team(account, sdb)
+    except RootTeamNotFoundError:
+        pass
+    else:
+        return team_row[Team.id.name]
+
+    name = await _root_team_initial_name(meta_ids, mdb)
+    team = Team(name=name, owner_id=account, members=[], parent_id=None)
+    return await sdb.execute(sa.insert(Team).values(team.create_defaults().explode()))
+
+
+async def _root_team_initial_name(meta_ids: tuple[int, ...], mdb: Database) -> str:
+    # the initial name of the root team comes from the github organization login
+    orgs_stmt = (
+        sa.select(sa.func.coalesce(Organization.name, Organization.login))
+        .where(Organization.acc_id.in_(meta_ids))
+        .order_by(Organization.acc_id, Organization.node_id)
+    )
+    orgs_name = await mdb.fetch_val(orgs_stmt)
+    if orgs_name is None:
+        log = logging.getLogger(f"{metadata.__package__}._root_team_initial_name")
+        msg = "Account with meta_ids %s has no named organization, using fallback root team name"
+        log.warning(msg, meta_ids)
+        return "Root"
+
+    return orgs_name

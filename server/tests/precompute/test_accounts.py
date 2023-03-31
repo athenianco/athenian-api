@@ -20,7 +20,6 @@ from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet
 from athenian.api.precompute.accounts import (
     _DurationTracker,
     _ensure_bot_team,
-    _ensure_root_team,
     _StatusTracker,
     alert_bad_health,
     ensure_teams,
@@ -317,20 +316,6 @@ class TestEnsureBotTeam:
         assert bot_team[Team.parent_id.name] == 10
 
 
-class TestEnsureRootTeam:
-    # tests for private function _ensure_root_team
-    async def test_already_existing(self, sdb: Database) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
-        assert await _ensure_root_team(1, sdb) == 97
-
-    async def test_not_existing(self, sdb: Database) -> None:
-        root_team_id = await _ensure_root_team(1, sdb)
-        root_team_row = await assert_existing_row(
-            sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
-        )
-        assert root_team_row[Team.members.name] == []
-
-
 class TestSyncBotsTeamMembers:
     async def test_members_are_added(self, sdb: Database, mdb_rw: Database) -> None:
         async with DBCleaner(mdb_rw) as mdb_cleaner:
@@ -341,7 +326,7 @@ class TestSyncBotsTeamMembers:
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
-            (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+            (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory())
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
 
             local_bots = {"u0", "u1", "u2"}
@@ -373,7 +358,7 @@ class TestSyncBotsTeamMembers:
 
     async def test_bots_team_not_exising(self, sdb: Database, mdb: Database) -> None:
         prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, id=97)))
         await _ensure_bot_team(1, set(), 97, prefixer, sdb, mdb, logging.getLogger())
         await assert_existing_row(sdb, Team, name=Team.BOTS)
 

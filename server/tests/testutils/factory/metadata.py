@@ -12,6 +12,7 @@ from athenian.api.models.metadata.github import (
     NodePullRequest,
     NodePullRequestJiraIssues,
     NodeRepository,
+    Organization,
     PullRequest,
     PullRequestCommit,
     PullRequestReview,
@@ -229,6 +230,16 @@ class NodePullRequestJiraIssuesFactory(SQLAlchemyModelFactory):
     node_acc = DEFAULT_MD_ACCOUNT_ID
     jira_id = factory.Sequence(lambda n: str(n + 100))
     jira_acc = DEFAULT_JIRA_ACCOUNT_ID
+
+
+class OrganizationFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Organization
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    login = factory.LazyAttribute(lambda o: f"org-{o.node_id}")
+    name = factory.LazyAttribute(lambda o: f"Org. {o.node_id}")
 
 
 class TeamFactory(SQLAlchemyModelFactory):
