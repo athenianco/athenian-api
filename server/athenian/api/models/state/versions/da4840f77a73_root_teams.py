@@ -33,8 +33,6 @@ class Team(Base):
         {"sqlite_autoincrement": True},
     )
 
-    ROOT = "Root"  # the name of the special artificial single root team
-
     id = sa.Column(sa.Integer(), primary_key=True)
     owner_id = sa.Column(
         sa.Integer(),
@@ -75,7 +73,7 @@ def upgrade():
         stmt = sa.insert(Team).values(
             owner_id=account,
             parent_id=None,
-            name=Team.ROOT,
+            name="Root",
             members=[],
             created_at=now,
             updated_at=now,
