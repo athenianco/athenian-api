@@ -594,7 +594,7 @@ async def ensure_teams(
     flag is enabled.
     """
     try:
-        root_team_id = await ensure_root_team(account, sdb)
+        root_team_id = await ensure_root_team(account, meta_ids, sdb, mdb)
     except Exception as e:
         log.warning("root team %d: %s: %s", account, type(e).__name__, e)
         sentry_sdk.capture_exception(e)
