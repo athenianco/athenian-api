@@ -1,7 +1,9 @@
 import argparse
 from typing import Any
 
-from athenian.api.controllers.events_controller import resolve_deployed_component_references
+from athenian.api.controllers.events_controller.deployments import (
+    resolve_deployed_component_references,
+)
 from athenian.api.precompute.context import PrecomputeContext
 
 
