@@ -596,6 +596,16 @@ async def _fill_issues_with_mapped_prs_info(
         f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
         f"{NodePullRequest.__tablename__})",
     )
+    if len(issues.index.values) > 300:
+        # with many issues sometimes our Leading hint confuses planner,
+        # a sequential scan is done on NodePullRequestJiraIssues
+        # forcing Parallel (which would be probably done anyway with a good plan) avoids this
+        for hint in (
+            f"HashJoin({NodePullRequestJiraIssues.__tablename__} *VALUES)",
+            f"Parallel({NodePullRequestJiraIssues.__tablename__} 6)",
+        ):
+            stmt = stmt.with_statement_hint(hint)
+
     prs = await read_sql_query(stmt, mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name)
 
     # TODO(vmarkovtsev): load the "fresh" released PRs
