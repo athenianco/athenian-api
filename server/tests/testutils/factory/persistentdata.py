@@ -6,6 +6,7 @@ import factory
 
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
+    DeployedLabel,
     DeploymentNotification,
     ReleaseNotification,
 )
@@ -38,6 +39,16 @@ class DeployedComponentFactory(SQLAlchemyModelFactory):
     repository_full_name = "org.org/repo"
     reference = "ABCDEF00"
     resolved_commit_node_id = 2756224  # magic number from mdb
+
+
+class DeployedLabelFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = DeployedLabel
+
+    account_id = DEFAULT_ACCOUNT_ID
+    deployment_name = factory.Sequence(lambda n: f"deploy {n}")
+    key = factory.Sequence(lambda n: f"k-{n}")
+    value = "value"
 
 
 class ReleaseNotificationFactory(SQLAlchemyModelFactory):
