@@ -50,7 +50,16 @@ class Requester:
         response = await self.put(*args, **kwargs)
         return await response.json()
 
-    async def _request(self, *, path_kwargs=None, **kwargs) -> ClientResponse:
+    async def _request(
+        self,
+        *,
+        path_kwargs: dict | None = None,
+        token: str | None = None,
+        **kwargs,
+    ) -> ClientResponse:
         headers = kwargs.pop("headers", self.headers)
+        if token is not None:
+            headers = headers.copy()
+            headers.setdefault("X-API-Key", token)
         path = self.build_path(**(path_kwargs or {}))
         return await self.client.request(path=path, headers=headers, **kwargs)
