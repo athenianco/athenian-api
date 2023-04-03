@@ -7,7 +7,9 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import insert, select, update
 
-from athenian.api.controllers.events_controller import resolve_deployed_component_references
+from athenian.api.controllers.events_controller.deployments import (
+    resolve_deployed_component_references,
+)
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
