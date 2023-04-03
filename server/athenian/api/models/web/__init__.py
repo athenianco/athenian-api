@@ -76,7 +76,10 @@ from athenian.api.models.web.deployment_analysis import (
 )
 from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisCode
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
-from athenian.api.models.web.deployment_labels import DeploymentLabelsResponse
+from athenian.api.models.web.deployment_labels import (
+    DeploymentLabelsResponse,
+    DeploymentModifyLabelsRequest,
+)
 from athenian.api.models.web.deployment_metric_id import DeploymentMetricID
 from athenian.api.models.web.deployment_metrics_request import DeploymentMetricsRequest
 from athenian.api.models.web.deployment_notification import (
