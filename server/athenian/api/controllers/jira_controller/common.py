@@ -222,13 +222,19 @@ async def fetch_issues_prs(
     log = logging.getLogger(f"{metadata.__package__}.fetch_issues_prs")
 
     async def fetch_prs_and_dependent_tasks():
-        prs_df = await read_sql_query(
+        prs_query = (
             sa.select(PullRequest)
             .where(
                 PullRequest.acc_id.in_(account_info.meta_ids),
-                PullRequest.node_id.in_(pr_ids),
+                PullRequest.node_id.progressive_in(pr_ids),
             )
-            .order_by(PullRequest.node_id.name),
+            .order_by(PullRequest.node_id.name)
+        )
+        if len(pr_ids) > 100:
+            # repo and pr are alias used in api_pull_requests view
+            prs_query = prs_query.with_statement_hint("HashJoin(repo pr)")
+        prs_df = await read_sql_query(
+            prs_query,
             mdb,
             PullRequest,
             index=PullRequest.node_id.name,
