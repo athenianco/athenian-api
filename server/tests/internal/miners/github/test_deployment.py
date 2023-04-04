@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import delete, func, insert, select
 
 from athenian.api.async_utils import gather
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.jira import JIRAConfig
@@ -4456,10 +4457,7 @@ async def test_invalidate_newer_deploys_smoke(
     rdb,
     old_notifications_mode,
 ) -> None:
-    await rdb.execute(sa.delete(DeploymentNotification))
-    await rdb.execute(sa.delete(DeployedComponent))
-    await rdb.execute(sa.delete(DeployedLabel))
-
+    await _delete_deployments(rdb)
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 2, 1, tzinfo=timezone.utc)
     mine_releases_ = partial(
@@ -4604,9 +4602,7 @@ async def test_invalidate_newer_deploys_in_pdb_different_envs(
     pdb,
     rdb,
 ):
-    await rdb.execute(sa.delete(DeploymentNotification))
-    await rdb.execute(sa.delete(DeployedComponent))
-    await rdb.execute(sa.delete(DeployedLabel))
+    await _delete_deployments(rdb)
 
     time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -4945,7 +4941,7 @@ class TestHideOutlierFirstDeployments:
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         # delete notifications so that mine_deployments will find nothing
-        await rdb.execute(sa.delete(DeploymentNotification))
+        await _delete_deployments(rdb)
 
         deps = await mine_deployments(
             **self._mine_common_kwargs(default_branches, release_match_setting_tag),
@@ -4979,7 +4975,7 @@ class TestHideOutlierFirstDeployments:
         release_match_setting_tag,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
-        await rdb.execute(sa.delete(DeploymentNotification))
+        await _delete_deployments(rdb)
         started_at = dt(2019, 1, 1)
         await models_insert(
             rdb,
@@ -5020,7 +5016,7 @@ class TestHideOutlierFirstDeployments:
             {"src-d/go-git/alpha": {"title": "alpha-.*"}},
         )
 
-        await rdb.execute(sa.delete(DeploymentNotification))
+        await _delete_deployments(rdb)
         await models_insert(
             rdb,
             DeploymentNotificationFactory(name="alpha-0", started_at=dt(2019, 1, 1)),
@@ -5369,3 +5365,8 @@ async def test_mine_releases_deployments(
     for rd in releases[ReleaseFacts.f.deployments]:
         ndeps += rd is not None and rd[0] == "Dummy deployment"
     assert ndeps == 51
+
+
+async def _delete_deployments(rdb: Database) -> None:
+    await rdb.execute(sa.delete(DeployedComponent))
+    await rdb.execute(sa.delete(DeploymentNotification))
