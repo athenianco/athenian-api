@@ -640,3 +640,48 @@ DashboardChartGroupBy.GROUP_BY_FIELDS = (
     DashboardChartGroupBy.jira_issue_types,
     DashboardChartGroupBy.jira_labels,
 )
+
+
+class InstallationProgress(create_time_mixin(created_at=False, updated_at=False), Base):
+    """The group by configured for a dashboard chart."""
+
+    __tablename__ = "installation_progress"
+
+    account_id = Column(
+        Integer(),
+        ForeignKey("accounts.id", name="fk_installation_progress_account"),
+        nullable=False,
+        primary_key=True,
+    )
+    account_created = Column(
+        "account_created",
+        TIMESTAMP(timezone=True),
+    )
+    fetch_started = Column(
+        "fetch_started",
+        TIMESTAMP(timezone=True),
+    )
+    fetch_completed = Column(
+        "fetch_completed",
+        TIMESTAMP(timezone=True),
+    )
+    consistency_started = Column(
+        "consistency_started",
+        TIMESTAMP(timezone=True),
+    )
+    consistency_completed = Column(
+        "consistency_completed",
+        TIMESTAMP(timezone=True),
+    )
+    precompute_started = Column(
+        "precompute_started",
+        TIMESTAMP(timezone=True),
+    )
+    precompute_completed = Column(
+        "precompute_completed",
+        TIMESTAMP(timezone=True),
+    )
+    current_status = Column(
+        "current_status",
+        Text(),
+    )

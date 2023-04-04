@@ -7,7 +7,6 @@ Create Date: 2023-04-04 17:13:06.137518+00:00
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "5b3dc49a9d7b"
@@ -23,6 +22,7 @@ def upgrade():
             "account_id",
             sa.Integer(),
             sa.ForeignKey("accounts.id", name="fk_installation_progress_account"),
+            nullable=False,
             primary_key=True,
         ),
         sa.Column(
