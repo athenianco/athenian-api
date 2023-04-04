@@ -95,13 +95,14 @@ class DeployedLabel(Base):
     """Key-values mapped to DeploymentNotification."""
 
     __tablename__ = "deployed_labels"
-    _table_args__ = [
+    __table_args__ = (
         ForeignKeyConstraint(
             ("account_id", "deployment_name"),
             (DeploymentNotification.account_id, DeploymentNotification.name),
             name="fk_deployed_labels_deployment",
         ),
-    ]
+        Base.__table_args__,
+    )
 
     deployment_name = Column(Text(), primary_key=True)
     key = Column(Text(), primary_key=True)
@@ -112,13 +113,14 @@ class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Ba
     """Deployed (repository, Git reference) pairs."""
 
     __tablename__ = "deployed_components"
-    _table_args__ = [
+    __table_args__ = (
         ForeignKeyConstraint(
             ("account_id", "deployment_name"),
             (DeploymentNotification.account_id, DeploymentNotification.name),
             name="fk_deployed_components_deployment",
         ),
-    ]
+        Base.__table_args__,
+    )
 
     deployment_name = Column(Text(), primary_key=True)
     repository_node_id = Column(BigInteger(), primary_key=True)
