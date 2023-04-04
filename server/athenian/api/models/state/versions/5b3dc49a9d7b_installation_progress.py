@@ -57,7 +57,6 @@ def upgrade():
             "current_status",
             sa.Text(),
         ),
-
     )
 
 

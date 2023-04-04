@@ -595,7 +595,7 @@ DashboardChart.FILTER_FIELDS = (
 
 
 class DashboardChartGroupBy(create_time_mixin(created_at=True, updated_at=True), Base):
-    """The group by configured for a dashboard chart."""
+    """Tracking installation progress for github accounts"""
 
     __tablename__ = "dashboard_charts_group_by"
 
