@@ -6,6 +6,7 @@ import hashlib
 import factory
 
 from athenian.api.models.precomputed.models import (
+    GitHubDeploymentFacts,
     GitHubDonePullRequestFacts,
     GitHubOpenPullRequestFacts,
     GitHubRelease,
@@ -56,3 +57,13 @@ class GitHubReleaseFactory(SQLAlchemyModelFactory):
     url = factory.Sequence(lambda n: f"https://example.com/releases/v-{n}")
     sha = hashlib.sha1(b"").hexdigest()
     commit_id = factory.Sequence(lambda n: n)
+
+
+class GitHubDeploymentFactsFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = GitHubDeploymentFacts
+
+    acc_id = DEFAULT_ACCOUNT_ID
+    deployment_name = factory.Sequence(lambda n: f"deploy-{n}")
+    release_matches = "tag|.*"
+    data = b""
