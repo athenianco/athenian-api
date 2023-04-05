@@ -595,7 +595,7 @@ DashboardChart.FILTER_FIELDS = (
 
 
 class DashboardChartGroupBy(create_time_mixin(created_at=True, updated_at=True), Base):
-    """Tracking installation progress for github accounts"""
+    """The group by configured for a dashboard chart."""
 
     __tablename__ = "dashboard_charts_group_by"
 
@@ -643,13 +643,12 @@ DashboardChartGroupBy.GROUP_BY_FIELDS = (
 
 
 class InstallationProgress(create_time_mixin(created_at=False, updated_at=False), Base):
-    """The group by configured for a dashboard chart."""
+    """Tracking installation progress for github accounts"""
 
     __tablename__ = "installation_progress"
 
     account_id = Column(
         Integer(),
-        ForeignKey("accounts.id", name="fk_installation_progress_account"),
         nullable=False,
         primary_key=True,
     )
