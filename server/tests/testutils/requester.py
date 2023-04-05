@@ -1,3 +1,5 @@
+import base64
+import struct
 from typing import Any
 
 from aiohttp import ClientResponse
@@ -50,7 +52,30 @@ class Requester:
         response = await self.put(*args, **kwargs)
         return await response.json()
 
-    async def _request(self, *, path_kwargs=None, **kwargs) -> ClientResponse:
+    async def patch(self, assert_status: int = 200, **kwargs) -> ClientResponse:
+        response = await self._request(method="PATCH", **kwargs)
+        assert response.status == assert_status, response.status
+        return response
+
+    async def patch_json(self, *args, **kwargs) -> Any:
+        response = await self.patch(*args, **kwargs)
+        return await response.json()
+
+    @classmethod
+    def encode_token(cls, token_id: int) -> str:
+        binary = struct.pack("<q", token_id)
+        return base64.b64encode(binary).decode("ascii")
+
+    async def _request(
+        self,
+        *,
+        path_kwargs: dict | None = None,
+        token: str | None = None,
+        **kwargs,
+    ) -> ClientResponse:
         headers = kwargs.pop("headers", self.headers)
+        if token is not None:
+            headers = headers.copy()
+            headers.setdefault("X-API-Key", token)
         path = self.build_path(**(path_kwargs or {}))
         return await self.client.request(path=path, headers=headers, **kwargs)

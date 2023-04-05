@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -49,7 +50,8 @@ def _get_query_body_multi(uuid: str) -> str:
         "--format=value(jsonPayload.msg)",
         f'"{uuid}"',
     ]
-    proc = subprocess.Popen(args, text=True, stdout=subprocess.PIPE)
+    child_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    proc = subprocess.Popen(args, text=True, stdout=subprocess.PIPE, bufsize=1, env=child_env)
     assert proc.stdout
     parts = ""
     for line in proc.stdout:
