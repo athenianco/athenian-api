@@ -16,6 +16,7 @@ from sqlalchemy import delete, func, insert, select
 from athenian.api.async_utils import gather
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.deployment_labels import invalidate_precomputed_on_labels_change
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.dag_accelerated import (
@@ -31,7 +32,8 @@ from athenian.api.internal.miners.github.deployment import (
 )
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.types import DeploymentConclusion, DeploymentFacts, ReleaseFacts
-from athenian.api.internal.settings import LogicalRepositorySettings
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import LogicalRepositorySettings, Settings
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
@@ -45,12 +47,23 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestDeployment,
     GitHubReleaseDeployment,
 )
-from tests.testutils.db import assert_existing_row, assert_missing_row, count, models_insert
+from tests.testutils.db import (
+    Database,
+    DBCleaner,
+    assert_existing_row,
+    assert_missing_row,
+    count,
+    models_insert,
+)
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.persistentdata import (
     DeployedComponentFactory,
+    DeployedLabelFactory,
     DeploymentNotificationFactory,
 )
+from tests.testutils.factory.precomputed import GitHubDeploymentFactsFactory
+from tests.testutils.factory.wizards import insert_logical_repo, insert_repo
 from tests.testutils.time import dt
 
 
@@ -2149,3 +2162,74 @@ async def test_extract_independent_ownership_smoke(dag):
         ).tolist()
         == []
     )
+
+
+class TestInvalidatePrecomputedOnLabelsChange:
+    async def test_no_invalidation(
+        self,
+        sdb: Database,
+        mdb_rw: Database,
+        rdb: Database,
+        pdb: Database,
+    ) -> None:
+        await models_insert(pdb, GitHubDeploymentFactsFactory(deployment_name="d"))
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="d"),
+            DeployedComponentFactory(deployment_name="d", repository_node_id=99),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
+            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+            logical_settings = await settings.list_logical_repositories()
+
+            await invalidate_precomputed_on_labels_change(
+                "d", ["l0"], 1, prefixer, logical_settings, rdb, pdb,
+            )
+
+        await assert_existing_row(pdb, GitHubDeploymentFacts, deployment_name="d")
+
+    async def test_invalidation(
+        self,
+        sdb: Database,
+        mdb_rw: Database,
+        rdb: Database,
+        pdb: Database,
+    ) -> None:
+        await models_insert(
+            pdb,
+            GitHubDeploymentFactsFactory(deployment_name="d"),
+            GitHubDeploymentFactsFactory(deployment_name="d2"),
+            GitHubDeploymentFactsFactory(deployment_name="d3"),
+        )
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="d", finished_at=dt(2021, 1, 2)),
+            DeployedComponentFactory(deployment_name="d", repository_node_id=99),
+            DeployedLabelFactory(deployment_name="d", key="k"),
+            DeploymentNotificationFactory(name="d2", finished_at=dt(2021, 1, 3)),
+            DeployedComponentFactory(deployment_name="d2", repository_node_id=99),
+            DeploymentNotificationFactory(name="d3", finished_at=dt(2021, 1, 1)),
+            DeployedComponentFactory(deployment_name="d3", repository_node_id=99),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            await insert_logical_repo(99, "l", sdb, deployments={"labels": {"lab0": "v"}})
+            prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
+            settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+            logical_settings = await settings.list_logical_repositories()
+
+            await invalidate_precomputed_on_labels_change(
+                "d", ["lab0"], 1, prefixer, logical_settings, rdb, pdb,
+            )
+
+        await assert_missing_row(pdb, GitHubDeploymentFacts, deployment_name="d")
+        # d2 invalidated, finished after d
+        await assert_missing_row(pdb, GitHubDeploymentFacts, deployment_name="d2")
+        # d not invalidated, finished before d
+        await assert_existing_row(pdb, GitHubDeploymentFacts, deployment_name="d3")
