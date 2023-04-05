@@ -4,14 +4,21 @@ from aiohttp import ClientResponse
 import pytest
 
 from athenian.api.db import Database
+from athenian.api.defer import wait_all_deferred
 from athenian.api.models.persistentdata.models import DeployedLabel
-from tests.testutils.db import assert_existing_rows, assert_missing_row, models_insert
+from athenian.api.models.precomputed.models import GitHubDeploymentFacts
+from tests.testutils.db import DBCleaner, assert_existing_rows, assert_missing_row, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.persistentdata import (
+    DeployedComponentFactory,
     DeployedLabelFactory,
     DeploymentNotificationFactory,
 )
+from tests.testutils.factory.precomputed import GitHubDeploymentFactsFactory
 from tests.testutils.factory.state import UserAccountFactory, UserTokenFactory
+from tests.testutils.factory.wizards import insert_logical_repo, insert_repo
 from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 class BaseGetDeploymentLabelsTest(Requester):
@@ -70,6 +77,17 @@ class BaseModifyDeploymentLabelsTest(Requester):
         if "token" not in kwargs:
             kwargs["token"] = self.encode_token(self._TOKEN_ID)
         return await super().patch(*args, path_kwargs=path_kwargs, **kwargs)
+
+    async def _assert_db_labels(self, name: str, rdb: Database, **labels) -> None:
+        if not labels:
+            await assert_missing_row(rdb, DeployedLabel, deployment_name=name)
+            return
+
+        rows = await assert_existing_rows(rdb, DeployedLabel, deployment_name=name)
+        assert len(rows) == len(labels)
+        for r in rows:
+            value = labels.pop(r[DeployedLabel.key.name])
+            assert value == r[DeployedLabel.value.name]
 
 
 class TestModifyDeploymentLabelsErrors(BaseModifyDeploymentLabelsTest):
@@ -152,13 +170,41 @@ class TestModifyDeploymentLabels(BaseModifyDeploymentLabelsTest):
         assert res == {"labels": {"k1": ["l0"], "k2": "bar"}}
         await self._assert_db_labels("d", rdb, k1=["l0"], k2="bar")
 
-    async def _assert_db_labels(self, name: str, rdb: Database, **labels) -> None:
-        if not labels:
-            await assert_missing_row(rdb, DeployedLabel, deployment_name=name)
-            return
 
-        rows = await assert_existing_rows(rdb, DeployedLabel, deployment_name=name)
-        assert len(rows) == len(labels)
-        for r in rows:
-            value = labels.pop(r[DeployedLabel.key.name])
-            assert value == r[DeployedLabel.value.name]
+class TestModifyDeploymentLabelsPDBInvalidation(BaseModifyDeploymentLabelsTest):
+    async def test_base(
+        self,
+        rdb: Database,
+        sdb: Database,
+        pdb: Database,
+        mdb_rw: Database,
+    ) -> None:
+        await models_insert(
+            pdb,
+            GitHubDeploymentFactsFactory(deployment_name="d"),
+            GitHubDeploymentFactsFactory(deployment_name="d2"),
+        )
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="d", finished_at=dt(2021, 1, 2)),
+            DeployedComponentFactory(deployment_name="d", repository_node_id=99),
+            DeployedLabelFactory(deployment_name="d", key="k", value="v"),
+            DeploymentNotificationFactory(name="d2", finished_at=dt(2021, 1, 3)),
+            DeployedComponentFactory(deployment_name="d2", repository_node_id=99),
+        )
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            await insert_logical_repo(99, "l", sdb, deployments={"labels": {"k": "v"}})
+
+            body = {"delete": ["k"]}
+            res = await self.patch_json("d", json=body)
+            assert res == {"labels": {}}
+
+            await self._assert_db_labels("d", rdb)
+
+            await wait_all_deferred()
+
+            await assert_missing_row(pdb, GitHubDeploymentFacts, deployment_name="d")
+            await assert_missing_row(pdb, GitHubDeploymentFacts, deployment_name="d1")
