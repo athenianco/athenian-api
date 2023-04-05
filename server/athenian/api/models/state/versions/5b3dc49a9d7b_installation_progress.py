@@ -21,7 +21,6 @@ def upgrade():
         sa.Column(
             "account_id",
             sa.Integer(),
-            sa.ForeignKey("accounts.id", name="fk_installation_progress_account"),
             nullable=False,
             primary_key=True,
         ),
