@@ -3516,8 +3516,7 @@ async def invalidate_precomputed_on_labels_change(
                 continue
 
             # check if its logical repos use any of the changed labels
-            # TODO: avoid access to private LogicalDeploymentSettings._labels
-            if changed_labels_set.intersection(logical_depl_settings._labels):
+            if changed_labels_set.intersection(logical_depl_settings.all_labels):
                 yield repo_id
 
     affected_repos = [repo_id async for repo_id in _discover_affected_repos()]
