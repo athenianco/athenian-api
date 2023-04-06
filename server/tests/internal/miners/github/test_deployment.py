@@ -16,7 +16,6 @@ from sqlalchemy import delete, func, insert, select
 from athenian.api.async_utils import gather
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
-from athenian.api.internal.deployment_labels import invalidate_precomputed_on_labels_change
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.dag_accelerated import (
@@ -27,6 +26,7 @@ from athenian.api.internal.miners.github.deployment import (
     MineDeploymentsMetrics,
     deployment_facts_extract_mentioned_people,
     hide_outlier_first_deployments,
+    invalidate_precomputed_on_labels_change,
     mine_deployments,
     reset_broken_deployments,
 )

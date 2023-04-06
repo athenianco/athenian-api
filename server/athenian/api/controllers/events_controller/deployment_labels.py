@@ -6,10 +6,10 @@ from athenian.api.defer import defer
 from athenian.api.internal.deployment_labels import (
     delete_deployment_labels,
     get_deployment_labels as get_deployment_labels_from_db,
-    invalidate_precomputed_on_labels_change,
     lock_deployment,
     upsert_deployment_labels,
 )
+from athenian.api.internal.miners.github.deployment import invalidate_precomputed_on_labels_change
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import Settings
 from athenian.api.models.web import (
