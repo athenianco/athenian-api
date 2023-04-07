@@ -17,7 +17,12 @@ from athenian.api.models.web import (
 )
 from athenian.api.models.web.goal import MetricValue
 from tests.testutils.auth import force_request_auth
-from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.db import (
+    assert_existing_row,
+    assert_missing_row,
+    models_insert,
+    models_insert_auto_pk,
+)
 from tests.testutils.factory.state import (
     AccountFactory,
     GoalFactory,
@@ -444,30 +449,25 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert tg_11_row[TeamGoal.metric_params.name] == {"threshold": 2}
 
     async def test_metric_params_duration(self, sdb: Database) -> None:
-        metric = PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO
-        await models_insert(sdb, TeamFactory(id=10))
-        body = self._body(
-            metric=metric,
-            team_goals=[(10, 42, {"threshold": "100s"})],
-            metric_params={"threshold": "100s"},
+        metrics = (
+            PullRequestMetricID.PR_MERGING_TIME_BELOW_THRESHOLD_RATIO,
+            JIRAMetricID.JIRA_LIFE_TIME_BELOW_THRESHOLD_RATIO,
+            JIRAMetricID.JIRA_ACKNOWLEDGE_TIME_BELOW_THRESHOLD_RATIO,
         )
-        new_goal_id = (await self._request(json=body))["id"]
-        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
-        assert goal_row[Goal.metric_params.name] == {"threshold": "100s"}
-        tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
-        assert tg_row[TeamGoal.metric_params.name] == {"threshold": "100s"}
-
-    async def test_metric_params_jira_life_time_metric(self, sdb: Database) -> None:
-        metric = JIRAMetricID.JIRA_LIFE_TIME_BELOW_THRESHOLD_RATIO
         await models_insert(sdb, TeamFactory(id=10))
-        body = self._body(
-            metric=metric,
-            team_goals=[(10, 42, {"threshold": "100s"})],
-            metric_params={"threshold": "100s"},
-        )
-        new_goal_id = (await self._request(json=body))["id"]
-        goal_row = await assert_existing_row(sdb, Goal, id=new_goal_id, account_id=1)
-        assert goal_row[Goal.metric_params.name] == {"threshold": "100s"}
+        for metric in metrics:
+            body = self._body(
+                metric=metric,
+                team_goals=[(10, 42, {"threshold": "100s"})],
+                metric_params={"threshold": "100s"},
+            )
+            new_goal_id = (await self._request(json=body))["id"]
+            goal_row = await assert_existing_row(
+                sdb, Goal, id=new_goal_id, account_id=1, metric=metric,
+            )
+            assert goal_row[Goal.metric_params.name] == {"threshold": "100s"}
+            tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
+            assert tg_row[TeamGoal.metric_params.name] == {"threshold": "100s"}
 
 
 class BaseUpdateGoalTest(BaseGoalTest):
@@ -775,34 +775,28 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         )
 
     async def test_set_teams_metric_params_duration(self, sdb: Database) -> None:
-        await models_insert(
-            sdb,
-            GoalFactory(id=1, metric=PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO),
-            *[TeamFactory(id=id_) for id_ in (10, 20)],
-            TeamGoalFactory(team_id=10, goal_id=1, metric_params={"threshold": "10s"}),
-            TeamGoalFactory(team_id=20, goal_id=1, metric_params={"threshold": "20s"}),
+        metrics = (
+            PullRequestMetricID.PR_OPEN_TIME_BELOW_THRESHOLD_RATIO,
+            PullRequestMetricID.PR_WIP_TIME_BELOW_THRESHOLD_RATIO,
+            JIRAMetricID.JIRA_ACKNOWLEDGE_TIME_BELOW_THRESHOLD_RATIO,
         )
+        await models_insert(sdb, *[TeamFactory(id=id_) for id_ in (10, 20)])
 
-        body = self._body(team_goals=[(10, 1, {"threshold": "1s"}), (20, 1)])
-        await self._request(1, json=body)
-        await assert_existing_row(
-            sdb, TeamGoal, goal_id=1, team_id=10, metric_params={"threshold": "1s"},
-        )
-        row_20 = await assert_existing_row(sdb, TeamGoal, goal_id=1, team_id=20)
-        assert row_20[TeamGoal.metric_params.name] is None
+        for metric in metrics:
+            (goal_id,) = await models_insert_auto_pk(sdb, GoalFactory(id=1, metric=metric))
+            await models_insert(
+                sdb,
+                TeamGoalFactory(team_id=10, goal_id=goal_id, metric_params={"threshold": "10s"}),
+                TeamGoalFactory(team_id=20, goal_id=goal_id, metric_params={"threshold": "20s"}),
+            )
 
-    async def test_metric_params_wip_below_threshold(self, sdb):
-        await models_insert(
-            sdb,
-            TeamFactory(id=10),
-            GoalFactory(id=9, metric=PullRequestMetricID.PR_WIP_TIME_BELOW_THRESHOLD_RATIO),
-        )
-
-        body = self._body(team_goals=[(10, 0.98, {"threshold": "1s"})])
-        await self._request(9, json=body, assert_status=200)
-        await assert_existing_row(
-            sdb, TeamGoal, goal_id=9, team_id=10, metric_params={"threshold": "1s"},
-        )
+            body = self._body(team_goals=[(10, 1, {"threshold": "1s"}), (20, 1)])
+            await self._request(goal_id, json=body)
+            await assert_existing_row(
+                sdb, TeamGoal, goal_id=goal_id, team_id=10, metric_params={"threshold": "1s"},
+            )
+            row_20 = await assert_existing_row(sdb, TeamGoal, goal_id=1, team_id=20)
+            assert row_20[TeamGoal.metric_params.name] is None
 
     @classmethod
     def _sample_goal_models(cls, **kwargs: Any) -> Sequence[Base]:
