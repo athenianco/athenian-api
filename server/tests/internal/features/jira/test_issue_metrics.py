@@ -1,17 +1,19 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import medvedi as md
 import numpy as np
 import pytest
 
 from athenian.api.internal.features.jira.issue_metrics import (
+    AcknowledgeTimeBelowThresholdRatio,
+    AcknowledgeTimeCalculator,
     LeadTimeBelowThresholdRatio,
     LeadTimeCalculator,
     LifeTimeBelowThresholdRatio,
     LifeTimeCalculator,
 )
 from athenian.api.internal.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
-from athenian.api.models.metadata.jira import AthenianIssue, Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Issue, Status
 from tests.testutils.time import dt, dt64arr_us
 
 
@@ -111,3 +113,39 @@ class TestLifeTimeBelowThresholdRatio:
         for k, v in columns.items():
             columns[k] = np.array(v, dtype="datetime64[us]")
         return md.DataFrame(columns)
+
+
+class TestAcknowledgeTimeBelowThresholdRatio:
+    def test_base(self) -> None:
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 7, 1))
+        issues = [
+            [datetime(2022, 1, 3), datetime(2022, 1, 4)],
+            [datetime(2022, 1, 3), datetime(2022, 1, 5)],
+            [datetime(2022, 1, 4), datetime(2022, 1, 10)],
+            [datetime(2022, 1, 3), datetime(2022, 1, 6)],
+            [datetime(2022, 1, 3), datetime(2022, 1, 8)],
+        ]
+        facts = self._gen_facts(*issues)
+        groups_mask = np.full((1, len(issues)), True, bool)
+
+        ack_time_calc = AcknowledgeTimeCalculator(quantiles=(0, 1))
+        ack_time_calc(facts, min_times, max_times, None, groups_mask)
+        calc = AcknowledgeTimeBelowThresholdRatio(
+            ack_time_calc, quantiles=(0, 1), threshold=timedelta(days=4),
+        )
+        calc(facts, min_times, max_times, None, groups_mask)
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == pytest.approx(3 / 5)
+
+    @classmethod
+    def _gen_facts(cls, *values: list) -> md.DataFrame:
+        return md.DataFrame(
+            {
+                Issue.created.name: np.array([v[0] for v in values]),
+                ISSUE_PRS_BEGAN: np.array([v[1] for v in values]),
+                AthenianIssue.work_began.name: np.array([v[1] for v in values]),
+                Status.category_name.name: np.repeat(Status.CATEGORY_IN_PROGRESS, len(values)),
+            },
+        )

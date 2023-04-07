@@ -376,6 +376,15 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
         return result
 
 
+@register_metric(JIRAMetricID.JIRA_ACKNOWLEDGE_TIME_BELOW_THRESHOLD_RATIO)
+class AcknowledgeTimeBelowThresholdRatio(ThresholdComparisonRatioCalculator):
+    """Calculate the ratio of issues with a JIRA_ACKNOWLEDGE_TIME below a given threshold."""
+
+    deps = (AcknowledgeTimeCalculator,)
+    _compare = np.less_equal
+    default_threshold = timedelta(days=3)
+
+
 @register_metric(JIRAMetricID.JIRA_ACKNOWLEDGED)
 class AcknowledgedCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate JIRA_ACKNOWLEDGED disregarding \
