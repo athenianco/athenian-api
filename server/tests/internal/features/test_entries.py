@@ -37,7 +37,12 @@ from athenian.api.internal.miners.participation import (
 from athenian.api.internal.miners.types import JIRAEntityToFetch, PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
+from athenian.api.models.web import (
+    DeploymentMetricID,
+    JIRAMetricID,
+    PullRequestMetricID,
+    ReleaseMetricID,
+)
 from tests.conftest import build_fake_cache
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
@@ -1446,6 +1451,71 @@ class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
         fetch_issues_mock.assert_not_called()
 
         assert first_res[0][0][0][0][0].value == second_res[0][0][0][0][0].value
+
+
+class TestCalcDeploymentMetricsLineGithub:
+    @with_defer
+    async def test_deployment_metrics_calculators_smoke(
+        self,
+        sample_deployments,
+        metrics_calculator_factory,
+        release_match_setting_tag_or_branch,
+        prefixer,
+        branches,
+        default_branches,
+    ):
+        for i in range(2):
+            calc = metrics_calculator_factory(1, (6366825,), with_cache=True)
+            if i == 1:
+                calc._mdb = None
+                calc._rdb = None
+                calc._pdb = None
+            metrics = await calc.calc_deployment_metrics_line_github(
+                list(DeploymentMetricID),
+                [[dt(2015, 1, 1), dt(2021, 1, 1)]],
+                (0, 1),
+                [["src-d/go-git"]],
+                {},
+                [["staging"], ["production"]],
+                LabelFilter.empty(),
+                {},
+                {},
+                JIRAFilter.empty(),
+                release_match_setting_tag_or_branch,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                branches,
+                default_branches,
+                (1, ("10003", "10009")),
+            )
+            await wait_deferred()
+            assert len(metrics) == 1
+            assert len(metrics[0]) == 1
+            assert len(metrics[0][0]) == 2
+            assert len(metrics[0][0][0]) == 1
+            assert len(metrics[0][0][1]) == 1
+            assert len(metrics[0][0][0][0]) == 1
+            assert len(metrics[0][0][1][0]) == 1
+            assert metrics[0][0][0][0][0] == metrics[0][0][1][0][0]
+            assert dict(zip(DeploymentMetricID, (m.value for m in metrics[0][0][0][0][0]))) == {
+                DeploymentMetricID.DEP_JIRA_ISSUES_COUNT: 44,
+                DeploymentMetricID.DEP_COMMITS_COUNT: 2342,
+                DeploymentMetricID.DEP_SIZE_RELEASES: 9.714285850524902,
+                DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT: 12,
+                DeploymentMetricID.DEP_LINES_COUNT: 416242,
+                DeploymentMetricID.DEP_SIZE_COMMITS: 334.5714416503906,
+                DeploymentMetricID.DEP_RELEASES_COUNT: 68,
+                DeploymentMetricID.DEP_COUNT: 7,
+                DeploymentMetricID.DEP_DURATION_ALL: timedelta(seconds=600),
+                DeploymentMetricID.DEP_FAILURE_COUNT: 1,
+                DeploymentMetricID.DEP_SIZE_LINES: 59463.14453125,
+                DeploymentMetricID.DEP_SUCCESS_RATIO: 0.8571428656578064,
+                DeploymentMetricID.DEP_DURATION_SUCCESSFUL: timedelta(seconds=600),
+                DeploymentMetricID.DEP_DURATION_FAILED: timedelta(seconds=600),
+                DeploymentMetricID.DEP_SIZE_PRS: 120.28571319580078,
+                DeploymentMetricID.DEP_PRS_COUNT: 842,
+                DeploymentMetricID.DEP_SUCCESS_COUNT: 6,
+            }
 
 
 async def _calc_shared_kwargs(
