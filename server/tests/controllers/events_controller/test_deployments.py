@@ -4,9 +4,11 @@ from typing import Any, Optional
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.async_utils import gather
 from athenian.api.controllers.events_controller.deployments import (
     resolve_deployed_component_references,
 )
+from athenian.api.db import Database
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -36,8 +38,7 @@ class TestNotifyDeployments(Requester):
         resolved,
         disable_default_user,
     ):
-        await rdb.execute(sa.delete(DeploymentNotification))
-        await rdb.execute(sa.delete(DeployedComponent))
+        await _delete_deployments(rdb)
         body = [
             {
                 "components": [{"repository": "github.com/src-d/go-git", "reference": ref}],
@@ -242,7 +243,7 @@ class TestNotifyDeployments(Requester):
         await self._request(token, 403, json=json)
 
     async def test_date_invalid_timezone_name(self, token, disable_default_user, rdb):
-        await rdb.execute(sa.delete(DeploymentNotification))
+        await _delete_deployments(rdb)
         body = [
             {
                 "components": [{"repository": "github.com/src-d/go-git", "reference": "4.2.0"}],
@@ -255,7 +256,7 @@ class TestNotifyDeployments(Requester):
         await self._request(token, 400, json=body)
 
     async def test_date_with_no_timezone_received(self, token, disable_default_user, rdb):
-        await rdb.execute(sa.delete(DeploymentNotification))
+        await _delete_deployments(rdb)
         body = [
             {
                 "components": [{"repository": "github.com/src-d/go-git", "reference": "4.2.0"}],
@@ -284,8 +285,7 @@ class TestNotifyDeployments(Requester):
 
 @pytest.mark.parametrize("unresolved", [False, True])
 async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unresolved):
-    await rdb.execute(sa.delete(DeployedComponent))
-    await rdb.execute(sa.delete(DeploymentNotification))
+    await _delete_deployments(rdb)
 
     async def execute_many(sql, values):
         if rdb.url.dialect == "sqlite":
@@ -369,3 +369,11 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
     )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
+
+
+async def _delete_deployments(rdb: Database) -> None:
+    await gather(
+        rdb.execute(sa.delete(DeployedComponent)),
+        rdb.execute(sa.delete(DeployedLabel)),
+    )
+    await rdb.execute(sa.delete(DeploymentNotification))
