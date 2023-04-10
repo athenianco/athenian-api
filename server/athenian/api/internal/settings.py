@@ -466,6 +466,11 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         """Return the label key values for the given logical repository."""
         return self._labels_inv[repo]
 
+    @property
+    def all_labels(self) -> Collection[str]:
+        """Return all the labels keys mentioned in the settings."""
+        return self._labels
+
     def match(self, notifications: md.DataFrame, labels: md.DataFrame) -> dict[str, set[str]]:
         """
         Split deployed components into logical parts.
