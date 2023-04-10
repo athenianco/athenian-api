@@ -2,14 +2,14 @@ from http import HTTPStatus
 
 from aiohttp import web
 
-from athenian.api.align.exceptions import GoalNotFoundError
-from athenian.api.align.goals.dbaccess import (
+from athenian.api.auth import disable_default_user
+from athenian.api.internal.account import request_user_belongs_to_account
+from athenian.api.internal.goals.dbaccess import (
     fetch_goal_account,
     unassign_team_from_goal as unassign_team_from_goal_in_db,
     unassign_team_from_goal_recursive,
 )
-from athenian.api.auth import disable_default_user
-from athenian.api.internal.account import request_user_belongs_to_account
+from athenian.api.internal.goals.exceptions import GoalNotFoundError
 from athenian.api.models.web import CreatedIdentifier, GoalUnassignTeamRequest
 from athenian.api.request import AthenianWebRequest, model_from_body
 from athenian.api.response import model_response

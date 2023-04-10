@@ -2278,7 +2278,7 @@ class PRFactsCalculator:
         else:
             self._pr_jira_mapper.apply_empty_to_pr_facts(precomputed_facts)
 
-        # TODO: miner returns in dfs.deployments some PRs included in blacklist,
+        # TODO(vmarkovtsev): miner returns in dfs.deployments some PRs included in blacklist,
         # so some PRs can be both in done_deps and new_deps, find out why
         unique_new_deps = new_deps.index.diff(done_deps.index)
         if len(unique_new_deps) < len(new_deps):

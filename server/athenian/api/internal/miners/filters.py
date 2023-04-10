@@ -277,8 +277,8 @@ class JIRAFilter:
         return cls.empty().replace(
             account=jira_config.acc_id,
             projects=frozenset(jira_config.projects),
-            # TODO: sometimes JIRAFilter is built from a JIRAConfig after projects have been
-            # manually restricted there, so setting False here is not possible
+            # TODO(gaetano-guerriero): sometimes JIRAFilter is built from a JIRAConfig after
+            # projects have been manually restricted there, so setting False here is not possible
             custom_projects=True,
         )
 

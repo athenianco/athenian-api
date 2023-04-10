@@ -20,7 +20,6 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import delete, func, insert, select, text, update
 
 from athenian.api import metadata
-from athenian.api.align.goals.dbaccess import create_default_goal_templates
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime, short_term_exptime
@@ -37,6 +36,7 @@ from athenian.api.internal.account import (
     is_membership_check_enabled,
     jira_url_template,
 )
+from athenian.api.internal.goals.dbaccess import create_default_goal_templates
 from athenian.api.internal.jira import fetch_jira_installation_progress
 from athenian.api.internal.refetcher import Refetcher
 from athenian.api.internal.reposet import load_account_reposets
