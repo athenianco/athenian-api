@@ -6,3 +6,13 @@ rules:
   message: Remove debugging pickles
   languages: [python3]
   severity: ERROR
+- id: todo-owner
+  pattern-regex: '# TODO(?!\([a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\):)'
+  message: "TODO format must be TODO(login_on_github):"
+  languages: [python3]
+  severity: ERROR
+- id: fixme-owner
+  pattern-regex: '# FIXME(?!\([a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\):)'
+  message: "FIXME format must be FIXME(login_on_github):"
+  languages: [python3]
+  severity: ERROR

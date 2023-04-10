@@ -9,7 +9,6 @@ import aiomcache
 import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
-from athenian.api.align.goals.dates import Intervals
 from athenian.api.async_utils import gather
 from athenian.api.db import Database
 from athenian.api.internal.features.entries import (
@@ -26,6 +25,7 @@ from athenian.api.internal.features.github.release_metrics import (
 from athenian.api.internal.features.jira.issue_metrics import (
     metric_calculators as jira_metric_calculators,
 )
+from athenian.api.internal.goals.dates import Intervals
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation, load_mapped_jira_users
 from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.miners.github.bots import bots

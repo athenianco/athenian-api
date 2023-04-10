@@ -3,11 +3,11 @@ from operator import itemgetter
 
 from aiohttp import web
 
-from athenian.api.align.goals.dbaccess import fetch_team_goals
-from athenian.api.align.goals.measure import GoalToServe
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.goals.dbaccess import fetch_team_goals
+from athenian.api.internal.goals.measure import GoalToServe
 from athenian.api.internal.jira import get_jira_installation_or_none
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import Settings

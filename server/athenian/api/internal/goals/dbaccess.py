@@ -9,14 +9,6 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import sqlalchemy as sa
 
-from athenian.api.align.exceptions import (
-    GoalMutationError,
-    GoalNotFoundError,
-    GoalTemplateNotFoundError,
-    TeamGoalNotFoundError,
-)
-from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.align.models import MetricParamNames
 from athenian.api.db import (
     Connection,
     DatabaseLike,
@@ -25,6 +17,13 @@ from athenian.api.db import (
     dialect_specific_insert,
     is_postgresql,
 )
+from athenian.api.internal.goals.exceptions import (
+    GoalMutationError,
+    GoalNotFoundError,
+    GoalTemplateNotFoundError,
+    TeamGoalNotFoundError,
+)
+from athenian.api.internal.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.models.state.models import Goal, GoalTemplate, Team, TeamGoal
 from athenian.api.serialization import deserialize_timedelta
@@ -350,13 +349,19 @@ async def create_default_goal_templates(account: int, sdb_conn: DatabaseLike) ->
     await sdb_conn.execute_many(stmt, values)
 
 
+class MetricParamNames(Enum):
+    """Names of the possible parameters for a metric."""
+
+    threshold = "threshold"
+
+
 def convert_metric_params_datatypes(metric_params: Optional[dict]) -> dict:
     """Convert the metric_params column to the format used in MetricWithParams and calculation."""
     if not metric_params:
         return {}
     parsed = metric_params.copy()
-    if isinstance(threshold := metric_params.get(MetricParamNames.threshold), str):
-        parsed[MetricParamNames.threshold] = deserialize_timedelta(threshold)
+    if isinstance(threshold := metric_params.get(MetricParamNames.threshold.name), str):
+        parsed[MetricParamNames.threshold.name] = deserialize_timedelta(threshold)
     return parsed
 
 
@@ -435,7 +440,7 @@ async def _validate_goal_creation_info(
 
     if missing_team_ids := team_ids - existing_team_ids:
         missing_repr = ",".join(str(team_id) for team_id in missing_team_ids)
-        # TODO: change to a more generic exception when graphql is dropped
+        # TODO(gaetano-guerriero): change to a more generic exception when graphql is dropped
         raise GoalMutationError(
             f"Some teams don't exist or access denied: {missing_repr}", HTTPStatus.NOT_FOUND,
         )

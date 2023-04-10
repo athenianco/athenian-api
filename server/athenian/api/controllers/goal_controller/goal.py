@@ -3,8 +3,10 @@ from typing import Optional, Sequence
 
 from aiohttp import web
 
-from athenian.api.align.exceptions import GoalNotFoundError
-from athenian.api.align.goals.dbaccess import (
+from athenian.api.auth import disable_default_user
+from athenian.api.internal.account import request_user_belongs_to_account
+from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
+from athenian.api.internal.goals.dbaccess import (
     GoalCreationInfo,
     TeamGoalTargetAssignment,
     delete_goal as db_delete_goal,
@@ -14,9 +16,7 @@ from athenian.api.align.goals.dbaccess import (
     replace_team_goals,
     update_goal as update_goal_in_db,
 )
-from athenian.api.auth import disable_default_user
-from athenian.api.internal.account import request_user_belongs_to_account
-from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
+from athenian.api.internal.goals.exceptions import GoalNotFoundError
 from athenian.api.internal.jira import parse_request_issue_types, parse_request_priorities
 from athenian.api.internal.repos import parse_request_repositories
 from athenian.api.models.state.models import Goal, TeamGoal
@@ -189,7 +189,7 @@ async def _parse_update_request(
     )
 
 
-# TODO: take those list from OpenAPI spec
+# TODO(gaetano-guerriero): take those list from OpenAPI spec
 _NUMERIC_THRESHOLD_METRICS = [
     PullRequestMetricID.PR_REVIEW_COMMENTS_PER_ABOVE_THRESHOLD_RATIO,
     PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO,

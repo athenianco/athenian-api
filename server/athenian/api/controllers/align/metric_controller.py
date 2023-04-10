@@ -3,11 +3,11 @@ from typing import Any, Optional, Sequence
 
 from aiohttp import web
 
-from athenian.api.align.goals.dates import Intervals
-from athenian.api.align.goals.dbaccess import convert_metric_params_datatypes
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.datetime_utils import closed_dates_interval_to_datetimes
+from athenian.api.internal.goals.dates import Intervals
+from athenian.api.internal.goals.dbaccess import convert_metric_params_datatypes
 from athenian.api.internal.jira import (
     JIRAConfig,
     check_jira_installation,

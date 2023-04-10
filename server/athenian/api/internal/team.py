@@ -9,10 +9,10 @@ import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.align.goals.empty_goals import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.dashboard import remove_team_refs_from_charts
+from athenian.api.internal.goals.empty_goals import delete_empty_goals
 from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.models.metadata.github import Organization, User
 from athenian.api.models.state.models import Team, UserAccount
