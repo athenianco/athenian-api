@@ -3351,7 +3351,7 @@ async def _fetch_extended_prs_for_facts(
     dep_lengths -= not_found_counts
     """
     dep_splits = np.cumsum(dep_lengths)[:-1]
-    df = {DeploymentFacts.f.name: facts.index.values}
+    df = {GitHubPullRequestDeployment.deployment_name.name: facts.index.values}
     for col in (
         PullRequest.number,
         PullRequest.title,
@@ -3363,7 +3363,7 @@ async def _fetch_extended_prs_for_facts(
         col = col.name
         df[col] = arr = np.empty(len(dep_splits) + 1, object)
         arr[:] = np.split(prs_df[col][indexes], dep_splits)
-    df = md.DataFrame(df, index=DeploymentFacts.f.name)
+    df = md.DataFrame(df, index=GitHubPullRequestDeployment.deployment_name.name)
     return df
 
 
