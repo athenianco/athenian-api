@@ -9,7 +9,6 @@ import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.controllers.invitation_controller import (
     admin_backdoor,
     create_new_account,
@@ -19,6 +18,7 @@ from athenian.api.controllers.invitation_controller import (
     url_prefix,
 )
 from athenian.api.db import Database, ensure_db_datetime_tz
+from athenian.api.internal.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import (

@@ -1,13 +1,5 @@
 from aiohttp import web
 
-from athenian.api.align.exceptions import GoalTemplateNotFoundError
-from athenian.api.align.goals.dbaccess import (
-    delete_goal_template_from_db,
-    get_goal_template_from_db,
-    get_goal_templates_from_db,
-    insert_goal_template,
-    update_goal_template_in_db,
-)
 from athenian.api.async_utils import gather
 from athenian.api.db import Row, integrity_errors
 from athenian.api.internal.account import (
@@ -15,6 +7,14 @@ from athenian.api.internal.account import (
     request_user_belongs_to_account,
 )
 from athenian.api.internal.datasources import AccountDatasources
+from athenian.api.internal.goals.dbaccess import (
+    delete_goal_template_from_db,
+    get_goal_template_from_db,
+    get_goal_templates_from_db,
+    insert_goal_template,
+    update_goal_template_in_db,
+)
+from athenian.api.internal.goals.exceptions import GoalTemplateNotFoundError
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.repos import parse_db_repositories, parse_request_repositories
 from athenian.api.models.state.models import GoalTemplate as DBGoalTemplate

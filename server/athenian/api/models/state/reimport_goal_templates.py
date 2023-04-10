@@ -6,8 +6,8 @@ import asyncio
 from flogging import flogging
 import sqlalchemy as sa
 
-from athenian.api.align.goals.dbaccess import create_default_goal_templates
 from athenian.api.db import Database, measure_db_overhead_and_retry
+from athenian.api.internal.goals.dbaccess import create_default_goal_templates
 from athenian.api.models.state.models import GoalTemplate
 
 

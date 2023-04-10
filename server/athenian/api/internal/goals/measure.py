@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from athenian.api.align.goals.dates import GoalTimeseriesSpec, goal_initial_query_interval
-from athenian.api.align.goals.dbaccess import (
+from athenian.api.db import Row
+from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
+from athenian.api.internal.goals.dates import GoalTimeseriesSpec, goal_initial_query_interval
+from athenian.api.internal.goals.dbaccess import (
     AliasedGoalColumns,
     GoalColumnAlias,
     TeamGoalColumns,
     convert_metric_params_datatypes,
 )
-from athenian.api.db import Row
-from athenian.api.internal.datetime_utils import datetimes_to_closed_dates_interval
 from athenian.api.internal.jira import JIRAConfig, check_jira_installation
 from athenian.api.internal.miners.filters import JIRAFilter
 from athenian.api.internal.prefixer import Prefixer

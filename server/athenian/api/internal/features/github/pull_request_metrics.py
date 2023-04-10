@@ -99,7 +99,7 @@ def group_prs_by_participants(
     `items` only contains participants expressed in `participants` so it will select all items
     if `participants` contains a single group.
     """
-    # FIXME: participants here can also be List[Dict[PRParticipationKind, Set[str]]]
+    # FIXME(gaetano-guerriero): participants can also be list[dict[PRParticipationKind, set[str]]]
 
     # if there are no participant groups also we select everything and don't re-check
     # if len(participants) == 1 and items only contains specified participants we also select

@@ -26,7 +26,6 @@ from aiohttp.web_exceptions import (
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
-import ariadne
 import asyncpg
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
 from especifico.apis import aiohttp_api
@@ -46,9 +45,8 @@ from werkzeug.exceptions import Unauthorized
 import yaml
 
 import athenian.api
-from athenian.api import align, metadata
+from athenian.api import metadata
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
-from athenian.api.ariadne import AriadneException, GraphQL
 from athenian.api.async_utils import gather
 from athenian.api.auth import AthenianAioHttpSecurityHandlerFactory, Auth0
 from athenian.api.balancing import extract_handler_weight
@@ -387,9 +385,6 @@ class AthenianApp(especifico.AioHttpApp):
         )
         self.add_api(self._specs_store["public"], base_path="/v1", **add_api_kwargs)
         self.add_api(self._specs_store["private"], base_path="/private", **add_api_kwargs)
-        GraphQL(align.create_graphql_schema()).attach(
-            self.app, "/align", middlewares + [self._auth0.authenticate],
-        )
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:
@@ -762,14 +757,6 @@ class AthenianApp(especifico.AioHttpApp):
             return await asyncio.wait_for(trampoline(), self.TIMEOUT)
         except ResponseError as e:
             return e.response
-        except AriadneException as e:
-            body = ariadne.format_error(e.args[0])
-            real_error = e.args[0].original_error.model
-            body["message"] = real_error.title
-            body.setdefault("extensions", {})["status"] = real_error.status
-            body["extensions"]["type"] = real_error.type
-            body["extensions"]["detail"] = real_error.detail
-            return aiohttp.web.json_response({"errors": [body]})
         except (
             EspecificoException,
             HTTPClientError,  # 4xx
@@ -1039,7 +1026,7 @@ class _SpecsStore:
 
     _PATHS = {
         "public": Path(athenian.api.__file__).parent / "openapi" / "openapi.yaml",
-        "private": Path(athenian.api.__file__).parent / "align" / "spec" / "openapi.yaml",
+        "private": Path(athenian.api.__file__).parent / "private" / "spec" / "openapi.yaml",
     }
 
     def __init__(self, arguments: dict) -> None:
