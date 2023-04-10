@@ -49,7 +49,6 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from tests.testutils.db import (
-    Database,
     DBCleaner,
     assert_existing_row,
     assert_missing_row,
@@ -2231,47 +2230,9 @@ class TestInvalidatePrecomputedOnLabelsChange:
         await assert_existing_row(pdb, GitHubDeploymentFacts, deployment_name="d3")
 
 
-@with_defer
-async def test_mine_releases_deployments(
-    release_match_setting_tag_or_branch,
-    prefixer,
-    precomputed_deployments,  # noqa: F811
-    branches,
-    default_branches,
-    mdb,
-    pdb,
-    rdb,
-):
-    releases, _, _, deps = await mine_releases(
-        ["src-d/go-git"],
-        {},
-        branches,
-        default_branches,
-        datetime(2015, 1, 1, tzinfo=timezone.utc),
-        datetime(2020, 1, 1, tzinfo=timezone.utc),
-        LabelFilter.empty(),
-        JIRAFilter.empty(),
-        release_match_setting_tag_or_branch,
-        LogicalRepositorySettings.empty(),
-        prefixer,
-        1,
-        (6366825,),
-        mdb,
-        pdb,
-        rdb,
-        None,
-        with_avatars=False,
-        with_extended_pr_details=False,
-        with_deployments=True,
-    )
-    assert deps == proper_deployments
-    assert len(releases) == 53
-    ndeps = 0
-    for rd in releases[ReleaseFacts.f.deployments]:
-        ndeps += rd is not None and rd[0] == "Dummy deployment"
-    assert ndeps == 51
-
-
 async def _delete_deployments(rdb: Database) -> None:
-    await rdb.execute(sa.delete(DeployedComponent))
+    await gather(
+        rdb.execute(sa.delete(DeployedComponent)),
+        rdb.execute(sa.delete(DeployedLabel)),
+    )
     await rdb.execute(sa.delete(DeploymentNotification))

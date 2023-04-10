@@ -4,6 +4,7 @@ from typing import Any, Optional
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.async_utils import gather
 from athenian.api.controllers.events_controller.deployments import (
     resolve_deployed_component_references,
 )
@@ -371,5 +372,8 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
 
 
 async def _delete_deployments(rdb: Database) -> None:
-    await rdb.execute(sa.delete(DeployedComponent))
+    await gather(
+        rdb.execute(sa.delete(DeployedComponent)),
+        rdb.execute(sa.delete(DeployedLabel)),
+    )
     await rdb.execute(sa.delete(DeploymentNotification))
