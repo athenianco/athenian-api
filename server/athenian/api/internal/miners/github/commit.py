@@ -699,7 +699,7 @@ async def _fetch_commit_history_dag(
                     .where(
                         NodeCommit.acc_id.in_(meta_ids),
                         NodeCommit.committed_date > min_commit_time,
-                        NodeCommit.oid.in_(stop_heads),
+                        NodeCommit.oid.progressive_in(stop_heads, threshold=200),
                     )
                     .order_by(desc(NodeCommit.committed_date))
                     .limit(max_stop_heads),
