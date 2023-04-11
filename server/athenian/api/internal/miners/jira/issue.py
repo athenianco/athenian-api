@@ -31,7 +31,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, Row
+from athenian.api.db import Database, DatabaseLike, Row, least
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
@@ -865,15 +865,18 @@ async def query_jira_raw(
     filter_by_athenian_issue = False
     if time_from is not None:
         filter_by_athenian_issue = True
-        and_filters.append(sql.func.coalesce(AthenianIssue.resolved, far_away_future) >= time_from)
+        resolved_coalesced = sql.func.coalesce(AthenianIssue.resolved, far_away_future)
+        if exclude_inactive:
+            and_filters.append(
+                (await least(mdb))(resolved_coalesced, AthenianIssue.updated) >= time_from,
+            )
+        else:
+            and_filters.append(resolved_coalesced >= time_from)
     if resolved_before is not None:
         filter_by_athenian_issue = True
         and_filters.append(AthenianIssue.resolved < resolved_before)
     if time_to is not None:
         and_filters.append(Issue.created < time_to)
-    if exclude_inactive and time_from is not None:
-        filter_by_athenian_issue = True
-        and_filters.append(AthenianIssue.updated >= time_from)
     if len(jira_filter.priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(jira_filter.priorities))
     if len(jira_filter.issue_types):
@@ -972,10 +975,12 @@ async def query_jira_raw(
                 sql.and_(Issue.epic_id == epic.id, Issue.acc_id == epic.acc_id),
             )
         return sql.select(*columns).select_from(
-            sql.outerjoin(
+            sql.join(
                 seed,
                 AthenianIssue,
                 sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
+                # this is important, otherwise we fail to push down the filters after hints
+                isouter=not filter_by_athenian_issue,
             ),
         )
 
@@ -995,13 +1000,15 @@ async def query_jira_raw(
     else:
         query = [query_finish(query_start().where(*and_filters))]
 
+    AthenianIssueT = AthenianIssue.__tablename__
+    IssueT = Issue.__tablename__
+
     def hint_athenian_issue(q):
-        AthenianIssueT = AthenianIssue.__tablename__
-        IssueT = Issue.__tablename__
         # "s" and "c" are table aliases used in the api_statuses view
         hints = [
             f"Rows({AthenianIssueT} {IssueT} *1000)",
-            f"HashJoin({AthenianIssueT} {IssueT})",
+            # we should not blindly enforce HashJoin, e.g. acc. 135 (jira: 26) severely degrades
+            # f"HashJoin({AthenianIssueT} {IssueT})",
             "Rows(s c *200)",
         ]
         if mapped_to_prs is not None:
@@ -1015,7 +1022,7 @@ async def query_jira_raw(
             else:
                 hints.append(f"Leading(((({PRIssues} {AthenianIssueT}) {IssueT}) (s c)))")
         else:
-            hints.append("Leading((({AthenianIssueT} {IssueT}) (s c)))")
+            hints.append(f"Leading((({AthenianIssueT} {IssueT}) (s c)))")
 
         for hint in hints:
             q = q.with_statement_hint(hint)
@@ -1024,11 +1031,11 @@ async def query_jira_raw(
     def hint_epics(q):
         exp_rows = len(jira_filter.epics) * 2
         return (
-            q.with_statement_hint("Leading(((((epic issue) s) c) athenian_issue))")
-            .with_statement_hint(f"Rows(epic issue s c athenian_issue #{exp_rows})")
-            .with_statement_hint(f"Rows(epic issue #{exp_rows})")
-            .with_statement_hint(f"Rows(epic issue s #{exp_rows})")
-            .with_statement_hint(f"Rows(epic issue s c #{exp_rows})")
+            q.with_statement_hint(f"Leading(((((epic {IssueT}) s) c) {AthenianIssueT}))")
+            .with_statement_hint(f"Rows(epic {IssueT} s c {AthenianIssueT} #{exp_rows})")
+            .with_statement_hint(f"Rows(epic {IssueT} #{exp_rows})")
+            .with_statement_hint(f"Rows(epic {IssueT} s #{exp_rows})")
+            .with_statement_hint(f"Rows(epic {IssueT} s c #{exp_rows})")
         )
 
     if postgres:
