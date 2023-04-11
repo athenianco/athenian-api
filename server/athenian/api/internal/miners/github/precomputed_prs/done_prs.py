@@ -112,14 +112,36 @@ class DonePRFactsLoader:
         ghprt = GitHubDonePullRequestFacts
         selected = [ghprt.pr_node_id, ghprt.repository_full_name, ghprt.release_match]
         filters = cls._create_common_filters(time_from, time_to, repos, account)
-        with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
-            rows = await pdb.fetch_all(select(*selected).where(*filters))
         result = {}
+
+        @sentry_span
+        async def fetch_and_store_dead_prs():
+            rows = await pdb.fetch_all(
+                union_all(
+                    select(*selected).where(
+                        ghprt.release_match == ReleaseMatch.rejected.name, *filters,
+                    ),
+                    select(*selected).where(
+                        ghprt.release_match == ReleaseMatch.force_push_drop.name, *filters,
+                    ),
+                ),
+            )
+            pr_node_id_col = 0
+            repository_full_name_col = 1
+            for row in rows:
+                result[(row[pr_node_id_col], row[repository_full_name_col])] = row
+
+        with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
+            released_rows, _ = await gather(
+                pdb.fetch_all(select(*selected).where(ghprt.release_match.like("%|%"), *filters)),
+                fetch_and_store_dead_prs(),
+            )
+
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         pr_node_id_col = 0  # performance: faster than ghprt.pr_node_id.name
         repository_full_name_col = 1  # performance: faster than ghprt.repository_full_name.name
         release_match_col = 2  # performance: faster than ghprt.release_match.name
-        for row in rows:
+        for row in released_rows:
             dump = triage_by_release_match(
                 row[repository_full_name_col],
                 row[release_match_col],
