@@ -19,9 +19,8 @@ def upgrade():
     op.create_table(
         "installation_progress",
         sa.Column(
-            "account_id",
+            "github_account_id",
             sa.Integer(),
-            nullable=False,
             primary_key=True,
         ),
         sa.Column(

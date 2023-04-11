@@ -640,3 +640,19 @@ DashboardChartGroupBy.GROUP_BY_FIELDS = (
     DashboardChartGroupBy.jira_issue_types,
     DashboardChartGroupBy.jira_labels,
 )
+
+
+class InstallationProgress(create_time_mixin(created_at=False, updated_at=False), Base):
+    """Tracking installation progress for github accounts"""
+
+    __tablename__ = "installation_progress"
+
+    github_account_id = Column(Integer(), primary_key=True)
+    account_created = Column(TIMESTAMP(timezone=True))
+    fetch_started = Column(TIMESTAMP(timezone=True))
+    fetch_completed = Column(TIMESTAMP(timezone=True))
+    consistency_started = Column(TIMESTAMP(timezone=True))
+    consistency_completed = Column(TIMESTAMP(timezone=True))
+    precompute_started = Column(TIMESTAMP(timezone=True))
+    precompute_completed = Column(TIMESTAMP(timezone=True))
+    current_status = Column(Text())
