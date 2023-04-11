@@ -229,16 +229,10 @@ async def fetch_issues_prs(
                 PullRequest.node_id.progressive_in(pr_ids),
             )
             .order_by(PullRequest.node_id.name)
-        )
-        if len(pr_ids) > 100:
             # repo and pr are alias used in api_pull_requests view
-            prs_query = prs_query.with_statement_hint("HashJoin(repo pr)")
-        prs_df = await read_sql_query(
-            prs_query,
-            mdb,
-            PullRequest,
-            index=PullRequest.node_id.name,
+            .with_statement_hint(f"Rows(repo pr #{len(pr_ids)})")
         )
+        prs_df = await read_sql_query(prs_query, mdb, PullRequest, index=PullRequest.node_id.name)
         PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
         closed_pr_mask = prs_df.notnull(PullRequest.closed_at.name)
         check_runs_task = asyncio.create_task(
