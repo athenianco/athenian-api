@@ -592,17 +592,18 @@ async def _fill_issues_with_mapped_prs_info(
         for meta_id in meta_ids
     ]
     stmt = sa.union_all(*selects)
-    stmt = stmt.with_statement_hint(
-        f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
-        f"{NodePullRequest.__tablename__})",
-    )
-    if len(issues.index.values) > 300:
-        # with many issues sometimes our Leading hint confuses planner,
-        # a sequential scan is done on NodePullRequestJiraIssues
-        # forcing Parallel (which would be probably done anyway with a good plan) avoids this
+    if len(issues) > 100:
+        estimated_rows = len(issues) // (2 * len(meta_ids))
         for hint in (
-            f"HashJoin({NodePullRequestJiraIssues.__tablename__} *VALUES)",
-            f"Parallel({NodePullRequestJiraIssues.__tablename__} 6)",
+            f"Leading((({NodePullRequestJiraIssues.__tablename__} *VALUES*) "
+            f"{NodePullRequest.__tablename__}))",
+            f"Rows({NodePullRequestJiraIssues.__tablename__} *VALUES* #{estimated_rows})"
+            f"Rows({NodePullRequestJiraIssues.__tablename__} *VALUES* "
+            f"{NodeRepository.__tablename__} #{estimated_rows})",
+            f"Rows({NodePullRequestJiraIssues.__tablename__} *VALUES* "
+            f"{NodePullRequest.__tablename__} #{estimated_rows})",
+            f"Rows({NodePullRequestJiraIssues.__tablename__} *VALUES* "
+            f"{NodePullRequest.__tablename__} {NodeRepository.__tablename__} #{estimated_rows})",
         ):
             stmt = stmt.with_statement_hint(hint)
 
@@ -725,7 +726,7 @@ def _mapped_prs_select(issue_ids: Iterable[str], cols, jira_id: int, meta_id: in
         .where(
             NodePullRequestJiraIssues.jira_acc == jira_id,
             NodePullRequestJiraIssues.node_acc == meta_id,
-            NodePullRequestJiraIssues.jira_id.progressive_in(issue_ids, threshold=20),
+            NodePullRequestJiraIssues.jira_id.progressive_in(issue_ids),
         )
     )
 
