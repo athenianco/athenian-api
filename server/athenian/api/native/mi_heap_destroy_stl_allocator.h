@@ -34,3 +34,8 @@ namespace std {
         }
     };
 }
+
+struct empty_deleter {
+  template <typename T>
+  void operator()(T *) const noexcept {}
+};

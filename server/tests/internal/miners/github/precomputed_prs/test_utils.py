@@ -3,6 +3,7 @@ from typing import Any, Optional
 import pytest
 
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
+from athenian.api.internal.miners.github.precomputed_prs.utils_accelerated import interleave_expand
 from athenian.api.internal.settings import (
     ReleaseMatch,
     ReleaseMatchSetting,
@@ -68,11 +69,22 @@ def triage_by_release_match_ground_truth(
         ("force_push_drop", "release_match_setting_tag_or_branch"),
         ("branch|main", "release_match_setting_branch"),
         ("branch|master", "release_match_setting_branch"),
+        ("branch|тест", "release_match_setting_branch"),
+        ("branch|мейн", "release_match_setting_branch"),
+        ("branch|👍", "release_match_setting_branch"),
+        ("branch|👎", "release_match_setting_branch"),
         ("tag|main", "release_match_setting_branch"),
+        ("tag|мейн", "release_match_setting_branch"),
+        ("tag|👍", "release_match_setting_branch"),
         ("event|main", "release_match_setting_branch"),
         ("tag|.*", "release_match_setting_tag"),
         ("tag|v1.0", "release_match_setting_tag"),
+        ("tag|тест", "release_match_setting_tag"),
+        ("tag|.*(?!тест)", "release_match_setting_tag"),
+        ("tag|👍", "release_match_setting_tag"),
+        ("tag|.*(?!👍)", "release_match_setting_tag"),
         ("branch|.*", "release_match_setting_tag"),
+        ("branch|мейн", "release_match_setting_tag"),
         ("event|", "release_match_setting_tag"),
         ("tag|.*", "release_match_setting_tag_or_branch"),
         ("branch|main", "release_match_setting_tag_or_branch"),
@@ -80,6 +92,7 @@ def triage_by_release_match_ground_truth(
         ("branch|main", "release_match_setting_event"),
         ("tag|.*", "release_match_setting_event"),
         ("event|.*", "release_match_setting_event"),
+        ("event|.*(?!тест)", "release_match_setting_event"),
         (
             "branch|main",
             ReleaseSettings(
@@ -108,6 +121,8 @@ def triage_by_release_match_ground_truth(
         ),
     ],
 )
+@pytest.mark.parametrize("default_branch", ["main", "мейн", "👍", "мейнаб", "👍й"])
+@pytest.mark.parametrize("unicode_mutate_release_settings", [1, 2, 4])
 def test_triage_by_release_match(
     release_match,
     release_settings,
@@ -115,15 +130,48 @@ def test_triage_by_release_match(
     release_match_setting_branch,
     release_match_setting_event,
     release_match_setting_tag_or_branch,
+    default_branch,
+    unicode_mutate_release_settings,
 ):
     if isinstance(release_settings, str):
         release_settings = locals()[release_settings]
+    if unicode_mutate_release_settings > 1:
+        release_settings = release_settings.copy()
+        rs = release_settings.native["src-d/go-git"]
+        suffix = "ф" if unicode_mutate_release_settings == 2 else "👍"
+        release_settings.native["src-d/go-git"] = ReleaseMatchSetting(
+            rs.branches + suffix,
+            rs.tags + suffix,
+            rs.events + suffix,
+            rs.match,
+        )
     args = (
         "src-d/go-git",
         release_match,
         release_settings,
-        {"src-d/go-git": "main"},
+        {"src-d/go-git": default_branch},
         "foo",
         {ReleaseMatch.tag.name: "bar", ReleaseMatch.branch.name: "qux"},
     )
     assert triage_by_release_match(*args) == triage_by_release_match_ground_truth(*args)
+
+
+@pytest.mark.parametrize(
+    "bytes_in",
+    [b"".join(str(i % 10).encode() for i in range(n)) for n in range(100)],
+)
+@pytest.mark.parametrize("kind", [2, 4])
+def test_interleave_expand1(bytes_in, kind):
+    bytes_out = b"".join(
+        (bytes_in[b : b + 1] + b"\x00" * (kind - 1)) for b in range(len(bytes_in))
+    )
+    assert interleave_expand(bytes_in, 1, kind) == bytes_out
+
+
+@pytest.mark.parametrize(
+    "bytes_in",
+    [b"".join(str(i % 10).encode() for i in range(n)) for n in range(0, 100, 2)],
+)
+def test_interleave_expand24(bytes_in):
+    bytes_out = b"".join((bytes_in[b : b + 2] + b"\x00" * 2) for b in range(0, len(bytes_in), 2))
+    assert interleave_expand(bytes_in, 2, 4) == bytes_out
