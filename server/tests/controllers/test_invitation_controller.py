@@ -250,7 +250,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     assert num_accounts_after == num_accounts_before
 
 
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 async def test_accept_invitation_user_profile(
     client,
     headers,

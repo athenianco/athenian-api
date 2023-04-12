@@ -16,6 +16,9 @@ cdef extern from "mi_heap_destroy_stl_allocator.h" nogil:
         T* allocate(size_t count) except +
         void deallocate(T*)
 
+    cdef cppclass empty_deleter:
+        empty_deleter()
+
     cdef cppclass mi_unordered_map[T, U, HASH=*, PRED=*](unordered_map[T, U, HASH, PRED]):
         mi_unordered_map mi_unordered_map[X](mi_heap_destroy_stl_allocator[X]&) except +
         pair[mi_unordered_map.iterator, bool] try_emplace(...) except +
