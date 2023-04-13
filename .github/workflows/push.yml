@@ -262,8 +262,9 @@ jobs:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: Set up Python 3.11
+      id: python
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.11
     - name: cache pip
@@ -271,8 +272,8 @@ jobs:
       uses: actions/cache@v3.3.1
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
-        restore-keys: ubuntu-22.04-3.11-pip-main-
+        key: ubuntu-22.04-${{ steps.python.outputs.python-version }}-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
+        restore-keys: ubuntu-22.04-${{ steps.python.outputs.python-version }}-pip-main-
     - name: chown /usr/local
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
@@ -454,8 +455,9 @@ jobs:
         token: ${{ secrets.GKWILLIE_TOKEN }}
         submodules: recursive
     - name: Set up Python 3.11
+      id: python
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.11
     - name: cache pip
@@ -463,8 +465,8 @@ jobs:
       uses: actions/cache@v3.3.1
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
-        restore-keys: ubuntu-22.04-3.11-pip-main-
+        key: ubuntu-22.04-${{ steps.python.outputs.python-version }}-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
+        restore-keys: ubuntu-22.04-${{ steps.python.outputs.python-version }}-pip-main-
     - name: chown /usr/local
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       run: sudo chown $(whoami) /usr/local/lib /usr/local/include
