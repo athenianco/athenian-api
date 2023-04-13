@@ -97,7 +97,7 @@ _sql_str_re = re.compile(r"\(?'[^']+' *\)?, ?")
 _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
 
-def _generate_tags() -> str:
+def _generate_tags() -> tuple[str, str]:
     with sentry_sdk.configure_scope() as scope:
         if (transaction := scope.transaction) is None:
             return ""
@@ -109,13 +109,15 @@ def _generate_tags() -> str:
             f"tracestate='{scope.span.span_id}'",
         ]
         try:
-            values.append(f"controller='{scope._tags['account']}'")
+            account = scope._tags["account"]
         except KeyError:
-            pass
+            account = None
+        else:
+            values.append(f"controller='{account}'")
         values.append(
             f"action='{';'.join(k for k, v in scope._tags.items() if isinstance(v, bool))}'",
         )
-    return " /*" + ",".join(sorted(values)) + "*/"
+    return "" if account is None else f"--@{account}\n", " /*" + ",".join(sorted(values)) + "*/"
 
 
 def _strip_rocket(query: str) -> str:
@@ -145,7 +147,8 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, **kwargs):
         description = description[:1024]
     with sentry_sdk.start_span(op="sql", description=description) as span:
         if not athenian.api.is_testing:
-            query += _generate_tags()
+            prefix, suffix = _generate_tags()
+            query = "".join([prefix, query, suffix])
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
         if isinstance(result[0], tuple):
             try:
