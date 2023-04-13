@@ -271,7 +271,7 @@ jobs:
       uses: actions/cache@v3.3.1
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
+        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-3.11-pip-main-
     - name: chown /usr/local
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
@@ -463,7 +463,7 @@ jobs:
       uses: actions/cache@v3.3.1
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
+        key: ubuntu-22.04-3.11-pip-main-${{ hashFiles('server/requirements.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-3.11-pip-main-
     - name: chown /usr/local
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
