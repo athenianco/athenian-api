@@ -125,13 +125,15 @@ async def _record_inconsistency_metrics(
     log = logging.getLogger(f"{metadata.__package__}._record_inconsistency_metrics")
     inserted = []
     now = datetime.now(timezone.utc)
-    known_metrics = set()
     for attempt in range(3):
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{prometheus_endpoint}/api/v1/query",
                 params={
-                    "query": "metadata_github_consistency_nodes_issues",
+                    "query": (
+                        "query=sum by (acc_id, node_type) "
+                        "(metadata_github_consistency_nodes_issues)"
+                    ),
                 },
             ) as response:
                 if not response.ok:
@@ -151,9 +153,6 @@ async def _record_inconsistency_metrics(
                     except KeyError:
                         continue
                     name = f'inconsistency/{obj["metric"]["node_type"]}'
-                    if (account, name) in known_metrics:
-                        continue
-                    known_metrics.add((account, name))
                     inserted.append(
                         HealthMetric(
                             account_id=account,
