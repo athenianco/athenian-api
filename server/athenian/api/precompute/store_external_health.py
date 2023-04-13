@@ -157,6 +157,7 @@ async def _record_inconsistency_metrics(
                             value=int(obj["value"][1]),
                         ).explode(with_primary_keys=True),
                     )
+                break
     if inserted:
         log.info("inserting %d data inconsistency records", len(inserted))
         await rdb.execute_many(insert(HealthMetric), inserted)
