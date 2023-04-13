@@ -405,14 +405,14 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert goal_row[Goal.repositories.name] is None
         assert goal_row[Goal.jira_projects.name] == ["P0"]
         assert goal_row[Goal.jira_priorities.name] is None
-        assert goal_row[Goal.jira_issue_types.name] == ["bug", "story", "task"]
+        assert goal_row[Goal.jira_issue_types.name] == ["bug", "task", "story"]
 
         # fields are also copied to the TeamGoal row
         tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=new_goal_id, team_id=10)
         assert tg_row[TeamGoal.repositories.name] is None
         assert tg_row[TeamGoal.jira_projects.name] == ["P0"]
         assert tg_row[TeamGoal.jira_priorities.name] is None
-        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "story", "task"]
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task", "story"]
 
     async def test_jira_priorities(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(owner_id=1, id=10))
@@ -725,13 +725,13 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         row = await assert_existing_row(sdb, Goal, id=100)
         assert row[Goal.jira_projects.name] == ["P0", "P1"]
         assert row[Goal.jira_priorities.name] is None
-        assert row[Goal.jira_issue_types.name] == ["bug", "task"]
+        assert row[Goal.jira_issue_types.name] == ["task", "bug"]
 
         tg_row = await assert_existing_row(sdb, TeamGoal, goal_id=100, team_id=10)
         # team goal jira_projects are overwritten
         assert tg_row[TeamGoal.jira_projects.name] == ["P0", "P1"]
         assert tg_row[TeamGoal.jira_priorities.name] is None
-        assert tg_row[TeamGoal.jira_issue_types.name] == ["bug", "task"]
+        assert tg_row[TeamGoal.jira_issue_types.name] == ["task", "bug"]
 
     async def test_change_unique_team_goal(self, sdb: Database) -> None:
         metric = PullRequestMetricID.PR_SIZE_BELOW_THRESHOLD_RATIO

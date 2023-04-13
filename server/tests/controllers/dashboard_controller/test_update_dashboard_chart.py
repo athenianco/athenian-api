@@ -191,6 +191,16 @@ class TestUpdateDashboardChart(BaseUpdateDashboardChartTest):
         group_by_row = await assert_existing_row(sdb, DashboardChartGroupBy, chart_id=4)
         assert group_by_row[DashboardChartGroupBy.repositories.name] == [[2, ""], [2, "l"]]
 
+    async def test_filter_ordering(self, sdb: Database) -> None:
+        await models_insert(
+            sdb, *self._base_models(name="n", time_interval="P2M", jira_labels=["l0"]),
+        )
+        body = self._body(filters={"jira": {"issue_types": ["Tech Debt", "task", "bug"]}})
+        await self.post_json(9, 1, 4, json=body)
+
+        row = await assert_existing_row(sdb, DashboardChart, id=4)
+        assert row[DashboardChart.jira_issue_types.name] == ["techdebt", "task", "bug"]
+
     async def test_update_group_by(self, sdb: Database) -> None:
         await models_insert(sdb, *self._base_models(jira_labels=["l0"]))
 

@@ -305,7 +305,7 @@ class TestCreateWithFilters(BaseCreateDashboardChartTest):
         body = self._body(
             filters={
                 "jira": {
-                    "priorities": ["high"],
+                    "priorities": ["medium", "high"],
                     "issue_types": ["Task", "bug"],
                     "labels_include": ["l1", "l0"],
                 },
@@ -315,8 +315,8 @@ class TestCreateWithFilters(BaseCreateDashboardChartTest):
         res = await self.post_json(9, 10, json=body)
 
         chart = await assert_existing_row(sdb, DashboardChart, id=res["id"])
-        assert chart[DashboardChart.jira_priorities.name] == ["high"]
-        assert chart[DashboardChart.jira_issue_types.name] == ["bug", "task"]
+        assert chart[DashboardChart.jira_priorities.name] == ["medium", "high"]
+        assert chart[DashboardChart.jira_issue_types.name] == ["task", "bug"]
         assert chart[DashboardChart.jira_labels.name] == ["l1", "l0"]
 
 
