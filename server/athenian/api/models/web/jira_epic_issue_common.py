@@ -12,6 +12,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
     title: str
     created: datetime
     updated: datetime
+    acknowledge_time: timedelta
     work_began: Optional[datetime]
     resolved: Optional[datetime]
     lead_time: Optional[timedelta]
