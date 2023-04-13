@@ -31,6 +31,7 @@ from athenian.api.internal.miners.jira.issue import (
     ISSUE_PR_IDS,
     ISSUE_PRS_BEGAN,
     ISSUE_PRS_RELEASED,
+    resolve_acknowledge_time,
     resolve_resolved,
     resolve_work_began,
 )
@@ -120,6 +121,7 @@ def build_issue_web_models(
     issues_resolved = resolve_resolved(
         issues[AthenianIssue.resolved.name], prs_began, issues[ISSUE_PRS_RELEASED],
     )
+    issues_ack_time = resolve_acknowledge_time(issues[Issue.created.name], issues_work_began, now)
 
     if Issue.description.name in issues.columns:
         issues_descriptions = issues[Issue.description.name]
@@ -144,6 +146,7 @@ def build_issue_web_models(
         issue_id,
         issue_work_began,
         issue_resolved,
+        issue_acknowledge_time,
         issue_description,
     ) in zip(
         *(
@@ -168,6 +171,7 @@ def build_issue_web_models(
         issues.index.values,
         issues_work_began,
         issues_resolved,
+        issues_ack_time,
         issues_descriptions,
     ):
         issue_work_began = issue_work_began if issue_work_began == issue_work_began else None
@@ -189,6 +193,7 @@ def build_issue_web_models(
                 updated=issue_updated,
                 work_began=issue_work_began,
                 resolved=issue_resolved,
+                acknowledge_time=issue_acknowledge_time,
                 lead_time=lead_time,
                 life_time=life_time,
                 reporter=issue_reporter,

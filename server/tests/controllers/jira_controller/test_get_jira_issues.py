@@ -1,6 +1,7 @@
 from operator import itemgetter
 from typing import Any
 
+from freezegun import freeze_time
 import sqlalchemy as sa
 
 from athenian.api.db import Database
@@ -184,6 +185,45 @@ class TestGetJIRAIssues(BaseGetJIRAIssuesTests):
             res = await self.post_json(json=body)
         assert res["issues"][0]["story_points"] == 5
         assert "story_points" not in res["issues"][1]
+
+    @freeze_time("2011-01-07")
+    async def test_acknowledge_time(self, mdb_rw: Database, sdb: Database) -> None:
+        issue_kw = {"project_id": "1", "type_id": "0"}
+        pr_kwargs = {"repository_full_name": "o/r"}
+        mdb_models = [
+            *pr_models(99, 1, 1, **pr_kwargs, created_at=dt(2011, 1, 2)),
+            *pr_models(99, 2, 2, **pr_kwargs, created_at=dt(2010, 12, 20)),
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1"),
+            *jira_issue_models(
+                "1", key="P-1", **issue_kw, created=dt(2011, 1, 1), work_began=dt(2011, 1, 3),
+            ),
+            *jira_issue_models(
+                "2", key="P-2", **issue_kw, created=dt(2011, 1, 1), work_began=dt(2011, 1, 4),
+            ),
+            *jira_issue_models(
+                "3", key="P-3", created=dt(2011, 1, 3), work_began=None, **issue_kw,
+            ),
+            *jira_issue_models(
+                "4", key="P-4", created=dt(2011, 1, 3), work_began=dt(2011, 1, 6), **issue_kw,
+            ),
+            *pr_jira_issue_mappings((1, "1"), (2, "2")),
+        ]
+
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+            await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+            mdb_cleaner.add_models(*mdb_models)
+            await models_insert(mdb_rw, *mdb_models)
+
+            body = self._body(issues=["P-1", "P-2", "P-3", "P-4"])
+            res = await self.post_json(json=body)
+        issues = res["issues"]
+        assert [i["id"] for i in issues] == ["P-1", "P-2", "P-3", "P-4"]
+        assert issues[0]["acknowledge_time"] == f"{3600*24}s"  # pr began - issue created
+        assert issues[1]["acknowledge_time"] == "0s"  # pr began - issue created would < 0, so 0
+        assert issues[2]["acknowledge_time"] == f"{3600*24*4}s"  # now - issue created
+        assert issues[3]["acknowledge_time"] == f"{3600*24*3}s"  # issue work began - issue created
 
 
 class TestGetJIRAIssuesIncludeUsers(BaseGetJIRAIssuesTests):
