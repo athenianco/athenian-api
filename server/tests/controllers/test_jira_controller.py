@@ -6,6 +6,7 @@ from dateutil.tz import tzutc
 import pytest
 from sqlalchemy import delete, insert, update
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.jira.epic import filter_epics
@@ -629,6 +630,43 @@ async def test_filter_jira_epics_no_time(client, headers):
     assert len(model.epics) == 60
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
+
+
+async def test_filter_jira_epics_acknowledge_time(client, headers, mdb_rw: Database) -> None:
+    body = {
+        "date_from": "2012-05-01",
+        "date_to": "2012-05-30",
+        "timezone": 0,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["epics"],
+    }
+    issue_kw = {"project_id": "1", "type_id": "0", "created": dt(2011, 1, 2)}
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        models = [
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1", name="Epic"),
+            md_factory.JIRAIssueTypeFactory(id="1", project_id="1"),
+            *jira_issue_models("1", key="P-1", **issue_kw, type="Epic", work_began=dt(2011, 1, 3)),
+            *jira_issue_models("2", key="P-2", **issue_kw, epic_id="1", work_began=dt(2011, 1, 3)),
+            *jira_issue_models("3", key="P-3", **issue_kw, epic_id="1", work_began=dt(2011, 1, 4)),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+
+    assert response.status == 200
+    res_body = await response.json()
+    assert len(res_body["epics"]) == 1
+    epic = res_body["epics"][0]
+    assert epic["acknowledge_time"] == f"{3600*24}s"
+
+    assert epic["children"][0]["id"] == "P-2"
+    assert epic["children"][0]["acknowledge_time"] == f"{3600*24}s"
+    assert epic["children"][1]["id"] == "P-3"
+    assert epic["children"][1]["acknowledge_time"] == f"{3600*24*2}s"
 
 
 @with_defer
