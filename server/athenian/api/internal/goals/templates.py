@@ -36,6 +36,11 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": "86400s"},
     },
     {
+        "metric": JIRAMetricID.JIRA_ACKNOWLEDGE_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Reduce our time to acknowledge bugs",
+        "metric_params": {"threshold": "259200"},
+    },
+    {
         "metric": JIRAMetricID.JIRA_LEAD_TIME_BELOW_THRESHOLD_RATIO,
         "name": "Improve our time to resolve Jira issues",
         "metric_params": {"threshold": "432000s"},
