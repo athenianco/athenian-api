@@ -123,8 +123,9 @@ async def _record_inconsistency_metrics(
     rdb: Database,
 ) -> None:
     log = logging.getLogger(f"{metadata.__package__}._record_inconsistency_metrics")
-    inserted = []
     now = datetime.now(timezone.utc)
+    # several metadata accounts may map to the same Athenian account
+    metrics = defaultdict(int)
     for attempt in range(3):
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -149,17 +150,19 @@ async def _record_inconsistency_metrics(
                     except KeyError:
                         continue
                     name = f'inconsistency/{obj["metric"]["node_type"]}'
-                    inserted.append(
-                        HealthMetric(
-                            account_id=account,
-                            name=name,
-                            created_at=now,
-                            value=int(obj["value"][1]),
-                        ).explode(with_primary_keys=True),
-                    )
+                    metrics[(account, name)] += int(obj["value"][1])
                 break
-    if inserted:
-        log.info("inserting %d data inconsistency records", len(inserted))
+    if metrics:
+        log.info("inserting %d data inconsistency records", len(metrics))
+        inserted = [
+            HealthMetric(
+                account_id=account,
+                name=name,
+                created_at=now,
+                value=value,
+            ).explode(with_primary_keys=True)
+            for (account, name), value in metrics.items()
+        ]
         await rdb.execute_many(insert(HealthMetric), inserted)
 
 
