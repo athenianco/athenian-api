@@ -4,6 +4,7 @@ from operator import itemgetter
 from typing import Any, Sequence
 from unittest import mock
 
+from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -26,7 +27,7 @@ from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
 from tests.testutils.factory.state import TeamFactory
 from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.requester import Requester
-from tests.testutils.time import dt, freeze_time
+from tests.testutils.time import dt
 
 
 class BaseSearchPRsTest(Requester):
