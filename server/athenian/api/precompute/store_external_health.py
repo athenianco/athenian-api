@@ -127,14 +127,10 @@ async def _record_inconsistency_metrics(
     now = datetime.now(timezone.utc)
     for attempt in range(3):
         async with aiohttp.ClientSession() as session:
-            async with session.get(
+            async with session.post(
                 f"{prometheus_endpoint}/api/v1/query",
-                params={
-                    "query": (
-                        "query=sum by (acc_id, node_type) "
-                        "(metadata_github_consistency_nodes_issues)"
-                    ),
-                },
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                data="query=sum by (acc_id, node_type) (metadata_github_consistency_nodes_issues)",
             ) as response:
                 if not response.ok:
                     log.error(
