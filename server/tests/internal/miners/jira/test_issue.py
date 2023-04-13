@@ -24,6 +24,7 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues_by_keys,
     generate_jira_prs_query,
     import_components_as_labels,
+    resolve_acknowledge_time,
     resolve_resolved,
     resolve_work_began,
 )
@@ -416,6 +417,18 @@ class TestResolveResolved:
 
         res = resolve_resolved(issue_resolved, prs_began, prs_released)
         expected = np.array([None], dtype="datetime64[s]")
+
+        assert_array_equal(res, expected)
+
+
+class TestResolveACknowledgeTime:
+    def test_smoke(self) -> None:
+        created = np.array([2, 1, 1], dtype="datetime64[s]")
+        work_began = np.array([3, None, 3], dtype="datetime64[s]")
+        now = np.datetime64(5, "s")
+
+        res = resolve_acknowledge_time(created, work_began, now)
+        expected = np.array([1, 4, 2], dtype="timedelta64[s]")
 
         assert_array_equal(res, expected)
 

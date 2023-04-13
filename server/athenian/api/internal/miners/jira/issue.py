@@ -1344,6 +1344,28 @@ def resolve_resolved(
     return resolved
 
 
+def resolve_acknowledge_time(
+    created: npt.NDArray[np.datetime64],
+    work_began: npt.NDArray[np.datetime64],
+    now: np.datetime64,
+) -> npt.NDArray[np.timedelta64]:
+    """Compute the acknowledge_time for the issues.
+
+    `created` are the `Issue.created.name` values
+    `work_began` are the final values computed by resolve_work_began()
+
+    The acknowledge_time is `work_began` - `created`.
+    For the issues not yet started (so no work_began) it is `now()` - `created`.
+    `acknowledge_time` can never be less than 0.
+    """
+    res = np.empty(len(created), dtype="timedelta64[us]")
+    res = work_began - created
+    no_work_began = res != res
+    res[no_work_began] = now - created[no_work_began]
+    res[res < np.timedelta64(0, "us")] = np.timedelta64(0, "us")
+    return res
+
+
 @sentry_span
 async def fetch_jira_issues_rows_by_keys(
     keys: Collection[str],
