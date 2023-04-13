@@ -8,6 +8,7 @@ from typing import Sequence
 import aiomcache
 import medvedi as md
 import numpy as np
+from numpy import typing as npt
 import sqlalchemy as sa
 
 from athenian.api import metadata
@@ -20,6 +21,7 @@ from athenian.api.internal.features.github.pull_request_filter import (
     fetch_pr_deployments,
     unwrap_pull_requests,
 )
+from athenian.api.internal.features.jira.issue_metrics import AcknowledgeTimeCalculator
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation, normalize_user_type
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.bots import bots
@@ -39,7 +41,7 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.metadata.github import Branch, PullRequest
-from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, User
+from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import (
     JIRAComment as WebJIRAComment,
@@ -415,3 +417,29 @@ async def fetch_issues_users(
         )
         for row in user_rows
     ]
+
+
+def resolve_acknowledge_time(
+    created: npt.NDArray[np.datetime64],
+    work_began: npt.NDArray[np.datetime64],
+    prs_began: npt.NDArray[np.datetime64],
+    statuses: npt.NDArray[object],
+    now: np.datetime64,
+) -> npt.NDArray[np.timedelta64]:
+    """Compute the acknowledge_time for the issues.
+
+    `created` are the `Issue.created.name` values
+
+
+    The acknowledge_time is `work_began` - `created`.
+    For the issues not yet started (so no work_began) it is `now()` - `created`.
+    `acknowledge_time` can never be less than 0.
+    """
+    acknowledged = AcknowledgeTimeCalculator.calculate_acknowledged(
+        work_began, prs_began, statuses,
+    )
+    acknowledge_time = AcknowledgeTimeCalculator.calculate_acknowledge_time(created, acknowledged)
+
+    not_acknowledged = acknowledged != acknowledged
+    acknowledge_time[not_acknowledged] = now - created[not_acknowledged]
+    return acknowledge_time

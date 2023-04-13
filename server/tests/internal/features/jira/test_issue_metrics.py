@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 import medvedi as md
 import numpy as np
+from numpy.testing import assert_array_equal
 import pytest
 
 from athenian.api.internal.features.jira.issue_metrics import (
@@ -115,6 +116,53 @@ class TestLifeTimeBelowThresholdRatio:
         return md.DataFrame(columns)
 
 
+class TestAcknowledgeTimeCalculator:
+    min_times = dt64arr_us(dt(2022, 1, 1))
+    max_times = dt64arr_us(dt(2022, 7, 1))
+
+    def test_base(self) -> None:
+        issues = [
+            [datetime(2022, 1, 3), datetime(2022, 1, 4)],
+            [datetime(2022, 1, 3), datetime(2022, 1, 5)],
+            [datetime(2022, 6, 20), datetime(2022, 7, 30)],  # out of focus
+        ]
+        calc = self._calc(issues)
+
+        assert_array_equal(
+            calc.peek[0], np.array([_np_td(1), _np_td(2), np.timedelta64("NaT", "s")]),
+        )
+        assert calc.values[0][0].value == timedelta(hours=36)
+
+    def test_status(self) -> None:
+        issues = [
+            [datetime(2022, 1, 3), datetime(2022, 1, 4)],
+            [datetime(2022, 1, 3), None, Status.CATEGORY_TODO],
+        ]
+        calc = self._calc(issues)
+
+        assert_array_equal(calc.peek[0], np.array([_np_td(1), np.timedelta64("NaT", "s")]))
+        assert calc.values[0][0].value == timedelta(hours=24)
+
+    def test_work_began_before_creation(self) -> None:
+        issues = [
+            [datetime(2022, 1, 3), datetime(2022, 1, 4)],
+            [datetime(2022, 1, 3), datetime(2022, 1, 1)],
+        ]
+
+        calc = self._calc(issues)
+
+        assert_array_equal(calc.peek[0], np.array([_np_td(1), _np_td(0)]))
+        assert calc.values[0][0].value == timedelta(hours=12)
+
+    @classmethod
+    def _calc(cls, issues: list[list]) -> AcknowledgeTimeCalculator:
+        facts = _gen_ack_time_facts(*issues)
+        groups_mask = np.full((1, len(facts)), True, bool)
+        calc = AcknowledgeTimeCalculator(quantiles=(0, 1))
+        calc(facts, cls.min_times, cls.max_times, None, groups_mask)
+        return calc
+
+
 class TestAcknowledgeTimeBelowThresholdRatio:
     def test_base(self) -> None:
         min_times = dt64arr_us(dt(2022, 1, 1))
@@ -126,7 +174,7 @@ class TestAcknowledgeTimeBelowThresholdRatio:
             [datetime(2022, 1, 3), datetime(2022, 1, 6)],
             [datetime(2022, 1, 3), datetime(2022, 1, 8)],
         ]
-        facts = self._gen_facts(*issues)
+        facts = _gen_ack_time_facts(*issues)
         groups_mask = np.full((1, len(issues)), True, bool)
 
         ack_time_calc = AcknowledgeTimeCalculator(quantiles=(0, 1))
@@ -139,13 +187,18 @@ class TestAcknowledgeTimeBelowThresholdRatio:
         assert len(calc.values[0]) == 1
         assert calc.values[0][0].value == pytest.approx(3 / 5)
 
-    @classmethod
-    def _gen_facts(cls, *values: list) -> md.DataFrame:
-        return md.DataFrame(
-            {
-                Issue.created.name: np.array([v[0] for v in values]),
-                ISSUE_PRS_BEGAN: np.array([v[1] for v in values]),
-                AthenianIssue.work_began.name: np.array([v[1] for v in values]),
-                Status.category_name.name: np.repeat(Status.CATEGORY_IN_PROGRESS, len(values)),
-            },
-        )
+
+def _gen_ack_time_facts(*values: list) -> md.DataFrame:
+    sanitized_values = [v if len(v) == 3 else [*v, Status.CATEGORY_IN_PROGRESS] for v in values]
+    return md.DataFrame(
+        {
+            Issue.created.name: np.array([v[0] for v in sanitized_values]),
+            ISSUE_PRS_BEGAN: np.array([v[1] for v in sanitized_values]),
+            AthenianIssue.work_began.name: np.array([v[1] for v in sanitized_values]),
+            Status.category_name.name: np.array([v[2] for v in sanitized_values]),
+        },
+    )
+
+
+def _np_td(days: int) -> np.timedelta64:
+    return np.timedelta64(days * 3600 * 24, "s")
