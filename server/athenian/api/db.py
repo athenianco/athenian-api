@@ -100,7 +100,7 @@ _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 def _generate_tags() -> tuple[str, str]:
     with sentry_sdk.configure_scope() as scope:
         if (transaction := scope.transaction) is None:
-            return ""
+            return "", ""
         values = [
             f"application='{metadata.__package__}'",
             f"framework='{metadata.__version__}'",
