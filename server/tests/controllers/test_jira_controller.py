@@ -2,10 +2,10 @@ from datetime import datetime, timedelta, timezone
 import json
 from unittest import mock
 
-from dateutil.tz import tzutc
 import pytest
 from sqlalchemy import delete, insert, update
 
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.jira.epic import filter_epics
@@ -118,91 +118,85 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert model.labels == [
             JIRALabel(
                 title="API",
-                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                last_used=dt(2020, 7, 13, 17, 45, 58),
                 issues_count=4,
                 kind="component",
             ),
             JIRALabel(
                 title="Webapp",
-                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                last_used=dt(2020, 7, 13, 17, 45, 58),
                 issues_count=1,
                 kind="component",
             ),
             JIRALabel(
                 title="accounts",
-                last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
+                last_used=dt(2020, 12, 15, 10, 16, 15),
                 issues_count=1,
                 kind="regular",
             ),
             JIRALabel(
-                title="bug",
-                last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                issues_count=16,
-                kind="regular",
+                title="bug", last_used=dt(2020, 6, 1, 7, 15, 7), issues_count=16, kind="regular",
             ),
             JIRALabel(
                 title="code-quality",
-                last_used=datetime(2020, 6, 4, 11, 35, 12, tzinfo=tzutc()),
+                last_used=dt(2020, 6, 4, 11, 35, 12),
                 issues_count=1,
                 kind="regular",
             ),
             JIRALabel(
                 title="discarded",
-                last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
+                last_used=dt(2020, 6, 1, 1, 27, 23),
                 issues_count=4,
                 kind="regular",
             ),
             JIRALabel(
                 title="discussion",
-                last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+                last_used=dt(2020, 3, 31, 21, 16, 11),
                 issues_count=3,
                 kind="regular",
             ),
             JIRALabel(
-                title="feature",
-                last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                issues_count=6,
-                kind="regular",
+                title="feature", last_used=dt(2020, 4, 3, 18, 48), issues_count=6, kind="regular",
             ),
             JIRALabel(
                 title="functionality",
-                last_used=datetime(2020, 6, 4, 11, 35, 15, tzinfo=tzutc()),
+                last_used=dt(2020, 6, 4, 11, 35, 15),
                 issues_count=1,
                 kind="regular",
             ),
             JIRALabel(
                 title="internal-story",
-                last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                last_used=dt(2020, 6, 1, 7, 15, 7),
                 issues_count=11,
                 kind="regular",
             ),
             JIRALabel(
                 title="needs-specs",
-                last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+                last_used=dt(2020, 4, 6, 13, 25, 2),
                 issues_count=4,
                 kind="regular",
             ),
             JIRALabel(
                 title="onboarding",
-                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                last_used=dt(2020, 7, 13, 17, 45, 58),
                 issues_count=1,
                 kind="regular",
             ),
             JIRALabel(
                 title="performance",
-                last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+                last_used=dt(2020, 3, 31, 21, 16, 5),
                 issues_count=1,
                 kind="regular",
             ),
             JIRALabel(
                 title="user-story",
-                last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                last_used=dt(2020, 4, 3, 18, 48),
                 issues_count=5,
                 kind="regular",
             ),
             JIRALabel(
                 title="webapp",
-                last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
+                last_used=dt(2020, 4, 3, 18, 47, 6),
                 issues_count=1,
                 kind="regular",
             ),
@@ -214,10 +208,11 @@ async def test_filter_jira_return(client, headers, return_, checked):
             JIRAEpic(
                 id="ENG-1",
                 title="Evaluate our product and process internally",
-                created=datetime(2019, 12, 2, 14, 19, 58, tzinfo=timezone.utc),
-                updated=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
-                work_began=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
-                resolved=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
+                created=dt(2019, 12, 2, 14, 19, 58),
+                updated=dt(2020, 6, 1, 7, 19, 0),
+                work_began=dt(2020, 6, 1, 7, 19, 0),
+                resolved=dt(2020, 6, 1, 7, 19, 0),
+                acknowledge_time=timedelta(days=181, seconds=61141),
                 lead_time=timedelta(0),
                 life_time=timedelta(days=181, seconds=61141),
                 reporter="Lou Marvin Caraig",
@@ -235,10 +230,11 @@ async def test_filter_jira_return(client, headers, return_, checked):
             JIRAEpic(
                 id="DEV-70",
                 title="Show the installation progress in the waiting page",
-                created=datetime(2020, 1, 22, 16, 57, 10, tzinfo=timezone.utc),
-                updated=datetime(2020, 7, 13, 17, 45, 58, tzinfo=timezone.utc),
-                work_began=datetime(2020, 6, 2, 11, 40, 42, tzinfo=timezone.utc),
-                resolved=datetime(2020, 7, 13, 17, 45, 58, tzinfo=timezone.utc),
+                created=dt(2020, 1, 22, 16, 57, 10),
+                updated=dt(2020, 7, 13, 17, 45, 58),
+                work_began=dt(2020, 6, 2, 11, 40, 42),
+                resolved=dt(2020, 7, 13, 17, 45, 58),
+                acknowledge_time=timedelta(days=161, seconds=41156),
                 lead_time=timedelta(days=41, seconds=21915),
                 life_time=timedelta(days=173, seconds=2928),
                 reporter="Lou Marvin Caraig",
@@ -255,10 +251,11 @@ async def test_filter_jira_return(client, headers, return_, checked):
                     JIRAEpicChild(
                         id="DEV-183",
                         title="Implement the endpoint that returns the installation progress",
-                        created=datetime(2020, 6, 2, 11, 7, 36, tzinfo=timezone.utc),
-                        updated=datetime(2020, 6, 2, 11, 40, 42, tzinfo=timezone.utc),
+                        created=dt(2020, 6, 2, 11, 7, 36),
+                        updated=dt(2020, 6, 2, 11, 40, 42),
                         work_began=datetime(2020, 6, 2, 11, 40, 42, tzinfo=timezone.utc),
                         resolved=datetime(2020, 6, 2, 11, 40, 42, tzinfo=timezone.utc),
+                        acknowledge_time=timedelta(seconds=1986),
                         lead_time=timedelta(0),
                         life_time=timedelta(seconds=1986),
                         reporter="Waren Long",
@@ -282,6 +279,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         updated=datetime(2020, 6, 16, 18, 12, 38, tzinfo=timezone.utc),
                         work_began=datetime(2020, 6, 9, 10, 8, 15, tzinfo=timezone.utc),
                         resolved=datetime(2020, 6, 9, 10, 34, 7, tzinfo=timezone.utc),
+                        acknowledge_time=timedelta(days=1, seconds=4072),
                         lead_time=timedelta(seconds=1551),
                         life_time=timedelta(days=1, seconds=5624),
                         reporter="Vadim Markovtsev",
@@ -305,6 +303,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         updated=datetime(2020, 7, 27, 16, 56, 20, tzinfo=timezone.utc),
                         work_began=datetime(2020, 6, 25, 17, 8, 11, tzinfo=timezone.utc),
                         resolved=datetime(2020, 7, 13, 17, 43, 20, tzinfo=timezone.utc),
+                        acknowledge_time=timedelta(days=6, seconds=69411),
                         lead_time=timedelta(days=18, seconds=2109),
                         life_time=timedelta(days=24, seconds=71520),
                         reporter="Waren Long",
@@ -328,6 +327,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         updated=datetime(2020, 7, 27, 16, 56, 22, tzinfo=timezone.utc),
                         work_began=datetime(2020, 7, 2, 4, 23, 20, tzinfo=timezone.utc),
                         resolved=datetime(2020, 7, 13, 17, 46, 15, tzinfo=timezone.utc),
+                        acknowledge_time=timedelta(days=6, seconds=43845),
                         lead_time=timedelta(days=11, seconds=48175),
                         life_time=timedelta(days=18, seconds=5621),
                         reporter="Waren Long",
@@ -351,6 +351,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                         updated=datetime(2020, 6, 26, 9, 38, 36, tzinfo=timezone.utc),
                         work_began=datetime(2020, 6, 26, 9, 33, 9, tzinfo=timezone.utc),
                         resolved=datetime(2020, 6, 26, 9, 35, 43, tzinfo=timezone.utc),
+                        acknowledge_time=timedelta(seconds=62154),
                         lead_time=timedelta(seconds=154),
                         life_time=timedelta(seconds=62309),
                         reporter="Waren Long",
@@ -629,6 +630,44 @@ async def test_filter_jira_epics_no_time(client, headers):
     assert len(model.epics) == 60
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
+
+
+async def test_filter_jira_epics_acknowledge_time(client, headers, mdb_rw: Database) -> None:
+    body = {
+        "date_from": "2012-05-01",
+        "date_to": "2012-05-30",
+        "timezone": 0,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["epics"],
+    }
+    issue_kw = {"project_id": "1", "type_id": "0", "created": dt(2011, 1, 2), "status_id": "9"}
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        models = [
+            md_factory.JIRAProjectFactory(id="1", key="P"),
+            md_factory.JIRAIssueTypeFactory(id="0", project_id="1", name="Epic"),
+            md_factory.JIRAIssueTypeFactory(id="1", project_id="1"),
+            md_factory.StatusFactory(id="9", category_name="In Progress"),
+            *jira_issue_models("1", key="P-1", **issue_kw, type="Epic", work_began=dt(2011, 1, 3)),
+            *jira_issue_models("2", key="P-2", **issue_kw, epic_id="1", work_began=dt(2011, 1, 3)),
+            *jira_issue_models("3", key="P-3", **issue_kw, epic_id="1", work_began=dt(2011, 1, 4)),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+
+    assert response.status == 200
+    res_body = await response.json()
+    assert len(res_body["epics"]) == 1
+    epic = res_body["epics"][0]
+    assert epic["acknowledge_time"] == f"{3600*24}s"
+
+    assert epic["children"][0]["id"] == "P-2"
+    assert epic["children"][0]["acknowledge_time"] == f"{3600*24}s"
+    assert epic["children"][1]["id"] == "P-3"
+    assert epic["children"][1]["acknowledge_time"] == f"{3600*24*2}s"
 
 
 @with_defer
@@ -1081,63 +1120,48 @@ def _check_filter_jira_no_dev_project(model: FilteredJIRAStuff) -> None:
     assert model.labels == [
         JIRALabel(
             title="accounts",
-            last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
+            last_used=dt(2020, 12, 15, 10, 16, 15),
             issues_count=1,
             kind="regular",
         ),
         JIRALabel(
-            title="bug",
-            last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-            issues_count=16,
-            kind="regular",
+            title="bug", last_used=dt(2020, 6, 1, 7, 15, 7), issues_count=16, kind="regular",
         ),
         JIRALabel(
-            title="discarded",
-            last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
-            issues_count=4,
-            kind="regular",
+            title="discarded", last_used=dt(2020, 6, 1, 1, 27, 23), issues_count=4, kind="regular",
         ),
         JIRALabel(
             title="discussion",
-            last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+            last_used=dt(2020, 3, 31, 21, 16, 11),
             issues_count=3,
             kind="regular",
         ),
         JIRALabel(
-            title="feature",
-            last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-            issues_count=6,
-            kind="regular",
+            title="feature", last_used=dt(2020, 4, 3, 18, 48), issues_count=6, kind="regular",
         ),
         JIRALabel(
             title="internal-story",
-            last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+            last_used=dt(2020, 6, 1, 7, 15, 7),
             issues_count=11,
             kind="regular",
         ),
         JIRALabel(
             title="needs-specs",
-            last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+            last_used=dt(2020, 4, 6, 13, 25, 2),
             issues_count=4,
             kind="regular",
         ),
         JIRALabel(
             title="performance",
-            last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+            last_used=dt(2020, 3, 31, 21, 16, 5),
             issues_count=1,
             kind="regular",
         ),
         JIRALabel(
-            title="user-story",
-            last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-            issues_count=5,
-            kind="regular",
+            title="user-story", last_used=dt(2020, 4, 3, 18, 48), issues_count=5, kind="regular",
         ),
         JIRALabel(
-            title="webapp",
-            last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
-            issues_count=1,
-            kind="regular",
+            title="webapp", last_used=dt(2020, 4, 3, 18, 47, 6), issues_count=1, kind="regular",
         ),
     ]
     assert model.epics == [
@@ -1148,6 +1172,7 @@ def _check_filter_jira_no_dev_project(model: FilteredJIRAStuff) -> None:
             updated=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
             work_began=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
             resolved=datetime(2020, 6, 1, 7, 19, 0, tzinfo=timezone.utc),
+            acknowledge_time=timedelta(days=181, seconds=61141),
             lead_time=timedelta(0),
             life_time=timedelta(days=181, seconds=61141),
             reporter="Lou Marvin Caraig",
