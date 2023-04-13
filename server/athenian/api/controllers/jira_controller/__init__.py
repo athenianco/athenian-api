@@ -43,6 +43,7 @@ from athenian.api.internal.miners.jira.issue import (
     fetch_jira_issues,
     participant_columns,
     query_jira_raw,
+    resolve_acknowledge_time,
     resolve_resolved,
     resolve_work_began,
 )
@@ -347,7 +348,9 @@ async def _epic_flow(
                     type=epic_type,
                     prs=epic_prs,
                     url=epic_url,
+                    # life_time and acknowledge_time are set after inspecting children
                     life_time=timedelta(0),
+                    acknowledge_time=timedelta(0),
                     story_points=epic_story_points,
                 ),
             )
@@ -364,6 +367,9 @@ async def _epic_flow(
                 children_df[AthenianIssue.resolved.name][children_indexes],
                 children_df[ISSUE_PRS_BEGAN][children_indexes],
                 children_df[ISSUE_PRS_RELEASED][children_indexes],
+            )
+            children_acknowledge_time = resolve_acknowledge_time(
+                children_df[Issue.created.name][children_indexes], children_work_began, now,
             )
 
             for (
@@ -383,6 +389,7 @@ async def _epic_flow(
                 child_story_points,
                 child_work_began,
                 child_resolved,
+                child_acknowledge_time,
             ) in zip(
                 *(
                     children_df[column][children_indexes]
@@ -405,6 +412,7 @@ async def _epic_flow(
                 ),
                 children_work_began,
                 children_resolved,
+                children_acknowledge_time,
             ):
                 epic.prs += child_prs
                 child_work_began = (
@@ -432,6 +440,7 @@ async def _epic_flow(
                         created=child_created,
                         updated=child_updated,
                         work_began=child_work_began,
+                        acknowledge_time=child_acknowledge_time,
                         lead_time=lead_time,
                         life_time=life_time,
                         resolved=child_resolved,
@@ -458,6 +467,13 @@ async def _epic_flow(
                 epic.life_time = now - epic.created
                 if epic.work_began is not None:
                     epic.lead_time = now - epic.work_began
+
+            epic.acknowledge_time = resolve_acknowledge_time(
+                np.array([epic.created], dtype=np.datetime64),
+                np.array([epic.work_began], dtype=np.datetime64),
+                now,
+            )[0]
+
     if JIRAFilterReturn.PRIORITIES in return_:
         priority_ids = unordered_unique(
             np.concatenate(
