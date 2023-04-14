@@ -17,6 +17,7 @@ from athenian.api.models.metadata.github import (
     PullRequestCommit,
     PullRequestReview,
     PullRequestReviewRequest,
+    PushCommit,
     Release,
     Repository,
     Team,
@@ -111,6 +112,25 @@ class PullRequestFactory(SQLAlchemyModelFactory):
     head_ref = "01234"
     number = factory.Sequence(lambda n: n + 1)
     title = factory.LazyAttribute(lambda pr: f"PR {pr.number}")
+
+
+class PushCommitFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = PushCommit
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    repository_full_name = "org/repo"
+    repository_node_id = factory.Sequence(lambda n: n + 100)
+    message = "Commit message"
+    author_date = "?"
+    authored_date = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    sha = "A" * 40
+    commit_date = "?"
+    committed_date = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
+    additions = 1
+    deletions = 1
+    changed_files = 1
 
 
 class RepositoryFactory(SQLAlchemyModelFactory):
