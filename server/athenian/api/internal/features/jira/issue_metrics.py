@@ -4,6 +4,7 @@ from typing import Dict, List, Sequence, Type
 import medvedi as md
 from medvedi.accelerators import in1d_str, unordered_unique
 import numpy as np
+from numpy import typing as npt
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.internal.features.metric_calculator import (
@@ -360,20 +361,48 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
         **_,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
-        work_began = facts[AthenianIssue.work_began.name].astype(min_times.dtype)
-        prs_began = facts[ISSUE_PRS_BEGAN].astype(min_times.dtype)
-        acknowledged = np.fmin(work_began, prs_began)
-        statuses = facts[Status.category_name.name]
-        acknowledged[
-            (statuses != Status.CATEGORY_IN_PROGRESS) & (statuses != Status.CATEGORY_DONE)
-        ] = None
-        created = facts[Issue.created.name].astype(min_times.dtype)
-        ack_times = acknowledged - created
-        ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
+        acknowledged = self.calculate_acknowledged(
+            facts[AthenianIssue.work_began.name].astype(min_times.dtype),
+            facts[ISSUE_PRS_BEGAN].astype(min_times.dtype),
+            facts[Status.category_name.name],
+        )
+        ack_times = self.calculate_acknowledge_time(
+            facts[Issue.created.name].astype(min_times.dtype), acknowledged,
+        )
         focus_mask = (min_times[:, None] <= acknowledged) & (acknowledged < max_times[:, None])
         result[:] = ack_times
         result[~focus_mask] = None
         return result
+
+    @classmethod
+    def calculate_acknowledged(
+        cls,
+        work_began: npt.NDArray[np.datetime64],
+        prs_began: npt.NDArray[np.datetime64],
+        statuses: npt.NDArray[object],
+    ) -> npt.NDArray[np.datetime64]:
+        """Calculate the time when issues were acknowledged.
+
+        This is defined only for issues with status "In Progress" or "Done".
+        """
+        acknowledged = np.fmin(work_began, prs_began)
+        acknowledged[
+            (statuses != Status.CATEGORY_IN_PROGRESS) & (statuses != Status.CATEGORY_DONE)
+        ] = None
+        return acknowledged
+
+    @classmethod
+    def calculate_acknowledge_time(
+        cls,
+        created: npt.NDArray[np.datetime64],
+        acknowledged: npt.NDArray[np.datetime64],
+    ) -> npt.NDArray[np.timedelta64]:
+        """Calculate the base acknowledge time for the issues.
+
+        `acknowledged` should be computed with `calculate_acknowledged()`
+        """
+        ack_times = acknowledged - created
+        return np.maximum(ack_times, ack_times.dtype.type(0))
 
 
 @register_metric(JIRAMetricID.JIRA_ACKNOWLEDGE_TIME_BELOW_THRESHOLD_RATIO)

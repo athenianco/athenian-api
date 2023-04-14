@@ -8,6 +8,7 @@ from typing import Sequence
 import aiomcache
 import medvedi as md
 import numpy as np
+from numpy import typing as npt
 import sqlalchemy as sa
 
 from athenian.api import metadata
@@ -20,6 +21,7 @@ from athenian.api.internal.features.github.pull_request_filter import (
     fetch_pr_deployments,
     unwrap_pull_requests,
 )
+from athenian.api.internal.features.jira.issue_metrics import AcknowledgeTimeCalculator
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation, normalize_user_type
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.bots import bots
@@ -39,7 +41,7 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import get_account_repositories
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.metadata.github import Branch, PullRequest
-from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, User
+from athenian.api.models.metadata.jira import AthenianIssue, Issue, IssueType, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import (
     JIRAComment as WebJIRAComment,
@@ -120,6 +122,13 @@ def build_issue_web_models(
     issues_resolved = resolve_resolved(
         issues[AthenianIssue.resolved.name], prs_began, issues[ISSUE_PRS_RELEASED],
     )
+    issues_acknowledge_time = resolve_acknowledge_time(
+        issues[Issue.created.name],
+        issues[AthenianIssue.work_began.name],
+        prs_began,
+        issues[Status.category_name.name],
+        now,
+    )
 
     if Issue.description.name in issues.columns:
         issues_descriptions = issues[Issue.description.name]
@@ -144,6 +153,7 @@ def build_issue_web_models(
         issue_id,
         issue_work_began,
         issue_resolved,
+        issue_acknowledge_time,
         issue_description,
     ) in zip(
         *(
@@ -168,6 +178,7 @@ def build_issue_web_models(
         issues.index.values,
         issues_work_began,
         issues_resolved,
+        issues_acknowledge_time,
         issues_descriptions,
     ):
         issue_work_began = issue_work_began if issue_work_began == issue_work_began else None
@@ -189,6 +200,7 @@ def build_issue_web_models(
                 updated=issue_updated,
                 work_began=issue_work_began,
                 resolved=issue_resolved,
+                acknowledge_time=issue_acknowledge_time,
                 lead_time=lead_time,
                 life_time=life_time,
                 reporter=issue_reporter,
@@ -415,3 +427,29 @@ async def fetch_issues_users(
         )
         for row in user_rows
     ]
+
+
+def resolve_acknowledge_time(
+    created: npt.NDArray[np.datetime64],
+    work_began: npt.NDArray[np.datetime64],
+    prs_began: npt.NDArray[np.datetime64],
+    statuses: npt.NDArray[object],
+    now: np.datetime64,
+) -> npt.NDArray[np.timedelta64]:
+    """Compute the acknowledge_time for the issues.
+
+    `created` are the `Issue.created.name` values
+
+
+    The acknowledge_time is `work_began` - `created`.
+    For the issues not yet started (so no work_began) it is `now()` - `created`.
+    `acknowledge_time` can never be less than 0.
+    """
+    acknowledged = AcknowledgeTimeCalculator.calculate_acknowledged(
+        work_began, prs_began, statuses,
+    )
+    acknowledge_time = AcknowledgeTimeCalculator.calculate_acknowledge_time(created, acknowledged)
+
+    not_acknowledged = acknowledged != acknowledged
+    acknowledge_time[not_acknowledged] = now - created[not_acknowledged]
+    return acknowledge_time

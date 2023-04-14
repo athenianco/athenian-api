@@ -3,6 +3,7 @@
 from datetime import date
 from typing import Any, Optional, Sequence
 
+from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -31,7 +32,7 @@ from tests.testutils.factory.state import (
     UserAccountFactory,
 )
 from tests.testutils.requester import Requester
-from tests.testutils.time import dt, freeze_time
+from tests.testutils.time import dt
 
 _USER_ID = "github|1"
 

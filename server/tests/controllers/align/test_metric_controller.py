@@ -2,6 +2,7 @@ from datetime import date
 from functools import partial
 from typing import Any, Optional, Sequence
 
+from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
@@ -25,7 +26,6 @@ from tests.testutils.factory.state import (
 )
 from tests.testutils.factory.wizards import pr_jira_issue_mappings
 from tests.testutils.requester import Requester
-from tests.testutils.time import freeze_time
 
 
 class BaseTeamMetricsTest(Requester):
