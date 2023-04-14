@@ -417,25 +417,35 @@ class TestChangeFailureMetrics(BaseCalcMetricsDeploymentsTest):
             metrics=[
                 DeploymentMetricID.DEP_COUNT,
                 DeploymentMetricID.DEP_CHANGE_FAILURE_COUNT,
+                DeploymentMetricID.DEP_CHANGE_FAILURE_RATIO,
             ],
         )
-        DeplFact = DeploymentNotificationFactory
-        DeplCompFact = DeployedComponentFactory
-        DeplLabelFact = DeployedLabelFactory
+        DepFact = DeploymentNotificationFactory
+        DepCompFact = DeployedComponentFactory
+        DepLabelFact = DeployedLabelFactory
         await models_insert(
             rdb,
-            DeplFact(name="d1", finished_at=dt(2005, 1, 10), started_at=dt(2005, 1, 1)),
-            DeplCompFact(deployment_name="d1", repository_node_id=9, resolved_commit_node_id=1),
-            DeplLabelFact(deployment_name="d1", key="foo", value=True),
-            DeplFact(name="d2", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
-            DeplCompFact(deployment_name="d2", repository_node_id=9, resolved_commit_node_id=2),
-            DeplLabelFact(deployment_name="d2", key="failure", value=None),
-            DeplFact(name="d3", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
-            DeplCompFact(deployment_name="d3", repository_node_id=9, resolved_commit_node_id=3),
-            DeplLabelFact(deployment_name="d3", key="failure", value=["DEV-123"]),
-            DeplFact(name="d4", finished_at=dt(2004, 12, 29), started_at=dt(2004, 12, 29)),
-            DeplCompFact(deployment_name="d4", repository_node_id=9, resolved_commit_node_id=4),
-            DeplLabelFact(deployment_name="d4", key="failure", value=True),
+            DepFact(name="d1", finished_at=dt(2005, 1, 10), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d1", repository_node_id=9, resolved_commit_node_id=1),
+            DepLabelFact(deployment_name="d1", key="foo", value=True),
+            DepFact(name="d2", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d2", repository_node_id=9, resolved_commit_node_id=2),
+            DepLabelFact(deployment_name="d2", key=CHANGE_FAILURE_LABEL, value=None),
+            DepFact(name="d3", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d3", repository_node_id=9, resolved_commit_node_id=3),
+            DepLabelFact(deployment_name="d3", key=CHANGE_FAILURE_LABEL, value=["DEV-123"]),
+            DepFact(name="d4", finished_at=dt(2004, 12, 29), started_at=dt(2004, 12, 29)),
+            DepCompFact(deployment_name="d4", repository_node_id=9, resolved_commit_node_id=4),
+            DepLabelFact(deployment_name="d4", key=CHANGE_FAILURE_LABEL, value=True),
+            DepFact(name="d5", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d5", repository_node_id=9, resolved_commit_node_id=5),
+            DepFact(
+                name="d6",
+                finished_at=dt(2005, 2, 1),
+                started_at=dt(2005, 1, 1),
+                conclusion="FAILURE",
+            ),
+            DepCompFact(deployment_name="d6", repository_node_id=9, resolved_commit_node_id=6),
         )
         async with DBCleaner(mdb_rw) as mdb_cleaner:
             repo0 = md_factory.RepositoryFactory(node_id=9, full_name="o/r")
@@ -446,6 +456,8 @@ class TestChangeFailureMetrics(BaseCalcMetricsDeploymentsTest):
                 *commit_models(node_id=2, oid="B" * 40, **commit_kwargs),
                 *commit_models(node_id=3, oid="C" * 40, **commit_kwargs),
                 *commit_models(node_id=4, oid="D" * 40, **commit_kwargs),
+                *commit_models(node_id=5, oid="E" * 40, **commit_kwargs),
+                *commit_models(node_id=6, oid="F" * 40, **commit_kwargs),
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb_rw, *models)
@@ -454,5 +466,7 @@ class TestChangeFailureMetrics(BaseCalcMetricsDeploymentsTest):
 
         # d2, d3 and d4 are marked as change failure
         # d4 is out of interval
-        assert res[0]["values"][0]["values"][0] == 3
+        # d6 is not successful, is excluded
+        assert res[0]["values"][0]["values"][0] == 5
         assert res[0]["values"][0]["values"][1] == 2
+        assert res[0]["values"][0]["values"][2] == pytest.approx(2 / 4)
