@@ -1,15 +1,21 @@
+from datetime import datetime
+
 import medvedi as md
 import numpy as np
 from numpy.testing import assert_array_equal
 import pytest
 
 from athenian.api.internal.features.github.deployment_metrics import (
+    CHANGE_FAILURE_LABEL,
+    ChangeFailureCounter,
     group_deployments_by_environments,
     group_deployments_by_participants,
     group_deployments_by_repositories,
 )
 from athenian.api.internal.miners.participation import ReleaseParticipationKind
 from athenian.api.internal.miners.types import DeploymentFacts
+from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
+from tests.testutils.time import dt, dt64arr_us
 
 
 class TestGroupDeploymentsByRepositories:
@@ -162,3 +168,55 @@ def test_group_deployments_by_environments_smoke(sample_deps):
     ]
     assert [x.tolist() for x in group_deployments_by_environments([["1"]], md.DataFrame())] == [[]]
     assert [x.tolist() for x in group_deployments_by_environments([], md.DataFrame())] == [[]]
+
+
+class TestChangeFailureCounter:
+    _SUCCESS = DeploymentNotification.CONCLUSION_SUCCESS
+    _FAILURE = DeploymentNotification.CONCLUSION_FAILURE
+
+    def test_base(self) -> None:
+        facts = self._gen_facts(
+            [self._SUCCESS, datetime(2001, 1, 1), self._labels(("foo", "bar"))],
+            [self._SUCCESS, datetime(2001, 1, 1), self._labels((CHANGE_FAILURE_LABEL, "a"))],
+            [self._SUCCESS, datetime(2001, 1, 1), self._labels((CHANGE_FAILURE_LABEL, None))],
+            [self._SUCCESS, datetime(2001, 1, 1), self._labels()],
+            [self._SUCCESS, datetime(2001, 1, 1), md.DataFrame()],
+            [
+                self._SUCCESS,
+                datetime(2001, 1, 1),
+                self._labels(("k", "v"), (CHANGE_FAILURE_LABEL, ["a"])),
+            ],
+            [self._SUCCESS, datetime(2001, 1, 1), self._labels(("k", "v"), ("k2", "v2"))],
+            [self._FAILURE, datetime(2001, 1, 1), self._labels((CHANGE_FAILURE_LABEL, "a"))],
+            [self._FAILURE, datetime(2003, 1, 1), self._labels((CHANGE_FAILURE_LABEL, "a"))],
+        )
+        min_times = dt64arr_us(dt(2001, 1, 1))
+        max_times = dt64arr_us(dt(2002, 1, 1))
+        groups_mask = np.full((1, len(facts)), True, bool)
+        calc = ChangeFailureCounter(quantiles=(0, 1))
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert len(calc.values) == 1
+        assert len(calc.values[0]) == 1
+        assert calc.values[0][0].value == 3
+
+    @classmethod
+    def _gen_facts(cls, *values: list) -> md.DataFrame:
+        labels = np.empty(dtype=object, shape=len(values))
+        labels[:] = [v[2] for v in values]
+        return md.DataFrame(
+            {
+                DeploymentNotification.conclusion.name: np.array([v[0] for v in values]),
+                DeploymentNotification.finished_at.name: np.array([v[1] for v in values]),
+                "labels": labels,
+            },
+        )
+
+    @classmethod
+    def _labels(cls, *values: tuple) -> md.DataFrame:
+        return md.DataFrame(
+            {
+                DeployedLabel.key.name: np.array([v[0] for v in values], dtype=object),
+                DeployedLabel.value.name: np.array([v[1] for v in values], dtype=object),
+            },
+        )
