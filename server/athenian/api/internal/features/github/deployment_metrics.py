@@ -363,6 +363,13 @@ class ChangeFailureCounter(SumMetricCalculator[int]):
         return result
 
 
+@register_metric(DeploymentMetricID.DEP_CHANGE_FAILURE_RATIO)
+class ChangeFailureRatioCalculator(RatioCalculator):
+    """Calculate the ratio between DEP_CHANGE_FAILURE_COUNT and DEP_SUCCESS_COUNT."""
+
+    deps = (ChangeFailureCounter, SuccessfulDeploymentsCounter)
+
+
 class ItemsMixin:
     """Calculate the average `agg` of deployed items in `facts[dimension]`."""
 
