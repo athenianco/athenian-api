@@ -18,7 +18,8 @@ from athenian.api.balancing import weight
 from athenian.api.db import Connection, Database
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.access_classes import access_classes
-from athenian.api.models.metadata.github import PushCommit, Release
+from athenian.api.internal.refetcher import Refetcher
+from athenian.api.models.metadata.github import NodeRepository, PushCommit, Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -78,7 +79,7 @@ async def notify_deployments(request: AthenianWebRequest, body: list[dict]) -> w
             )
         if notification.name is None:
             notification.name = _compose_name(notification)
-    resolved = await _resolve_references(
+    resolved, _ = await _resolve_references(
         chain.from_iterable(
             ((c.repository, c.reference) for c in n.components) for n in notifications
         ),
@@ -144,16 +145,16 @@ async def _resolve_references(
     meta_ids: tuple[int, ...],
     mdb: Database,
     repository_node_ids: bool,
-) -> dict[str, dict[str, str]]:
+) -> tuple[dict[str, dict[str, str]], dict[str, set[str]]]:
     releases = defaultdict(set)
-    full_commits = set()
+    full_commits = defaultdict(set)
     prefix_commits = defaultdict(set)
     for repository, reference in components:
         repo = repository if repository_node_ids else repository.split("/", 1)[1]
         if len(reference) == 7:
             prefix_commits[repo].add(reference)
         if len(reference) == 40:
-            full_commits.add(reference)
+            full_commits[repo].add(reference)
         releases[repo].add(reference)
         if reference.startswith("v"):
             releases[repo].add(reference[1:])
@@ -173,7 +174,10 @@ async def _resolve_references(
     queries = [
         sa.select(
             sa.text("'commit_f'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit),
-        ).where(PushCommit.acc_id.in_(meta_ids), PushCommit.sha.in_(full_commits)),
+        ).where(
+            PushCommit.acc_id.in_(meta_ids),
+            PushCommit.sha.in_(list(chain.from_iterable(full_commits.values()))),
+        ),
         *(
             sa.select(
                 sa.text("'commit_p'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit),
@@ -203,6 +207,9 @@ async def _resolve_references(
         type_id, ref, commit, repo = row[0], row[1], row[2], row[3]
         if type_id == "commit_f":
             result[repo][ref] = commit
+            (acc_full_commits := full_commits[repo]).discard(ref)
+            if not acc_full_commits:
+                del full_commits[repo]
         elif type_id == "commit_p":
             result[repo][ref[:7]] = commit
         else:
@@ -211,7 +218,7 @@ async def _resolve_references(
                 result[repo]["v" + ref] = commit
             else:
                 result[repo][ref[1:]] = commit
-    return result
+    return result, full_commits
 
 
 @sentry_span
@@ -274,6 +281,7 @@ async def _notify_deployment(
 
 
 async def resolve_deployed_component_references(
+    refetcher: Refetcher,
     sdb: Database,
     mdb: Database,
     rdb: Database,
@@ -282,10 +290,13 @@ async def resolve_deployed_component_references(
     """Resolve the missing deployed component references and remove stale deployments."""
     async with rdb.connection() as rdb_conn:
         async with rdb_conn.transaction():
-            return await _resolve_deployed_component_references(sdb, mdb, rdb_conn, cache)
+            return await _resolve_deployed_component_references(
+                refetcher, sdb, mdb, rdb_conn, cache,
+            )
 
 
 async def _resolve_deployed_component_references(
+    refetcher: Refetcher,
     sdb: Database,
     mdb: Database,
     rdb: Connection,
@@ -354,7 +365,7 @@ async def _resolve_deployed_component_references(
     del unresolved
     for account, unresolved in unresolved_by_account.items():
         meta_ids = await get_metadata_account_ids(account, sdb, cache)
-        resolved = await _resolve_references(
+        resolved, unresolved_commits = await _resolve_references(
             [
                 (r[DeployedComponent.repository_node_id.name], r[DeployedComponent.reference.name])
                 for r in unresolved
@@ -363,6 +374,23 @@ async def _resolve_deployed_component_references(
             mdb,
             True,
         )
+        if unresolved_commits:
+            repo_id_map = dict(
+                await mdb.fetch_all(
+                    sa.select(NodeRepository.node_id, NodeRepository.database_id).where(
+                        NodeRepository.acc_id.in_(meta_ids),
+                        NodeRepository.node_id.in_(unresolved_commits),
+                    ),
+                ),
+            )
+            await refetcher.specialize(meta_ids).submit_commit_hashes(
+                [
+                    (repo_id_map[repo], h)
+                    for repo, hashes in unresolved_commits.items()
+                    if repo in repo_id_map
+                    for h in hashes
+                ],
+            )
         updated = set()
         for row in unresolved:
             repo = row[DeployedComponent.repository_node_id.name]

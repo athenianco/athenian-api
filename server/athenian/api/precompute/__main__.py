@@ -92,9 +92,15 @@ def _parse_args() -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
-    subparsers.add_parser(
+    deployments_parser = subparsers.add_parser(
         "resolve-deployments", help="Fill missing commit references in the deployed components",
     )
+    deployments_parser.add_argument(
+        "--refetch-topic",
+        required=False,
+        help="PubSub topic name where we submit metadata heal requests.",
+    )
+
     subparsers.add_parser(
         "notify-almost-expired-accounts",
         help="Send Slack messages about accounts which are about to expire",

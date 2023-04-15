@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import pytest
 import sqlalchemy as sa
@@ -9,6 +9,7 @@ from athenian.api.controllers.events_controller.deployments import (
     resolve_deployed_component_references,
 )
 from athenian.api.db import Database
+from athenian.api.internal.refetcher import Refetcher
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -353,7 +354,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb, unreso
             .explode(with_primary_keys=True),
         ],
     )
-    await resolve_deployed_component_references(sdb, mdb, rdb, None)
+    await resolve_deployed_component_references(None, sdb, mdb, rdb, None)
     rows = await rdb.fetch_all(
         sa.select(DeploymentNotification.name).order_by(DeploymentNotification.name),
     )
@@ -377,3 +378,62 @@ async def _delete_deployments(rdb: Database) -> None:
         rdb.execute(sa.delete(DeployedLabel)),
     )
     await rdb.execute(sa.delete(DeploymentNotification))
+
+
+async def test_resolve_deployed_component_references_refetch(
+    sdb,
+    mdb,
+    rdb,
+    precomputed_deployments,
+):
+    await rdb.execute(
+        sa.insert(DeploymentNotification).values(
+            DeploymentNotification(
+                account_id=1,
+                name="xxx",
+                started_at=datetime.now(timezone.utc) - timedelta(hours=12),
+                finished_at=datetime.now(timezone.utc),
+                conclusion="SUCCESS",
+                environment="production",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
+    await rdb.execute(
+        sa.insert(DeployedComponent).values(
+            DeployedComponent(
+                account_id=1,
+                deployment_name="xxx",
+                repository_node_id=40550,
+                reference="1" * 40,
+                created_at=datetime.now(timezone.utc) - (timedelta(hours=12)),
+            ).explode(with_primary_keys=True),
+        ),
+    )
+
+    class FakeRefetcher(Refetcher):
+        def specialize(self, *_):
+            return self
+
+        async def _submit_noraise(
+            self,
+            nodes: Iterable[int],
+            node_type: str,
+            fields: list[str],
+            noraise: bool,
+            as_native_ids: bool,
+        ) -> None:
+            self.called_nodes = nodes
+            self.called_as_native_ids = as_native_ids
+            self.called_node_type = node_type
+
+    await resolve_deployed_component_references(
+        refetcher := FakeRefetcher(None), sdb, mdb, rdb, None,
+    )
+
+    assert refetcher.called_node_type == "Commit"
+    assert refetcher.called_as_native_ids
+    assert refetcher.called_nodes == [
+        "C_kwDNAwnaACgxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEx",
+    ]

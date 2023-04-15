@@ -6,6 +6,7 @@ from typing import Iterable
 
 import aiohttp
 from gcloud.aio.pubsub import PublisherClient, PubsubMessage
+from ghid import ghid
 
 from athenian.api import metadata
 
@@ -45,11 +46,20 @@ class Refetcher:
 
     async def submit_commits(self, nodes: Iterable[int], noraise: bool = False) -> None:
         """Send commit node IDs to refetch."""
-        await self._submit_noraise(nodes, "Commit", [], noraise)
+        await self._submit_noraise(nodes, "Commit", [], noraise, False)
+
+    async def submit_commit_hashes(
+        self,
+        hashes: Iterable[tuple[int, str]],
+        noraise: bool = False,
+    ) -> None:
+        """Send commit node IDs to refetch."""
+        ids = [ghid.EncodeV2(ghid.CommitKey(*h)) for h in hashes]
+        await self._submit_noraise(ids, "Commit", [], noraise, True)
 
     async def submit_org_members(self, nodes: Iterable[int], noraise: bool = False) -> None:
         """Send organization node IDs to refetch the members."""
-        await self._submit_noraise(nodes, "Organization", ["membersWithRole"], noraise)
+        await self._submit_noraise(nodes, "Organization", ["membersWithRole"], noraise, False)
 
     async def _submit_noraise(
         self,
@@ -57,16 +67,23 @@ class Refetcher:
         node_type: str,
         fields: list[str],
         noraise: bool,
+        as_native_ids: bool,
     ) -> None:
         try:
-            await self._submit(nodes, node_type, fields)
+            await self._submit(nodes, node_type, fields, as_native_ids)
         except Exception as e:
             if noraise:
                 self.log.exception("while requesting to heal %s of type %s", nodes, node_type)
             else:
                 raise e from None
 
-    async def _submit(self, nodes: Iterable[int], node_type: str, fields: list[str]) -> None:
+    async def _submit(
+        self,
+        nodes: Iterable[int],
+        node_type: str,
+        fields: list[str],
+        as_native_ids: bool,
+    ) -> None:
         if self._session is None or not (nodes := [f"{node}:{node_type}" for node in nodes]):
             return
         if not self._meta_ids:
@@ -81,7 +98,7 @@ class Refetcher:
                         "athenian_acc_id": acc_id,
                         "flags": ["recursive", "force", "important"],
                         "event_id": f"{ts}_acc_{acc_id}_heal_{node_type}",
-                        "gids": nodes,
+                        ("ids" if as_native_ids else "gids"): nodes,
                         **fields,
                     },
                 ),
