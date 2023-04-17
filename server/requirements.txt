@@ -15,7 +15,7 @@ medvedi==0.1.67
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.19.1
 prometheus_client==0.14.1
-alembic==1.10.2
+alembic==1.10.3
 mako==1.2.4
 python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
