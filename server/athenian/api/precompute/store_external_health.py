@@ -131,7 +131,10 @@ async def _record_inconsistency_metrics(
             async with session.post(
                 f"{prometheus_endpoint}/api/v1/query",
                 headers={"content-type": "application/x-www-form-urlencoded"},
-                data="query=sum by (acc_id, node_type) (metadata_github_consistency_nodes_issues)",
+                data=(
+                    "query=sum by (acc_id, node_type) "
+                    '(metadata_github_consistency_nodes_issues{instance="airflow"})'
+                ),
             ) as response:
                 if not response.ok:
                     log.error(
