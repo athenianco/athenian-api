@@ -9,7 +9,17 @@ import pickle
 from sqlite3 import IntegrityError
 import struct
 import time
-from typing import Any, Callable, Collection, Coroutine, Mapping, NamedTuple, Optional, Sequence
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Coroutine,
+    Iterable,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+)
 from urllib.parse import urlparse
 
 from aiohttp import web
@@ -177,7 +187,7 @@ async def get_metadata_account_ids_or_empty(
     key=lambda accounts, **_: (sorted(accounts),),
 )
 async def get_multiple_metadata_account_ids(
-    accounts: Sequence[int],
+    accounts: Iterable[int],
     sdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
 ) -> dict[int, list[int]]:
