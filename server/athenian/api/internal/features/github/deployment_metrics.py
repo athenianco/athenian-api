@@ -322,6 +322,54 @@ class SuccessRatioCalculator(RatioCalculator):
     deps = (SuccessfulDeploymentsCounter, DeploymentsCounter)
 
 
+CHANGE_FAILURE_LABEL = "failure"
+"""A deployment associated with this label will be considered as introducing a failure."""
+
+
+@register_metric(DeploymentMetricID.DEP_CHANGE_FAILURE_COUNT)
+class ChangeFailureCounter(SumMetricCalculator[int]):
+    """Calculate the number of deployments introducing a failure in the system."""
+
+    metric = MetricInt
+
+    def _analyze(
+        self,
+        facts: md.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+
+        matching_label_mask = np.fromiter(
+            (
+                # labels df has no columns for deploments without labels
+                not labels.empty and CHANGE_FAILURE_LABEL in labels["key"]
+                for labels in facts["labels"]
+            ),
+            bool,
+            len(facts),
+        )
+
+        success_mask = (
+            facts[DeploymentNotification.conclusion.name]
+            == DeploymentNotification.CONCLUSION_SUCCESS
+        )
+        finished_at = facts[DeploymentNotification.finished_at.name]
+        time_mask = (min_times[:, None] <= finished_at) & (finished_at < max_times[:, None])
+
+        mask = matching_label_mask & success_mask & time_mask
+        result[mask] = 1
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_CHANGE_FAILURE_RATIO)
+class ChangeFailureRatioCalculator(RatioCalculator):
+    """Calculate the ratio between DEP_CHANGE_FAILURE_COUNT and DEP_SUCCESS_COUNT."""
+
+    deps = (ChangeFailureCounter, SuccessfulDeploymentsCounter)
+
+
 class ItemsMixin:
     """Calculate the average `agg` of deployed items in `facts[dimension]`."""
 

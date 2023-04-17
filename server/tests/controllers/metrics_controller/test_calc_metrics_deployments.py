@@ -4,10 +4,21 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from athenian.api.db import Database
+from athenian.api.internal.features.github.deployment_metrics import CHANGE_FAILURE_LABEL
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
 from athenian.api.models.web import CalculatedDeploymentMetric, DeploymentMetricID
+from tests.testutils.db import DBCleaner, models_insert
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_ACCOUNT_ID
+from tests.testutils.factory.persistentdata import (
+    DeployedComponentFactory,
+    DeployedLabelFactory,
+    DeploymentNotificationFactory,
+)
+from tests.testutils.factory.wizards import commit_models, insert_repo
 from tests.testutils.requester import Requester
+from tests.testutils.time import dt
 
 
 class BaseCalcMetricsDeploymentsTest(Requester):
@@ -395,3 +406,67 @@ class TestCalcMetricsDeployments(BaseCalcMetricsDeploymentsTest):
         )
         res = await self.post_json(json=body, assert_status=400)
         assert "granularities" in res["detail"]
+
+
+class TestChangeFailureMetrics(BaseCalcMetricsDeploymentsTest):
+    async def test_base(self, mdb_rw: Database, rdb: Database, sdb: Database) -> None:
+        body = self._body(
+            date_from="2005-01-01",
+            date_to="2005-03-01",
+            for_=[{}],
+            metrics=[
+                DeploymentMetricID.DEP_COUNT,
+                DeploymentMetricID.DEP_CHANGE_FAILURE_COUNT,
+                DeploymentMetricID.DEP_CHANGE_FAILURE_RATIO,
+            ],
+        )
+        DepFact = DeploymentNotificationFactory
+        DepCompFact = DeployedComponentFactory
+        DepLabelFact = DeployedLabelFactory
+        await models_insert(
+            rdb,
+            DepFact(name="d1", finished_at=dt(2005, 1, 10), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d1", repository_node_id=9, resolved_commit_node_id=1),
+            DepLabelFact(deployment_name="d1", key="foo", value=True),
+            DepFact(name="d2", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d2", repository_node_id=9, resolved_commit_node_id=2),
+            DepLabelFact(deployment_name="d2", key=CHANGE_FAILURE_LABEL, value=None),
+            DepFact(name="d3", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d3", repository_node_id=9, resolved_commit_node_id=3),
+            DepLabelFact(deployment_name="d3", key=CHANGE_FAILURE_LABEL, value=["DEV-123"]),
+            DepFact(name="d4", finished_at=dt(2004, 12, 29), started_at=dt(2004, 12, 29)),
+            DepCompFact(deployment_name="d4", repository_node_id=9, resolved_commit_node_id=4),
+            DepLabelFact(deployment_name="d4", key=CHANGE_FAILURE_LABEL, value=True),
+            DepFact(name="d5", finished_at=dt(2005, 2, 1), started_at=dt(2005, 1, 1)),
+            DepCompFact(deployment_name="d5", repository_node_id=9, resolved_commit_node_id=5),
+            DepFact(
+                name="d6",
+                finished_at=dt(2005, 2, 1),
+                started_at=dt(2005, 1, 1),
+                conclusion="FAILURE",
+            ),
+            DepCompFact(deployment_name="d6", repository_node_id=9, resolved_commit_node_id=6),
+        )
+        async with DBCleaner(mdb_rw) as mdb_cleaner:
+            repo0 = md_factory.RepositoryFactory(node_id=9, full_name="o/r")
+            await insert_repo(repo0, mdb_cleaner, mdb_rw, sdb)
+            commit_kwargs = {"repository_full_name": "o/r", "repository_id": 9}
+            models = [
+                *commit_models(node_id=1, oid="A" * 40, **commit_kwargs),
+                *commit_models(node_id=2, oid="B" * 40, **commit_kwargs),
+                *commit_models(node_id=3, oid="C" * 40, **commit_kwargs),
+                *commit_models(node_id=4, oid="D" * 40, **commit_kwargs),
+                *commit_models(node_id=5, oid="E" * 40, **commit_kwargs),
+                *commit_models(node_id=6, oid="F" * 40, **commit_kwargs),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb_rw, *models)
+
+            res = await self.post_json(json=body)
+
+        # d2, d3 and d4 are marked as change failure
+        # d4 is out of interval
+        # d6 is not successful, is excluded
+        assert res[0]["values"][0]["values"][0] == 5
+        assert res[0]["values"][0]["values"][1] == 2
+        assert res[0]["values"][0]["values"][2] == pytest.approx(2 / 4)

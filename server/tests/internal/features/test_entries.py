@@ -1515,6 +1515,8 @@ class TestCalcDeploymentMetricsLineGithub:
                 DeploymentMetricID.DEP_SIZE_PRS: 120.28571319580078,
                 DeploymentMetricID.DEP_PRS_COUNT: 842,
                 DeploymentMetricID.DEP_SUCCESS_COUNT: 6,
+                DeploymentMetricID.DEP_CHANGE_FAILURE_COUNT: 0,
+                DeploymentMetricID.DEP_CHANGE_FAILURE_RATIO: 0.0,
             }
 
 

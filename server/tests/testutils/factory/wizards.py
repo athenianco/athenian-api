@@ -173,3 +173,26 @@ def pr_jira_issue_mappings(*mappings: tuple[int, str]) -> Sequence[Any]:
         md_factory.NodePullRequestJiraIssuesFactory(node_id=node_id, jira_id=issue_id)
         for node_id, issue_id in mappings
     ]
+
+
+def commit_models(**kwargs) -> Sequence[Any]:
+    """Return the model to insert in mdb to have a valid github commit."""
+
+    commit_kw = {}
+    push_commit_kw = {}
+
+    if "oid" in kwargs:
+        commit_kw = {"oid": kwargs.pop("oid")}
+        push_commit_kw = {"sha": commit_kw["oid"]}
+
+    if "repository_id" in kwargs:
+        commit_kw["repository_id"] = kwargs.pop("repository_id")
+        push_commit_kw["repository_node_id"] = commit_kw["repository_id"]
+
+    if "repository_full_name" in kwargs:
+        push_commit_kw["repository_full_name"] = kwargs.pop("repository_full_name")
+
+    return [
+        md_factory.NodeCommitFactory(**kwargs, **commit_kw),
+        md_factory.PushCommitFactory(**kwargs, **push_commit_kw),
+    ]
