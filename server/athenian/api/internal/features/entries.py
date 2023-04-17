@@ -648,7 +648,7 @@ class MetricEntriesCalculator:
         deserialize=pickle.loads,
         key=lambda prop, time_intervals, repos, with_author, with_committer, only_default_branch, **kwargs: (  # noqa
             prop.value,
-            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ";".join(str(dt.timestamp()) for dt in time_intervals),
             ",".join(sorted(repos)),
             ",".join(sorted(with_author)) if with_author else "",
             ",".join(sorted(with_committer)) if with_committer else "",
@@ -668,7 +668,7 @@ class MetricEntriesCalculator:
     ) -> list[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
         time_from, time_to = self.align_time_min_max(time_intervals, 100500)
-        x_commits, all_commits = await gather(
+        (x_commits, _), (all_commits, _) = await gather(
             extract_commits(
                 prop,
                 time_from,

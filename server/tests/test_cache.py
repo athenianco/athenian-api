@@ -81,7 +81,7 @@ class TestCached:
 
     @with_defer
     async def test_serialization_errors(self, cache):
-        def crash(*_):
+        def crash(*_, **__):
             raise ValueError
 
         @cached(exptime=1, serialize=crash, deserialize=pickle.loads, key=lambda **_: ())
@@ -97,6 +97,12 @@ class TestCached:
 
         await test(cache)
         await wait_deferred()
+        await test(cache)
+
+        @cached(exptime=1, serialize=pickle.dumps, deserialize=pickle.loads, key=crash)
+        async def test(cache):
+            return 1
+
         await test(cache)
 
     @with_defer
