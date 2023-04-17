@@ -32,7 +32,10 @@ def calc_code_stats(
                 all_stats.append(np.zeros(len(time_intervals) - 1, dtype=int))
             continue
         assert commits[PushCommit.committed_date.name].dtype == time_intervals.dtype
-        cut = np.searchsorted(time_intervals, commits[PushCommit.committed_date.name])
+        cut = np.searchsorted(time_intervals, commits[PushCommit.committed_date.name]) - 1
+        if not (range_mask := (cut >= 0) & (cut < len(time_intervals))).all():
+            cut = cut[range_mask]
+            commits.take(range_mask, inplace=True)
         grouper = commits.groupby(cut)
         group_indexes = cut[grouper.group_indexes()]
         commit_stats = np.zeros(len(time_intervals) - 1, dtype=int)

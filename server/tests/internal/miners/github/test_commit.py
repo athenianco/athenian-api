@@ -104,7 +104,7 @@ async def test_extract_commits_users(
         assert with_deps == 258
     await wait_deferred()
     args["only_default_branch"] = True
-    commits = await extract_commits(**args)
+    commits, _ = await extract_commits(**args)
     assert len(commits) < count
 
 

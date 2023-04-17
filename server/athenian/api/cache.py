@@ -145,7 +145,12 @@ def cached(
             cache_key = None
             if client is not None:
                 buffer = None
-                if (cache_key := _gen_cache_key(args_dict)) is not None:
+                try:
+                    cache_key = _gen_cache_key(args_dict)
+                except Exception:
+                    log.exception("Failed to generate the cache key for %s", full_name)
+                    cache_key = None
+                if cache_key is not None:
                     for retry in range(1, 4):
                         try:
                             with sentry_sdk.start_span(

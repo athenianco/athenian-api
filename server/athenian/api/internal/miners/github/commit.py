@@ -143,8 +143,12 @@ async def extract_commits(
     cache: Optional[aiomcache.Client],
     columns: Optional[list[InstrumentedAttribute]] = None,
     with_deployments: bool = True,
-) -> tuple[md.DataFrame, dict[str, Deployment]] | md.DataFrame:
-    """Fetch commits that satisfy the given filters."""
+) -> tuple[md.DataFrame, Optional[dict[str, Deployment]]]:
+    """
+    Fetch commits that satisfy the given filters.
+
+    :return: Tuple with the mined commits and an optional map from deployment name to details.
+    """
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
     log = logging.getLogger("%s.extract_commits" % metadata.__package__)
@@ -296,9 +300,8 @@ async def extract_commits(
         nans = commits[PushCommit.node_id.name][is_null(number_col)]
         if len(nans):
             log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.name, ", ".join(nans))
-    if with_deployments:
-        return commits, deployments
-    return commits
+
+    return commits, deployments if with_deployments else None
 
 
 def _take_commits_in_default_branches(
