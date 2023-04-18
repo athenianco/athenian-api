@@ -6,7 +6,7 @@ from typing import Awaitable, Coroutine
 from aiohttp import web
 import asyncpg
 import morcilla
-from sentry_sdk import Hub, push_scope, start_transaction
+from sentry_sdk import Hub, configure_scope, push_scope, start_transaction
 from sentry_sdk.tracing import Transaction
 
 from athenian.api import metadata
@@ -132,6 +132,12 @@ async def defer(coroutine: Awaitable, name: str) -> None:
     launch_event: Event = _defer_launch_event.get()
     transaction_ptr = _defer_transaction.get()
     explicit_launch = _defer_explicit.get()
+    with configure_scope() as scope:
+        if scope.transaction is not None:
+            try:
+                account = scope._tags["account"]
+            except KeyError:
+                account = None
     _log.debug("planned %s %d %r", name, counter_ptr[0], launch_event)
 
     async def wrapped_defer():
@@ -144,6 +150,7 @@ async def defer(coroutine: Awaitable, name: str) -> None:
             if transaction is not None:
                 with transaction.start_child(op=name):
                     with push_scope() as scope:
+                        scope.set_tag("account", account)
                         scope.fingerprint = ["{{ default }}", "defer"]
                         await coroutine
             else:
