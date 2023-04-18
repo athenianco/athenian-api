@@ -197,7 +197,7 @@ def _main() -> int:
 
     setup_context(log)
     if args.max_mem:
-        resource.setrlimit(resource.RLIMIT_AS, (args.max_mem,) * 2)
+        resource.setrlimit(resource.RLIMIT_RSS, (args.max_mem,) * 2)
 
     with sentry_sdk.start_transaction(
         name=f"precomputer[{args.command}]",
