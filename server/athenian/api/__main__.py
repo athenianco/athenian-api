@@ -358,6 +358,13 @@ def _init_sentry(
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()
     flogging.trailing_dot_exceptions.add(sentry_log.name)
+
+    class TimeoutTransport(sentry_sdk.HttpTransport):
+        def _get_pool_options(self, *args, **kwargs):
+            opts = super()._get_pool_options(*args, **kwargs)
+            opts["timeout"] = 5
+            return opts
+
     sentry_sdk.init(
         environment=sentry_env,
         dsn=(sentry_dsn := f"https://{sentry_key}@o336028.ingest.sentry.io/{sentry_project}"),
@@ -378,6 +385,7 @@ def _init_sentry(
         release=(sentry_release := f"{metadata.__package__}@{metadata.__version__}"),
         traces_sampler=sample_trace,
         before_send=before_send,
+        transport=TimeoutTransport,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
