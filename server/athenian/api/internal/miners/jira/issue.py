@@ -1012,6 +1012,12 @@ async def query_jira_raw(
             # f"HashJoin({AthenianIssueT} {IssueT})",
             "Rows(s c *200)",
         ]
+        # DEV-6453 otherwise account 135 decides to do a parallel scan of the primary key index
+        if time_from is not None:
+            if exclude_inactive:
+                hints.append("IndexScan(athenian_issue athenian_issue_updated_resolved)")
+            else:
+                hints.append("IndexScan(athenian_issue athenian_issue_resolved)")
         if mapped_to_prs is not None:
             PRIssuesT = NodePullRequestJiraIssues.__tablename__
             if len(mapped_to_prs) > _PR_ISSUES_THRESHOLD:
