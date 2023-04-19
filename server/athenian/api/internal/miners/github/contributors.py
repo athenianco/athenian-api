@@ -227,7 +227,7 @@ async def mine_contributors(
                 select(PullRequest.merged_by_login, func.count(PullRequest.merged_by_login))
                 .where(
                     *common_prs_where(),
-                    PullRequest.closed,
+                    PullRequest.merged,
                     PullRequest.merged_at.between(time_from, time_to)
                     if has_times
                     else PullRequest.merged,
