@@ -25,6 +25,7 @@ from athenian.api.models.persistentdata.models import (
     DeployedLabel,
     DeploymentNotification,
 )
+from athenian.api.models.state.models import Account
 from athenian.api.models.web import (
     DatabaseConflict,
     DeploymentNotification as WebDeploymentNotification,
@@ -364,7 +365,12 @@ async def _resolve_deployed_component_references(
         unresolved_by_account[row[DeployedComponent.account_id.name]].append(row)
     del unresolved
     for account, unresolved in unresolved_by_account.items():
-        meta_ids = await get_metadata_account_ids(account, sdb, cache)
+        meta_ids, stale = await gather(
+            get_metadata_account_ids(account, sdb, cache),
+            sdb.fetch_val(sa.select(Account.stale).where(Account.id == account)),
+        )
+        if stale:
+            continue
         resolved, unresolved_commits = await _resolve_references(
             [
                 (r[DeployedComponent.repository_node_id.name], r[DeployedComponent.reference.name])

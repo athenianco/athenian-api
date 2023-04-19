@@ -9,3 +9,4 @@ class AccountStatus(Model):
     has_ci: bool
     has_jira: bool
     has_deployments: bool
+    stale: bool

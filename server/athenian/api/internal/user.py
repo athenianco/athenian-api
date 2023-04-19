@@ -38,7 +38,7 @@ async def load_user_accounts(
 ) -> dict[int, AccountStatus]:
     """Fetch the user accounts membership and flags."""
     accounts = await sdb.fetch_all(
-        select(UserAccount, Account.expires_at)
+        select(UserAccount, Account.expires_at, Account.stale)
         .select_from(join(UserAccount, Account, UserAccount.account_id == Account.id))
         .where(UserAccount.user_id == uid),
     )
@@ -106,6 +106,7 @@ async def load_user_accounts(
             has_jira=jira_id is not None,
             has_ci=check_run is not None,
             has_deployments=deployments_count > 0,
+            stale=account[Account.stale.name],
         )
     return result
 
