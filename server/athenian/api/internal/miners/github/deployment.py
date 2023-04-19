@@ -2818,8 +2818,8 @@ async def _append_latest_deployed_components(
                         del until_per_repo_env_logical[env][repo]
                     except KeyError:
                         pass
-        all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
-        all_shas = unordered_unique(np.concatenate(all_shas, dtype="S40"))
+        if all_shas := list(chain.from_iterable(v.values() for v in suspects.values())):
+            all_shas = unordered_unique(np.concatenate(all_shas, dtype="S40"))
         if len(all_shas):
             sha_df = await read_sql_query(
                 select(NodeCommit.id, NodeCommit.sha).where(
