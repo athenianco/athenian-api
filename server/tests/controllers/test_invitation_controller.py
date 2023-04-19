@@ -94,6 +94,7 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
                     "has_ci": False,
                     "has_jira": False,
                     "has_deployments": True,
+                    "stale": False,
                 },
             },
         },
@@ -194,6 +195,7 @@ async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_def
         "has_ci": False,
         "has_jira": False,
         "has_deployments": False,
+        "stale": False,
     }
 
 
@@ -228,6 +230,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
                     "has_ci": False,
                     "has_jira": True,
                     "has_deployments": True,
+                    "stale": False,
                 },
                 "2": {
                     "is_admin": False,
@@ -235,6 +238,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
                     "has_ci": False,
                     "has_jira": False,
                     "has_deployments": False,
+                    "stale": False,
                 },
                 "3": {
                     "is_admin": False,
@@ -242,6 +246,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
                     "has_ci": True,
                     "has_jira": False,
                     "has_deployments": False,
+                    "stale": False,
                 },
             },
         },
@@ -470,6 +475,7 @@ async def test_accept_invitation_noop(client, eiso, headers, disable_default_use
                     "has_ci": True,
                     "has_jira": True,
                     "has_deployments": True,
+                    "stale": False,
                 },
                 "3": {
                     "is_admin": True,
@@ -477,6 +483,7 @@ async def test_accept_invitation_noop(client, eiso, headers, disable_default_use
                     "has_ci": False,
                     "has_jira": False,
                     "has_deployments": False,
+                    "stale": False,
                 },
             },
         },
@@ -580,6 +587,7 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
                     "has_ci": True,
                     "has_jira": True,
                     "has_deployments": True,
+                    "stale": False,
                 },
                 "2": {
                     "is_admin": False,
@@ -587,6 +595,7 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
                     "has_ci": False,
                     "has_jira": False,
                     "has_deployments": False,
+                    "stale": False,
                 },
                 "4": {
                     "is_admin": True,
@@ -594,6 +603,7 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
                     "has_ci": False,
                     "has_jira": False,
                     "has_deployments": False,
+                    "stale": False,
                 },
             },
         },

@@ -34,7 +34,9 @@ vadim_email = "vadim@athenian.co"
 eiso_email = "eiso@athenian.co"
 
 
-async def test_get_user_smoke(client, headers, app):
+@pytest.mark.parametrize("stale", [False, True])
+async def test_get_user_smoke(client, headers, app, sdb, stale):
+    await sdb.execute(update(DBAccount).where(DBAccount.id == 1).values({DBAccount.stale: stale}))
     response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     assert response.status == 200
     items = await response.json()
@@ -54,6 +56,7 @@ async def test_get_user_smoke(client, headers, app):
                 "has_ci": True,
                 "has_jira": True,
                 "has_deployments": True,
+                "stale": stale,
             },
             "2": {
                 "is_admin": False,
@@ -61,6 +64,7 @@ async def test_get_user_smoke(client, headers, app):
                 "has_ci": False,
                 "has_jira": False,
                 "has_deployments": False,
+                "stale": False,
             },
         },
     }
@@ -129,6 +133,7 @@ async def test_get_user_sso_join(client, headers, app, sdb):
                 "has_ci": True,
                 "has_jira": True,
                 "has_deployments": True,
+                "stale": False,
             },
         },
     }
@@ -389,6 +394,7 @@ async def test_become_db(client, headers, sdb, god):
                 "has_ci": True,
                 "has_jira": True,
                 "has_deployments": True,
+                "stale": False,
             },
             "3": {
                 "is_admin": True,
@@ -396,6 +402,7 @@ async def test_become_db(client, headers, sdb, god):
                 "has_ci": False,
                 "has_jira": False,
                 "has_deployments": False,
+                "stale": False,
             },
         },
     }
@@ -416,6 +423,7 @@ async def test_become_db(client, headers, sdb, god):
                 "has_ci": True,
                 "has_jira": True,
                 "has_deployments": True,
+                "stale": False,
             },
             "2": {
                 "is_admin": False,
@@ -423,6 +431,7 @@ async def test_become_db(client, headers, sdb, god):
                 "has_ci": False,
                 "has_jira": False,
                 "has_deployments": False,
+                "stale": False,
             },
         },
     }
@@ -448,6 +457,7 @@ async def test_become_header(client, headers, sdb, god):
                 "has_ci": True,
                 "has_jira": True,
                 "has_deployments": True,
+                "stale": False,
             },
             "3": {
                 "is_admin": True,
@@ -455,6 +465,7 @@ async def test_become_header(client, headers, sdb, god):
                 "has_ci": False,
                 "has_jira": False,
                 "has_deployments": False,
+                "stale": False,
             },
         },
         "impersonated_by": "auth0|62a1ae88b6bba16c6dbc6870",
