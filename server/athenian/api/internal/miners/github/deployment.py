@@ -3134,7 +3134,10 @@ async def _fetch_precomputed_deployment_facts(
                 name=row[GitHubDeploymentFacts.deployment_name.name],
             ),
         )
-    facts = df_from_structs(structs)
+    if structs:
+        facts = df_from_structs(structs)
+    else:
+        facts = md.DataFrame(columns=DeploymentFacts.f)
     facts.set_index(DeploymentNotification.name.name, inplace=True)
     return facts
 
