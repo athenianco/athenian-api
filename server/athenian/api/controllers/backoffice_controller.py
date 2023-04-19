@@ -84,12 +84,13 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
             and (await conn.fetch_one(select(UserAccount).where(UserAccount.user_id == id)))
             is None
         ):
-            raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
+            raise ResponseError(NotFoundError(detail=f"User {id} does not exist"))
         god = await conn.fetch_one(select(God).where(God.user_id == user_id))
         god = God(**god).refresh()
         god.mapped_id = id or None
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
-    user = await request.app["auth"].get_user(id or user_id)
+    if (user := await request.app["auth"].get_user(id or user_id)) is None:
+        raise ResponseError(NotFoundError(detail=f"User {id} does not exist"))
     user.accounts = await load_user_accounts(
         user.id,
         getattr(request, "god_id", user.id),

@@ -437,6 +437,17 @@ async def test_become_db(client, headers, sdb, god):
     }
 
 
+async def test_become_not_found(client, headers, sdb, god):
+    response = await client.request(
+        method="GET",
+        path="/private/become?id=xxx",
+        headers=headers,
+        json={},
+    )
+    body = await response.json()
+    assert response.status == 404, body
+
+
 async def test_become_header(client, headers, sdb, god):
     headers = headers.copy()
     headers["X-Identity"] = "auth0|5e1f6e2e8bfa520ea5290741"
