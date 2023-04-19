@@ -2615,6 +2615,9 @@ async def _resolve_commit_relationship(
             )
     del commits_per_repo_per_env
     if tainted_envs:
+        until_per_repo_env = {
+            env: v for env, v in until_per_repo_env.items() if env not in tainted_envs
+        }
         previous = {env: repos for env, repos in previous.items() if env not in tainted_envs}
     missing_sha = b"0" * 40
     suspects = defaultdict(dict)
