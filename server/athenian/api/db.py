@@ -121,8 +121,8 @@ def _generate_tags() -> tuple[str, str]:
 
 
 def _strip_rocket(query: str) -> str:
-    if query.startswith("--🚀"):
-        return query[query.find("🚀", 4) + 2 :]
+    if query.startswith("--�"):
+        return query[query.find("�", 4) + 2 :]
     return query
 
 
