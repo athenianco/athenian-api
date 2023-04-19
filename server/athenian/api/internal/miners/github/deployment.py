@@ -1188,7 +1188,12 @@ async def _compute_deployment_facts(
     components = components.take(
         components.isin(components.index.name, notifications.index.values),
     )
-    (commit_relationship, dags, deployed_commits_df) = await _resolve_commit_relationship(
+    (
+        commit_relationship,
+        dags,
+        deployed_commits_df,
+        tainted_envs,
+    ) = await _resolve_commit_relationship(
         notifications,
         components,
         logical_settings,
@@ -1200,6 +1205,13 @@ async def _compute_deployment_facts(
         rdb,
         cache,
     )
+    if tainted_envs:
+        notifications = notifications.take(
+            notifications.isin(DeploymentNotification.environment.name, tainted_envs, invert=True),
+        )
+        components = components.take(
+            components.isin(components.index.name, notifications.index.values),
+        )
     if notifications.empty:
         return (md.DataFrame(),) * 4
     with sentry_sdk.start_span(op=f"_extract_deployed_commits({len(components)})"):
@@ -2469,6 +2481,7 @@ async def _resolve_commit_relationship(
     dict[str, dict[str, dict[int, dict[int, _CommitRelationship]]]],
     dict[str, tuple[bool, DAG]],
     md.DataFrame,
+    list[str],
 ]:
     log = logging.getLogger(f"{metadata.__package__}._resolve_commit_relationship")
     until_per_repo_env = defaultdict(dict)
@@ -2549,6 +2562,7 @@ async def _resolve_commit_relationship(
     root_details_per_repo = defaultdict(dict)
     commit_relationship = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     missing_commits = {}
+    tainted_envs = []
     for env, env_commits_per_repo in commits_per_repo_per_env.items():
         for repo_name, (
             successful_commits,
@@ -2591,10 +2605,17 @@ async def _resolve_commit_relationship(
                     all_shas[my_parents],
                     np.zeros(len(my_parents), dtype=bool),
                 )
-        assert (
-            not missing_commits
-        ), f"cannot analyze deployments to {env} with missing commit node IDs: {missing_commits}"
+        if missing_commits:
+            tainted_envs.append(env)
+            commit_relationship.pop(env)
+            log.error(
+                "cannot analyze deployments to %s with missing commit node IDs: %s",
+                env,
+                missing_commits,
+            )
     del commits_per_repo_per_env
+    if tainted_envs:
+        previous = {env: repos for env, repos in previous.items() if env not in tainted_envs}
     missing_sha = b"0" * 40
     suspects = defaultdict(dict)
     dags = await _extend_dags_with_previous_commits(previous, dags, account, meta_ids, mdb, pdb)
@@ -2705,7 +2726,7 @@ async def _resolve_commit_relationship(
             dags = await _extend_dags_with_previous_commits(
                 previous, dags, account, meta_ids, mdb, pdb,
             )
-    return commit_relationship, dags, deployed_commits_df
+    return commit_relationship, dags, deployed_commits_df, tainted_envs
 
 
 @sentry_span
