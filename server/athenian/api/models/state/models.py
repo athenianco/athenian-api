@@ -142,6 +142,7 @@ class Account(create_time_mixin(created_at=True), Base):
     secret_salt = Column(Integer(), nullable=False)
     secret = Column(String(8), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    stale = Column(Boolean(), nullable=False, server_default="false", default=False)
 
 
 class Team(
