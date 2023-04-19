@@ -950,8 +950,8 @@ def webify_deployment(val: Deployment, prefix_logical_repo) -> WebDeploymentNoti
         components=[
             WebDeployedComponent(
                 repository=prefix_logical_repo(c.repository_full_name),
-                reference=f"{c.reference} ({c.sha})"
-                if not c.sha.startswith(c.reference)
+                reference=(f"{c.reference}" + (f" ({c.sha})" if c.sha else ""))
+                if not c.sha or not c.sha.startswith(c.reference)
                 else c.sha,
             )
             for c in val.components

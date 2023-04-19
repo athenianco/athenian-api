@@ -841,7 +841,7 @@ async def _filter_pull_requests(
         np.concatenate(
             [
                 pr_miner.dfs.deployments.index.get_level_values(2),
-                done_deps.index.get_level_values(1),
+                done_deps.index.get_level_values(2),
             ],
         ),
     )
