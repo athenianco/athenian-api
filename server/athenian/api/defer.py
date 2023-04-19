@@ -138,6 +138,8 @@ async def defer(coroutine: Awaitable, name: str) -> None:
                 account = scope._tags["account"]
             except KeyError:
                 account = None
+        else:
+            account = None
     _log.debug("planned %s %d %r", name, counter_ptr[0], launch_event)
 
     async def wrapped_defer():
