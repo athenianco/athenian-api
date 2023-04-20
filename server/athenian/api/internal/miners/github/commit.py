@@ -15,7 +15,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, infer_dtype, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import (
     Database,
@@ -1005,7 +1005,12 @@ async def _fetch_commits_for_dags(
     cache: Optional[aiomcache.Client],
 ) -> md.DataFrame:
     if not commits:
-        return md.DataFrame()
+        return md.DataFrame(
+            columns=[c.name for c in COMMIT_FETCH_COMMITS_COLUMNS],
+            dtype={
+                k: dt for k, (dt, _) in infer_dtype(COMMIT_FETCH_COMMITS_COLUMNS)[0].fields.items()
+            },
+        )
     queries = [
         select(*COMMIT_FETCH_COMMITS_COLUMNS).where(
             PushCommit.acc_id.in_(meta_ids),
