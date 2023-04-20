@@ -16,43 +16,13 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        "installation_progress",
-        sa.Column(
-            "github_account_id",
-            sa.Integer(),
-            primary_key=True,
-        ),
-        sa.Column(
-            "fetch_started",
-            sa.TIMESTAMP(timezone=True),
-        ),
-        sa.Column(
-            "fetch_completed",
-            sa.TIMESTAMP(timezone=True),
-        ),
-        sa.Column(
-            "consistency_started",
-            sa.TIMESTAMP(timezone=True),
-        ),
-        sa.Column(
-            "consistency_completed",
-            sa.TIMESTAMP(timezone=True),
-        ),
-        sa.Column(
-            "current_status",
-            sa.Text(),
-        ),
-    )
-
     with op.batch_alter_table("repository_sets") as bop:
         bop.add_column(sa.Column("precompute_started", sa.TIMESTAMP(timezone=True)))
-        bop.add_column(sa.Column("precompute_completed", sa.TIMESTAMP(timezone=True)))
+        bop.add_column(sa.Column("precompute_finished", sa.TIMESTAMP(timezone=True)))
 
 
 def downgrade():
-    op.drop_table("installation_progress")
 
     with op.batch_alter_table("repository_sets") as bop:
         bop.drop_column("precompute_started")
-        bop.drop_column("precompute_completed")
+        bop.drop_column("precompute_finished")

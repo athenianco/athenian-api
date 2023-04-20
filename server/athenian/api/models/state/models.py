@@ -101,7 +101,7 @@ class RepositorySet(
     tracking_re = Column(Text(), nullable=False, default=".*", server_default=".*")
     precomputed = Column(Boolean(), nullable=False, default=False, server_default="false")
     precompute_started = Column(TIMESTAMP(timezone=True))
-    precompute_completed = Column(TIMESTAMP(timezone=True))
+    precompute_finished = Column(TIMESTAMP(timezone=True))
 
 
 class UserAccount(create_time_mixin(created_at=True), Base):
@@ -642,16 +642,3 @@ DashboardChartGroupBy.GROUP_BY_FIELDS = (
     DashboardChartGroupBy.jira_issue_types,
     DashboardChartGroupBy.jira_labels,
 )
-
-
-class GitHubInstallationProgress(Base):
-    """Tracking installation progress for github accounts"""
-
-    __tablename__ = "installation_progress"
-
-    github_account_id = Column(Integer(), primary_key=True)
-    fetch_started = Column(TIMESTAMP(timezone=True))
-    fetch_completed = Column(TIMESTAMP(timezone=True))
-    consistency_started = Column(TIMESTAMP(timezone=True))
-    consistency_completed = Column(TIMESTAMP(timezone=True))
-    current_status = Column(Text())
