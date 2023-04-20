@@ -1094,7 +1094,7 @@ async def test_calc_pull_request_metrics_deep_filters(
         ],
         dtype=object,
     )
-    np.testing.assert_array_equal(np.array(metrics.tolist(), dtype=object), ground_truth)
+    assert_array_equal(np.array(metrics.tolist(), dtype=object), ground_truth)
 
 
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
@@ -2072,6 +2072,43 @@ class TestReviewTimeBelowThresholdRatio:
             first_review_request_exact=np.datetime64(review_request.replace(tzinfo=None), "s"),
             approved=np.datetime64(approved.replace(tzinfo=None), "s") if approved else None,
         )
+
+
+class TestWaitFirstReviewCalculator:
+    def test_no_first_review_request_exact(self) -> None:
+        quantiles = (0, 1)
+        min_times = dt64arr_us(dt(2022, 1, 1))
+        max_times = dt64arr_us(dt(2022, 2, 1))
+
+        calc = WaitFirstReviewTimeCalculator(quantiles=quantiles)
+
+        prs = [
+            PullRequestFactsFactory(
+                first_review_request=np.datetime64(datetime(2022, 1, 1)),
+                last_review=np.datetime64(datetime(2022, 1, 2)),
+                first_comment_on_first_review=np.datetime64(datetime(2022, 1, 2)),
+            ),
+            PullRequestFactsFactory(
+                first_review_request=np.datetime64(datetime(2022, 1, 1)),
+                last_review=np.datetime64(datetime(2022, 1, 3)),
+                first_comment_on_first_review=np.datetime64(datetime(2022, 1, 3)),
+            ),
+            PullRequestFactsFactory(
+                first_review_request=np.datetime64(datetime(2022, 1, 1)),
+                last_review=None,
+                first_comment_on_first_review=np.datetime64(datetime(2022, 1, 2)),
+            ),
+        ]
+        facts = df_from_structs(prs)
+        groups_mask = np.full((1, len(prs)), True, bool)
+
+        calc(facts, min_times, max_times, None, groups_mask)
+
+        assert_array_equal(
+            calc.peek[0], np.array([3600 * 24, 3600 * 24 * 2, "NaT"], dtype="timedelta64[s]"),
+        )
+        # only two PRs included in the average
+        assert calc.values[0][0].value == np.timedelta64(3600 * 36, "s")
 
 
 class TestWaitFirstReviewTimeBelowThresholdRatio:

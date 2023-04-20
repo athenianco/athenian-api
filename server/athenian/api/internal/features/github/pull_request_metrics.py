@@ -734,9 +734,14 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        result_mask = facts.notnull(
-            PullRequestFacts.f.first_comment_on_first_review,
-        ) & facts.notnull(PullRequestFacts.f.first_review_request)
+        # facts were precomputed with first_comment_on_first_review field even though
+        # they have not real reviews
+        # extra filtering on last_review is then needed to get the mask where the metric is defined
+        result_mask = (
+            facts.notnull(PullRequestFacts.f.first_comment_on_first_review)
+            & facts.notnull(PullRequestFacts.f.first_review_request)
+            & facts.notnull(PullRequestFacts.f.last_review)
+        )
         fc_on_fr = facts[PullRequestFacts.f.first_comment_on_first_review][result_mask]
         fc_on_fr_in_range_mask = (min_times[:, None] <= fc_on_fr) & (fc_on_fr < max_times[:, None])
         result_indexes = np.nonzero(result_mask)[0]
