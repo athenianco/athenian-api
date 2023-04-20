@@ -51,6 +51,11 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
         "metric_params": {"threshold": "432000s"},
     },
     {
+        "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME_BELOW_THRESHOLD_RATIO,
+        "name": "Reduce the time PRs are waiting for review",
+        "metric_params": {"threshold": "21600s"},
+    },
+    {
         "metric": PullRequestMetricID.PR_WIP_TIME,
         "name": "Reduce WIP time",
     },
@@ -88,7 +93,7 @@ TEMPLATES_COLLECTION: Sequence[TemplateDefinition] = [
     },
     {
         "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
-        "name": "Reduce the time PRs are waiting for review",
+        "name": "Decrease waiting time for review",
     },
     {
         "metric": PullRequestMetricID.PR_OPEN_TIME,
