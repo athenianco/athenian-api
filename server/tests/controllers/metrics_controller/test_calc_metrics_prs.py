@@ -91,9 +91,9 @@ class TestCalcMetricsPRs(BaseCalcMetricsPRsTest):
             (PullRequestMetricID.PR_REJECTED, 3),
             (PullRequestMetricID.PR_CLOSED, 51),
             (PullRequestMetricID.PR_DONE, 22),
-            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, 51),
-            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 51),
-            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 51),
+            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, 46),
+            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 46),
+            (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 46),
             (PullRequestMetricID.PR_SIZE, 51),
             (PullRequestMetricID.PR_DEPLOYMENT_TIME, 0),  # because pdb is empty
         ],
