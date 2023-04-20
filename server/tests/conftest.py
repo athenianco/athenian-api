@@ -636,7 +636,9 @@ def persistentdata_db(worker_id) -> str:
         PersistentdataBase,
         worker_id,
         {
-            "postgresql": "create schema if not exists athenian;",
+            "postgresql": (
+                "CREATE SCHEMA IF NOT EXISTS athenian; CREATE SCHEMA IF NOT EXISTS acc_monitor "
+            ),
         },
     )
 

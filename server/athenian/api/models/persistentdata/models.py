@@ -18,6 +18,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import create_base
 
+JSONType = JSONB().with_variant(JSON(), sqlite.dialect.name)
+
 
 class ShardedByAccount:
     """All the tables contain `account_id` primary key."""
@@ -106,7 +108,7 @@ class DeployedLabel(Base):
 
     deployment_name = Column(Text(), primary_key=True)
     key = Column(Text(), primary_key=True)
-    value = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
+    value = Column(JSONType)
 
 
 class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Base):
@@ -143,7 +145,7 @@ class HealthMetric(Base):
         default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
     )
-    value = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)
+    value = Column(JSONType, nullable=False)
 
 
 class VitallyAccount(Base, create_time_mixin(created_at=False, updated_at=True)):
@@ -154,3 +156,20 @@ class VitallyAccount(Base, create_time_mixin(created_at=False, updated_at=True))
     name = Column(Text())
     mrr = Column(DECIMAL())
     health_score = Column(Float())
+
+
+class AccMonitorCheckLog(Base):
+    """The log of the execution of a check in the account monitor."""
+
+    __table_args__ = {"schema": "acc_monitor"}
+    __tablename__ = "check_logs"
+
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        primary_key=True,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    check_name = Column(Text, primary_key=True)
+    passed = Column(Boolean, nullable=False)
+    result = Column(JSONType)
