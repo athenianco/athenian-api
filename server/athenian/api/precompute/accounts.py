@@ -80,14 +80,14 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
     isolate = not args.disable_isolation
     if isolate:
         await context.close()
-    context.log.info("Heating %d reposets", len(to_precompute))
+    context.log.info("heating %d reposets", len(to_precompute))
     failed = 0
     log = context.log
 
     for reposet_to_precompute in tqdm(to_precompute):
         reposet = reposet_to_precompute.reposet
         if not (meta_ids := reposet_to_precompute.meta_ids):
-            log.error("Reposet owner account %d is not installed", reposet.owner_id)
+            log.error("reposet owner account %d is not installed", reposet.owner_id)
             continue
 
         duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
@@ -271,7 +271,7 @@ async def precompute_reposet(
             # no return
 
     log.info(
-        "Heating reposet %d of account %d (%d repos)",
+        "heating reposet %d of account %d (%d repos)",
         reposet.id,
         reposet.owner_id,
         len(deref_items),
@@ -298,7 +298,7 @@ async def precompute_reposet(
             ),
         )
         if not args.skip_releases:
-            log.info("Mining the releases")
+            log.info("mining the releases")
             releases, _, matches, _ = await mine_releases(
                 repos,
                 {},
@@ -323,6 +323,7 @@ async def precompute_reposet(
                 metrics=health_metrics.releases,
                 refetcher=refetcher,
             )
+            log.info("discovered %d releases", len(releases))
             if (releases_count := len(releases)) > 0:
                 ignored_first_releases = discover_first_outlier_releases(releases)
             else:
@@ -331,16 +332,50 @@ async def precompute_reposet(
             _release_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings, matches,
             )
+            # Performance: we should load branch releases for tag_or_branch repositories that
+            # resolved to tags. Otherwise, we'll have to load them in the endpoints if a nested
+            # time window doesn't see tags.
+            _branch_forced_settings = ReleaseLoader.tag_or_branch_settings_to_branch(
+                release_settings, matches,
+            )
+            await wait_deferred()
+            log.info("loading backup branch releases for %d repos", len(_branch_forced_settings))
+            branch_releases, *_ = await mine_releases(
+                _branch_forced_settings.native.keys(),
+                {},
+                branches,
+                default_branches,
+                no_time_from,
+                time_to,
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                _branch_forced_settings,
+                logical_settings,
+                prefixer,
+                reposet.owner_id,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                None,
+                force_fresh=True,
+                with_extended_pr_details=False,
+                with_deployments=False,
+                metrics=health_metrics.releases,
+                refetcher=refetcher,
+            )
+            log.info("discovered %d backup branch releases", len(branch_releases))
+            del branch_releases
         else:
             _release_settings = release_settings
             ignored_first_releases = md.DataFrame()
         if not args.skip_prs:
             if reposet.precomputed and not args.skip_force_push_dropped:
-                log.info("Scanning for force push dropped PRs")
+                log.info("scanning for force push dropped PRs")
                 await detect_force_push_dropped_prs(
                     repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
                 )
-            log.info("Extracting PR facts")
+            log.info("extracting PR facts")
             await PRFactsCalculator(
                 reposet.owner_id,
                 meta_ids,
