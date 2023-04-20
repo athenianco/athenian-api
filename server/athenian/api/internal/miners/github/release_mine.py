@@ -1449,7 +1449,7 @@ def _enrich_release_facts_with_extended_pr_details(
         none_mask = pr_extended_node_ids[indexes] != node_ids
         f["prs_" + pr_title_name] = titles = pr_extended_titles[indexes]
         f["prs_" + pr_created_at_name] = createds = pr_extended_createds[indexes]
-        titles[none_mask] = None
+        titles[none_mask] = "N/A - not fetched yet"
         createds[none_mask] = None
 
 
