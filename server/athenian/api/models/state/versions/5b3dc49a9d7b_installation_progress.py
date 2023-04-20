@@ -22,7 +22,6 @@ def upgrade():
 
 
 def downgrade():
-
     with op.batch_alter_table("repository_sets") as bop:
         bop.drop_column("precompute_started")
         bop.drop_column("precompute_finished")
