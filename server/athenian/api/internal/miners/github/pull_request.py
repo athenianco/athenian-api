@@ -2903,27 +2903,29 @@ class PullRequestFactsMiner:
         )
         if closed and first_review_exact and first_review_exact > closed:
             first_review_exact = None
-        first_comment_on_first_review = first_review_exact or merged
-        if first_comment_on_first_review:
+        potential_first_comment_on_first_review = first_review_exact or merged
+        if potential_first_comment_on_first_review:
             committed_dates = pr.commits[PullRequestCommit.committed_date.name]
             try:
                 last_commit_before_first_review = committed_dates[
-                    committed_dates <= first_comment_on_first_review
+                    committed_dates <= potential_first_comment_on_first_review
                 ].max()
             except ValueError:
                 last_commit_before_first_review = None
             if not (last_commit_before_first_review_own := bool(last_commit_before_first_review)):
-                last_commit_before_first_review = first_comment_on_first_review
+                last_commit_before_first_review = potential_first_comment_on_first_review
             # force pushes that were lost
             first_commit = nonemin(first_commit, last_commit_before_first_review)
             last_commit = nonemax(last_commit, first_commit)
             first_review_request_backup = nonemin(
-                nonemax(created, last_commit_before_first_review), first_comment_on_first_review,
+                nonemax(created, last_commit_before_first_review),
+                potential_first_comment_on_first_review,
             )
         else:
             last_commit_before_first_review = None
             last_commit_before_first_review_own = False
             first_review_request_backup = None
+
         first_review_request_exact = pr.review_requests.nonemin(
             PullRequestReviewRequest.created_at.name,
         )
@@ -2934,7 +2936,7 @@ class PullRequestFactsMiner:
         if (
             first_review_request_backup
             and first_review_request
-            and first_review_request > first_comment_on_first_review
+            and first_review_request > potential_first_comment_on_first_review
         ):
             # we cannot request a review after we received a review
             first_review_request = first_review_request_backup
@@ -2950,6 +2952,12 @@ class PullRequestFactsMiner:
         # DEV-5684: first review request must match the last commit in case there was no review
         if first_review_request and not first_review_exact:
             first_review_request = nonemax(first_review_request, last_commit)
+
+        # only PR with a review will have `first_comment_on_first_review` filled
+        if potential_first_comment_on_first_review and first_review_exact:
+            first_comment_on_first_review = potential_first_comment_on_first_review
+        else:
+            first_comment_on_first_review = None
 
         if closed:
             if first_review_request and first_review_request > closed:
