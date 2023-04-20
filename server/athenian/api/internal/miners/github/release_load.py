@@ -153,10 +153,11 @@ class ReleaseLoader:
                             match `repos`! This is a performance trick.
         :param metrics: Optional health metrics collector.
         :param refetcher: Metadata auto-healer for branch releases.
-        :return: 1. Pandas DataFrame with the loaded releases (columns match the Release model + \
+        :return: 1. DataFrame with the loaded releases (columns match the Release model + \
                     `matched_by_column`.)
                  2. map from repository names (without the service prefix) to the effective
                     matches.
+                3. loaded commit DAGs mapped to checked (not all!) repositories.
         """
         assert isinstance(mdb, Database)
         assert isinstance(pdb, Database)
@@ -169,6 +170,8 @@ class ReleaseLoader:
         )
         if repos_count == 0:
             log.warning("no repositories")
+            if return_dags:
+                return dummy_releases_df(index), {}, {}
             return dummy_releases_df(index), {}
         # the order is critically important! first fetch the spans, then the releases
         # because when the update transaction commits, we can be otherwise half-way through
@@ -458,6 +461,8 @@ class ReleaseLoader:
             )
 
         if only_applied_matches:
+            if return_dags:
+                return releases.iloc[:0], applied_matches, dags
             return releases.iloc[:0], applied_matches
 
         assert Release.acc_id.name not in releases
