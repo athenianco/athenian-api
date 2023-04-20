@@ -523,10 +523,12 @@ class ReleaseLoader:
     ) -> ReleaseSettings:
         """Resolve "tag_or_branch" to either "tag" or "branch"."""
         settings = settings.copy()
+        match_by_tag_or_branch = ReleaseMatch.tag_or_branch
+        match_by_branch = ReleaseMatch.branch
         for repo, setting in settings.native.items():
             match = ReleaseMatch(matched_bys.get(repo, setting.match))
-            if match == ReleaseMatch.tag_or_branch:
-                match = ReleaseMatch.branch
+            if match == match_by_tag_or_branch:
+                match = match_by_branch
             settings.set_by_native(
                 repo,
                 ReleaseMatchSetting(
@@ -534,6 +536,37 @@ class ReleaseLoader:
                     branches=setting.branches,
                     events=setting.events,
                     match=match,
+                ),
+            )
+        return settings
+
+    @classmethod
+    def tag_or_branch_settings_to_branch(
+        cls,
+        settings: ReleaseSettings,
+        matched_bys: dict[str, ReleaseMatch],
+    ) -> ReleaseSettings:
+        """Extract `tag_or_branch` settings that matched to `tag` and overwrite them to \
+        `branch`."""
+        branch_repos = []
+        match_by_tag_or_branch = ReleaseMatch.tag_or_branch
+        match_by_branch = ReleaseMatch.branch
+        match_by_tag = ReleaseMatch.tag
+        for repo, setting in settings.native.items():
+            if setting.match != match_by_tag_or_branch:
+                continue
+            if matched_bys.get(repo, match_by_branch) == match_by_tag:
+                branch_repos.append(repo)
+        settings = settings.select(branch_repos)
+        for repo in branch_repos:
+            match = settings.native[repo]
+            settings.set_by_native(
+                repo,
+                ReleaseMatchSetting(
+                    tags=match.tags,
+                    branches=match.branches,
+                    events=match.events,
+                    match=match_by_branch,
                 ),
             )
         return settings
