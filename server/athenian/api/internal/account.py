@@ -810,7 +810,10 @@ async def check_account_expired(context: AthenianWebRequest, log: logging.Logger
                 "report_user_account_expired_to_slack",
             )
         log.warning(
-            "Attempt to use an expired account %d by user %s", context.account, context.uid,
+            "Attempt to use an expired account %d (%s) by user %s",
+            context.account,
+            expires_at,
+            context.uid,
         )
         return True
     return False

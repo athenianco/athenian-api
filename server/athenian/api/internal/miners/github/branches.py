@@ -426,18 +426,18 @@ class BranchMiner:
             )
             # fmt: on
         else:
-            # Postgres still thinks we will fetch 0 rows, but that's OK on a narrow time window
-            # fmt: off
-            query = (
-                query
-                .with_statement_hint(
-                    "IndexScan(c github_node_commit_committed_date)"
-                    if repos is None else
-                    "IndexOnlyScan(c github_node_commit_check_runs)",
+            query = query.with_statement_hint("Leading((((((c ref) rr) repo) n1) n2))")
+            # Postgres may think we will fetch 0 rows, but that's OK on a narrow time window
+            if repos is not None:
+                # fmt: off
+                query = (
+                    query
+                    .with_statement_hint(f"Rows(c ref *{len(repos) * 5})")
+                    .with_statement_hint("IndexOnlyScan(c github_node_commit_check_runs)")
                 )
-                .with_statement_hint("Leading((((((c ref) rr) repo) n1) n2))")
-            )
-            # fmt: on
+                # fmt: on
+            else:
+                query = query.with_statement_hint("IndexScan(c github_node_commit_committed_date)")
         return await read_sql_query(query, mdb, columns)
 
     @classmethod
