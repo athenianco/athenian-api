@@ -161,8 +161,11 @@ async def _reset_jira_account(
     pdb: Database,
     cache: Optional[aiomcache.Client],
 ) -> None:
+    from athenian.api.controllers.user_controller import _get_account_jira
+
     await gather(
         get_jira_id.reset_cache(account, sdb, cache),
+        _get_account_jira.reset_cache(account, sdb, mdb, cache),
         fetch_jira_installation_progress.reset_cache(account, sdb, mdb, cache),
         sdb.execute(delete(MappedJIRAIdentity).where(MappedJIRAIdentity.account_id == account)),
     )
