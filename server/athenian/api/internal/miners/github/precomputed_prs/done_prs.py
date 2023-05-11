@@ -79,6 +79,7 @@ from athenian.api.models.metadata.github import (
 from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
     GitHubPullRequestDeployment,
+    GitHubRebasedPullRequest,
 )
 from athenian.api.tracing import sentry_span
 
@@ -1162,6 +1163,20 @@ async def detect_force_push_dropped_prs(
     del prs_df
     node_commit = aliased(NodeCommit, name="c")
     node_pr = aliased(NodePullRequest, name="pr")
+
+    # first retrieve matched shas for rebased PRs
+    ghrpr = GitHubRebasedPullRequest
+    rebased_prs_query = select(ghrpr.matched_merge_commit_sha, ghrpr.pr_node_id).where(
+        ghrpr.acc_id == account,
+        ghrpr.pr_node_id.in_any_values(pr_node_ids),
+    )
+    rebased_prs_df = await read_sql_query(
+        rebased_prs_query, pdb, [ghrpr.matched_merge_commit_sha, ghrpr.pr_node_id],
+    )
+    rebased_found_mask = np.isin(pr_node_ids, rebased_prs_df[ghrpr.pr_node_id.name])
+    not_rebased_pr_node_ids = pr_node_ids[~rebased_found_mask]
+
+    # for PRs not rebased retrieve merge commit from mdb
     pr_merges, dags = await gather(
         read_sql_query(
             select(node_commit.sha, node_pr.node_id)
@@ -1175,8 +1190,10 @@ async def detect_force_push_dropped_prs(
                     ),
                 ),
             )
-            .where(node_pr.acc_id.in_(meta_ids), node_pr.node_id.in_any_values(pr_node_ids))
-            .order_by(node_commit.sha)
+            .where(
+                node_pr.acc_id.in_(meta_ids),
+                node_pr.node_id.in_any_values(not_rebased_pr_node_ids),
+            )
             .with_statement_hint("Leading(((*VALUES* pr) c))")
             .with_statement_hint(f"Rows(*VALUES* pr #{len(pr_node_ids)})")
             .with_statement_hint(f"Rows(*VALUES* pr c #{len(pr_node_ids)})"),
@@ -1188,19 +1205,27 @@ async def detect_force_push_dropped_prs(
         ),
         op="fetch merges + prune dags",
     )
-    del pr_node_ids
+    all_pr_shas = np.concatenate(
+        (rebased_prs_df[ghrpr.matched_merge_commit_sha.name], pr_merges[node_commit.sha.name]),
+    )
+    all_pr_ids = np.concatenate(
+        (rebased_prs_df[ghrpr.pr_node_id.name], pr_merges[node_pr.node_id.name]),
+    )
+    shas_order = np.argsort(all_pr_shas)
+    merge_hashes = all_pr_shas[shas_order]
+    all_pr_ids = all_pr_ids[shas_order]
+
     if dags:
         accessible_hashes = np.unique(np.concatenate([dag[1][0] for dag in dags.values()]))
     else:
         accessible_hashes = np.array([], dtype="S40")
-    merge_hashes = pr_merges[node_commit.sha.name]
     if len(accessible_hashes) > 0:
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
         dead_indexes = np.flatnonzero(accessible_hashes[found] != merge_hashes)
     else:
         log.error("all these repositories have empty commit DAGs: %s", sorted(dags))
         dead_indexes = np.arange(len(merge_hashes))
-    dead_pr_node_ids = pr_merges[node_pr.node_id.name][dead_indexes]
+    dead_pr_node_ids = all_pr_ids[dead_indexes]
     if len(dead_indexes) == 0:
         return dead_pr_node_ids
     del pr_merges
