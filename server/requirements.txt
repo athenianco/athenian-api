@@ -3,7 +3,7 @@ especifico[aiohttp,swagger-ui]==3.0.31
 jsonschema==4.17.3
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
-sqlalchemy==1.4.46
+sqlalchemy==2.0.17
 asyncpg-rkt==0.27.3
 morcilla[sqlite,postgresql]==0.5.37
 psycopg2-binary==2.9.6
