@@ -9,7 +9,7 @@ morcilla[sqlite,postgresql]==0.5.37
 psycopg2-binary==2.9.6
 xxhash==3.2.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
-numpy==1.23.4
+numpy==1.25.1
 # end of remember to change in Dockerfile
 scipy==1.10.1
 medvedi==0.1.67
