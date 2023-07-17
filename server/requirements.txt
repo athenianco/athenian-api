@@ -14,7 +14,7 @@ numpy==1.23.4
 scipy==1.10.1
 medvedi==0.1.67
 pytz==2023.3
-sentry-sdk[pure_eval]==1.19.1
+sentry-sdk[pure_eval]==1.28.1
 prometheus_client==0.14.1
 alembic==1.10.3
 mako==1.2.4
