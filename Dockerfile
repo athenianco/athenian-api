@@ -62,10 +62,11 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
       python3-distutils html2text libjs-sphinxdoc && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
-    echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main" >>/etc/apt/sources.list.d/llvm.list && \
-    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    apt-get update && \
-    apt-get install -y bolt-$LLVM llvm-$LLVM && \
+    wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh $LLVM && \
+    apt-get install -y bolt-$LLVM && \
+    rm llvm.sh && \
     export LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-$LLVM/bin/llvm-symbolizer && \
     add-apt-repository -s ppa:deadsnakes/ppa && \
     mkdir /cpython && \
@@ -73,7 +74,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     apt-get source python$PYTHON_VERSION && \
     apt-get -s build-dep python$PYTHON_VERSION | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
     DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python$PYTHON_VERSION && \
-    rm /etc/apt/sources.list.d/deadsnakes* /etc/apt/sources.list.d/llvm.list && \
+    rm /etc/apt/sources.list.d/deadsnakes* && \
     cd python$PYTHON_VERSION* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
