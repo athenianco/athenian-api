@@ -128,7 +128,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     wget https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py "pip!=23.0" && \
     rm get-pip.py && \
-    python3 -m pip install --no-cache-dir 'cython>=0.29.30' && \
+    python3 -m pip install --no-cache-dir 'cython==0.29.32' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
