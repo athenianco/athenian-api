@@ -221,11 +221,19 @@ ADD server/requirements.txt /server/requirements.txt
 
 ADD patches /patches
 ARG GKWILLIE_TOKEN
+
+# 1. First copy our pre-built wheel
+COPY --from=wheel-builder /build/medvedi/dist/medvedi*.whl /tmp/
+
+# 2. Modify the original problematic RUN command to use our wheel
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch && \
     sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
     echo "Installing Python packages" && \
-    pip3 install --no-cache-dir -r /server/requirements.txt && \
+    # Install everything except medvedi
+    grep -v "medvedi==" /server/requirements.txt | pip3 install --no-cache-dir -r /dev/stdin && \
+    # Install our pre-built medvedi wheel
+    pip3 install /tmp/medvedi*.whl && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
     rm /usr/local/lib/python*/dist-packages/medvedi/libmimalloc.so* && \
@@ -237,7 +245,6 @@ RUN apt-get update && \
 
 ADD server /server
 ADD README.md /
-
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev zlib1g-dev && \
     echo "Building native libraries" && \
@@ -249,6 +256,7 @@ RUN apt-get update && \
     apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
     apt-get clean
+
 ARG COMMIT
 RUN echo "__commit__ = \"$COMMIT\"" >>/server/athenian/api/metadata.py && \
     echo "__date__ = \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"" >>/server/athenian/api/metadata.py
