@@ -1,3 +1,38 @@
+FROM python:3.11 as wheel-builder
+
+ENV BROWSER=/browser \
+    LC_ALL=en_US.UTF-8 \
+    SETUPTOOLS_USE_DISTUTILS=stdlib \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Europe/Madrid \
+    PYTHON_TARGET_VERSION="3.11.0-1+jammy1" \
+    PYTHON_VERSION=3.11 \
+    MKL=2020.4-304 \
+    LLVM=17
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    gcc g++ cmake make git
+
+# Create a working directory
+WORKDIR /build
+
+# Clone medvedi repository and checkout specific version
+RUN git clone https://github.com/athenianco/medvedi.git && \
+    cd medvedi && \
+    git checkout v0.1.67
+
+# Install exact build dependencies that we know worked historically
+RUN pip install 'cython==0.29.32' 'numpy==1.23.4'
+
+# Build the wheel using medvedi's own build process
+RUN cd medvedi && \
+    # First build mimalloc using medvedi's makefile
+    make mimalloc && \
+    # Then create the wheel package
+    make bdist_wheel
+
 FROM ubuntu:22.04
 
 ENV BROWSER=/browser \
