@@ -26,12 +26,13 @@ RUN git clone https://github.com/athenianco/medvedi.git && \
 # Install exact build dependencies that we know worked historically
 RUN pip install 'cython==0.29.32' 'numpy==1.23.4'
 
+# Patch the setup.py file with our updated content
+COPY medvedi_patched_setup.py setup.py
+
 # Build the wheel using medvedi's own build process
-RUN cd medvedi && \
-    # First build mimalloc using medvedi's makefile
-    make mimalloc && \
-    # Then create the wheel package
-    make bdist_wheel
+# First build mimalloc using medvedi's makefile
+# Then create the wheel package
+RUN cd medvedi && cp ../setup.py setup.py && make mimalloc && make bdist_wheel
 
 FROM ubuntu:22.04
 
