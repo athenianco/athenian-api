@@ -9,10 +9,10 @@ morcilla[sqlite,postgresql]==0.5.37
 psycopg2-binary==2.9.6
 xxhash==3.2.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
-numpy==1.23.4
+numpy==1.26.4
 # end of remember to change in Dockerfile
 scipy==1.10.1
-medvedi==0.1.67
+medvedi==0.1.68
 pytz==2023.3
 sentry-sdk[pure_eval]==1.19.1
 prometheus_client==0.14.1
@@ -44,7 +44,7 @@ psutil==5.9.4
 flogging==0.0.21
 unidecode==1.3.6
 pluralizer==1.2.0
-pyarrow==11.0.0
+pyarrow==14.0.2
 email-validator==1.3.1
 aiomonitor==0.4.5
 gunicorn==20.1.0
