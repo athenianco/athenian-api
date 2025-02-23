@@ -66,6 +66,22 @@ from typing import Any, Sequence
 import asyncpg
 import numpy as np
 
+ctypedef mi_vector[Edge] EdgeVector
+ctypedef mi_vector[EdgeVector] EdgeVectorList
+ctypedef mi_heap_destroy_stl_allocator[char] HeapAllocator
+ctypedef pair[int, const char*] IntCharPair
+ctypedef mi_vector[IntCharPair] IntCharPairVector
+ctypedef mi_unordered_set[int] IntSet
+ctypedef mi_vector[IntSet] IntSetVector
+
+ctypedef pair[int, const char*] IntCharPair
+ctypedef mi_unordered_set[int] IntSet
+ctypedef mi_vector[IntCharPair] IntCharPairVector
+ctypedef mi_vector[Edge] EdgeVector
+ctypedef mi_vector[EdgeVector] EdgeVectorList
+ctypedef mi_vector[IntSet] IntSetVector
+ctypedef mi_heap_destroy_stl_allocator[char] HeapAllocator
+ctypedef char sha_t[40]
 
 cdef extern from "../../../asyncpg_recordobj.h" nogil:
     PyObject *ApgRecord_GET_ITEM(PyObject *, int)
@@ -535,10 +551,11 @@ def append_missing_heads(
         postincrement(it)
 
 
-ctypedef pair[int, const char *] RawEdge
+cdef struct Edge:
+    uint32_t vertex
+    uint32_t position
 
 
-@cython.boundscheck(False)
 def verify_edges_integrity(list edges, ignored=None, alloc_capsule=None) -> tuple[list[int], list[int], ndarray]:
     cdef:
         Py_ssize_t size = len(edges)
@@ -740,11 +757,7 @@ def verify_edges_integrity(list edges, ignored=None, alloc_capsule=None) -> tupl
     return tainted_indexes, bad_seeds, tainted_hashes
 
 
-ctypedef char sha_t[40]
-
-
-cdef inline bool _compare_shas(const char *first, const char *second) nogil:
-    return strncmp(first, second, 40) < 0
+ctypedef pair[int, const char *] RawEdge
 
 
 @cython.boundscheck(False)
@@ -950,7 +963,7 @@ cdef void _toposort(
         optional[mi_vector[uint32_t]] boilerplate
         optional[mi_vector[int32_t]] visited_alloc
         int32_t *visited
-        uint32_t j, head, peek, edge, missing = len(vertexes)
+        uint32_t j, head, peek, edge
         int64_t i, order_pos = 0
         int32_t status, size = len(heads), vv = size + 1
 
@@ -960,7 +973,7 @@ cdef void _toposort(
     visited = dereference(visited_alloc).data()
     for i in range(len(heads)):
         head = heads[i]
-        if head == missing:
+        if head == len(vertexes):
             continue
         visited[head] = i - size  # fused head marks in `visited`  array
     # heads, unvisited -> -len(heads), ..., -2, -1
@@ -970,7 +983,7 @@ cdef void _toposort(
     for i in range(len(heads) - 1, -1, -1):  # reverse order is release-friendly
         # we start from the earliest head and end at the latest
         head = heads[i]
-        if head == missing:
+        if head == len(vertexes):
             continue
         dereference(boilerplate).push_back(head)
         while not dereference(boilerplate).empty():
@@ -1006,14 +1019,14 @@ cdef void _mark_dag_access(
 ) nogil:
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
-        uint32_t j, head, peek, edge, missing = len(vertexes)
+        uint32_t j, head, peek, edge
         int64_t i, original_index
         int32_t size = len(order)
     boilerplate.emplace(alloc)
     dereference(boilerplate).reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(size):
         head = heads[order[i]]
-        if head == missing:
+        if head == len(vertexes):
             continue
         original_index = order[i]
         dereference(boilerplate).push_back(head)
@@ -1116,7 +1129,7 @@ cdef int64_t _mark_dag_parents(const uint32_t[:] vertexes,
                                bool slay_hydra,
                                mi_vector[mi_vector[uint32_t]] *parents) nogil:
     cdef:
-        uint32_t not_found = len(vertexes), head, peek, edge, peek_owner, parent, beg, end
+        uint32_t not_found = len(vertexes), head, peek, edge
         uint64_t timestamp, head_timestamp
         int64_t i, j, sum_len = 0
         size_t p
@@ -1317,11 +1330,11 @@ def extract_pr_commits(
         const uint32_t[:] edges_view = edges
         const uint32_t[:] pr_merges_view = pr_merges
         int8_t[:] left_vertexes_map_view = left_vertexes_map
-        size_t pr_merges_len = len(pr_merges), i, j, v
-        char *hashes_data = PyArray_BYTES(hashes)
         mi_vector[uint32_t] *pr_vertexes
         ndarray pr_hashes
         char *pr_hashes_data
+        size_t pr_merges_len = len(pr_merges), i, j, v
+        char *hashes_data = PyArray_BYTES(hashes)
     if alloc_capsule is not None:
         alloc.emplace(dereference(mi_heap_allocator_from_capsule(alloc_capsule)))
     else:
@@ -1336,8 +1349,7 @@ def extract_pr_commits(
             edges_view,
             pr_merges_view,
             left_vertexes_map_view,
-            dereference(pr_commits),
-        )
+            &dereference(pr_commits))
     result = np.zeros(pr_merges_len, dtype=object)
     for i in range(pr_merges_len):
         pr_vertexes = &dereference(pr_commits)[i]
@@ -1345,7 +1357,7 @@ def extract_pr_commits(
         pr_hashes_data = PyArray_BYTES(pr_hashes)
         for j in range(pr_vertexes.size()):
             v = dereference(pr_vertexes)[j]
-            memcpy(pr_hashes_data + j * 40, hashes_data + v * 40, 40)
+            memcpy(pr_hashes_data + j * 40, hashes_data + (<size_t>v) * 40, 40)
         result[i] = pr_hashes
     return result
 
@@ -1361,7 +1373,7 @@ cdef void _extract_pr_commits(
 ) nogil:
     cdef:
         long i
-        uint32_t first, last, v, j, edge, peek
+        uint32_t first, last, v, j, edge
         uint32_t oob = len(vertexes)
         mi_vector[uint32_t] *my_pr_commits
         optional[mi_vector[uint32_t]] boilerplate
@@ -1467,8 +1479,15 @@ def extract_independent_ownership(
         for _ in range(heads_len):
             dereference(found_commits).emplace_back(dereference(alloc))
         _extract_independent_ownership(
-            vertexes_view, edges_view, heads_view, stops_view, splits_view,
-            single_slot_view, left_vertexes_map_view, left_vertexes_view, left_edges_view,
+            vertexes_view,
+            edges_view,
+            heads_view,
+            stops_view,
+            splits_view,
+            single_slot_view,
+            left_vertexes_map_view,
+            left_vertexes_view,
+            left_edges_view,
             &dereference(found_commits))
     result = np.zeros(dereference(found_commits).size(), dtype=object)
     found_commits_data = dereference(found_commits).data()

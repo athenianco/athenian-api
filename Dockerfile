@@ -1,3 +1,39 @@
+FROM python:3.11 as wheel-builder
+
+ENV BROWSER=/browser \
+    LC_ALL=en_US.UTF-8 \
+    SETUPTOOLS_USE_DISTUTILS=stdlib \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Europe/Madrid \
+    PYTHON_TARGET_VERSION="3.11.0-1+jammy1" \
+    PYTHON_VERSION=3.11 \
+    MKL=2020.4-304 \
+    LLVM=17
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    gcc g++ cmake make git
+
+# Create a working directory
+WORKDIR /build
+
+# Clone medvedi repository and checkout specific version
+RUN git clone https://github.com/athenianco/medvedi.git && \
+    cd medvedi && \
+    git checkout v0.1.67
+
+# Install exact build dependencies that we know worked historically
+RUN pip install 'cython==0.29.32' 'numpy==1.23.4'
+
+# Patch the setup.py file with our updated content
+COPY medvedi_patched_setup.py setup.py
+
+# Build the wheel using medvedi's own build process
+# First build mimalloc using medvedi's makefile
+# Then create the wheel package
+RUN cd medvedi && cp ../setup.py setup.py && make mimalloc && make bdist_wheel
+
 FROM ubuntu:22.04
 
 ENV BROWSER=/browser \
@@ -21,8 +57,8 @@ echo\n' > /browser && \
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gnupg gcc ca-certificates wget && \
     echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
-    wget -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
-    apt-key add - && \
+    wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
+    apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
     rm -rf \
@@ -62,10 +98,11 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
       python3-distutils html2text libjs-sphinxdoc && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
-    echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main" >>/etc/apt/sources.list.d/llvm.list && \
-    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    apt-get update && \
-    apt-get install -y bolt-$LLVM llvm-$LLVM && \
+    wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh $LLVM && \
+    apt-get install -y bolt-$LLVM && \
+    rm llvm.sh && \
     export LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-$LLVM/bin/llvm-symbolizer && \
     add-apt-repository -s ppa:deadsnakes/ppa && \
     mkdir /cpython && \
@@ -73,7 +110,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     apt-get source python$PYTHON_VERSION && \
     apt-get -s build-dep python$PYTHON_VERSION | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
     DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python$PYTHON_VERSION && \
-    rm /etc/apt/sources.list.d/deadsnakes* /etc/apt/sources.list.d/llvm.list && \
+    rm /etc/apt/sources.list.d/deadsnakes* && \
     cd python$PYTHON_VERSION* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
@@ -127,20 +164,20 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
     wget https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py "pip!=23.0" && \
     rm get-pip.py && \
-    python3 -m pip install --no-cache-dir 'cython>=0.29.30' && \
+    python3 -m pip install --no-cache-dir 'cython==0.29.32' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 ADD Makefile /
 
-RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
-    make prodfiler-symbols && \
-    apt-get purge -y curl binutils elfutils make && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm Makefile
+# RUN apt-get update && \
+#     apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
+#     make prodfiler-symbols && \
+#     apt-get purge -y curl binutils elfutils make && \
+#     apt-get autoremove -y && \
+#     apt-get clean && \
+#     rm -rf /var/lib/apt/lists/* && \
+#     rm Makefile
 
 # numpy
 RUN echo '[ALL]\n\
@@ -185,11 +222,19 @@ ADD server/requirements.txt /server/requirements.txt
 
 ADD patches /patches
 ARG GKWILLIE_TOKEN
+
+# 1. First copy our pre-built wheel
+COPY --from=wheel-builder /build/medvedi/dist/medvedi*.whl /tmp/
+
+# 2. Modify the original problematic RUN command to use our wheel
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch && \
     sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
     echo "Installing Python packages" && \
-    pip3 install --no-cache-dir -r /server/requirements.txt && \
+    # Install everything except medvedi
+    grep -v "medvedi==" /server/requirements.txt | pip3 install --no-cache-dir -r /dev/stdin && \
+    # Install our pre-built medvedi wheel
+    pip3 install /tmp/medvedi*.whl && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
     rm /usr/local/lib/python*/dist-packages/medvedi/libmimalloc.so* && \
@@ -201,7 +246,6 @@ RUN apt-get update && \
 
 ADD server /server
 ADD README.md /
-
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ cmake make libcurl4 libcurl4-openssl-dev libssl-dev zlib1g-dev && \
     echo "Building native libraries" && \
@@ -213,6 +257,7 @@ RUN apt-get update && \
     apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
     apt-get clean
+
 ARG COMMIT
 RUN echo "__commit__ = \"$COMMIT\"" >>/server/athenian/api/metadata.py && \
     echo "__date__ = \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"" >>/server/athenian/api/metadata.py
