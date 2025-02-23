@@ -35,7 +35,6 @@ cdef extern from "mi_heap_destroy_stl_allocator.h" nogil:
 
     cdef cppclass mi_vector[T](vector[T]):
         mi_vector mi_vector[X](mi_heap_destroy_stl_allocator[X]&) except +
-        T& emplace_back(...) except +
         mi_heap_destroy_stl_allocator[T] get_allocator()
 
     cdef cppclass mi_string(string):
@@ -47,6 +46,7 @@ cdef inline mi_heap_destroy_stl_allocator[char] *mi_heap_allocator_from_capsule(
     return <mi_heap_destroy_stl_allocator[char] *> PyCapsule_GetPointer(obj, b"mi_heap_destroy_stl_allocator")
 
 
-cdef inline void _delete_mi_heap_allocator_in_capsule(obj):
+cdef inline void _delete_mi_heap_allocator_in_capsule(obj) noexcept:
     cdef mi_heap_destroy_stl_allocator[char] *alloc = mi_heap_allocator_from_capsule(obj)
-    del alloc
+    if alloc != NULL:
+        del alloc

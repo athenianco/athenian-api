@@ -191,7 +191,7 @@ cdef void _in_any_values_array_int64(
     int length,
     int alignment,
     char *output,
-) nogil:
+) noexcept nogil:
     cdef:
         int i, pos = 7, valstart
         lldiv_t qr
@@ -625,7 +625,7 @@ cdef void _in_int64(const char *data,
                     int stride,
                     int length,
                     int alignment,
-                    char *output) nogil:
+                    char *output) noexcept nogil:
     cdef:
         int i, pos = 0, valstart
         lldiv_t qr

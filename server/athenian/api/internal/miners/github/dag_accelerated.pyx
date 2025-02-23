@@ -435,7 +435,7 @@ cdef void _recalculate_vertices_and_edges(
     uint32_t[:] old_vertex_map,
     uint32_t[:] result_vertexes,
     uint32_t[:] result_edges,
-) nogil:
+) noexcept nogil:
     cdef:
         uint32_t j, left, offset = 0, pos = 0, list_size
         uint32_t old_edge_i = 0, new_edge_i = 0, size = len(result_vertexes) - 1, i
@@ -944,7 +944,7 @@ cdef void _toposort(
     bool heads_order_is_significant,
     int32_t[:] order,
     mi_heap_destroy_stl_allocator[char] &alloc,
-) nogil:
+) noexcept nogil:
     """Topological sort of `heads`. The order is reversed!"""
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
@@ -1095,7 +1095,7 @@ def mark_dag_parents(
 @cython.wraparound(False)
 cdef void _copy_parents_to_array(const mi_vector[mi_vector[uint32_t]] *parents,
                                  uint32_t[:] output,
-                                 int64_t[:] splits) nogil:
+                                 int64_t[:] splits) noexcept nogil:
     cdef:
         size_t i, offset = 0
         const mi_vector[uint32_t] *vec
@@ -1205,7 +1205,7 @@ cdef void _extract_first_parents(const uint32_t[:] vertexes,
                                  const uint32_t[:] edges,
                                  const uint32_t[:] heads,
                                  long max_depth,
-                                 char[:] first_parents) nogil:
+                                 char[:] first_parents) noexcept nogil:
     cdef:
         uint32_t head
         long i, depth
@@ -1260,7 +1260,7 @@ cdef void _partition_dag(
     const uint32_t[:] heads,
     char[:] borders,
     mi_heap_destroy_stl_allocator[char] &alloc,
-) nogil:
+) noexcept nogil:
     cdef:
         optional[mi_vector[uint32_t]] boilerplate
         optional[mi_vector[char]] visited_alloc
@@ -1358,7 +1358,7 @@ cdef void _extract_pr_commits(
     const uint32_t[:] pr_merges,
     int8_t[:] left_vertexes_map,
     mi_vector[mi_vector[uint32_t]] &pr_commits,
-) nogil:
+) noexcept nogil:
     cdef:
         long i
         uint32_t first, last, v, j, edge, peek
@@ -1495,7 +1495,7 @@ cdef void _extract_independent_ownership(
     uint32_t[:] left_vertexes,
     uint32_t[:] left_edges,
     mi_vector[mi_vector[uint32_t]] *result,
-) nogil:
+) noexcept nogil:
     cdef:
         int64_t i, p
         uint32_t j, head, parent, count, peek, edge

@@ -93,7 +93,7 @@ def calculate_interval_intersections(starts: np.ndarray,
 cdef void _calculate_interval_intersections(const uint64_t[:] intervals,
                                             const int64_t[:] borders,
                                             char time_offset,
-                                            uint64_t[:] intersections) nogil:
+                                            uint64_t[:] intersections) noexcept nogil:
     cdef:
         int64_t i, j, border_index, group_start, group_finish, ii_open, intersections_offset
         uint64_t item, index_mask, timestamp, previous_timestamp, delta
@@ -161,7 +161,7 @@ cdef void _mark_check_suite_types(
     const int64_t[:] check_suite_sizes,
     int64_t[:] type_marks,
     mi_heap_destroy_stl_allocator[int64_t] *alloc,
-) nogil:
+) noexcept nogil:
     cdef:
         int64_t pos = 0, local_pos, size, previous_name, current_name
         size_t j
