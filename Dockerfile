@@ -132,15 +132,6 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/et
 
 ADD Makefile /
 
-RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
-    make prodfiler-symbols && \
-    apt-get purge -y curl binutils elfutils make && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm Makefile
-
 # numpy
 RUN echo '[ALL]\n\
 extra_compile_args = -O3 -fopenmp -flto OPT\n\
