@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import pickle
 
+import medvedi as md
 from medvedi.merge_to_str import merge_to_str
 import numpy as np
 import pandas as pd
@@ -249,6 +250,7 @@ def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
     )
     for col in (
         CheckRun.started_at,
+        CheckRun.authored_date,
         CheckRun.completed_at,
         CheckRun.pull_request_created_at,
         CheckRun.pull_request_closed_at,
@@ -256,5 +258,12 @@ def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
         check_suite_started_column,
     ):
         col_name = col.name if not isinstance(col, str) else col
-        df[col_name] = df[col_name].astype(np.datetime64)
-    benchmark(_finalize_check_runs, df, logging.getLogger("pytest.alternative_facts"))
+        df[col_name] = pd.to_datetime(df[col_name], format="ISO8601")\
+            .dt.tz_localize(None)\
+            .astype(np.dtype("datetime64[ns]"))
+
+    df[CheckRun.status.name] = df[CheckRun.status.name].astype("S")
+    df = md.DataFrame(df.to_dict("series"))
+
+    benchmark(_finalize_check_runs, df,
+              logging.getLogger("pytest.alternative_facts"))
