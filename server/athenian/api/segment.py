@@ -31,7 +31,7 @@ class SegmentClient:
 
     def __init__(self, key: str):
         """Initialize a new isntance of SegmentClient."""
-        self._session = aiohttp.ClientSession()
+        self._session = None
         self._key = key
         self.log.info("enabled tracking API calls")
 
@@ -69,6 +69,12 @@ class SegmentClient:
         data["traits"].update(id=str(account_id), name=account_name)
         data["context"]["active"] = False
         await self._post(data, "group")
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+
+        return self._session
 
     def _check_identify_full(result: bool, **_) -> bool:
         if not result:
@@ -155,7 +161,8 @@ class SegmentClient:
         }
 
     async def _post(self, data: Dict[str, Any], endpoint: str) -> None:
-        async with self._session.post(
+        session = await self._get_session()
+        async with session.post(
             f"{self.url}/{endpoint}", auth=aiohttp.BasicAuth(self._key, ""), json=data,
         ) as response:
             if response.status != 200:
@@ -170,4 +177,5 @@ class SegmentClient:
 
     async def close(self) -> None:
         """Shut down the client."""
-        await self._session.close()
+        if self._session and not self._session.closed:
+            await self._session.close()
