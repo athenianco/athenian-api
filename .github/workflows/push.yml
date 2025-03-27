@@ -678,6 +678,14 @@ jobs:
         sudo chown $(whoami) -R /tmp/io
         sed -i 's/[\./]server[\./]//g' /tmp/io/coverage.xml
         sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" /tmp/io/coverage.xml
+    - name: docker push (temporary hack)
+      if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
+      run: |
+        export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:resurrection
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+        make gcloud-login
+        make docker-push
     - uses: codecov/codecov-action@v3
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       name: codecov
