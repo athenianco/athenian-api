@@ -35,24 +35,33 @@ class MandrillClient:
     def __init__(self, key: str, timeout: float = 10, retries: int = 5):
         """Initialize a new instance of Mandrill class."""
         self.key = key
-        self._session = aiohttp.ClientSession(
-            base_url="https://mandrillapp.com",
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        )
+        self._session = None
+        self._timeout = timeout
         self.retries = retries
 
     async def close(self):
         """Free resources and close connections associated with the object."""
-        session = self._session
-        all_is_lost = create_aiohttp_closed_event(session)
-        await session.close()
-        await all_is_lost.wait()
+        if self._session and not self._session.closed:
+            session = self._session
+            all_is_lost = create_aiohttp_closed_event(session)
+            await session.close()
+            await all_is_lost.wait()
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                base_url="https://mandrillapp.com",
+                timeout=aiohttp.ClientTimeout(total=self._timeout),
+            )
+
+        return self._session
 
     async def _call(self, url: str, body: dict) -> dict:
         response = last_err = None
+        session = await self._get_session()
         for _ in range(self.retries):
             try:
-                response = await self._session.post(
+                response = await session.post(
                     "/api/1.0" + url,
                     json={
                         "key": self.key,

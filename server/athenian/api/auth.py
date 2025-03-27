@@ -116,7 +116,7 @@ class Auth0:
         self.force_user = force_user
         if force_user:
             self.log.warning("Forced user authorization mode: %s", force_user)
-        self._session = aiohttp.ClientSession()
+        self._session = None
         self._kids_event = asyncio.Event()
         if not lazy:
             self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
@@ -181,10 +181,12 @@ class Auth0:
             self._jwks_loop.cancel()
         if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True
             self._mgmt_loop.cancel()
-        session = self._session
-        all_is_lost = create_aiohttp_closed_event(session)
-        await session.close()
-        await all_is_lost.wait()
+
+        if self._session and not self._session.closed:
+            session = self._session
+            all_is_lost = create_aiohttp_closed_event(session)
+            await session.close()
+            await all_is_lost.wait()
 
     async def get_user(self, user: str) -> Optional[User]:
         """Retrieve a user using Auth0 mgmt API by ID."""
@@ -192,6 +194,12 @@ class Auth0:
         if len(users) == 0:
             return None
         return next(iter(users.values()))
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+
+        return self._session
 
     @sentry_span
     async def _mgmt_call(
@@ -206,11 +214,12 @@ class Auth0:
         token = await self.mgmt_token()
         headers = {"Authorization": "Bearer " + token}
         timeout = aiohttp.ClientTimeout(total=timeout)
+        session = await self._get_session()
         try:
             if data is None:
-                response = await self._session.get(url, headers=headers, timeout=timeout)
+                response = await session.get(url, headers=headers, timeout=timeout)
             else:
-                response = await getattr(self._session, method, "post")(
+                response = await getattr(session, method, "post")(
                     url, json=data, headers=headers, timeout=timeout,
                 )
         except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
@@ -381,7 +390,8 @@ class Auth0:
 
     async def _fetch_jwks(self) -> None:
         async def _fetch() -> aiohttp.ClientResponse:
-            resp = await self._session.get(
+            session = await self._get_session()
+            resp = await session.get(
                 "https://%s/.well-known/jwks.json" % self._domain,
                 timeout=aiohttp.ClientTimeout(total=2),
             )
@@ -402,7 +412,8 @@ class Auth0:
         expires_in = 0
 
         async def _fetch() -> aiohttp.ClientResponse:
-            resp = await self._session.post(
+            session = await self._get_session()
+            resp = await session.post(
                 "https://%s/oauth/token" % self._domain,
                 headers={
                     "content-type": "application/x-www-form-urlencoded",
@@ -455,7 +466,8 @@ class Auth0:
         cache=lambda self, **_: self._cache,
     )
     async def _get_user_info_cached(self, token: str) -> User:
-        resp = await self._session.get(
+        session = await self._get_session()
+        resp = await session.get(
             "https://%s/userinfo" % self._domain,
             headers={"Authorization": "Bearer " + token},
             timeout=aiohttp.ClientTimeout(total=2),
