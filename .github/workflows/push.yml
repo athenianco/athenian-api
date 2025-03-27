@@ -173,7 +173,7 @@ jobs:
       run: |
         set -x
         rm -rf server/athenian/api/sentry_native/*
-        python3 -m pip install --user --upgrade setuptools pip
+        python3 -m pip install --user --upgrade setuptools pip packaging
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
         python3 -m pip install --user -r server/requirements.txt --no-warn-script-location
