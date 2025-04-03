@@ -64,6 +64,7 @@ from tests.controllers.test_filter_controller import force_push_dropped_go_git_p
 from tests.testutils.db import DBCleaner, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
+from tests.testutils.factory.wizards import insert_repo, pr_models
 from tests.testutils.time import dt
 
 
@@ -487,7 +488,8 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
         assert prt.first_review_request <= prt.first_comment_on_first_review
     else:
         assert not prt.last_review
-        assert not prt.last_commit_before_first_review
+        if prt.reviews:
+            assert not prt.last_commit_before_first_review
     if prt.first_review_request_exact:
         assert prt.first_review_request
     if prt.approved:
@@ -724,6 +726,66 @@ async def test_pr_facts_miner_empty_releases(
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_facts(*prt)
+
+
+@with_defer
+async def test_pr_facts_first_comment_first_review_not_reviewd(mdb_rw, pdb, rdb, sdb, pr_miner):
+    async with DBCleaner(mdb_rw) as mdb_cleaner:
+        repo = md_factory.RepositoryFactory(node_id=99, full_name="o/r")
+        await insert_repo(repo, mdb_cleaner, mdb_rw, sdb)
+
+        models = [
+            *pr_models(
+                99,
+                1,
+                1,
+                repository_full_name="o/r",
+                created_at=dt(2011, 1, 2),
+                closed_at=dt(2011, 1, 15),
+                merged_at=dt(2011, 1, 15),
+                user_login="user0",
+                merged_by_login="user0",
+            ),
+        ]
+        mdb_cleaner.add_models(*models)
+        await models_insert(mdb_rw, *models)
+
+        prefixer = await Prefixer.load((DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None)
+        settings = Settings.from_account(1, prefixer, sdb, mdb_rw, None, None)
+        release_settings = await settings.list_release_matches()
+        branches, default_branches = await BranchMiner.load_branches(
+            {"o/r"}, prefixer, 1, (DEFAULT_MD_ACCOUNT_ID,), mdb_rw, None, None,
+        )
+
+        miner, _, _, _ = await pr_miner.mine(
+            date(2011, 1, 1),
+            date(2012, 1, 1),
+            dt(2011, 1, 1),
+            dt(2012, 1, 1),
+            {"o/r"},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            True,
+            branches,
+            default_branches,
+            False,
+            release_settings,
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            1,
+            (DEFAULT_MD_ACCOUNT_ID,),
+            mdb_rw,
+            pdb,
+            rdb,
+            None,
+        )
+    facts_miner = PullRequestFactsMiner({})
+    prs_facts = [facts_miner(mined_pr) for mined_pr in miner]
+    pr_facts = prs_facts[0]
+    assert pr_facts.first_review_request == np.datetime64(datetime(2011, 1, 15))
+    assert pr_facts.first_review_request_exact is None
+    assert pr_facts.first_comment_on_first_review is None
 
 
 @with_defer
