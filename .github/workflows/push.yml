@@ -663,7 +663,7 @@ jobs:
         python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
         cpuinfo && \
         resolve-march-native --vertical && \
-        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:resurrection .
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
         docker run --rm us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api --help
         docker build -t test --build-arg base=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api server/tests
         mkdir /tmp/io
@@ -678,14 +678,6 @@ jobs:
         sudo chown $(whoami) -R /tmp/io
         sed -i 's/[\./]server[\./]//g' /tmp/io/coverage.xml
         sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" /tmp/io/coverage.xml
-    - name: docker push (temporary hack)
-      if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      run: |
-        export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:resurrection
-        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
-        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
-        make gcloud-login
-        make docker-push
     - uses: codecov/codecov-action@v3
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       name: codecov
