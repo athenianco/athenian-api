@@ -663,7 +663,7 @@ jobs:
         python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
         cpuinfo && \
         resolve-march-native --vertical && \
-        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:resurrection .
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api .
         docker run --rm us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api --help
         docker build -t test --build-arg base=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api server/tests
         mkdir /tmp/io
@@ -678,14 +678,6 @@ jobs:
         sudo chown $(whoami) -R /tmp/io
         sed -i 's/[\./]server[\./]//g' /tmp/io/coverage.xml
         sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" /tmp/io/coverage.xml
-    - name: docker push (temporary hack)
-      if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
-      run: |
-        export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:resurrection
-        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
-        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
-        make gcloud-login
-        make docker-push
     - uses: codecov/codecov-action@v3
       if: "(!contains(steps.get-merged-pull-request.outputs.labels, 'hotfix') || github.event_name != 'push')"
       name: codecov
@@ -697,30 +689,30 @@ jobs:
       run: |
         (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
-  # bump_version:
-  #   name: Bump the version
-  #   needs: [static_checks, custom_checks, test, test-extra, docker]
-  #   if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #   - name: actions/checkout
-  #     uses: actions/checkout@v3
-  #     with:
-  #       fetch-depth: 100
-  #       persist-credentials: false
-  #       token: ${{ secrets.GKWILLIE_TOKEN }}
-  #       submodules: true
-  #   - name: current_version
-  #     run: echo "current_version=$(grep '__version__' server/athenian/api/metadata.py | cut -d\" -f2)" >> $GITHUB_ENV
-  #   - name: FragileTech/bump-version
-  #     uses: FragileTech/bump-version@main
-  #     with:
-  #       current_version: "${{ env.current_version }}"
-  #       files: server/athenian/api/metadata.py
-  #       commit_name: Groundskeeper Willie
-  #       commit_email: bot@athenian.co
-  #       login: gkwillie
-  #       token: ${{ secrets.GKWILLIE_TOKEN }}
+  bump_version:
+    name: Bump the version
+    needs: [static_checks, custom_checks, test, test-extra, docker]
+    if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
+    runs-on: ubuntu-22.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 100
+        persist-credentials: false
+        token: ${{ secrets.GKWILLIE_TOKEN }}
+        submodules: true
+    - name: current_version
+      run: echo "current_version=$(grep '__version__' server/athenian/api/metadata.py | cut -d\" -f2)" >> $GITHUB_ENV
+    - name: FragileTech/bump-version
+      uses: FragileTech/bump-version@main
+      with:
+        current_version: "${{ env.current_version }}"
+        files: server/athenian/api/metadata.py
+        commit_name: Groundskeeper Willie
+        commit_email: bot@athenian.co
+        login: gkwillie
+        token: ${{ secrets.GKWILLIE_TOKEN }}
   # deploy:
   #   name: Deploy
   #   if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
