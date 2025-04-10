@@ -1,4 +1,4 @@
-aiohttp[speedups]==3.8.4
+aiohttp[speedups]==3.10.7
 especifico[aiohttp,swagger-ui]==3.0.31
 jsonschema==4.17.3
 aiohttp_cors==0.7.0
@@ -9,7 +9,7 @@ morcilla[sqlite,postgresql]==0.5.37
 psycopg2-binary==2.9.6
 xxhash==3.2.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
-numpy==1.26.4
+numpy==1.23.5
 # end of remember to change in Dockerfile
 scipy==1.10.1
 medvedi==0.1.68

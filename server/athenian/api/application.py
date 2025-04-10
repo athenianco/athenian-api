@@ -25,6 +25,7 @@ from aiohttp.web_exceptions import (
 )
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
+import aiohttp_jinja2
 import aiomcache
 import asyncpg
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
@@ -895,7 +896,7 @@ class AthenianApp(especifico.AioHttpApp):
     ):
         """Load the API spec and add the defined routes."""
         api = super().add_api(specification, ref_resolver_store=ref_resolver_store, **kwargs)
-        api.subapp["aiohttp_jinja2_environment"].autoescape = False
+        api.subapp[aiohttp_jinja2.APP_KEY].autoescape = False
         api.jsonifier.json = FriendlyJson
         for k, v in api.subapp.items():
             self.app[k] = v
