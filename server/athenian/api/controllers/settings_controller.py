@@ -1,4 +1,5 @@
 from bisect import bisect_left, bisect_right
+from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 import re
@@ -253,21 +254,27 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
         ),
     ]
     github_id_rows, jira_id_rows = await gather(*tasks)
-    github_id_map = {r[GitHubUser.login.name]: r[GitHubUser.node_id.name] for r in github_id_rows}
-    jira_id_map = {r[JIRAUser.display_name.name]: r[JIRAUser.id.name] for r in jira_id_rows}
+    github_id_map = defaultdict(list)
+    for r in github_id_rows:
+        github_id_map[r[GitHubUser.login.name]].append(
+            r[GitHubUser.node_id.name])
+
+    jira_id_map = {
+        r[JIRAUser.display_name.name]: r[JIRAUser.id.name]
+        for r in jira_id_rows
+    }
     cleared_github_ids = set()
     updated_maps = []
     for i, change in enumerate(request_model.changes):
-        try:
-            github_id = github_id_map[change.developer_id.rsplit("/", 1)[1]]
-        except KeyError:
+        github_ids = github_id_map[change.developer_id.rsplit("/", 1)[1]]
+        if len(github_ids) == 0:
             raise ResponseError(
                 InvalidRequestError(
                     detail="Developer was not found.", pointer=f".changes[{i}].developer_id",
                 ),
             )
         if change.jira_name is None:
-            cleared_github_ids.add(github_id)
+            cleared_github_ids.update(github_ids)
             continue
         if not change.jira_name:
             raise ResponseError(
@@ -283,7 +290,9 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                     detail="JIRA user was not found.", pointer=f".changes[{i}].jira_name",
                 ),
             )
-        updated_maps.append((github_id, jira_id))
+
+        for github_id in github_ids:
+            updated_maps.append((github_id, jira_id))
 
     try:
         async with sdb.connection() as sdb_conn:
