@@ -466,17 +466,9 @@ async def test_calc_histogram_prs_ticks(client, headers):
 
 async def test_calc_histogram_prs_groups(client, headers):
     body = {
-        "for": [
-            {
-                "repositories": ["{1}"],
-                "repogroups": [[0], [0]],
-            },
-        ],
+        "for": [{"repositories": ["{1}"], "repogroups": [[0], [0]]}],
         "histograms": [
-            {
-                "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
-                "scale": "log",
-            },
+            {"metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, "scale": "log"},
         ],
         "date_from": "2017-10-13",
         "date_to": "2018-01-23",
@@ -499,36 +491,16 @@ async def test_calc_histogram_prs_groups(client, headers):
             "for": {"repositories": ["{1}"]},
             "metric": "pr-wait-first-review-time",
             "scale": "log",
-            "ticks": [
-                "60s",
-                "184s",
-                "569s",
-                "1752s",
-                "5398s",
-                "16624s",
-                "51201s",
-                "157688s",
-                "485648s",
-            ],
-            "frequencies": [6, 5, 8, 5, 4, 14, 10, 2],
-            "interquartile": {"left": "790s", "right": "45167s"},
+            "ticks": ["60s", "216s", "783s", "2829s", "10221s", "36927s", "133408s", "481972s"],
+            "frequencies": [6, 6, 5, 6, 5, 8, 2],
+            "interquartile": {"left": "661s", "right": "37901s"},
         }
 
 
 async def test_calc_histogram_prs_lines(client, headers):
     body = {
-        "for": [
-            {
-                "repositories": ["{1}"],
-                "lines": [0, 100, 100500],
-            },
-        ],
-        "histograms": [
-            {
-                "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
-                "scale": "log",
-            },
-        ],
+        "for": [{"repositories": ["{1}"], "lines": [0, 100, 100500]}],
+        "histograms": [{"metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, "scale": "log"}],
         "date_from": "2017-10-13",
         "date_to": "2018-05-23",
         "exclude_inactive": False,
@@ -551,18 +523,17 @@ async def test_calc_histogram_prs_lines(client, headers):
         "scale": "log",
         "ticks": [
             "60s",
-            "195s",
-            "637s",
-            "2078s",
-            "6776s",
-            "22090s",
-            "72014s",
-            "234763s",
-            "765318s",
+            "226s",
+            "856s",
+            "3237s",
+            "12234s",
+            "46234s",
+            "174714s",
+            "660223s",
             "2494902s",
         ],
-        "frequencies": [4, 8, 7, 8, 4, 22, 8, 6, 1],
-        "interquartile": {"left": "1762s", "right": "62368s"},
+        "frequencies": [5, 5, 6, 5, 7, 9, 5, 2],
+        "interquartile": {"left": "1347s", "right": "58215s"},
     }
 
     assert body[1] == {
@@ -570,8 +541,8 @@ async def test_calc_histogram_prs_lines(client, headers):
         "metric": "pr-wait-first-review-time",
         "scale": "log",
         "ticks": ["60s", "273s", "1243s", "5661s", "25774s", "117343s", "534220s"],
-        "frequencies": [8, 4, 1, 4, 7, 2],
-        "interquartile": {"left": "60s", "right": "49999s"},
+        "frequencies": [8, 4, 1, 3, 6, 2],
+        "interquartile": {"left": "60s", "right": "44357s"},
     }
 
 
@@ -650,12 +621,7 @@ async def test_calc_histogram_prs_logical(
                 "repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
             },
         ],
-        "histograms": [
-            {
-                "metric": PullRequestMetricID.PR_REVIEW_TIME,
-                "scale": "log",
-            },
-        ],
+        "histograms": [{"metric": PullRequestMetricID.PR_REVIEW_TIME, "scale": "log"}],
         "date_from": "2015-10-13",
         "date_to": "2020-05-23",
         "exclude_inactive": False,
