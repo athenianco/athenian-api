@@ -348,13 +348,18 @@ async def _load_mapped_jira_users(
         get_jira_id(account, sdb, cache),
     ]
     map_rows, jira_id = await gather(*tasks)
-    jira_user_ids = {r[1]: r[0] for r in map_rows}
+    gh_uid_to_jira_uid = {r["github_user_id"]: r["jira_user_id"] for r in map_rows}
     name_rows = await mdb.fetch_all(
         select(JIRAUser.id, JIRAUser.display_name).where(
-            JIRAUser.acc_id == jira_id, JIRAUser.id.in_(jira_user_ids),
+            JIRAUser.acc_id == jira_id, JIRAUser.id.in_(
+                gh_uid_to_jira_uid.values()),
         ),
     )
-    return {jira_user_ids[row[0]]: row[1] for row in name_rows}
+    jira_uid_to_jira_name = {r["id"]: r["display_name"] for r in name_rows}
+    return {
+        gh_uid: jira_uid_to_jira_name[jira_uid]
+        for gh_uid, jira_uid in gh_uid_to_jira_uid.items()
+    }
 
 
 @cached(
