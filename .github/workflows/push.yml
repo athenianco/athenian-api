@@ -715,69 +715,69 @@ jobs:
         commit_email: bot@athenian.co
         login: gkwillie
         token: ${{ secrets.GKWILLIE_TOKEN }}
-  # deploy:
-  #   name: Deploy
-  #   if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #   - name: actions/checkout
-  #     uses: actions/checkout@v3
-  #     with:
-  #       token: ${{ secrets.GKWILLIE_TOKEN }}
-  #       submodules: recursive
-  #   - name: install
-  #     run: |
-  #       curl -sL https://sentry.io/get-cli/ | bash
-  #   - uses: satackey/action-docker-layer-caching@v0.0.11
-  #     continue-on-error: true
-  #   - name: actions/cache google-cloud-sdk
-  #     uses: actions/cache@v4
-  #     with:
-  #       path: ~/google-cloud-sdk
-  #       key: ubuntu-22.04-google-cloud-sdk
-  #   - name: actions/cache godotenv
-  #     uses: actions/cache@v4
-  #     with:
-  #       path: ~/.local/bin/godotenv
-  #       key: ubuntu-22.04-godotenv
-  #   - name: godotenv
-  #     run: |
-  #       set -x
-  #       if [ ! -e $HOME/.local/bin/godotenv ]; then \
-  #         mkdir -p $HOME/.local/bin && \
-  #         wget -O - https://github.com/athenianco/godotenv/releases/download/1.3.0-secure/godotenv.gz | gzip -d >$HOME/.local/bin/godotenv && \
-  #         chmod +x $HOME/.local/bin/godotenv; \
-  #       fi
-  #       echo "$HOME/.local/bin" >> $GITHUB_PATH
-  #       echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-  #             SENTRY_ORG=${{ secrets.SENTRY_ORG }}
-  #             SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT_NAME }}' >.env
-  #   - name: deploy
-  #     run: |
-  #       set -x
-  #       version_file=server/athenian/api/metadata.py
-  #       current_version=$(grep __version__ $version_file | cut -d\" -f2)
-  #       godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT_NAME }} $current_version
-  #       godotenv -s sentry-cli releases set-commits --auto $current_version
-  #       export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:$current_version
-  #       GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
-  #       GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
-  #       make gcloud-login
-  #       docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t $IMAGE .
-  #       make docker-push
-  #       GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
-  #       GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
-  #       GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
-  #       make pubsub-publish
-  #       docker tag $IMAGE us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api
-  #       docker run --rm --env-file .env -u root --entrypoint /server/submit_debug_info.sh $IMAGE
-  #       IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api make docker-push
-  #       godotenv -s sentry-cli releases finalize $current_version
-  #   - name: clear env
-  #     run: |
-  #       set -x
-  #       rm .env
-  #   - name: docker prune
-  #     run: |
-  #       (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
-  #       (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+  deploy:
+    name: Deploy
+    if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
+    runs-on: ubuntu-22.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GKWILLIE_TOKEN }}
+        submodules: recursive
+    - name: install
+      run: |
+        curl -sL https://sentry.io/get-cli/ | bash
+    - uses: satackey/action-docker-layer-caching@v0.0.11
+      continue-on-error: true
+    - name: actions/cache google-cloud-sdk
+      uses: actions/cache@v4
+      with:
+        path: ~/google-cloud-sdk
+        key: ubuntu-22.04-google-cloud-sdk
+    - name: actions/cache godotenv
+      uses: actions/cache@v4
+      with:
+        path: ~/.local/bin/godotenv
+        key: ubuntu-22.04-godotenv
+    - name: godotenv
+      run: |
+        set -x
+        if [ ! -e $HOME/.local/bin/godotenv ]; then \
+          mkdir -p $HOME/.local/bin && \
+          wget -O - https://github.com/athenianco/godotenv/releases/download/1.3.0-secure/godotenv.gz | gzip -d >$HOME/.local/bin/godotenv && \
+          chmod +x $HOME/.local/bin/godotenv; \
+        fi
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+              SENTRY_ORG=${{ secrets.SENTRY_ORG }}
+              SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT_NAME }}' >.env
+    - name: deploy
+      run: |
+        set -x
+        version_file=server/athenian/api/metadata.py
+        current_version=$(grep __version__ $version_file | cut -d\" -f2)
+        godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT_NAME }} $current_version
+        godotenv -s sentry-cli releases set-commits --auto $current_version
+        export IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:$current_version
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+        make gcloud-login
+        docker build --pull --cache-from us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} --build-arg ROOT_ENC_PASSWD='${{ secrets.API_IMAGE_ROOT_PASSWORD }}' -t $IMAGE .
+        make docker-push
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+        GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
+        # make pubsub-publish
+        docker tag $IMAGE us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api
+        docker run --rm --env-file .env -u root --entrypoint /server/submit_debug_info.sh $IMAGE
+        IMAGE=us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api make docker-push
+        godotenv -s sentry-cli releases finalize $current_version
+    - name: clear env
+      run: |
+        set -x
+        rm .env
+    - name: docker prune
+      run: |
+        (docker image ls -a | grep -v us-east1-docker.pkg.dev/${{ secrets.GOOGLE_PROJECT }}/images/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
