@@ -127,11 +127,12 @@ async def get_all_team_members(
                 User.login.isnot(None),
             ),
         ),
-        load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache),
+        load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache, with_ids=True),
     )
     user_by_node = {u[User.node_id.name]: u for u in user_rows}
     all_contributors = {}
     missing = []
+    seen = set()
     for m in gh_user_ids:
         try:
             ud = user_by_node[m]
@@ -140,13 +141,21 @@ async def get_all_team_members(
             continue
         else:
             login = ud[User.html_url.name].split("://", 1)[1]
+            jira_user_id = mapped_jira.get(m, {}).get("id", "")
+            jira_user_name = mapped_jira.get(m, {}).get("display_name")
+            id_ = f"{login}-{jira_user_id}"
+            if id_ in seen:
+                continue
+
+            seen.add(id_)
             c = Contributor(
                 login=login,
                 name=ud[User.name.name],
                 email=ud[User.email.name],
                 picture=ud[User.avatar_url.name],
-                jira_user=mapped_jira.get(m),
+                jira_user=jira_user_name,
             )
+
         all_contributors[m] = c
 
     if missing:

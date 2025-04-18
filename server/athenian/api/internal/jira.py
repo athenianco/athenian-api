@@ -299,12 +299,13 @@ async def load_mapped_jira_users(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
+    with_ids: Optional[bool] = False,
 ) -> dict[int, str]:
     """Fetch the map from GitHub developer IDs to JIRA names."""
     cache_dropped = not await load_jira_identity_mapping_sentinel(account, cache)
     try:
         return await _load_mapped_jira_users(
-            account, github_user_ids, sdb, mdb, cache, cache_dropped,
+            account, github_user_ids, with_ids, sdb, mdb, cache, cache_dropped,
         )
     except ResponseError:
         return {}
@@ -324,18 +325,20 @@ def _postprocess_load_mapped_jira_users(
     exptime=max_exptime,  # we drop load_jira_identity_mapping_sentinel when we re-compute
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda account, github_user_ids, **_: (account, sorted(github_user_ids)),
+    key=lambda account, github_user_ids, with_ids, **_: (
+        account, sorted(github_user_ids), with_ids),
     postprocess=_postprocess_load_mapped_jira_users,
     refresh_on_access=True,
 )
 async def _load_mapped_jira_users(
     account: int,
     github_user_ids: Iterable[int],
+    with_ids: bool,
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
     cache_dropped: bool,
-) -> dict[int, str]:
+) -> dict[int, str | dict[str, int | str]]:
     tasks = [
         sdb.fetch_all(
             select(MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id).where(
@@ -356,10 +359,19 @@ async def _load_mapped_jira_users(
         ),
     )
     jira_uid_to_jira_name = {r["id"]: r["display_name"] for r in name_rows}
-    return {
-        gh_uid: jira_uid_to_jira_name[jira_uid]
-        for gh_uid, jira_uid in gh_uid_to_jira_uid.items()
-    }
+
+    if with_ids:
+        return {
+            gh_uid: {
+                "id": jira_uid,
+                "display_name": jira_uid_to_jira_name[jira_uid]
+            } for gh_uid, jira_uid in gh_uid_to_jira_uid.items()
+        }
+    else:
+        return {
+            gh_uid: jira_uid_to_jira_name[jira_uid]
+            for gh_uid, jira_uid in gh_uid_to_jira_uid.items()
+        }
 
 
 @cached(
