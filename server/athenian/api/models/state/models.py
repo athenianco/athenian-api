@@ -100,6 +100,8 @@ class RepositorySet(
     )
     tracking_re = Column(Text(), nullable=False, default=".*", server_default=".*")
     precomputed = Column(Boolean(), nullable=False, default=False, server_default="false")
+    precompute_started = Column(TIMESTAMP(timezone=True))
+    precompute_finished = Column(TIMESTAMP(timezone=True))
 
 
 class UserAccount(create_time_mixin(created_at=True), Base):
